@@ -170,6 +170,20 @@ export default function App(){
     });
   }
 
+  async function handleSave(){
+    setSyncing(true); setSyncMsg("");
+    const msg = await saveToSheets(store.events);
+    setSyncMsg(msg); setSyncing(false);
+  }
+
+  async function handleLoad(){
+    setSyncing(true); setSyncMsg("");
+    const evts = await loadFromSheets();
+    if(evts){ save({...store,events:evts}); setSyncMsg("✅ Dati caricati da Sheets"); }
+    else setSyncMsg("❌ Nessun dato trovato");
+    setSyncing(false);
+  }
+
   // ── CALENDAR GRID ────────────────────────────────────────────
   const totalDays = daysInMonth(year,month);
   const fd = firstDay(year,month);
