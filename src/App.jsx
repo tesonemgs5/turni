@@ -49,6 +49,8 @@ export default function App(){
   const [nsColor, setNsColor] = useState(PALETTE[0]);
   const [exCal,   setExCal]   = useState(null);
   const [nhName,  setNhName]  = useState("");
+  const [syncMsg,  setSyncMsg]  = useState("");
+  const [syncing,  setSyncing]  = useState(false);
   const [nhD,     setNhD]     = useState("");
   const [nhM,     setNhM]     = useState("");
 
@@ -366,6 +368,27 @@ export default function App(){
           }} style={{background:"#3b82f6",border:"none",borderRadius:8,
             color:"#fff",padding:"8px 14px",cursor:"pointer",fontWeight:800,fontSize:14}}>+</button>
         </div>
+      </Sec>
+
+      {/* Sync Sheets */}
+      <Sec label="ARCHIVIO GOOGLE SHEETS" T={T}>
+        <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
+          Salva o carica tutti gli eventi dal foglio Google.
+        </div>
+        <div style={{display:"flex",gap:8,marginBottom:10}}>
+          <button onClick={handleSave} disabled={syncing}
+            style={{flex:1,background:"#16a34a",border:"none",borderRadius:10,
+              color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
+            {syncing?"⏳ ...":"📤 Salva su Sheets"}
+          </button>
+          <button onClick={handleLoad} disabled={syncing}
+            style={{flex:1,background:"#2563eb",border:"none",borderRadius:10,
+              color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
+            {syncing?"⏳ ...":"📥 Carica da Sheets"}
+          </button>
+        </div>
+        {syncMsg&&<div style={{fontSize:12,color:T.text,padding:"8px 10px",
+          background:T.s2,borderRadius:8,textAlign:"center"}}>{syncMsg}</div>}
       </Sec>
 
       {/* Festivi locali */}
