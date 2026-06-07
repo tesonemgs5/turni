@@ -173,12 +173,15 @@ export default function App(){
   const SHEETS_URL = "https://script.google.com/macros/s/AKfycby84d3usTshqIPnMnuQzlKXDWvXQdPECY8dgDUX-uhmjqZ2UMWuu57IsgrRZ8B4MsBreA/exec";
   const SHEETS_SECRET = "turnipm2024";
 
-  async function saveToSheets(events) {
+  async function saveToSheets(events, calendars) {
     try {
       const res = await fetch(SHEETS_URL, {
         method: "POST",
+        mode: "no-cors",
+        headers: { "Content-Type": "text/plain" },
         body: JSON.stringify({ secret: SHEETS_SECRET, action: "save", events, calendars }),
       });
+      return "✅ Eventi inviati a Sheets";
       const data = await res.json();
       return data.success ? `✅ ${data.count} eventi salvati su Sheets` : `❌ ${data.error}`;
     } catch(e) { return "❌ Errore connessione"; }
