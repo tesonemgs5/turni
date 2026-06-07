@@ -170,7 +170,41 @@ export default function App(){
     });
   }
 
+  const SHEETS_URL = "https://script.google.com/macros/s/AKfycby84d3usTshqIPnMnuQzlKXDWvXQdPECY8dgDUX-uhmjqZ2UMWuu57IsgrRZ8B4MsBreA/exec";
+  const SHEETS_SECRET = "turnipm2024";
+
+  async function saveToSheets(events) {
+    try {
+      const res = await fetch(SHEETS_URL, {
+        method: "POST",
+        body: JSON.stringify({ secret: SHEETS_SECRET, action: "save", events }),
+      });
+      const data = await res.json();
+      return data.success ? `✅ ${data.count} eventi salvati su Sheets` : `❌ ${data.error}`;
+    } catch(e) { return "❌ Errore connessione"; }
+  }
+
+  async function loadFromSheets() {
+    try {
+      const res = await fetch(`${SHEETS_URL}?secret=${SHEETS_SECRET}&action=load`);
+      const data = await res.json();
+      return data.events || null;
+    } catch(e) { return null; }
+  }
+
   async function handleSave(){
+    setSyncing(true); setSyncMsg("");
+    const msg = await saveToSheets(store.events);
+    setSyncMsg(msg); setSyncing(false);
+  }
+
+  async function handleLoad(){
+    setSyncing(true); setSyncMsg("");
+    const evts = await loadFromSheets();
+    if(evts){ setStore(s=>({...s,events:evts})); setSyncMsg("✅ Dati caricati da Sheets"); }
+    else setSyncMsg("❌ Nessun dato trovato");
+    setSyncing(false);
+  }
     setSyncing(true); setSyncMsg("");
     const msg = await saveToSheets(store.events);
     setSyncMsg(msg); setSyncing(false);
