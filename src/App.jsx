@@ -194,7 +194,7 @@ export default function App(){
 
   async function handleSave(){
     setSyncing(true); setSyncMsg("");
-    const msg = await saveToSheets(store.events);
+    const msg = await saveToSheets(store.events, store.calendars);
     setSyncMsg(msg); setSyncing(false);
   }
 
