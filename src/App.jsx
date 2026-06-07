@@ -177,7 +177,7 @@ export default function App(){
     try {
       const res = await fetch(SHEETS_URL, {
         method: "POST",
-        body: JSON.stringify({ secret: SHEETS_SECRET, action: "save", events }),
+        body: JSON.stringify({ secret: SHEETS_SECRET, action: "save", events, calendars }),
       });
       const data = await res.json();
       return data.success ? `✅ ${data.count} eventi salvati su Sheets` : `❌ ${data.error}`;
@@ -188,7 +188,7 @@ export default function App(){
     try {
       const res = await fetch(`${SHEETS_URL}?secret=${SHEETS_SECRET}&action=load`);
       const data = await res.json();
-      return data.events || null;
+      return data || null;
     } catch(e) { return null; }
   }
 
@@ -200,20 +200,19 @@ export default function App(){
 
   async function handleLoad(){
     setSyncing(true); setSyncMsg("");
-    const evts = await loadFromSheets();
-    if(evts){ setStore(s=>({...s,events:evts})); setSyncMsg("✅ Dati caricati da Sheets"); }
-    else setSyncMsg("❌ Nessun dato trovato");
-    setSyncing(false);
-  }
-    setSyncing(true); setSyncMsg("");
-    const msg = await saveToSheets(store.events);
-    setSyncMsg(msg); setSyncing(false);
-  }
-
-  async function handleLoad(){
-    setSyncing(true); setSyncMsg("");
-    const evts = await loadFromSheets();
-    if(evts){ save({...store,events:evts}); setSyncMsg("✅ Dati caricati da Sheets"); }
+    const data = await loadFromSheets();
+    if(data && data.data){
+      const newEvents = {};
+      store.calendars.forEach(cal => {
+        const calData = data.data[cal.name] || {};
+        Object.entries(calData).forEach(([dateKey, evts]) => {
+          if(!newEvents[dateKey]) newEvents[dateKey] = {};
+          newEvents[dateKey][cal.id] = evts;
+        });
+      });
+      setStore(s=>({...s,events:newEvents}));
+      setSyncMsg("✅ Dati caricati da Sheets");
+    }
     else setSyncMsg("❌ Nessun dato trovato");
     setSyncing(false);
   }
