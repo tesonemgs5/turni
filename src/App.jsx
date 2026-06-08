@@ -182,8 +182,6 @@ export default function App(){
         body: JSON.stringify({ secret: SHEETS_SECRET, action: "save", events, calendars }),
       });
       return "✅ Eventi inviati a Sheets";
-      const data = await res.json();
-      return data.success ? `✅ ${data.count} eventi salvati su Sheets` : `❌ ${data.error}`;
     } catch(e) { return "❌ Errore connessione"; }
   }
 
