@@ -159,6 +159,8 @@ export default function App(){
     });
     setForm(null);
     setDayKey(null);
+    // Auto-salva su Sheets
+    saveToSheets(ns.events, store.calendars);
   }
 
   function delEvt(key,cid,eid){
