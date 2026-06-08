@@ -1,7 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
-import Auth from './Auth.jsx'
+import Auth from './auth.jsx'
 import { supabase } from './supabase.js'
 import { useState, useEffect } from 'react'
 
