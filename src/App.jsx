@@ -439,6 +439,13 @@ export default function App(){
         </div>
         {syncMsg&&<div style={{fontSize:12,color:T.text,padding:"8px 10px",
           background:T.s2,borderRadius:8,textAlign:"center"}}>{syncMsg}</div>}
+        <a href="https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit"
+          target="_blank" rel="noreferrer"
+          style={{display:"block",marginTop:8,textAlign:"center",fontSize:11,
+            color:"#16a34a",fontWeight:700,textDecoration:"none",
+            background:"#dcfce7",borderRadius:8,padding:"8px 0"}}>
+          📊 Apri Google Sheets
+        </a>
       </Sec>
 
       {/* Festivi locali */}
