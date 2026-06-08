@@ -218,16 +218,26 @@ export default function App(){
     setSyncing(true); setSyncMsg("");
     const data = await loadFromSheets();
     if(data && data.data){
+      // Crea calendari mancanti dai tab dello sheet
+      const existingNames = store.calendars.map(c=>c.name);
+      const newCals = [...store.calendars];
+      (data.tabs||Object.keys(data.data)).forEach(tabName => {
+        if(!existingNames.includes(tabName)){
+          newCals.push({id:uid(),name:tabName,color:PALETTE[newCals.length%PALETTE.length],isMain:newCals.length===0,shifts:[]});
+        }
+      });
+      // Ricostruisce eventi per ID calendario
       const newEvents = {};
-      store.calendars.forEach(cal => {
+      newCals.forEach(cal => {
         const calData = data.data[cal.name] || {};
         Object.entries(calData).forEach(([dateKey, evts]) => {
           if(!newEvents[dateKey]) newEvents[dateKey] = {};
           newEvents[dateKey][cal.id] = evts;
         });
       });
-      setStore(s=>({...s,events:newEvents}));
-      setSyncMsg("✅ Dati caricati da Sheets");
+      setStore(s=>({...s,calendars:newCals,events:newEvents}));
+      setCalId(newCals[0]?.id||null);
+      setSyncMsg(`✅ ${newCals.length} calendari caricati da Sheets`);
     }
     else setSyncMsg("❌ Nessun dato trovato");
     setSyncing(false);
