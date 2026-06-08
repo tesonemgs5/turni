@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { supabase } from "./supabase";
 
 const MONTHS = ["Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno",
                 "Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"];
@@ -29,12 +30,12 @@ function italianHols(y){
     {m:e.m,d:e.d},{m:e.m,d:e.d+1}];
 }
 
-const SK = "cal_v4";
 const INIT = { calendars:[], events:{}, theme:"auto", extraHols:[] };
 
-export default function App(){
+export default function App({ session }){
   const today = new Date();
   const [store, setStore] = useState(INIT);
+  const [loading, setLoading] = useState(true);
   const [year,  setYear]  = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
   const [calId, setCalId] = useState(null);
@@ -42,7 +43,6 @@ export default function App(){
   const [dayKey, setDayKey] = useState(null);
   const [form,   setForm]   = useState(null);
   const [pal,    setPal]    = useState(null);
-  // settings inputs
   const [ncName,  setNcName]  = useState("");
   const [ncColor, setNcColor] = useState(PALETTE[9]);
   const [nsName,  setNsName]  = useState("");
@@ -54,48 +54,106 @@ export default function App(){
   const [nhD,     setNhD]     = useState("");
   const [nhM,     setNhM]     = useState("");
 
-  // Load once
+  const userId = session?.user?.id;
+
+  // ── LOAD DA SUPABASE ─────────────────────────────────────────
   useEffect(()=>{
+    if(!userId) return;
     (async()=>{
-      try{
-        const r = await window.storage?.get(SK);
-        if(r?.value){
-          const s = JSON.parse(r.value);
-          setStore(s);
-          setCalId(s.calendars[0]?.id||null);
-          // Auto-carica da Sheets
+      try {
+        // Carica calendari
+        const { data: cals } = await supabase
+          .from("calendars")
+          .select("*")
+          .eq("user_id", userId)
+          .order("created_at");
+
+        // Carica eventi
+        const { data: evts } = await supabase
+          .from("events")
+          .select("*")
+          .eq("user_id", userId);
+
+        // Carica impostazioni
+        const { data: settings } = await supabase
+          .from("user_settings")
+          .select("*")
+          .eq("user_id", userId)
+          .single();
+
+        // Mappa calendari
+        const calendars = (cals||[]).map(c=>({
+          id: c.id,
+          name: c.name,
+          color: c.color,
+          isMain: c.is_main,
+          shifts: c.shifts||[],
+        }));
+
+        // Mappa eventi in formato {dateKey: {calId: [evts]}}
+        const events = {};
+        (evts||[]).forEach(e=>{
+          if(!events[e.date_key]) events[e.date_key]={};
+          if(!events[e.date_key][e.calendar_id]) events[e.date_key][e.calendar_id]=[];
+          events[e.date_key][e.calendar_id].push({
+            id: e.id,
+            label: e.label,
+            color: e.color,
+            allDay: e.all_day,
+            tIn: e.time_in||"",
+            tOut: e.time_out||"",
+            place: e.place||"",
+            map: e.map_url||"",
+            note: e.note||"",
+          });
+        });
+
+        const theme = settings?.theme||"auto";
+        const extraHols = settings?.extra_hols||[];
+
+        // Se non ci sono calendari su Supabase, carica da Sheets automaticamente
+        if(calendars.length === 0) {
           const data = await loadFromSheets();
           if(data && data.data){
-            const existingNames = s.calendars.map(c=>c.name);
-            const newCals = [...s.calendars];
-            (data.tabs||Object.keys(data.data)).forEach(tabName => {
-              if(!existingNames.includes(tabName)){
-                newCals.push({id:uid(),name:tabName,color:PALETTE[newCals.length%PALETTE.length],isMain:newCals.length===0,shifts:[]});
-              }
-            });
+            const newCals = [];
+            for(const tabName of (data.tabs||Object.keys(data.data))){
+              const dbCal = await supabase.from("calendars").insert({
+                user_id: userId, name: tabName,
+                color: PALETTE[newCals.length%PALETTE.length],
+                is_main: newCals.length===0, shifts:[],
+              }).select().single();
+              if(dbCal.data) newCals.push({id:dbCal.data.id,name:dbCal.data.name,color:dbCal.data.color,isMain:dbCal.data.is_main,shifts:[]});
+            }
             const newEvents = {};
-            newCals.forEach(cal => {
-              const calData = data.data[cal.name] || {};
-              Object.entries(calData).forEach(([dateKey, evts]) => {
-                if(!newEvents[dateKey]) newEvents[dateKey] = {};
-                newEvents[dateKey][cal.id] = evts;
-              });
-            });
-            setStore(prev=>({...prev,calendars:newCals,events:newEvents}));
+            for(const cal of newCals){
+              const calData = data.data[cal.name]||{};
+              for(const [dateKey, evts] of Object.entries(calData)){
+                if(!newEvents[dateKey]) newEvents[dateKey]={};
+                newEvents[dateKey][cal.id]=evts;
+                for(const e of evts){
+                  await supabase.from("events").insert({
+                    user_id: userId, calendar_id: cal.id, date_key: dateKey,
+                    label: e.label||"Evento", color: e.color||cal.color,
+                    all_day: e.allDay??true, time_in: e.tIn||"", time_out: e.tOut||"",
+                    place: e.place||"", map_url: e.map||"", note: e.note||"",
+                  });
+                }
+              }
+            }
+            setStore({ calendars:newCals, events:newEvents, theme, extraHols });
             setCalId(newCals[0]?.id||null);
+          } else {
+            setStore({ calendars, events, theme, extraHols });
+            setCalId(null);
           }
+        } else {
+          setStore({ calendars, events, theme, extraHols });
+          setCalId(calendars[0]?.id||null);
         }
-      }catch(e){ console.log(e); }
+      } catch(e){ console.log(e); }
+      setLoading(false);
     })();
-  },[]);
-
-  // Save whenever store changes
-  useEffect(()=>{
-    if(store===INIT) return;
-    (async()=>{
-      try{ await window.storage?.set(SK, JSON.stringify(store)); }catch(e){ console.log(e); }
-    })();
-  },[store]);
+  },[userId]);
 
   const sysDark = window.matchMedia?.("(prefers-color-scheme:dark)").matches??false;
   const dark = store.theme==="auto"?sysDark:store.theme==="dark";
@@ -114,7 +172,7 @@ export default function App(){
   const accent    = activeCal?.color||"#3b82f6";
   const hols      = italianHols(year);
 
-  function isRed(d,m){ 
+  function isRed(d,m){
     return hols.some(h=>h.m===m&&h.d===d) ||
       (store.extraHols||[]).some(h=>+h.m-1===m&&+h.d===d);
   }
@@ -126,13 +184,11 @@ export default function App(){
     if(mainCal) getEvts(key,mainCal.id).forEach(e=>res.push({...e,_cid:mainCal.id}));
     store.calendars.filter(c=>!c.isMain).forEach(c=>
       getEvts(key,c.id).forEach(e=>res.push({...e,_cid:c.id})));
-    // Ordina: tutto il giorno prima, poi per orario crescente, a parità mantieni ordine inserimento
     return res.sort((a,b)=>{
       if(a.allDay && b.allDay) return 0;
       if(a.allDay) return -1;
       if(b.allDay) return 1;
-      const ta = a.tIn||"";
-      const tb = b.tIn||"";
+      const ta=a.tIn||"", tb=b.tIn||"";
       if(ta===tb) return 0;
       if(!ta) return 1;
       if(!tb) return -1;
@@ -142,9 +198,44 @@ export default function App(){
 
   function dots(key){ return store.calendars.filter(c=>getEvts(key,c.id).length>0); }
 
+  // ── SALVA TEMA/FESTIVI SU SUPABASE ───────────────────────────
+  async function saveSettings(newTheme, newExtraHols){
+    if(!userId) return;
+    await supabase.from("user_settings").upsert({
+      user_id: userId,
+      theme: newTheme,
+      extra_hols: newExtraHols,
+      updated_at: new Date().toISOString(),
+    });
+  }
+
+  // ── SALVA CALENDARIO SU SUPABASE ─────────────────────────────
+  async function addCalendar(name, color, isFirst){
+    if(!userId) return null;
+    const { data, error } = await supabase.from("calendars").insert({
+      user_id: userId,
+      name,
+      color,
+      is_main: isFirst,
+      shifts: [],
+    }).select().single();
+    if(error){ console.log(error); return null; }
+    return data;
+  }
+
+  async function updateCalendar(calId, fields){
+    if(!userId) return;
+    await supabase.from("calendars").update(fields).eq("id", calId).eq("user_id", userId);
+  }
+
+  async function deleteCalendar(calId){
+    if(!userId) return;
+    await supabase.from("calendars").delete().eq("id", calId).eq("user_id", userId);
+  }
+
   // ── SAVE EVENT ───────────────────────────────────────────────
-  function saveEvt(){
-    if(!form||!dayKey||!calId) return;
+  async function saveEvt(){
+    if(!form||!dayKey||!calId||!userId) return;
     const cal = store.calendars.find(c=>c.id===calId);
     if(!cal) return;
 
@@ -163,12 +254,30 @@ export default function App(){
       tOut=`${String(Math.floor(tot/60)%24).padStart(2,"0")}:${String(tot%60).padStart(2,"0")}`;
     }
 
+    const { data, error } = await supabase.from("events").insert({
+      user_id: userId,
+      calendar_id: calId,
+      date_key: dayKey,
+      label,
+      color,
+      all_day: form.dur==="allday",
+      time_in: form.dur==="allday"?"":form.tIn||"",
+      time_out: form.dur==="allday"?"":tOut,
+      place: form.place||"",
+      map_url: form.map||"",
+      note: form.note||"",
+    }).select().single();
+
+    if(error){ console.log(error); return; }
+
     const evt = {
-      id:uid(), color, label, note:form.note||"",
-      allDay: form.dur==="allday",
-      tIn:  form.dur==="allday"?"":form.tIn||"",
-      tOut: form.dur==="allday"?"":tOut,
-      place:form.place||"", map:form.map||"",
+      id: data.id, color, label,
+      allDay: data.all_day,
+      tIn: data.time_in||"",
+      tOut: data.time_out||"",
+      place: data.place||"",
+      map: data.map_url||"",
+      note: data.note||"",
     };
 
     setStore(prev=>{
@@ -176,29 +285,35 @@ export default function App(){
       if(!ns.events[dayKey]) ns.events[dayKey]={};
       if(!ns.events[dayKey][calId]) ns.events[dayKey][calId]=[];
       ns.events[dayKey][calId].push(evt);
+      // Auto-save su Sheets
+      saveToSheets(ns.events, ns.calendars);
       return ns;
     });
     setForm(null);
     setDayKey(null);
   }
 
-  function delEvt(key,cid,eid){
+  async function delEvt(key,cid,eid){
+    if(!userId) return;
+    await supabase.from("events").delete().eq("id", eid).eq("user_id", userId);
     setStore(prev=>{
       const ns=JSON.parse(JSON.stringify(prev));
       if(ns.events?.[key]?.[cid])
         ns.events[key][cid]=ns.events[key][cid].filter(e=>e.id!==eid);
+      // Auto-save su Sheets
+      saveToSheets(ns.events, ns.calendars);
       return ns;
     });
   }
 
+  // ── GOOGLE SHEETS (mantenuto) ────────────────────────────────
   const SHEETS_URL = "https://script.google.com/macros/s/AKfycby84d3usTshqIPnMnuQzlKXDWvXQdPECY8dgDUX-uhmjqZ2UMWuu57IsgrRZ8B4MsBreA/exec";
   const SHEETS_SECRET = "turnipm2024";
 
   async function saveToSheets(events, calendars) {
     try {
-      const res = await fetch(SHEETS_URL, {
-        method: "POST",
-        mode: "no-cors",
+      await fetch(SHEETS_URL, {
+        method: "POST", mode: "no-cors",
         headers: { "Content-Type": "text/plain" },
         body: JSON.stringify({ secret: SHEETS_SECRET, action: "save", events, calendars }),
       });
@@ -209,8 +324,7 @@ export default function App(){
   async function loadFromSheets() {
     try {
       const res = await fetch(`${SHEETS_URL}?secret=${SHEETS_SECRET}&action=load`);
-      const data = await res.json();
-      return data || null;
+      return await res.json() || null;
     } catch(e) { return null; }
   }
 
@@ -224,30 +338,46 @@ export default function App(){
     setSyncing(true); setSyncMsg("");
     const data = await loadFromSheets();
     if(data && data.data){
-      // Crea calendari mancanti dai tab dello sheet
       const existingNames = store.calendars.map(c=>c.name);
       const newCals = [...store.calendars];
-      (data.tabs||Object.keys(data.data)).forEach(tabName => {
+      for(const tabName of (data.tabs||Object.keys(data.data))){
         if(!existingNames.includes(tabName)){
-          newCals.push({id:uid(),name:tabName,color:PALETTE[newCals.length%PALETTE.length],isMain:newCals.length===0,shifts:[]});
+          const dbCal = await addCalendar(tabName, PALETTE[newCals.length%PALETTE.length], newCals.length===0);
+          if(dbCal) newCals.push({id:dbCal.id,name:dbCal.name,color:dbCal.color,isMain:dbCal.is_main,shifts:[]});
         }
-      });
-      // Ricostruisce eventi per ID calendario
+      }
       const newEvents = {};
-      newCals.forEach(cal => {
-        const calData = data.data[cal.name] || {};
-        Object.entries(calData).forEach(([dateKey, evts]) => {
-          if(!newEvents[dateKey]) newEvents[dateKey] = {};
+      for(const cal of newCals){
+        const calData = data.data[cal.name]||{};
+        for(const [dateKey, evts] of Object.entries(calData)){
+          if(!newEvents[dateKey]) newEvents[dateKey]={};
           newEvents[dateKey][cal.id] = evts;
-        });
-      });
+          // Salva su Supabase
+          for(const e of evts){
+            await supabase.from("events").upsert({
+              user_id: userId, calendar_id: cal.id, date_key: dateKey,
+              label: e.label||"Evento", color: e.color||cal.color,
+              all_day: e.allDay??true, time_in: e.tIn||"", time_out: e.tOut||"",
+              place: e.place||"", map_url: e.map||"", note: e.note||"",
+            });
+          }
+        }
+      }
       setStore(s=>({...s,calendars:newCals,events:newEvents}));
       setCalId(newCals[0]?.id||null);
-      setSyncMsg(`✅ ${newCals.length} calendari caricati da Sheets`);
-    }
-    else setSyncMsg("❌ Nessun dato trovato");
+      setSyncMsg(`✅ ${newCals.length} calendari caricati`);
+    } else setSyncMsg("❌ Nessun dato trovato");
     setSyncing(false);
   }
+
+  // ── LOGOUT ───────────────────────────────────────────────────
+  async function handleLogout(){
+    await supabase.auth.signOut();
+  }
+
+  if(loading) return <div style={{background:dark?"#090e1a":"#f1f5f9",height:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}>
+    <div style={{color:"#64748b",fontSize:13}}>⏳ Caricamento...</div>
+  </div>;
 
   // ── CALENDAR GRID ────────────────────────────────────────────
   const totalDays = daysInMonth(year,month);
@@ -256,15 +386,12 @@ export default function App(){
 
   const calView = (
     <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
-      {/* Topbar */}
       <div style={{background:accent,display:"flex",alignItems:"center",
         gap:5,padding:"6px 8px",overflowX:"auto",scrollbarWidth:"none",flexShrink:0}}>
-        <button onClick={()=>month===0?(setYear(y=>y-1),setMonth(11)):setMonth(m=>m-1)}
-          style={NB}>‹</button>
+        <button onClick={()=>month===0?(setYear(y=>y-1),setMonth(11)):setMonth(m=>m-1)} style={NB}>‹</button>
         <span style={{color:"#fff",fontSize:13,fontWeight:900,flexShrink:0,
           fontFamily:"Georgia,serif"}}>{MONTHS[month].slice(0,3).toUpperCase()} {year}</span>
-        <button onClick={()=>month===11?(setYear(y=>y+1),setMonth(0)):setMonth(m=>m+1)}
-          style={NB}>›</button>
+        <button onClick={()=>month===11?(setYear(y=>y+1),setMonth(0)):setMonth(m=>m+1)} style={NB}>›</button>
         <div style={{width:1,height:14,background:"rgba(255,255,255,0.3)",flexShrink:0,marginLeft:2}}/>
         {store.calendars.length===0
           ? <span style={{color:"rgba(255,255,255,0.6)",fontSize:10,fontStyle:"italic"}}>→ Impostazioni</span>
@@ -274,15 +401,13 @@ export default function App(){
                 background:calId===c.id?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.1)",
                 border:`1.5px solid ${calId===c.id?"rgba(255,255,255,0.85)":"transparent"}`,
                 borderRadius:20,padding:"2px 8px 2px 5px"}}>
-              <div style={{width:8,height:8,borderRadius:"50%",background:c.color,
-                border:"1px solid rgba(255,255,255,0.5)"}}/>
+              <div style={{width:8,height:8,borderRadius:"50%",background:c.color,border:"1px solid rgba(255,255,255,0.5)"}}/>
               <span style={{color:"#fff",fontSize:10,fontWeight:700}}>{c.name}</span>
               {c.isMain&&<span style={{color:"rgba(255,255,255,0.6)",fontSize:8}}>★</span>}
             </button>
           ))
         }
       </div>
-      {/* Day headers */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",
         background:T.s2,borderBottom:`1px solid ${T.border}`,flexShrink:0}}>
         {DAYS.map((d,i)=>(
@@ -290,7 +415,6 @@ export default function App(){
             padding:"3px 0",color:i===6?"#ef4444":T.sub}}>{d}</div>
         ))}
       </div>
-      {/* Grid */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",
         gridAutoRows:"minmax(54px,1fr)",flex:1,overflow:"hidden",gap:"1px",background:T.gap}}>
         {cells.map((d,i)=>{
@@ -335,11 +459,24 @@ export default function App(){
     <div style={{flex:1,overflowY:"auto",padding:"12px 12px 80px",color:T.text}}>
       <div style={{fontSize:18,fontWeight:900,fontFamily:"Georgia,serif",marginBottom:14}}>Impostazioni</div>
 
+      {/* Account */}
+      <Sec label="ACCOUNT" T={T}>
+        <div style={{fontSize:12,color:T.sub,marginBottom:10}}>{session?.user?.email}</div>
+        <button onClick={handleLogout}
+          style={{width:"100%",background:"#ef4444",border:"none",borderRadius:10,
+            color:"#fff",padding:"10px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
+          🚪 Logout
+        </button>
+      </Sec>
+
       {/* Tema */}
       <Sec label="TEMA" T={T}>
         <div style={{display:"flex",gap:6}}>
           {[["auto","Auto"],["light","Chiaro"],["dark","Scuro"]].map(([v,l])=>(
-            <button key={v} onClick={()=>setStore(s=>({...s,theme:v}))}
+            <button key={v} onClick={()=>{
+              setStore(s=>({...s,theme:v}));
+              saveSettings(v, store.extraHols);
+            }}
               style={{flex:1,padding:"9px 4px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:11,
                 background:store.theme===v?(v==="light"?"#f8fafc":v==="dark"?"#0f172a":"#6366f1"):T.s2,
                 color:store.theme===v?(v==="light"?"#0f172a":"#fff"):T.sub,
@@ -352,32 +489,42 @@ export default function App(){
       <Sec label="CALENDARI" T={T}>
         {store.calendars.map((c,ci)=>(
           <div key={c.id} style={{marginBottom:10}}>
-            <div style={{display:"flex",alignItems:"center",gap:8,
-              background:T.s2,borderRadius:10,padding:"8px 10px"}}>
-              {/* Colore */}
+            <div style={{display:"flex",alignItems:"center",gap:8,background:T.s2,borderRadius:10,padding:"8px 10px"}}>
               <div style={{position:"relative",flexShrink:0}}>
                 <div style={{width:24,height:24,borderRadius:"50%",background:c.color,
                   border:`2px solid ${T.border}`,cursor:"pointer"}}
                   onClick={e=>{e.stopPropagation();setPal(pal===c.id?null:c.id);}}/>
                 {pal===c.id&&<Pal T={T} cur={c.color} onPick={p=>{
-                  setStore(s=>{const n=JSON.parse(JSON.stringify(s));n.calendars[ci].color=p;return n;});
+                  const newCals = JSON.parse(JSON.stringify(store.calendars));
+                  newCals[ci].color=p;
+                  setStore(s=>({...s,calendars:newCals}));
+                  updateCalendar(c.id,{color:p});
                   setPal(null);
                 }}/>}
               </div>
               <input value={c.name}
-                onChange={e=>setStore(s=>{const n=JSON.parse(JSON.stringify(s));n.calendars[ci].name=e.target.value;return n;})}
+                onChange={e=>{
+                  const newCals=JSON.parse(JSON.stringify(store.calendars));
+                  newCals[ci].name=e.target.value;
+                  setStore(s=>({...s,calendars:newCals}));
+                }}
+                onBlur={e=>updateCalendar(c.id,{name:e.target.value})}
                 style={{flex:1,background:"transparent",border:"none",outline:"none",color:T.text,fontSize:13,fontWeight:700}}/>
-              <button onClick={()=>setStore(s=>{const n=JSON.parse(JSON.stringify(s));
-                n.calendars=n.calendars.map((x,j)=>({...x,isMain:j===ci}));return n;})}
-                style={{background:"none",border:"none",cursor:"pointer",fontSize:16,color:c.isMain?"#f59e0b":T.sub}}>★</button>
+              <button onClick={async()=>{
+                const newCals=store.calendars.map((x,j)=>({...x,isMain:j===ci}));
+                setStore(s=>({...s,calendars:newCals}));
+                for(const cal of store.calendars){
+                  await updateCalendar(cal.id,{is_main: cal.id===c.id});
+                }
+              }} style={{background:"none",border:"none",cursor:"pointer",fontSize:16,color:c.isMain?"#f59e0b":T.sub}}>★</button>
               <button onClick={()=>setExCal(exCal===c.id?null:c.id)}
                 style={{background:"none",border:"none",color:T.sub,cursor:"pointer",fontSize:12}}>
                 {exCal===c.id?"▲":"▼"}</button>
-              <button onClick={()=>setStore(s=>{const n=JSON.parse(JSON.stringify(s));
-                n.calendars=n.calendars.filter(x=>x.id!==c.id);return n;})}
-                style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:18}}>×</button>
+              <button onClick={async()=>{
+                await deleteCalendar(c.id);
+                setStore(s=>({...s,calendars:s.calendars.filter(x=>x.id!==c.id)}));
+              }} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:18}}>×</button>
             </div>
-            {/* Turni */}
             {exCal===c.id&&(
               <div style={{background:T.s2,borderRadius:"0 0 10px 10px",padding:"10px",borderTop:`1px solid ${T.border}`}}>
                 <div style={{fontSize:9,color:T.sub,fontWeight:700,marginBottom:8}}>TURNI PREDEFINITI</div>
@@ -387,20 +534,31 @@ export default function App(){
                       <div style={{width:20,height:20,borderRadius:"50%",background:sh.color,cursor:"pointer"}}
                         onClick={e=>{e.stopPropagation();setPal(pal===sh.id?null:sh.id);}}/>
                       {pal===sh.id&&<Pal T={T} cur={sh.color} onPick={p=>{
-                        setStore(s=>{const n=JSON.parse(JSON.stringify(s));n.calendars[ci].shifts[si].color=p;return n;});
+                        const newCals=JSON.parse(JSON.stringify(store.calendars));
+                        newCals[ci].shifts[si].color=p;
+                        setStore(s=>({...s,calendars:newCals}));
+                        updateCalendar(c.id,{shifts:newCals[ci].shifts});
                         setPal(null);
                       }}/>}
                     </div>
                     <input value={sh.label}
-                      onChange={e=>setStore(s=>{const n=JSON.parse(JSON.stringify(s));
-                        n.calendars[ci].shifts[si].label=e.target.value;return n;})}
+                      onChange={e=>{
+                        const newCals=JSON.parse(JSON.stringify(store.calendars));
+                        newCals[ci].shifts[si].label=e.target.value;
+                        setStore(s=>({...s,calendars:newCals}));
+                      }}
+                      onBlur={()=>{
+                        updateCalendar(c.id,{shifts:store.calendars[ci].shifts});
+                      }}
                       style={{flex:1,background:"transparent",border:"none",outline:"none",color:T.text,fontSize:12}}/>
-                    <button onClick={()=>setStore(s=>{const n=JSON.parse(JSON.stringify(s));
-                      n.calendars[ci].shifts=n.calendars[ci].shifts.filter((_,k)=>k!==si);return n;})}
-                      style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:16}}>×</button>
+                    <button onClick={()=>{
+                      const newCals=JSON.parse(JSON.stringify(store.calendars));
+                      newCals[ci].shifts=newCals[ci].shifts.filter((_,k)=>k!==si);
+                      setStore(s=>({...s,calendars:newCals}));
+                      updateCalendar(c.id,{shifts:newCals[ci].shifts});
+                    }} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:16}}>×</button>
                   </div>
                 ))}
-                {/* Nuovo turno */}
                 <div style={{display:"flex",gap:6,alignItems:"center",marginTop:6}}>
                   <div style={{position:"relative",flexShrink:0}}>
                     <div style={{width:22,height:22,borderRadius:"50%",background:nsColor,
@@ -414,10 +572,11 @@ export default function App(){
                       borderRadius:8,padding:"7px 10px",color:T.text,fontSize:12,outline:"none"}}/>
                   <button onClick={()=>{
                     if(!nsName.trim()) return;
-                    setStore(s=>{const n=JSON.parse(JSON.stringify(s));
-                      if(!n.calendars[ci].shifts) n.calendars[ci].shifts=[];
-                      n.calendars[ci].shifts.push({id:uid(),label:nsName.trim(),color:nsColor});
-                      return n;});
+                    const newCals=JSON.parse(JSON.stringify(store.calendars));
+                    if(!newCals[ci].shifts) newCals[ci].shifts=[];
+                    newCals[ci].shifts.push({id:uid(),label:nsName.trim(),color:nsColor});
+                    setStore(s=>({...s,calendars:newCals}));
+                    updateCalendar(c.id,{shifts:newCals[ci].shifts});
                     setNsName("");
                   }} style={{background:"#3b82f6",border:"none",borderRadius:8,
                     color:"#fff",padding:"7px 12px",cursor:"pointer",fontWeight:800,fontSize:14}}>+</button>
@@ -426,7 +585,6 @@ export default function App(){
             )}
           </div>
         ))}
-        {/* Nuovo calendario */}
         <div style={{display:"flex",gap:8,alignItems:"center",marginTop:4}}>
           <div style={{position:"relative",flexShrink:0}}>
             <div style={{width:24,height:24,borderRadius:"50%",background:ncColor,
@@ -438,11 +596,15 @@ export default function App(){
             placeholder="Nome calendario..."
             style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
               borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,outline:"none"}}/>
-          <button onClick={()=>{
+          <button onClick={async()=>{
             if(!ncName.trim()) return;
             const isFirst=store.calendars.length===0;
-            setStore(s=>({...s,calendars:[...s.calendars,
-              {id:uid(),name:ncName.trim(),color:ncColor,isMain:isFirst,shifts:[]}]}));
+            const dbCal = await addCalendar(ncName.trim(), ncColor, isFirst);
+            if(dbCal){
+              setStore(s=>({...s,calendars:[...s.calendars,
+                {id:dbCal.id,name:dbCal.name,color:dbCal.color,isMain:dbCal.is_main,shifts:[]}]}));
+              if(!calId) setCalId(dbCal.id);
+            }
             setNcName("");
           }} style={{background:"#3b82f6",border:"none",borderRadius:8,
             color:"#fff",padding:"8px 14px",cursor:"pointer",fontWeight:800,fontSize:14}}>+</button>
@@ -486,8 +648,11 @@ export default function App(){
           <div key={i} style={{display:"flex",alignItems:"center",gap:8,
             background:T.s2,borderRadius:8,padding:"6px 10px",marginBottom:6}}>
             <span style={{flex:1,fontSize:12,color:T.text}}>🎉 {h.name} — {h.d}/{h.m}</span>
-            <button onClick={()=>setStore(s=>({...s,extraHols:(s.extraHols||[]).filter((_,j)=>j!==i)}))}
-              style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:16}}>×</button>
+            <button onClick={()=>{
+              const newH=(store.extraHols||[]).filter((_,j)=>j!==i);
+              setStore(s=>({...s,extraHols:newH}));
+              saveSettings(store.theme, newH);
+            }} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:16}}>×</button>
           </div>
         ))}
         <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
@@ -502,7 +667,9 @@ export default function App(){
               borderRadius:8,padding:"7px 6px",color:T.text,fontSize:12,outline:"none",textAlign:"center"}}/>
           <button onClick={()=>{
             if(!nhName.trim()||!nhD||!nhM) return;
-            setStore(s=>({...s,extraHols:[...(s.extraHols||[]),{name:nhName.trim(),d:nhD,m:nhM}]}));
+            const newH=[...(store.extraHols||[]),{name:nhName.trim(),d:nhD,m:nhM}];
+            setStore(s=>({...s,extraHols:newH}));
+            saveSettings(store.theme, newH);
             setNhName(""); setNhD(""); setNhM("");
           }} style={{background:"#ef4444",border:"none",borderRadius:8,
             color:"#fff",padding:"7px 12px",cursor:"pointer",fontWeight:800}}>+</button>
@@ -520,8 +687,6 @@ export default function App(){
       <div style={{background:T.surface,borderRadius:"18px 18px 0 0",width:"100%",
         maxWidth:480,margin:"0 auto",padding:"16px 14px 32px",maxHeight:"88vh",overflowY:"auto"}}
         onClick={e=>e.stopPropagation()}>
-
-        {/* Header */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
           <div>
             <div style={{fontSize:16,fontWeight:900,color:T.text}}>{dayKey}</div>
@@ -541,8 +706,6 @@ export default function App(){
                 color:T.sub,width:32,height:32,cursor:"pointer",fontSize:18}}>×</button>
           </div>
         </div>
-
-        {/* Cambio calendario */}
         <div style={{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap"}}>
           {store.calendars.map(c=>{
             const n=getEvts(dayKey,c.id).length;
@@ -559,8 +722,6 @@ export default function App(){
             );
           })}
         </div>
-
-        {/* Evento list */}
         {curEvts.length===0&&!form&&(
           <div style={{textAlign:"center",color:T.sub,padding:"24px 0",fontSize:13}}>
             Nessun evento — premi + Aggiungi
@@ -590,13 +751,9 @@ export default function App(){
                 color:"#fff",width:26,height:26,cursor:"pointer",fontSize:14,marginLeft:8,flexShrink:0}}>×</button>
           </div>
         ))}
-
-        {/* FORM */}
         {form&&(
           <div style={{background:T.s2,borderRadius:12,padding:14,marginTop:8}}>
             <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:12}}>NUOVO EVENTO</div>
-
-            {/* Turni predefiniti */}
             {(activeCal?.shifts||[]).length>0&&(
               <>
                 <div style={{fontSize:10,color:T.sub,marginBottom:6,fontWeight:600}}>TURNO</div>
@@ -608,8 +765,7 @@ export default function App(){
                         border:`2px solid ${form.shiftId===s.id?s.color:T.border}`,
                         borderRadius:10,padding:"8px 4px",cursor:"pointer",
                         color:form.shiftId===s.id?"#fff":T.sub,fontSize:11,fontWeight:700}}>
-                      <div style={{width:10,height:10,borderRadius:"50%",background:s.color,
-                        margin:"0 auto 4px"}}/>
+                      <div style={{width:10,height:10,borderRadius:"50%",background:s.color,margin:"0 auto 4px"}}/>
                       {s.label}
                     </button>
                   ))}
@@ -617,8 +773,6 @@ export default function App(){
                 <div style={{textAlign:"center",fontSize:10,color:T.sub,marginBottom:10}}>— o evento libero —</div>
               </>
             )}
-
-            {/* Label libero */}
             {!form.shiftId&&(
               <input value={form.label||""} onChange={e=>setForm(f=>({...f,label:e.target.value}))}
                 placeholder="Nome evento..."
@@ -626,8 +780,6 @@ export default function App(){
                   borderRadius:8,padding:"9px 10px",color:T.text,fontSize:13,
                   marginBottom:10,boxSizing:"border-box",outline:"none"}}/>
             )}
-
-            {/* Colore */}
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
               <span style={{fontSize:10,color:T.sub,fontWeight:700}}>COLORE</span>
               <div style={{position:"relative"}}>
@@ -644,8 +796,6 @@ export default function App(){
                   style={{background:"none",border:"none",color:T.sub,fontSize:10,cursor:"pointer"}}>↩ auto</button>
               )}
             </div>
-
-            {/* Durata */}
             <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>DURATA</div>
             <div style={{display:"flex",gap:6,marginBottom:10}}>
               {[["allday","Tutto il giorno"],["fixed","6h 15m"],["custom","Orario libero"]].map(([v,l])=>(
@@ -656,7 +806,6 @@ export default function App(){
                     border:`1.5px solid ${form.dur===v?accent:T.border}`}}>{l}</button>
               ))}
             </div>
-
             {form.dur!=="allday"&&(
               <div style={{display:"flex",gap:8,marginBottom:10}}>
                 <div style={{flex:1}}>
@@ -688,8 +837,6 @@ export default function App(){
                 )}
               </div>
             )}
-
-            {/* Luogo */}
             <input value={form.place||""} onChange={e=>setForm(f=>({...f,place:e.target.value}))}
               placeholder="📍 Luogo (opzionale)..."
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
@@ -702,14 +849,11 @@ export default function App(){
                   borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
                   marginBottom:6,boxSizing:"border-box",outline:"none"}}/>
             )}
-
-            {/* Note */}
             <input value={form.note||""} onChange={e=>setForm(f=>({...f,note:e.target.value}))}
               placeholder="Note..."
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
                 marginBottom:12,boxSizing:"border-box",outline:"none"}}/>
-
             <div style={{display:"flex",gap:8}}>
               <button onClick={()=>{setForm(null);setPal(null);}}
                 style={{flex:1,background:T.surface,border:`1px solid ${T.border}`,
