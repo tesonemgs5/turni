@@ -66,15 +66,23 @@ export default function App(){
           // Auto-carica da Sheets
           const data = await loadFromSheets();
           if(data && data.data){
+            const existingNames = s.calendars.map(c=>c.name);
+            const newCals = [...s.calendars];
+            (data.tabs||Object.keys(data.data)).forEach(tabName => {
+              if(!existingNames.includes(tabName)){
+                newCals.push({id:uid(),name:tabName,color:PALETTE[newCals.length%PALETTE.length],isMain:newCals.length===0,shifts:[]});
+              }
+            });
             const newEvents = {};
-            s.calendars.forEach(cal => {
+            newCals.forEach(cal => {
               const calData = data.data[cal.name] || {};
               Object.entries(calData).forEach(([dateKey, evts]) => {
                 if(!newEvents[dateKey]) newEvents[dateKey] = {};
                 newEvents[dateKey][cal.id] = evts;
               });
             });
-            setStore(prev=>({...prev,events:newEvents}));
+            setStore(prev=>({...prev,calendars:newCals,events:newEvents}));
+            setCalId(newCals[0]?.id||null);
           }
         }
       }catch(e){ console.log(e); }
@@ -172,8 +180,6 @@ export default function App(){
     });
     setForm(null);
     setDayKey(null);
-    // Auto-salva su Sheets
-    saveToSheets(ns.events, store.calendars);
   }
 
   function delEvt(key,cid,eid){
