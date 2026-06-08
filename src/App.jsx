@@ -63,6 +63,19 @@ export default function App(){
           const s = JSON.parse(r.value);
           setStore(s);
           setCalId(s.calendars[0]?.id||null);
+          // Auto-carica da Sheets
+          const data = await loadFromSheets();
+          if(data && data.data){
+            const newEvents = {};
+            s.calendars.forEach(cal => {
+              const calData = data.data[cal.name] || {};
+              Object.entries(calData).forEach(([dateKey, evts]) => {
+                if(!newEvents[dateKey]) newEvents[dateKey] = {};
+                newEvents[dateKey][cal.id] = evts;
+              });
+            });
+            setStore(prev=>({...prev,events:newEvents}));
+          }
         }
       }catch(e){ console.log(e); }
     })();
