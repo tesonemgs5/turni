@@ -79,7 +79,7 @@ export default function App({ session }){
           .from("user_settings")
           .select("*")
           .eq("user_id", userId)
-          .single();
+          .maybeSingle();
 
         // Mappa calendari
         const calendars = (cals||[]).map(c=>({
@@ -121,7 +121,7 @@ export default function App({ session }){
                 user_id: userId, name: tabName,
                 color: PALETTE[newCals.length%PALETTE.length],
                 is_main: newCals.length===0, shifts:[],
-              }).select().single();
+              }).select().maybeSingle();
               if(dbCal.data) newCals.push({id:dbCal.data.id,name:dbCal.data.name,color:dbCal.data.color,isMain:dbCal.data.is_main,shifts:[]});
             }
             const newEvents = {};
@@ -218,7 +218,7 @@ export default function App({ session }){
       color,
       is_main: isFirst,
       shifts: [],
-    }).select().single();
+    }).select().maybeSingle();
     if(error){ console.log(error); return null; }
     return data;
   }
@@ -266,7 +266,7 @@ export default function App({ session }){
       place: form.place||"",
       map_url: form.map||"",
       note: form.note||"",
-    }).select().single();
+    }).select().maybeSingle();
 
     if(error){ console.log(error); return; }
 
