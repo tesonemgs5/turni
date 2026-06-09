@@ -9,16 +9,32 @@ export default function Auth({ onLogin }) {
   const [loading, setLoading] = useState(false)
 
   async function handle() {
-    setLoading(true); setMsg("")
-    if (mode === "login") {
-      const { error } = await supabase.auth.signInWithPassword({ email, password })
-      if (error) setMsg("❌ " + error.message)
-    } else {
-      const { error } = await supabase.auth.signUp({ email, password })
-      if (error) setMsg("❌ " + error.message)
-      else setMsg("✅ Controlla email per confermare")
+    if (!email.trim() || !password.trim()) {
+      setMsg("❌ Per favore compila tutti i campi.");
+      return;
     }
-    setLoading(false)
+    setLoading(true);
+    setMsg("");
+    try {
+      if (mode === "login") {
+        const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+        if (error) {
+          setMsg("❌ Errore di accesso: " + error.message);
+        }
+      } else {
+        const { error } = await supabase.auth.signUp({ email: email.trim(), password });
+        if (error) {
+          setMsg("❌ Errore di registrazione: " + error.message);
+        } else {
+          setMsg("✅ Registrazione avviata! Se richiesto, controlla la tua email per confermare l'account, altrimenti prova subito ad accedere.");
+        }
+      }
+    } catch (err) {
+      setMsg("❌ Si è verificato un errore imprevisto.");
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (

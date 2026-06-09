@@ -54,34 +54,46 @@ export default function App({ session }){
   const [nhD,     setNhD]     = useState("");
   const [nhM,     setNhM]     = useState("");
 
+  // Nuovi stati per Sheets dinamico, Sync in background e Statistiche
+  const [bgSyncing, setBgSyncing] = useState(false);
+  const [sheetsUrl, setSheetsUrl] = useState("");
+  const [sheetsSecret, setSheetsSecret] = useState("");
+  const [stats, setStats] = useState(null);
+
+  // Nuovi stati per il visualizzatore dati di Supabase
+  const [showDbModal, setShowDbModal] = useState(false);
+  const [dbRawData, setDbRawData] = useState(null);
+  const [dbCalsCount, setDbCalsCount] = useState(0);
+  const [dbEvtsCount, setDbEvtsCount] = useState(0);
+
   const userId = session?.user?.id;
 
-  // ── LOAD DA SUPABASE ─────────────────────────────────────────
+  // ── LOAD DA SUPABASE & UTILITY DI STARTUP ────────────────────
   useEffect(()=>{
     if(!userId) return;
     (async()=>{
       try {
-        // Carica calendari
+        // 1. Carica calendari
         const { data: cals } = await supabase
           .from("calendars")
           .select("*")
           .eq("user_id", userId)
           .order("created_at");
 
-        // Carica eventi
+        // 2. Carica eventi
         const { data: evts } = await supabase
           .from("events")
           .select("*")
           .eq("user_id", userId);
 
-        // Carica impostazioni
+        // 3. Carica impostazioni
         const { data: settings } = await supabase
           .from("user_settings")
           .select("*")
           .eq("user_id", userId)
           .maybeSingle();
 
-        // Mappa calendari
+        // 4. Mappa calendari
         const calendars = (cals||[]).map(c=>({
           id: c.id,
           name: c.name,
@@ -90,7 +102,7 @@ export default function App({ session }){
           shifts: c.shifts||[],
         }));
 
-        // Mappa eventi in formato {dateKey: {calId: [evts]}}
+        // 5. Mappa eventi in formato {dateKey: {calId: [evts]}}
         const events = {};
         (evts||[]).forEach(e=>{
           if(!events[e.date_key]) events[e.date_key]={};
@@ -110,47 +122,36 @@ export default function App({ session }){
 
         const theme = settings?.theme||"auto";
         const extraHols = settings?.extra_hols||[];
+        const sUrl = settings?.sheets_url || "";
+        const sSec = settings?.sheets_secret || "";
 
-        // Se non ci sono calendari su Supabase, carica da Sheets automaticamente
-        if(calendars.length === 0) {
-          const data = await loadFromSheets();
-          if(data && data.data){
-            const newCals = [];
-            for(const tabName of (data.tabs||Object.keys(data.data))){
-              const dbCal = await supabase.from("calendars").insert({
-                user_id: userId, name: tabName,
-                color: PALETTE[newCals.length%PALETTE.length],
-                is_main: newCals.length===0, shifts:[],
-              }).select().maybeSingle();
-              if(dbCal.data) newCals.push({id:dbCal.data.id,name:dbCal.data.name,color:dbCal.data.color,isMain:dbCal.data.is_main,shifts:[]});
-            }
-            const newEvents = {};
-            for(const cal of newCals){
-              const calData = data.data[cal.name]||{};
-              for(const [dateKey, evts] of Object.entries(calData)){
-                if(!newEvents[dateKey]) newEvents[dateKey]={};
-                newEvents[dateKey][cal.id]=evts;
-                for(const e of evts){
-                  await supabase.from("events").insert({
-                    user_id: userId, calendar_id: cal.id, date_key: dateKey,
-                    label: e.label||"Evento", color: e.color||cal.color,
-                    all_day: e.allDay??true, time_in: e.tIn||"", time_out: e.tOut||"",
-                    place: e.place||"", map_url: e.map||"", note: e.note||"",
-                  });
-                }
-              }
-            }
-            setStore({ calendars:newCals, events:newEvents, theme, extraHols });
-            setCalId(newCals[0]?.id||null);
-          } else {
-            setStore({ calendars, events, theme, extraHols });
-            setCalId(null);
-          }
-        } else {
-          setStore({ calendars, events, theme, extraHols });
-          setCalId(calendars[0]?.id||null);
+        setSheetsUrl(sUrl);
+        setSheetsSecret(sSec);
+
+        // 6. Registra statistica d'uso (GDPR Compliant - solo ID pseudonimo e login_count)
+        try {
+          const { data: curStats } = await supabase.from("usage_stats").select("login_count").eq("user_id", userId).maybeSingle();
+          const newCount = (curStats?.login_count || 0) + 1;
+          await supabase.from("usage_stats").upsert({
+            user_id: userId,
+            last_active: new Date().toISOString(),
+            login_count: newCount
+          });
+        } catch(statErr) {
+          console.warn("Errore registrazione statistiche (GDPR safe):", statErr);
         }
-      } catch(e){ console.log(e); }
+
+        // 7. Imposta stato iniziale
+        setStore({ calendars, events, theme, extraHols });
+        setCalId(calendars[0]?.id||null);
+
+        // 8. Sincronizzazione automatica all'avvio in background (se configurata)
+        if (sUrl) {
+          setTimeout(() => {
+            syncFromSheets(calendars, events, sUrl, sSec, true);
+          }, 100);
+        }
+      } catch(e){ console.log("Errore startup:", e); }
       setLoading(false);
     })();
   },[userId]);
@@ -306,26 +307,92 @@ export default function App({ session }){
     });
   }
 
-  // ── GOOGLE SHEETS (mantenuto) ────────────────────────────────
-  const SHEETS_URL = "https://script.google.com/macros/s/AKfycby84d3usTshqIPnMnuQzlKXDWvXQdPECY8dgDUX-uhmjqZ2UMWuu57IsgrRZ8B4MsBreA/exec";
-  const SHEETS_SECRET = "turnipm2024";
-
-  async function saveToSheets(events, calendars) {
+  // ── GOOGLE SHEETS DINAMICO ───────────────────────────────────
+  async function saveToSheets(events, calendars, customUrl = sheetsUrl, customSecret = sheetsSecret) {
+    if (!customUrl) return "⚠️ Sheets non configurato";
     try {
-      await fetch(SHEETS_URL, {
+      await fetch(customUrl, {
         method: "POST", mode: "no-cors",
         headers: { "Content-Type": "text/plain" },
-        body: JSON.stringify({ secret: SHEETS_SECRET, action: "save", events, calendars }),
+        body: JSON.stringify({ secret: customSecret, action: "save", events, calendars, userId }),
       });
       return "✅ Eventi inviati a Sheets";
-    } catch(e) { return "❌ Errore connessione"; }
+    } catch(e) { return "❌ Errore connessione Sheets"; }
   }
 
-  async function loadFromSheets() {
+  async function loadFromSheets(customUrl = sheetsUrl, customSecret = sheetsSecret) {
+    if (!customUrl) return null;
     try {
-      const res = await fetch(`${SHEETS_URL}?secret=${SHEETS_SECRET}&action=load`);
+      const res = await fetch(`${customUrl}?secret=${customSecret}&action=load&userId=${userId}`);
       return await res.json() || null;
     } catch(e) { return null; }
+  }
+
+  async function syncFromSheets(cals = store.calendars, evts = store.events, customUrl = sheetsUrl, customSecret = sheetsSecret, isBackground = false) {
+    if (!customUrl) return "⚠️ Sincronizzazione non configurata";
+    if (isBackground) setBgSyncing(true);
+    else setSyncing(true);
+    try {
+      const data = await loadFromSheets(customUrl, customSecret);
+      if (data && data.data) {
+        const existingNames = cals.map(c => c.name);
+        const newCals = [...cals];
+        
+        // Aggiungi calendari mancanti
+        for (const tabName of (data.tabs || Object.keys(data.data))) {
+          if (!existingNames.includes(tabName)) {
+            const dbCal = await addCalendar(tabName, PALETTE[newCals.length % PALETTE.length], newCals.length === 0);
+            if (dbCal) {
+              newCals.push({ id: dbCal.id, name: dbCal.name, color: dbCal.color, isMain: dbCal.is_main, shifts: [] });
+            }
+          }
+        }
+        
+        // Sincronizza eventi senza duplicare
+        const newEvents = JSON.parse(JSON.stringify(evts));
+        for (const cal of newCals) {
+          const calData = data.data[cal.name] || {};
+          for (const [dateKey, sheetEvts] of Object.entries(calData)) {
+            if (!newEvents[dateKey]) newEvents[dateKey] = {};
+            if (!newEvents[dateKey][cal.id]) newEvents[dateKey][cal.id] = [];
+            
+            const localEvts = newEvents[dateKey][cal.id];
+            for (const e of sheetEvts) {
+              // Controlla se l'evento esiste già (stessa etichetta e ora inizio)
+              const exists = localEvts.some(le => le.label === e.label && le.tIn === (e.tIn || ""));
+              if (!exists) {
+                const { data: dbEvt } = await supabase.from("events").insert({
+                  user_id: userId, calendar_id: cal.id, date_key: dateKey,
+                  label: e.label || "Evento", color: e.color || cal.color,
+                  all_day: e.allDay ?? true, time_in: e.tIn || "", time_out: e.tOut || "",
+                  place: e.place || "", map_url: e.map || "", note: e.note || "",
+                }).select().maybeSingle();
+                
+                if (dbEvt) {
+                  localEvts.push({
+                    id: dbEvt.id, color: dbEvt.color, label: dbEvt.label,
+                    allDay: dbEvt.all_day, tIn: dbEvt.time_in || "", tOut: dbEvt.time_out || "",
+                    place: dbEvt.place || "", map: dbEvt.map_url || "", note: dbEvt.note || "",
+                  });
+                }
+              }
+            }
+          }
+        }
+        
+        setStore(s => ({ ...s, calendars: newCals, events: newEvents }));
+        if (newCals.length > 0 && !calId) setCalId(newCals[0].id);
+        return `✅ Sincronizzato con successo`;
+      } else {
+        return "❌ Nessun dato valido da Sheets";
+      }
+    } catch (e) {
+      console.error(e);
+      return "❌ Errore sincronizzazione Sheets";
+    } finally {
+      if (isBackground) setBgSyncing(false);
+      else setSyncing(false);
+    }
   }
 
   async function handleSave(){
@@ -335,39 +402,66 @@ export default function App({ session }){
   }
 
   async function handleLoad(){
-    setSyncing(true); setSyncMsg("");
-    const data = await loadFromSheets();
-    if(data && data.data){
-      const existingNames = store.calendars.map(c=>c.name);
-      const newCals = [...store.calendars];
-      for(const tabName of (data.tabs||Object.keys(data.data))){
-        if(!existingNames.includes(tabName)){
-          const dbCal = await addCalendar(tabName, PALETTE[newCals.length%PALETTE.length], newCals.length===0);
-          if(dbCal) newCals.push({id:dbCal.id,name:dbCal.name,color:dbCal.color,isMain:dbCal.is_main,shifts:[]});
-        }
-      }
-      const newEvents = {};
-      for(const cal of newCals){
-        const calData = data.data[cal.name]||{};
-        for(const [dateKey, evts] of Object.entries(calData)){
-          if(!newEvents[dateKey]) newEvents[dateKey]={};
-          newEvents[dateKey][cal.id] = evts;
-          // Salva su Supabase
-          for(const e of evts){
-            await supabase.from("events").upsert({
-              user_id: userId, calendar_id: cal.id, date_key: dateKey,
-              label: e.label||"Evento", color: e.color||cal.color,
-              all_day: e.allDay??true, time_in: e.tIn||"", time_out: e.tOut||"",
-              place: e.place||"", map_url: e.map||"", note: e.note||"",
-            });
+    setSyncMsg("");
+    const msg = await syncFromSheets(store.calendars, store.events, sheetsUrl, sheetsSecret, false);
+    setSyncMsg(msg);
+  }
+
+  // Salva impostazioni Sheets su Supabase
+  async function handleSaveSheetsConfig() {
+    if(!userId) return;
+    setSyncing(true);
+    setSyncMsg("");
+    try {
+      const { error } = await supabase.from("user_settings").upsert({
+        user_id: userId,
+        sheets_url: sheetsUrl.trim(),
+        sheets_secret: sheetsSecret.trim(),
+        updated_at: new Date().toISOString(),
+      });
+      if(error) throw error;
+      setSyncMsg("✅ Impostazioni Google Sheets salvate");
+    } catch(err) {
+      setSyncMsg("❌ Errore salvataggio: " + err.message);
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  // Carica statistiche di utilizzo per l'admin (GDPR Safe, solo conteggi aggregati)
+  useEffect(() => {
+    if (screen === "settings" && session?.user?.email === 'tesonemgs5@gmail.com') {
+      (async () => {
+        try {
+          const { data, error } = await supabase.rpc('get_app_stats');
+          if (!error && data && data.length > 0) {
+            setStats(data[0]);
+          } else {
+            console.error("Errore statistiche admin:", error);
           }
+        } catch(e) {
+          console.error(e);
         }
-      }
-      setStore(s=>({...s,calendars:newCals,events:newEvents}));
-      setCalId(newCals[0]?.id||null);
-      setSyncMsg(`✅ ${newCals.length} calendari caricati`);
-    } else setSyncMsg("❌ Nessun dato trovato");
-    setSyncing(false);
+      })();
+    }
+  }, [screen, session]);
+
+  // Visualizza i dati correnti di Supabase (Calendari ed Eventi)
+  async function handleViewDbData() {
+    setShowDbModal(true);
+    setDbRawData(null);
+    try {
+      const { data: cals } = await supabase.from("calendars").select("*").eq("user_id", userId).order("created_at");
+      const { data: evts } = await supabase.from("events").select("*").eq("user_id", userId).order("date_key", { ascending: false });
+      setDbCalsCount(cals?.length || 0);
+      setDbEvtsCount(evts?.length || 0);
+      setDbRawData({
+        calendars: cals || [],
+        events: evts || []
+      });
+    } catch (e) {
+      console.error("Errore caricamento dati DB:", e);
+    }
   }
 
   // ── LOGOUT ───────────────────────────────────────────────────
@@ -390,7 +484,7 @@ export default function App({ session }){
         gap:5,padding:"6px 8px",overflowX:"auto",scrollbarWidth:"none",flexShrink:0}}>
         <button onClick={()=>month===0?(setYear(y=>y-1),setMonth(11)):setMonth(m=>m-1)} style={NB}>‹</button>
         <span style={{color:"#fff",fontSize:13,fontWeight:900,flexShrink:0,
-          fontFamily:"Georgia,serif"}}>{MONTHS[month].slice(0,3).toUpperCase()} {year}</span>
+          fontFamily:"Georgia,serif"}}>{MONTHS[month].slice(0,3).toUpperCase()} {year} {bgSyncing && " 🔄"}</span>
         <button onClick={()=>month===11?(setYear(y=>y+1),setMonth(0)):setMonth(m=>m+1)} style={NB}>›</button>
         <div style={{width:1,height:14,background:"rgba(255,255,255,0.3)",flexShrink:0,marginLeft:2}}/>
         {store.calendars.length===0
@@ -522,7 +616,9 @@ export default function App({ session }){
                 {exCal===c.id?"▲":"▼"}</button>
               <button onClick={async()=>{
                 await deleteCalendar(c.id);
-                setStore(s=>({...s,calendars:s.calendars.filter(x=>x.id!==c.id)}));
+                const newCals = store.calendars.filter(x=>x.id!==c.id);
+                setStore(s=>({...s,calendars:newCals}));
+                saveToSheets(store.events, newCals);
               }} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:18}}>×</button>
             </div>
             {exCal===c.id&&(
@@ -601,9 +697,11 @@ export default function App({ session }){
             const isFirst=store.calendars.length===0;
             const dbCal = await addCalendar(ncName.trim(), ncColor, isFirst);
             if(dbCal){
-              setStore(s=>({...s,calendars:[...s.calendars,
-                {id:dbCal.id,name:dbCal.name,color:dbCal.color,isMain:dbCal.is_main,shifts:[]}]}));
+              const newCals = [...store.calendars,
+                {id:dbCal.id,name:dbCal.name,color:dbCal.color,isMain:dbCal.is_main,shifts:[]}];
+              setStore(s=>({...s,calendars:newCals}));
               if(!calId) setCalId(dbCal.id);
+              saveToSheets(store.events, newCals);
             }
             setNcName("");
           }} style={{background:"#3b82f6",border:"none",borderRadius:8,
@@ -611,33 +709,89 @@ export default function App({ session }){
         </div>
       </Sec>
 
-      {/* Sync Sheets */}
+      {/* Configurazione & Sync Google Sheets */}
       <Sec label="ARCHIVIO GOOGLE SHEETS" T={T}>
         <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
-          Salva o carica tutti gli eventi dal foglio Google.
+          Configura il tuo script Google Sheets per importare ed esportare i dati.
         </div>
-        <div style={{display:"flex",gap:8,marginBottom:10}}>
-          <button onClick={handleSave} disabled={syncing}
-            style={{flex:1,background:"#16a34a",border:"none",borderRadius:10,
-              color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
-            {syncing?"⏳ ...":"📤 Salva su Sheets"}
-          </button>
-          <button onClick={handleLoad} disabled={syncing}
-            style={{flex:1,background:"#2563eb",border:"none",borderRadius:10,
-              color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
-            {syncing?"⏳ ...":"📥 Carica da Sheets"}
+        <div style={{marginBottom:10}}>
+          <input value={sheetsUrl} onChange={e=>setSheetsUrl(e.target.value)}
+            placeholder="URL Script Google Sheets..."
+            style={{width:"100%",background:T.s2,border:`1px solid ${T.border}`,
+              borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,outline:"none",marginBottom:6,boxSizing:"border-box"}}/>
+          <input value={sheetsSecret} onChange={e=>setSheetsSecret(e.target.value)}
+            placeholder="Secret Google Sheets..." type="password"
+            style={{width:"100%",background:T.s2,border:`1px solid ${T.border}`,
+              borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,outline:"none",marginBottom:8,boxSizing:"border-box"}}/>
+          <button onClick={handleSaveSheetsConfig} disabled={syncing}
+            style={{width:"100%",background:accent,border:"none",borderRadius:10,
+              color:"#fff",padding:"9px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
+            {syncing?"⏳ Salvataggio...":"💾 Salva Configurazione Sheets"}
           </button>
         </div>
-        {syncMsg&&<div style={{fontSize:12,color:T.text,padding:"8px 10px",
-          background:T.s2,borderRadius:8,textAlign:"center"}}>{syncMsg}</div>}
-        <a href="https://docs.google.com/spreadsheets/d/106C8GAh0Ka2WS8O8Ezx0nUnDgX0hyS7Crvixy84uDSA/edit"
-          target="_blank" rel="noreferrer"
-          style={{display:"block",marginTop:8,textAlign:"center",fontSize:11,
-            color:"#16a34a",fontWeight:700,textDecoration:"none",
-            background:"#dcfce7",borderRadius:8,padding:"8px 0"}}>
-          📊 Apri Google Sheets
-        </a>
+        {sheetsUrl && (
+          <>
+            <div style={{display:"flex",gap:8,marginBottom:10}}>
+              <button onClick={handleSave} disabled={syncing}
+                style={{flex:1,background:"#16a34a",border:"none",borderRadius:10,
+                  color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
+                {syncing?"⏳ ...":"📤 Esporta su Sheets"}
+              </button>
+              <button onClick={handleLoad} disabled={syncing}
+                style={{flex:1,background:"#2563eb",border:"none",borderRadius:10,
+                  color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
+                {syncing?"⏳ ...":"📥 Importa da Sheets"}
+              </button>
+            </div>
+            <a href={sheetsUrl.includes("/exec") ? "https://docs.google.com/spreadsheets" : sheetsUrl}
+              target="_blank" rel="noreferrer"
+              style={{display:"block",marginTop:8,textAlign:"center",fontSize:11,
+                color:"#16a34a",fontWeight:700,textDecoration:"none",
+                background:"#dcfce7",borderRadius:8,padding:"8px 0"}}>
+              📊 Apri Google Sheets
+            </a>
+          </>
+        )}
+        {syncMsg&&<div style={{fontSize:11,color:T.text,padding:"8px 10px",
+          background:T.s2,borderRadius:8,textAlign:"center",marginTop:8}}>{syncMsg}</div>}
       </Sec>
+
+      {/* Visualizzatore Dati Supabase */}
+      <Sec label="DATABASE CLOUD SUPABASE" T={T}>
+        <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
+          Controlla lo stato dei dati memorizzati nel cloud Supabase per il tuo account.
+        </div>
+        <button onClick={handleViewDbData}
+          style={{width:"100%",background:"#475569",border:"none",borderRadius:10,
+            color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
+          🔍 Visualizza Dati in Supabase
+        </button>
+      </Sec>
+
+      {/* Statistiche di Utilizzo (Visibile solo all'Admin) */}
+      {session?.user?.email === 'tesonemgs5@gmail.com' && (
+        <Sec label="STATISTICHE DI UTILIZZO (ADMIN)" T={T}>
+          <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
+            Dati aggregati di utilizzo dell'applicazione conformi al GDPR (senza PII).
+          </div>
+          {stats ? (
+            <div style={{display:"flex",flexDirection:"column",gap:6,background:T.s2,borderRadius:10,padding:12}}>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:12}}>
+                <span style={{color:T.sub}}>Utenti Registrati Totali:</span>
+                <span style={{fontWeight:800,color:T.text}}>{stats.total_users}</span>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:12}}>
+                <span style={{color:T.sub}}>Utenti Attivi (ultimi 7 giorni):</span>
+                <span style={{fontWeight:800,color:"#22c55e"}}>{stats.active_users_7d}</span>
+              </div>
+            </div>
+          ) : (
+            <div style={{fontSize:11,color:T.sub,textAlign:"center",padding:6}}>
+              ⏳ Caricamento statistiche...
+            </div>
+          )}
+        </Sec>
+      )}
 
       {/* Festivi locali */}
       <Sec label="FESTIVI LOCALI" T={T}>
@@ -872,6 +1026,89 @@ export default function App({ session }){
     </div>
   );
 
+  // ── DATABASE VIEWER MODAL ─────────────────────────────────────
+  const dbModal = showDbModal && (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:300,
+      display:"flex",alignItems:"center",justifyContent:"center",padding:12}}
+      onClick={()=>setShowDbModal(false)}>
+      <div style={{background:T.surface,borderRadius:16,width:"100%",maxWidth:440,
+        maxHeight:"85vh",display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 12px 48px rgba(0,0,0,0.3)"}}
+        onClick={e=>e.stopPropagation()}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 16px",borderBottom:`1px solid ${T.border}`}}>
+          <span style={{fontSize:14,fontWeight:900,color:T.text}}>☁️ Dati Salvati in Supabase</span>
+          <button onClick={()=>setShowDbModal(false)}
+            style={{background:"none",border:"none",color:T.sub,cursor:"pointer",fontSize:18,fontWeight:700}}>×</button>
+        </div>
+        <div style={{flex:1,overflowY:"auto",padding:16}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
+            <div style={{background:T.s2,borderRadius:10,padding:12,boxSizing:"border-box",textAlign:"center"}}>
+              <div style={{fontSize:10,color:T.sub,fontWeight:800}}>CALENDARI</div>
+              <div style={{fontSize:22,fontWeight:900,color:accent}}>{dbCalsCount}</div>
+            </div>
+            <div style={{background:T.s2,borderRadius:10,padding:12,boxSizing:"border-box",textAlign:"center"}}>
+              <div style={{fontSize:10,color:T.sub,fontWeight:800}}>EVENTI TOTALI</div>
+              <div style={{fontSize:22,fontWeight:900,color:"#10b981"}}>{dbEvtsCount}</div>
+            </div>
+          </div>
+          {dbRawData ? (
+            <div style={{display:"flex",flexDirection:"column",gap:14}}>
+              <div>
+                <div style={{fontSize:10,fontWeight:800,color:T.sub,marginBottom:6,letterSpacing:0.5}}>I TUOI CALENDARI ({dbRawData.calendars.length})</div>
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  {dbRawData.calendars.map(c => (
+                    <div key={c.id} style={{display:"flex",alignItems:"center",gap:8,background:T.s2,borderRadius:8,padding:"8px 10px"}}>
+                      <div style={{width:12,height:12,borderRadius:"50%",background:c.color}}/>
+                      <span style={{fontSize:12,fontWeight:700,color:T.text,flex:1}}>{c.name}</span>
+                      {c.is_main && <span style={{fontSize:9,background:accent+"33",color:accent,padding:"2px 6px",borderRadius:10,fontWeight:800}}>Principale</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div style={{fontSize:10,fontWeight:800,color:T.sub,marginBottom:6,letterSpacing:0.5}}>RECENTI EVENTI ({dbRawData.events.length})</div>
+                {dbRawData.events.length === 0 ? (
+                  <div style={{fontSize:11,color:T.sub,textAlign:"center",padding:12}}>Nessun evento salvato su Supabase</div>
+                ) : (
+                  <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:220,overflowY:"auto"}}>
+                    {dbRawData.events.slice(0, 50).map(e => {
+                      const cal = dbRawData.calendars.find(c => c.id === e.calendar_id);
+                      return (
+                        <div key={e.id} style={{background:T.s2,borderRadius:8,padding:"8px 10px",display:"flex",flexDirection:"column",gap:2}}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                            <span style={{fontSize:11,fontWeight:800,color:e.color}}>{e.label}</span>
+                            <span style={{fontSize:9,color:T.sub}}>{e.date_key}</span>
+                          </div>
+                          <div style={{display:"flex",gap:8,fontSize:9,color:T.sub}}>
+                            <span>Cal: {cal?.name || "Sconosciuto"}</span>
+                            {!e.all_day && e.time_in && <span>🕐 {e.time_in} - {e.time_out}</span>}
+                            {e.place && <span>📍 {e.place}</span>}
+                          </div>
+                        </div>
+                      )
+                    })}
+                    {dbRawData.events.length > 50 && (
+                      <div style={{fontSize:10,color:T.sub,textAlign:"center",padding:4}}>... e altri {dbRawData.events.length - 50} eventi</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div style={{textAlign:"center",padding:24,color:T.sub,fontSize:12}}>
+              ⏳ Caricamento dettagli...
+            </div>
+          )}
+        </div>
+        <div style={{padding:12,borderTop:`1px solid ${T.border}`,background:T.s2}}>
+          <button onClick={()=>setShowDbModal(false)}
+            style={{width:"100%",background:"#64748b",border:"none",borderRadius:10,color:"#fff",padding:"10px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
+            Chiudi
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div style={{display:"flex",flexDirection:"column",height:"100vh",background:T.bg,
       fontFamily:"system-ui,sans-serif",maxWidth:480,margin:"0 auto",overflow:"hidden"}}
@@ -890,6 +1127,7 @@ export default function App({ session }){
         ))}
       </div>
       {dayModal}
+      {dbModal}
     </div>
   );
 }
