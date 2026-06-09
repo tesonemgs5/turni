@@ -510,7 +510,7 @@ export default function App({ session }){
         ))}
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",
-        gridAutoRows:"minmax(54px,1fr)",flex:1,overflow:"hidden",gap:"1px",background:T.gap}}>
+        gridAutoRows:"minmax(54px,1fr)",flex:1,overflow:"hidden",gap:"1px 0px",background:T.gap}}>
         {cells.map((d,i)=>{
           if(!d) return <div key={i} style={{background:T.bg}}/>;
           const key=dkey(year,month,d);
