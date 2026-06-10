@@ -1741,56 +1741,6 @@ function ConteggioConfig({T, cfg, setCfg, data, calendars, modelli}){
     </div>
   );
 }
-  return (
-    <div style={{display:"flex",flexDirection:"column",gap:10}}>
-      <div>
-        <div style={{fontSize:10,color:T.sub,marginBottom:4}}>TITOLO</div>
-        <input value={cfg.titolo} onChange={e=>setCfg(c=>({...c,titolo:e.target.value}))}
-          style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
-            borderRadius:8,padding:"8px 10px",color:T.text,fontSize:13,outline:"none",boxSizing:"border-box"}}/>
-      </div>
-      {/* Dati calcolati */}
-      <div style={{background:T.surface,borderRadius:10,padding:12}}>
-        <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:8}}>RIEPILOGO</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
-          {[
-            ["Totale turni", data.totale],
-            ["Mattina", data.mattina],
-            ["Pomeriggio", data.pomeriggio],
-            ["3° Turno", data.terzo],
-            ["Notte", data.notte],
-            ["H24", data.h24],
-          ].map(([l,v])=>(
-            <div key={l} style={{display:"flex",justifyContent:"space-between",
-              padding:"6px 8px",background:T.s2,borderRadius:6}}>
-              <span style={{fontSize:11,color:T.sub}}>{l}</span>
-              <span style={{fontSize:13,fontWeight:800,color:T.text}}>{v}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-      {/* Giorni inclusi */}
-      <div>
-        <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>INCLUDI GIORNI</div>
-        <div style={{background:T.surface,borderRadius:10,overflow:"hidden",border:`1px solid ${T.border}`}}>
-          {[["festivi","Festività"],["lun","Lunedì"],["mar","Martedì"],["mer","Mercoledì"],
-            ["gio","Giovedì"],["ven","Venerdì"],["sab","Sabato"],["dom","Domenica"]].map(([k,l],i,arr)=>(
-            <div key={k} style={{display:"flex",alignItems:"center",justifyContent:"space-between",
-              padding:"12px 14px",borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
-              <span style={{fontSize:13,color:T.text}}>{l}</span>
-              <div onClick={()=>setCfg(c=>({...c,giorni:{...c.giorni,[k]:!c.giorni[k]}}))}
-                style={{width:44,height:26,borderRadius:13,cursor:"pointer",position:"relative",
-                  background:cfg.giorni[k]?"#3b82f6":"#94a3b8",transition:"background 0.2s"}}>
-                <div style={{position:"absolute",top:3,left:cfg.giorni[k]?20:3,width:20,height:20,
-                  borderRadius:"50%",background:"#fff",transition:"left 0.2s"}}/>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function IndennitaConfig({T, values, setValues, calc, onSave}){
   const fasce = [
