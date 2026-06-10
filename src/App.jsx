@@ -134,6 +134,7 @@ export default function App({ session }){
   const [editRotazione, setEditRotazione] = useState(null);
   const [rotForm, setRotForm] = useState({ tipo:"personalizzata", titolo:"", dataInizio:"", nSettimane:52, modellaLavoroId:null, modelloNLId:null, modelloRSId:null });
   const [showRotDetail, setShowRotDetail] = useState(null); // id rotazione griglia aperta
+  const [showModelloPicker, setShowModelloPicker] = useState(false);
 
   // Report states
   const [reportInterval, setReportInterval] = useState("mese"); // "mese"|"anno"|"custom"
@@ -976,7 +977,7 @@ export default function App({ session }){
       </div>
 
       {/* Modal form modello */}
-      {showModelForm&&(
+      {false&&showModelForm&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:300,
           display:"flex",alignItems:"flex-end"}}
           onClick={e=>{if(e.target===e.currentTarget)setShowModelForm(false);}}>
@@ -1340,8 +1341,7 @@ export default function App({ session }){
           </div>
           <div style={{display:"flex",gap:8}}>
             {!form&&activeCal&&(
-              <button onClick={()=>setForm({modelloId:null,shiftId:null,label:"",note:"",dur:"allday",
-                tIn:"",tOut:"",place:"",map:"",colorOvr:null,collega:""})}
+              <button onClick={()=>setShowModelloPicker(true)}
                 style={{background:accent,border:"none",borderRadius:8,
                   color:"#fff",fontSize:13,fontWeight:800,padding:"7px 14px",cursor:"pointer"}}>
                 + Aggiungi
@@ -1663,6 +1663,123 @@ export default function App({ session }){
       </div>
       {dayModal}
       {dbModal}
+      {showModelForm&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:600,
+          display:"flex",alignItems:"flex-end"}}
+          onClick={e=>{if(e.target===e.currentTarget)setShowModelForm(false);}}>
+          <div style={{background:T.surface,borderRadius:"18px 18px 0 0",width:"100%",
+            maxWidth:480,margin:"0 auto",maxHeight:"92vh",overflowY:"auto"}}
+            onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 16px 0"}}>
+              <button onClick={()=>setShowModelForm(false)}
+                style={{background:"none",border:"none",color:T.sub,fontSize:22,cursor:"pointer",padding:4}}>‹</button>
+              <div style={{fontSize:16,fontWeight:900,color:T.text}}>
+                {editModello?"Modifica modello":"Nuovo modello"}
+              </div>
+              <div style={{width:32}}/>
+            </div>
+            <ModelForm T={T} form={modelForm} setForm={setModelForm} accent={accent} dark={dark}
+              onSave={async()=>{
+                await saveModello({...modelForm,id:editModello?.id});
+                setShowModelForm(false);
+                setShowModelloPicker(true);
+              }}/>
+          </div>
+        </div>
+      )}
+      {showModelloPicker && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:500,
+          display:"flex",flexDirection:"column"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+            padding:"16px 16px 8px",background:T.surface,borderBottom:`1px solid ${T.border}`}}>
+            <button onClick={()=>setShowModelloPicker(false)}
+              style={{background:"none",border:"none",color:T.sub,fontSize:22,cursor:"pointer"}}>‹</button>
+            <div style={{fontSize:16,fontWeight:900,color:T.text}}>Scegli modello</div>
+            <div style={{width:32}}/>
+          </div>
+          <div style={{flex:1,overflowY:"auto",padding:12,background:T.bg}}>
+            {modelli.length===0 && (
+              <div style={{textAlign:"center",padding:"40px 24px",color:T.sub}}>
+                <div style={{fontSize:36,marginBottom:10}}>📋</div>
+                <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Nessun modello</div>
+                <div style={{fontSize:13}}>Crea il tuo primo modello turno</div>
+              </div>
+            )}
+            {modelli.length>0 && (
+              <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:12}}>
+                {modelli.map((m,i,arr)=>{
+                  const c=m.coloreCustom||getColorByTime(m.inizio);
+                  const durata=m.tempo==="h24"?"Tutto il giorno"
+                    :m.tempo==="6h15"&&m.inizio?`${m.inizio} - ${calcFine6h15(m.inizio)} • 6h 15m`
+                    :m.inizio&&m.fine?`${m.inizio} - ${m.fine} • ${calcDurata(m.inizio,m.fine)}`
+                    :m.inizio?m.inizio:"";
+                  return (
+                    <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
+                      <div onClick={()=>{
+                        setForm({modelloId:m.id,shiftId:null,label:m.titolo,note:"",
+                          dur:m.tempo==="h24"?"allday":m.tempo==="6h15"?"fixed":"custom",
+                          tIn:m.inizio||"",tOut:m.fine||"",place:"",map:"",colorOvr:null,collega:""});
+                        setShowModelloPicker(false);
+                      }} style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}>
+                        <div style={{width:36,height:36,borderRadius:10,background:c+"33",
+                          border:`2px solid ${c}`,display:"flex",alignItems:"center",justifyContent:"center",
+                          flexShrink:0,marginRight:12}}>
+                          <div style={{width:14,height:14,borderRadius:"50%",background:c}}/>
+                        </div>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:14,fontWeight:800,color:T.text,overflow:"hidden",
+                            textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.titolo||"Senza nome"}</div>
+                          <div style={{fontSize:12,color:T.sub,marginTop:1}}>{durata}</div>
+                        </div>
+                        <span style={{color:T.sub,fontSize:14}}>›</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {(activeCal?.shifts||[]).length>0 && (
+              <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:12}}>
+                {activeCal.shifts.map((s,i,arr)=>(
+                  <div key={s.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
+                    <div onClick={()=>{
+                      setForm({modelloId:null,shiftId:s.id,label:s.label,note:"",dur:"allday",
+                        tIn:"",tOut:"",place:"",map:"",colorOvr:null,collega:""});
+                      setShowModelloPicker(false);
+                    }} style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}>
+                      <div style={{width:36,height:36,borderRadius:10,background:s.color+"33",
+                        border:`2px solid ${s.color}`,display:"flex",alignItems:"center",justifyContent:"center",
+                        flexShrink:0,marginRight:12}}>
+                        <div style={{width:14,height:14,borderRadius:"50%",background:s.color}}/>
+                      </div>
+                      <div style={{flex:1,fontSize:14,fontWeight:800,color:T.text}}>{s.label}</div>
+                      <span style={{color:T.sub,fontSize:14}}>›</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div onClick={()=>{
+              setForm({modelloId:null,shiftId:null,label:"",note:"",dur:"allday",
+                tIn:"",tOut:"",place:"",map:"",colorOvr:null,collega:""});
+              setShowModelloPicker(false);
+            }} style={{display:"flex",alignItems:"center",justifyContent:"center",padding:"12px 14px",
+              background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,cursor:"pointer",
+              color:T.sub,fontSize:13,fontWeight:700,marginBottom:12}}>
+              Evento libero (senza modello)
+            </div>
+            <button onClick={()=>{
+              setEditModello(null);
+              setModelForm({titolo:"",tempo:"personalizzato",inizio:"",fine:"",coloreCustom:null,posizione:""});
+              setShowModelForm(true);
+              setShowModelloPicker(false);
+            }} style={{width:"100%",background:accent,border:"none",borderRadius:14,
+              color:"#fff",padding:"14px 0",cursor:"pointer",fontWeight:800,fontSize:15}}>
+              + Nuovo modello
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
