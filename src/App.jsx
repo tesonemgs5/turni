@@ -357,12 +357,12 @@ export default function App({ session }){
       user_id: userId, calendar_id: calId, date_key: dayKey,
       label, color, all_day: form.dur==="allday"&&!form.modelloId,
       time_in: tInFinal, time_out: tOutFinal,
-      place: form.place||"",
+      place: (form.place||"").toUpperCase(),
       map_url: form.map||"",
       note: extraNote,
       modello_id: form.modelloId||null,
-      collega: form.collega||null,
-      auto: form.auto||"",
+      collega: (form.collega||"").toUpperCase(),
+      auto: (form.auto||"").toUpperCase(),
     }).select().maybeSingle();
     if(error){ console.log(error); return; }
     const evt = {
@@ -1509,20 +1509,20 @@ export default function App({ session }){
             )}
 
             {/* Numero auto */}
-            <input value={form.auto||""} onChange={e=>setForm(f=>({...f,auto:e.target.value}))}
+            <input value={form.auto||""} onChange={e=>setForm(f=>({...f,auto:e.target.value.toUpperCase()}))}
               placeholder="🚗 Numero auto/pattuglia (opzionale)..."
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
                 marginBottom:6,boxSizing:"border-box",outline:"none"}}/>
 
             {/* Collega di pattuglia */}
-            <input value={form.collega||""} onChange={e=>setForm(f=>({...f,collega:e.target.value}))}
+            <input value={form.collega||""} onChange={e=>setForm(f=>({...f,collega:e.target.value.toUpperCase()}))}
               placeholder="👮 COLLEGA DI PATTUGLIA (OPZIONALE)..."
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
                 marginBottom:6,boxSizing:"border-box",outline:"none"}}/>
 
-            <input value={form.place||""} onChange={e=>setForm(f=>({...f,place:e.target.value}))}
+            <input value={form.place||""} onChange={e=>setForm(f=>({...f,place:e.target.value.toUpperCase()}))}
               placeholder="📍 LUOGO (OPZIONALE)..."
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
