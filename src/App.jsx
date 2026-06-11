@@ -1214,7 +1214,7 @@ export default function App({ session }){
           </button>
         </div>
         {sheetsUrl && (
-          <a href="https://docs.google.com/spreadsheets" target="_blank" rel="noreferrer"
+          <a href="https://docs.google.com/spreadsheets/d/106C8GAh0Ka2WS8O8Ezx0nUnDgX0hyS7Crvixy84uDSA/edit" target="_blank" rel="noreferrer"
             style={{display:"block",textAlign:"center",fontSize:11,color:"#16a34a",fontWeight:700,
               textDecoration:"none",background:"#dcfce7",borderRadius:8,padding:"8px 0"}}>
             📊 Apri Google Sheets
