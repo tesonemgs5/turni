@@ -177,13 +177,13 @@ export default function App({ session }){
             tIn: e.time_in||"", tOut: e.time_out||"", place: e.place||"",
             map: e.map_url||"", note: e.note||"",
             modelloId: e.modello_id||null, collega: e.collega||null,
+            auto: e.auto||"",
           });
         });
 
         const theme = settings?.theme||"auto";
         const extraHols = settings?.extra_hols||[];
         const sUrl = settings?.sheets_url || "";
-        // FIX: usa sheets_secret se esiste, altrimenti stringa vuota
         const sSec = settings?.sheets_secret || "";
         const savedReports = settings?.reports || DEFAULT_REPORT_TYPES;
         const savedReportSettings = settings?.report_settings || {};
@@ -302,7 +302,6 @@ export default function App({ session }){
     const cal = store.calendars.find(c=>c.id===calId);
     if(!cal) return;
 
-    // Se è un modello, prendi i dati da lì
     let color = form.colorOvr || cal.color;
     let label = form.label||"Evento";
     let tInFinal = form.dur==="allday"?"":form.tIn||"";
@@ -316,7 +315,7 @@ export default function App({ session }){
         if(mod.tempo==="h24"){ tInFinal=""; tOutFinal=""; }
         else if(mod.tempo==="6h15"){
           tInFinal = form.tIn||mod.inizio||"";
-          tOutFinal = tInFinal?calcFine6h15(tInFinal):"";
+          tOutFinal = form.tOut||calcFine6h15(tInFinal)||"";
         } else {
           tInFinal = form.tIn||mod.inizio||"";
           tOutFinal = form.tOut||mod.fine||"";
@@ -328,14 +327,12 @@ export default function App({ session }){
     }
 
     if(form.dur==="fixed" && tInFinal && !form.modelloId){
-      const [h,m]=tInFinal.split(":").map(Number);
-      const tot=h*60+m+375;
-      tOutFinal=`${String(Math.floor(tot/60)%24).padStart(2,"0")}:${String(tot%60).padStart(2,"0")}`;
+      tOutFinal = form.tOut||calcFine6h15(tInFinal);
     }
 
     // Calcola protrazione se orario modificato rispetto al modello
     let extraNote = form.note||"";
-    if(form.modelloId && tInFinal && tOutFinal && form.tOut && form.modelloId){
+    if(form.modelloId && tInFinal && tOutFinal && form.modelloId){
       const mod=modelli.find(m=>m.id===form.modelloId);
       if(mod&&mod.fine&&mod.inizio){
         const durPrevista=calcMinuti(mod.inizio,mod.fine);
@@ -346,14 +343,26 @@ export default function App({ session }){
       }
     }
 
+    // Calcola straordinario/monte ore per turni fixed
+    if(form.dur==="fixed" && tInFinal && form.tOut){
+      const std=calcFine6h15(tInFinal);
+      const [h1,m1]=std.split(":").map(Number);
+      const [h2,m2]=form.tOut.split(":").map(Number);
+      const diff=(h2*60+m2)-(h1*60+m1);
+      if(diff>0) extraNote=(extraNote?extraNote+" | ":"")+`Straordinario: +${Math.floor(diff/60)}h${diff%60>0?diff%60+"m":""}`;
+      if(diff<0) extraNote=(extraNote?extraNote+" | ":"")+`Monte ore: ${Math.floor(Math.abs(diff)/60)}h${Math.abs(diff)%60>0?Math.abs(diff)%60+"m":""}`;
+    }
+
     const { data, error } = await supabase.from("events").insert({
       user_id: userId, calendar_id: calId, date_key: dayKey,
       label, color, all_day: form.dur==="allday"&&!form.modelloId,
       time_in: tInFinal, time_out: tOutFinal,
-      place: form.place||"", map_url: form.map||"",
+      place: form.place||"",
+      map_url: form.map||"",
       note: extraNote,
       modello_id: form.modelloId||null,
       collega: form.collega||null,
+      auto: form.auto||"",
     }).select().maybeSingle();
     if(error){ console.log(error); return; }
     const evt = {
@@ -361,7 +370,7 @@ export default function App({ session }){
       tIn: data.time_in||"", tOut: data.time_out||"",
       place: data.place||"", map: data.map_url||"",
       note: data.note||"", modelloId: data.modello_id||null,
-      collega: data.collega||null,
+      collega: data.collega||null, auto: data.auto||"",
     };
     setStore(prev=>{
       const ns = JSON.parse(JSON.stringify(prev));
@@ -415,7 +424,6 @@ export default function App({ session }){
     } catch(e) { return null; }
   }
 
-  // FIX: import da Sheets SOVRASCRIVE anziché duplicare
   async function syncFromSheets(cals = store.calendars, evts = store.events, customUrl = sheetsUrl, customSecret = sheetsSecret, isBackground = false) {
     if (!customUrl) return "⚠️ Sincronizzazione non configurata";
     if (isBackground) setBgSyncing(true); else setSyncing(true);
@@ -430,7 +438,6 @@ export default function App({ session }){
             if (dbCal) newCals.push({ id: dbCal.id, name: dbCal.name, color: dbCal.color, isMain: dbCal.is_main, shifts: [] });
           }
         }
-        // FIX: azzera eventi esistenti e reimporta (no duplicati)
         const newEvents = {};
         for (const cal of newCals) {
           const calData = data.data[cal.name] || {};
@@ -449,6 +456,7 @@ export default function App({ session }){
                   id: dbEvt.id, color: dbEvt.color, label: dbEvt.label,
                   allDay: dbEvt.all_day, tIn: dbEvt.time_in || "", tOut: dbEvt.time_out || "",
                   place: dbEvt.place || "", map: dbEvt.map_url || "", note: dbEvt.note || "",
+                  auto: dbEvt.auto || "",
                 });
               }
             }
@@ -532,10 +540,13 @@ export default function App({ session }){
     if(!userId) return;
     const coloreEff=data.coloreCustom||(data.tempo==="h24"?"#64748b":getColorByTime(data.inizio));
     const payload={
-      user_id:userId, titolo:data.titolo, tempo:data.tempo,
+      user_id:userId,
+      titolo:(data.titolo||"").toUpperCase(),
+      tempo:data.tempo,
       inizio:data.inizio||null, fine:data.fine||null,
       colore:coloreEff, colore_custom:data.coloreCustom||null,
-      posizione:data.posizione||null, sort_order:data.sortOrder||modelli.length,
+      posizione:(data.posizione||"").toUpperCase()||null,
+      sort_order:data.sortOrder||modelli.length,
     };
     if(data.id){
       await supabase.from("modelli").update(payload).eq("id",data.id).eq("user_id",userId);
@@ -555,7 +566,8 @@ export default function App({ session }){
   async function saveRotazione(data){
     if(!userId) return;
     const payload={
-      user_id:userId, tipo:data.tipo, titolo:data.titolo,
+      user_id:userId, tipo:data.tipo,
+      titolo:(data.titolo||"").toUpperCase(),
       data_inizio:data.dataInizio||null, n_settimane:data.nSettimane||52,
       modello_lavoro_id:data.modellaLavoroId||null,
       modello_nl_id:data.modelloNLId||null,
@@ -605,7 +617,6 @@ export default function App({ session }){
       for(const [, evts] of Object.entries(calMap)){
         for(const e of evts){
           result.totale++;
-          // Conteggio per modello
           if(e.modelloId){
             perModello[e.modelloId]=(perModello[e.modelloId]||0)+1;
           }
@@ -617,7 +628,6 @@ export default function App({ session }){
           else if(mins>=705&&mins<1035) result.pomeriggio++;
           else if(mins>=1035&&mins<1080) result.terzo++;
           else result.notte++;
-          // Calcola protrazioni
           if(e.note&&e.note.includes("Protrazione:")) result.protrazioneRec++;
           if(e.note&&e.note.includes("Pagamento:")) result.protrazionePag++;
         }
@@ -775,7 +785,6 @@ export default function App({ session }){
 
   const reportView = (
     <div style={{flex:1,overflowY:"auto",padding:"0 0 80px",color:T.text}}>
-      {/* Header */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
         padding:"16px 16px 8px"}}>
         <div style={{fontSize:22,fontWeight:900,fontFamily:"Georgia,serif"}}>Report</div>
@@ -786,7 +795,6 @@ export default function App({ session }){
         </button>
       </div>
 
-      {/* Report attivi */}
       {activeReports.length>0 && (
         <div style={{margin:"8px 12px"}}>
           <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:6,paddingLeft:4}}>Report attivi</div>
@@ -796,7 +804,6 @@ export default function App({ session }){
         </div>
       )}
 
-      {/* Altri report */}
       {inactiveReports.length>0 && (
         <div style={{margin:"16px 12px 0"}}>
           <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:6,paddingLeft:4}}>Altri report</div>
@@ -821,7 +828,6 @@ export default function App({ session }){
         </div>
       )}
 
-      {/* Intervallo picker modal */}
       {showIntervalPicker && (
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:400,
           display:"flex",alignItems:"flex-end"}} onClick={()=>setShowIntervalPicker(false)}>
@@ -838,15 +844,6 @@ export default function App({ session }){
                   {reportInterval===v&&<span style={{color:accent,marginRight:10,fontSize:14}}>✓</span>}
                   <span style={{flex:1,fontSize:14,fontWeight:reportInterval===v?700:400,
                     color:reportInterval===v?accent:T.text}}>{l}</span>
-                  {v==="custom"&&reportInterval==="custom"&&(
-                    <span style={{fontSize:11,color:T.sub}}>{reportDateFrom} - {reportDateTo}</span>
-                  )}
-                  {v==="custom"&&reportInterval==="custom"&&(
-                    <button style={{background:"none",border:"none",color:T.sub,cursor:"pointer",
-                      fontSize:20,marginLeft:6,width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center"}}>
-                      ⋯
-                    </button>
-                  )}
                 </div>
               ))}
             </div>
@@ -882,7 +879,6 @@ export default function App({ session }){
   // ── MODELLI VIEW ─────────────────────────────────────────────
   const modelliView = (
     <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
-      {/* Header */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 16px 8px"}}>
         <div style={{fontSize:22,fontWeight:900,fontFamily:"Georgia,serif",color:T.text}}>Modelli</div>
         <div style={{display:"flex",gap:8,alignItems:"center",position:"relative"}}>
@@ -920,7 +916,6 @@ export default function App({ session }){
         </div>
       </div>
 
-      {/* Tab switcher */}
       <div style={{display:"flex",margin:"0 12px 12px",background:T.s2,borderRadius:14,padding:4,gap:4}}>
         {[["turni","Turni"],["rotazioni","Rotazioni"]].map(([v,l])=>(
           <button key={v} onClick={()=>setModelliTab(v)}
@@ -932,7 +927,6 @@ export default function App({ session }){
         ))}
       </div>
 
-      {/* Lista */}
       <div style={{flex:1,overflowY:"auto",padding:"0 12px 80px"}}>
         {modelliTab==="turni"&&(
           sortedModelli().length===0?(
@@ -976,29 +970,6 @@ export default function App({ session }){
         )}
       </div>
 
-      {/* Modal form modello */}
-      {false&&showModelForm&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:300,
-          display:"flex",alignItems:"flex-end"}}
-          onClick={e=>{if(e.target===e.currentTarget)setShowModelForm(false);}}>
-          <div style={{background:T.surface,borderRadius:"18px 18px 0 0",width:"100%",
-            maxWidth:480,margin:"0 auto",maxHeight:"92vh",overflowY:"auto"}}
-            onClick={e=>e.stopPropagation()}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 16px 0"}}>
-              <button onClick={()=>setShowModelForm(false)}
-                style={{background:"none",border:"none",color:T.sub,fontSize:22,cursor:"pointer",padding:4}}>‹</button>
-              <div style={{fontSize:16,fontWeight:900,color:T.text}}>
-                {editModello?"Modifica modello":"Nuovo modello"}
-              </div>
-              <div style={{width:32}}/>
-            </div>
-            <ModelForm T={T} form={modelForm} setForm={setModelForm} accent={accent} dark={dark}
-              onSave={()=>{ saveModello({...modelForm,id:editModello?.id}); setShowModelForm(false); }}/>
-          </div>
-        </div>
-      )}
-
-      {/* Modal form rotazione */}
       {showRotForm&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:300,
           display:"flex",alignItems:"flex-end"}}
@@ -1020,7 +991,6 @@ export default function App({ session }){
         </div>
       )}
 
-      {/* Modal griglia/dettaglio rotazione */}
       {showRotDetail&&(()=>{
         const rot=rotazioni.find(r=>r.id===showRotDetail);
         if(!rot) return null;
@@ -1087,7 +1057,6 @@ export default function App({ session }){
         </div>
       </Sec>
 
-      {/* FIX: Calendari - rimossa duplicazione */}
       <Sec label="CALENDARI" T={T}>
         {store.calendars.map((c,ci)=>(
           <div key={c.id} style={{marginBottom:10}}>
@@ -1215,7 +1184,6 @@ export default function App({ session }){
         </div>
       </Sec>
 
-      {/* Google Sheets - FIX: bottoni import/export sempre visibili */}
       <Sec label="ARCHIVIO GOOGLE SHEETS" T={T}>
         <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
           Configura il tuo script Google Sheets per importare ed esportare i dati.
@@ -1233,7 +1201,6 @@ export default function App({ session }){
             color:"#fff",padding:"9px 0",cursor:"pointer",fontWeight:800,fontSize:12,marginBottom:8}}>
           {syncing?"⏳ Salvataggio...":"💾 Salva Configurazione Sheets"}
         </button>
-        {/* FIX: sempre visibili, non solo se sheetsUrl */}
         <div style={{display:"flex",gap:8,marginBottom:8}}>
           <button onClick={handleSave} disabled={syncing||!sheetsUrl}
             style={{flex:1,background:sheetsUrl?"#16a34a":"#94a3b8",border:"none",borderRadius:10,
@@ -1386,6 +1353,7 @@ export default function App({ session }){
                 </div>
               )}
               {e.note&&<div style={{color:"rgba(255,255,255,0.8)",fontSize:11,marginTop:3}}>{e.note}</div>}
+              {e.auto&&<div style={{color:"rgba(255,255,255,0.8)",fontSize:11,marginTop:3}}>🚗 {e.auto}</div>}
               {e.collega&&<div style={{color:"rgba(255,255,255,0.8)",fontSize:11,marginTop:3}}>👮 {e.collega}</div>}
               {e.place&&(e.map
                 ?<a href={e.map} target="_blank" rel="noreferrer"
@@ -1457,7 +1425,7 @@ export default function App({ session }){
 
             {!form.shiftId&&!form.modelloId&&(
               <input value={form.label||""} onChange={e=>setForm(f=>({...f,label:e.target.value}))}
-                placeholder="Nome evento..."
+                placeholder="NOME EVENTO..."
                 style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                   borderRadius:8,padding:"9px 10px",color:T.text,fontSize:13,
                   marginBottom:10,boxSizing:"border-box",outline:"none"}}/>
@@ -1497,7 +1465,7 @@ export default function App({ session }){
                 <div style={{flex:1}}>
                   <div style={{fontSize:9,color:T.sub,marginBottom:3}}>INGRESSO</div>
                   <input type="time" value={form.tIn||""}
-                    onChange={e=>setForm(f=>({...f,tIn:e.target.value}))}
+                    onChange={e=>setForm(f=>({...f,tIn:e.target.value,tOut:""}))}
                     style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                       borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
                 </div>
@@ -1512,27 +1480,50 @@ export default function App({ session }){
                 )}
                 {form.dur==="fixed"&&form.tIn&&(
                   <div style={{flex:1}}>
-                    <div style={{fontSize:9,color:T.sub,marginBottom:3}}>USCITA AUTO</div>
-                    <div style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
-                      padding:"7px 8px",fontSize:13,color:T.sub}}>
-                      {(()=>{const [h,m]=form.tIn.split(":").map(Number);
-                        const t=h*60+m+375;
-                        return `${String(Math.floor(t/60)%24).padStart(2,"0")}:${String(t%60).padStart(2,"0")}`;})()}
-                    </div>
+                    <div style={{fontSize:9,color:T.sub,marginBottom:3}}>USCITA (modif.)</div>
+                    <input type="time" value={form.tOut||calcFine6h15(form.tIn)}
+                      onChange={e=>setForm(f=>({...f,tOut:e.target.value}))}
+                      style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
+                        borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
+                    {(()=>{
+                      const tOut=form.tOut||calcFine6h15(form.tIn);
+                      const std=calcFine6h15(form.tIn);
+                      if(!tOut||!std) return null;
+                      const [h1,m1]=std.split(":").map(Number);
+                      const [h2,m2]=tOut.split(":").map(Number);
+                      let diff=(h2*60+m2)-(h1*60+m1);
+                      if(diff===0) return null;
+                      const absDiff=Math.abs(diff);
+                      const isExtra=diff>0;
+                      return (
+                        <div style={{fontSize:10,color:isExtra?"#22c55e":"#f97316",
+                          marginTop:3,fontWeight:700}}>
+                          {isExtra?"+":"-"}{Math.floor(absDiff/60)}h{absDiff%60>0?absDiff%60+"m":""}
+                          {" "}{isExtra?"straordinario":"monte ore"}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
             )}
 
+            {/* Numero auto */}
+            <input value={form.auto||""} onChange={e=>setForm(f=>({...f,auto:e.target.value}))}
+              placeholder="🚗 Numero auto/pattuglia (opzionale)..."
+              style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
+                borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
+                marginBottom:6,boxSizing:"border-box",outline:"none"}}/>
+
             {/* Collega di pattuglia */}
             <input value={form.collega||""} onChange={e=>setForm(f=>({...f,collega:e.target.value}))}
-              placeholder="👮 Collega di pattuglia (opzionale)..."
+              placeholder="👮 COLLEGA DI PATTUGLIA (OPZIONALE)..."
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
                 marginBottom:6,boxSizing:"border-box",outline:"none"}}/>
 
             <input value={form.place||""} onChange={e=>setForm(f=>({...f,place:e.target.value}))}
-              placeholder="📍 Luogo (opzionale)..."
+              placeholder="📍 LUOGO (OPZIONALE)..."
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
                 marginBottom:6,boxSizing:"border-box",outline:"none"}}/>
@@ -1650,7 +1641,6 @@ export default function App({ session }){
         {screen==="modelli"  && modelliView}
         {screen==="settings" && settingsView}
       </div>
-      {/* Bottom Nav - 4 tasti */}
       <div style={{display:"flex",borderTop:`1px solid ${T.border}`,background:T.surface,flexShrink:0}}>
         {NAV_ITEMS.map(({id,icon,label})=>(
           <button key={id} onClick={()=>setScreen(id)}
@@ -1718,7 +1708,7 @@ export default function App({ session }){
                       <div onClick={()=>{
                         setForm({modelloId:m.id,shiftId:null,label:m.titolo,note:"",
                           dur:m.tempo==="h24"?"allday":m.tempo==="6h15"?"fixed":"custom",
-                          tIn:m.inizio||"",tOut:m.fine||"",place:"",map:"",colorOvr:null,collega:""});
+                          tIn:m.inizio||"",tOut:m.fine||"",place:"",map:"",colorOvr:null,collega:"",auto:""});
                         setShowModelloPicker(false);
                       }} style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}>
                         <div style={{width:36,height:36,borderRadius:10,background:c+"33",
@@ -1744,7 +1734,7 @@ export default function App({ session }){
                   <div key={s.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                     <div onClick={()=>{
                       setForm({modelloId:null,shiftId:s.id,label:s.label,note:"",dur:"allday",
-                        tIn:"",tOut:"",place:"",map:"",colorOvr:null,collega:""});
+                        tIn:"",tOut:"",place:"",map:"",colorOvr:null,collega:"",auto:""});
                       setShowModelloPicker(false);
                     }} style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}>
                       <div style={{width:36,height:36,borderRadius:10,background:s.color+"33",
@@ -1761,7 +1751,7 @@ export default function App({ session }){
             )}
             <div onClick={()=>{
               setForm({modelloId:null,shiftId:null,label:"",note:"",dur:"allday",
-                tIn:"",tOut:"",place:"",map:"",colorOvr:null,collega:""});
+                tIn:"",tOut:"",place:"",map:"",colorOvr:null,collega:"",auto:""});
               setShowModelloPicker(false);
             }} style={{display:"flex",alignItems:"center",justifyContent:"center",padding:"12px 14px",
               background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,cursor:"pointer",
@@ -1795,7 +1785,6 @@ function ConteggioConfig({T, cfg, setCfg, data, calendars, modelli}){
           style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
             borderRadius:8,padding:"8px 10px",color:T.text,fontSize:13,outline:"none",boxSizing:"border-box"}}/>
       </div>
-      {/* Dati calcolati */}
       <div style={{background:T.surface,borderRadius:10,padding:12}}>
         <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:8}}>RIEPILOGO FASCE ORARIE</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
@@ -1816,7 +1805,6 @@ function ConteggioConfig({T, cfg, setCfg, data, calendars, modelli}){
         </div>
       </div>
 
-      {/* Breakdown per modello */}
       {modelli.length>0&&data.perModello&&Object.keys(data.perModello).length>0&&(
         <div style={{background:T.surface,borderRadius:10,padding:12}}>
           <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:8}}>PER MODELLO</div>
@@ -1836,7 +1824,6 @@ function ConteggioConfig({T, cfg, setCfg, data, calendars, modelli}){
         </div>
       )}
 
-      {/* Giorni inclusi */}
       <div>
         <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>INCLUDI GIORNI</div>
         <div style={{background:T.surface,borderRadius:10,overflow:"hidden",border:`1px solid ${T.border}`}}>
@@ -2010,16 +1997,14 @@ function ModelForm({T, form, setForm, accent, dark, onSave}){
   ];
   return (
     <div style={{padding:"16px 14px 40px"}}>
-      {/* Titolo */}
       <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,
         overflow:"hidden",marginBottom:16}}>
         <input value={form.titolo} onChange={e=>setForm(f=>({...f,titolo:e.target.value}))}
-          placeholder="Titolo"
+          placeholder="TITOLO"
           style={{width:"100%",padding:"14px 16px",background:"transparent",border:"none",
             outline:"none",color:T.text,fontSize:16,fontWeight:600,boxSizing:"border-box"}}/>
       </div>
 
-      {/* Tipo */}
       <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>TIPO DI TURNO</div>
       <div style={{display:"flex",gap:8,marginBottom:16}}>
         {[["h24","H24"],["6h15","6h 15m"],["personalizzato","Personalizzato"]].map(([v,l])=>(
@@ -2031,7 +2016,6 @@ function ModelForm({T, form, setForm, accent, dark, onSave}){
         ))}
       </div>
 
-      {/* Orari */}
       {form.tempo!=="h24"&&(
         <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,
           overflow:"hidden",marginBottom:16}}>
@@ -2055,7 +2039,6 @@ function ModelForm({T, form, setForm, accent, dark, onSave}){
         </div>
       )}
 
-      {/* Colore */}
       <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>COLORE</div>
       <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,
         padding:"12px 14px",marginBottom:16}}>
@@ -2087,12 +2070,11 @@ function ModelForm({T, form, setForm, accent, dark, onSave}){
         )}
       </div>
 
-      {/* Posizione */}
       <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>POSIZIONE</div>
       <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,
         overflow:"hidden",marginBottom:24}}>
-        <input value={form.posizione||""} onChange={e=>setForm(f=>({...f,posizione:e.target.value}))}
-          placeholder="Luogo di lavoro (opzionale)"
+        <input value={form.posizione||""} onChange={e=>setForm(f=>({...f,posizione:e.target.value.toUpperCase()}))}
+          placeholder="LUOGO DI LAVORO (OPZIONALE)"
           style={{width:"100%",padding:"14px 16px",background:"transparent",border:"none",
             outline:"none",color:T.text,fontSize:15,boxSizing:"border-box"}}/>
       </div>
@@ -2132,7 +2114,6 @@ function RotazioneCard({r, T, accent, modelli, onOpen, onDelete}){
 function RotazioneForm({T, form, setForm, accent, modelli, onSave}){
   return (
     <div style={{padding:"16px 14px 40px"}}>
-      {/* Tipo rotazione */}
       <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>TIPO DI ROTAZIONE</div>
       <div style={{display:"flex",gap:8,marginBottom:16}}>
         {[["personalizzata","Personalizzata"],["domeniche","Domeniche"],["nlrs","NL / RS"]].map(([v,l])=>(
@@ -2144,15 +2125,13 @@ function RotazioneForm({T, form, setForm, accent, modelli, onSave}){
         ))}
       </div>
 
-      {/* Titolo */}
       <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:16}}>
-        <input value={form.titolo} onChange={e=>setForm(f=>({...f,titolo:e.target.value}))}
-          placeholder={form.tipo==="domeniche"?"Es. Rotazione domeniche":form.tipo==="nlrs"?"Es. Rotazione NL/RS":"Titolo rotazione"}
+        <input value={form.titolo} onChange={e=>setForm(f=>({...f,titolo:e.targonChange={e=>setForm(f=>({...f,titolo:e.target.value}))}et.value}))}
+          placeholder={form.tipo==="domeniche"?"ES. ROTAZIONE DOMENICHE":form.tipo==="nlrs"?"ES. ROTAZIONE NL/RS":"TITOLO ROTAZIONE"}
           style={{width:"100%",padding:"14px 16px",background:"transparent",border:"none",
             outline:"none",color:T.text,fontSize:16,fontWeight:600,boxSizing:"border-box"}}/>
       </div>
 
-      {/* Data inizio */}
       <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:16}}>
         <div style={{display:"flex",alignItems:"center",padding:"14px 16px",borderBottom:`1px solid ${T.border}`}}>
           <span style={{flex:1,fontSize:15,color:T.text}}>
@@ -2170,7 +2149,6 @@ function RotazioneForm({T, form, setForm, accent, modelli, onSave}){
         </div>
       </div>
 
-      {/* Modelli da assegnare */}
       {form.tipo==="domeniche"&&(
         <div style={{marginBottom:16}}>
           <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>MODELLI</div>
@@ -2279,7 +2257,6 @@ function GrigliaRotazione({rot, T, accent, modelli, onUpdate}){
   }
 
   const days=getDays();
-  // Raggruppa per settimane
   const weeks=[];
   for(let i=0;i<days.length;i+=7) weeks.push(days.slice(i,i+7));
 
@@ -2288,7 +2265,6 @@ function GrigliaRotazione({rot, T, accent, modelli, onUpdate}){
 
   return (
     <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
-      {/* Selettore modello in basso */}
       <div style={{flex:1,overflowY:"auto",padding:"8px 8px 0"}}>
         <div style={{display:"grid",gridTemplateColumns:"repeat(8,1fr)",gap:2}}>
           <div style={{gridColumn:"1",display:"flex",flexDirection:"column",gap:2,paddingTop:20}}>
@@ -2332,7 +2308,6 @@ function GrigliaRotazione({rot, T, accent, modelli, onUpdate}){
           </div>
         </div>
       </div>
-      {/* Barra selezione modelli in basso */}
       <div style={{borderTop:`1px solid ${T.border}`,background:T.surface,
         padding:"8px 8px",overflowX:"auto",display:"flex",gap:8,flexShrink:0}}>
         {modelli.map(m=>{
@@ -2365,7 +2340,6 @@ function DomenicheView({rot, T, accent, modelli, onUpdate}){
   function getDomeniche(){
     if(!rot.dataInizio) return [];
     const inizio=new Date(rot.dataInizio);
-    // trova prima domenica >= inizio
     let d=new Date(inizio);
     while(d.getDay()!==0) d.setDate(d.getDate()+1);
     const domeniche=[];
@@ -2378,7 +2352,6 @@ function DomenicheView({rot, T, accent, modelli, onUpdate}){
   }
 
   const domeniche=getDomeniche();
-  // Schema: 1 lavoro, 3 festa, 1 lavoro, 3 festa...
   return (
     <div style={{flex:1,overflowY:"auto",padding:12}}>
       {!rot.dataInizio&&(
@@ -2425,14 +2398,12 @@ function NLRSView({rot, T, accent, modelli}){
     if(!rot.dataInizio) return [];
     const inizio=new Date(rot.dataInizio);
     const ciclo=[];
-    // Ciclo: NL (sett 0), RS (sett 1), libera (sett 2), libera (sett 3), poi NL scivola di -1 giorno
-    let giornoCiclo=inizio.getDay()===0?6:inizio.getDay()-1; // 0=lun...6=dom
+    let giornoCiclo=inizio.getDay()===0?6:inizio.getDay()-1;
     let settCiclo=0;
     for(let s=0;s<(rot.nSettimane||52);s++){
       const posNelCiclo=settCiclo%4;
       const d=new Date(inizio);
       d.setDate(d.getDate()+s*7);
-      // trova il giorno della settimana corrente
       const lunedi=new Date(d);
       while(lunedi.getDay()!==1) lunedi.setDate(lunedi.getDate()-1);
       const target=new Date(lunedi);
@@ -2441,7 +2412,6 @@ function NLRSView({rot, T, accent, modelli}){
       if(posNelCiclo===0) ciclo.push({key:k,date:target,tipo:"NL",sett:s+1});
       else if(posNelCiclo===1) ciclo.push({key:k,date:target,tipo:"RS",sett:s+1});
       settCiclo++;
-      // ogni 4 settimane scivola di 1 giorno indietro
       if(settCiclo%4===0) giornoCiclo=((giornoCiclo-1)+7)%7;
     }
     return ciclo;
