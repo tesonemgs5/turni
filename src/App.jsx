@@ -225,7 +225,7 @@ export default function App({ session }){
         setCalId(calendars[0]?.id||null);
 
         if (sUrl) {
-          setTimeout(() => { syncFromSheets(calendars, events, sUrl, sSec, true); }, 100);
+          setTimeout(() => { saveToSheets(events, calendars, sUrl, sSec); }, 500);
         }
       } catch(e){ console.log("Errore startup:", e); }
       setLoading(false);
