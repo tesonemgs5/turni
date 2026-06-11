@@ -2126,7 +2126,7 @@ function RotazioneForm({T, form, setForm, accent, modelli, onSave}){
       </div>
 
       <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:16}}>
-        <input value={form.titolo} onChange={e=>setForm(f=>({...f,titolo:e.targonChange={e=>setForm(f=>({...f,titolo:e.target.value}))}et.value}))}
+        <input value={form.titolo} onChange={e=>setForm(f=>({...f,titolo:e.target.value}))}
           placeholder={form.tipo==="domeniche"?"ES. ROTAZIONE DOMENICHE":form.tipo==="nlrs"?"ES. ROTAZIONE NL/RS":"TITOLO ROTAZIONE"}
           style={{width:"100%",padding:"14px 16px",background:"transparent",border:"none",
             outline:"none",color:T.text,fontSize:16,fontWeight:600,boxSizing:"border-box"}}/>
