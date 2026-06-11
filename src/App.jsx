@@ -429,45 +429,48 @@ export default function App({ session }){
     if (isBackground) setBgSyncing(true); else setSyncing(true);
     try {
       const data = await loadFromSheets(customUrl, customSecret);
-      if (data && data.data) {
-        const existingNames = cals.map(c => c.name);
-        const newCals = [...cals];
-        for (const tabName of (data.tabs || Object.keys(data.data))) {
-          if (!existingNames.includes(tabName)) {
-            const dbCal = await addCalendar(tabName, PALETTE[newCals.length % PALETTE.length], newCals.length === 0);
-            if (dbCal) newCals.push({ id: dbCal.id, name: dbCal.name, color: dbCal.color, isMain: dbCal.is_main, shifts: [] });
-          }
+      if (!data || !data.data) return "❌ Nessun dato valido da Sheets";
+
+      // Cancella tutti gli eventi esistenti su Supabase
+      await supabase.from("events").delete().eq("user_id", userId);
+
+      const existingNames = cals.map(c => c.name);
+      const newCals = [...cals];
+      for (const tabName of (data.tabs || Object.keys(data.data))) {
+        if (!existingNames.includes(tabName)) {
+          const dbCal = await addCalendar(tabName, PALETTE[newCals.length % PALETTE.length], newCals.length === 0);
+          if (dbCal) newCals.push({ id: dbCal.id, name: dbCal.name, color: dbCal.color, isMain: dbCal.is_main, shifts: [] });
         }
-        const newEvents = {};
-        for (const cal of newCals) {
-          const calData = data.data[cal.name] || {};
-          for (const [dateKey, sheetEvts] of Object.entries(calData)) {
-            if (!newEvents[dateKey]) newEvents[dateKey] = {};
-            if (!newEvents[dateKey][cal.id]) newEvents[dateKey][cal.id] = [];
-            for (const e of sheetEvts) {
-              const { data: dbEvt } = await supabase.from("events").upsert({
-                user_id: userId, calendar_id: cal.id, date_key: dateKey,
-                label: e.label || "Evento", color: e.color || cal.color,
-                all_day: e.allDay ?? true, time_in: e.tIn || "", time_out: e.tOut || "",
-                place: e.place || "", map_url: e.map || "", note: e.note || "",
-              }, { onConflict: "user_id,calendar_id,date_key,label" }).select().maybeSingle();
-              if (dbEvt) {
-                newEvents[dateKey][cal.id].push({
-                  id: dbEvt.id, color: dbEvt.color, label: dbEvt.label,
-                  allDay: dbEvt.all_day, tIn: dbEvt.time_in || "", tOut: dbEvt.time_out || "",
-                  place: dbEvt.place || "", map: dbEvt.map_url || "", note: dbEvt.note || "",
-                  auto: dbEvt.auto || "",
-                });
-              }
+      }
+
+      const newEvents = {};
+      for (const cal of newCals) {
+        const calData = data.data[cal.name] || {};
+        for (const [dateKey, sheetEvts] of Object.entries(calData)) {
+          if (!newEvents[dateKey]) newEvents[dateKey] = {};
+          if (!newEvents[dateKey][cal.id]) newEvents[dateKey][cal.id] = [];
+          for (const e of sheetEvts) {
+            const { data: dbEvt } = await supabase.from("events").insert({
+              user_id: userId, calendar_id: cal.id, date_key: dateKey,
+              label: e.label || "Evento", color: e.color || cal.color,
+              all_day: e.allDay ?? true, time_in: e.tIn || "", time_out: e.tOut || "",
+              place: e.place || "", map_url: e.map || "", note: e.note || "",
+              modello_id: e.modelloId || null, collega: e.collega || "", auto: e.auto || "",
+            }).select().maybeSingle();
+            if (dbEvt) {
+              newEvents[dateKey][cal.id].push({
+                id: dbEvt.id, color: dbEvt.color, label: dbEvt.label,
+                allDay: dbEvt.all_day, tIn: dbEvt.time_in || "", tOut: dbEvt.time_out || "",
+                place: dbEvt.place || "", map: dbEvt.map_url || "", note: dbEvt.note || "",
+                modelloId: dbEvt.modello_id || null, collega: dbEvt.collega || "", auto: dbEvt.auto || "",
+              });
             }
           }
         }
-        setStore(s => ({ ...s, calendars: newCals, events: newEvents }));
-        if (newCals.length > 0 && !calId) setCalId(newCals[0].id);
-        return "✅ Importazione completata";
-      } else {
-        return "❌ Nessun dato valido da Sheets";
       }
+      setStore(s => ({ ...s, calendars: newCals, events: newEvents }));
+      if (newCals.length > 0 && !calId) setCalId(newCals[0].id);
+      return "✅ Importazione completata (Supabase sincronizzato)";
     } catch (e) {
       console.error(e);
       return "❌ Errore sincronizzazione Sheets";
