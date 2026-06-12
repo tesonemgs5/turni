@@ -1497,9 +1497,18 @@ export default function App({ session }){
                 :<div style={{color:"rgba(255,255,255,0.8)",fontSize:11,marginTop:3}}>📍 {e.place}</div>
               )}
             </div>
-            <button onClick={()=>delEvt(dayKey,calId,e.id)}
+            <button onClick={e2=>{e2.stopPropagation();setForm({
+                editId: e.id, modelloId: e.modelloId||null, shiftId: null,
+                label: e.label, colorOvr: e.color,
+                dur: e.allDay?"allday":(e.tIn&&e.tOut?(calcFine6h15(e.tIn)===e.tOut?"fixed":"custom"):"custom"),
+                tIn: e.tIn||"", tOut: e.tOut||"", place: e.place||"",
+                map: e.map||"", note: e.note||"", collega: e.collega||"", auto: e.auto||"",
+              });}}
               style={{background:"rgba(0,0,0,0.2)",border:"none",borderRadius:6,
-                color:"#fff",width:26,height:26,cursor:"pointer",fontSize:14,marginLeft:8,flexShrink:0}}>×</button>
+                color:"#fff",width:26,height:26,cursor:"pointer",fontSize:14,marginLeft:4,flexShrink:0}}>✏️</button>
+            <button onClick={e2=>{e2.stopPropagation();delEvt(dayKey,calId,e.id);}}
+              style={{background:"rgba(0,0,0,0.2)",border:"none",borderRadius:6,
+                color:"#fff",width:26,height:26,cursor:"pointer",fontSize:14,marginLeft:4,flexShrink:0}}>×</button>
           </div>
         ))}
         {form&&(
