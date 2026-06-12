@@ -1659,7 +1659,7 @@ export default function App({ session }){
                         background:form.straordinarioTipo==="pagamento"?"#8b5cf6":T.surface,
                         color:form.straordinarioTipo==="pagamento"?"#fff":T.sub,
                         border:`1.5px solid ${form.straordinarioTipo==="pagamento"?"#8b5cf6":T.border}`}}>
-                      💜 PROTRAZIONE A PAGAMENTO
+                      PROTRAZIONE A PAGAMENTO
                     </button>
                     {form.straordinarioTipo&&(()=>{
                       const std=calcFine6h15(form.tIn);
@@ -1704,12 +1704,9 @@ export default function App({ session }){
                       const isExtra=diff>0;
                       return (
                         <>
-                          <div style={{fontSize:10,color:isExtra?"#22c55e":"#f97316",
-                            marginTop:3,fontWeight:700}}>
-                            {isExtra?"+":"-"}{Math.floor(absDiff/60)}h{absDiff%60>0?absDiff%60+"m":""}
-                            {" "}{isExtra?"protrazione":"recupero"}
-                          </div>
-{isExtra&&(
+                          </>
+                      );
+                    })()}
                               <>
                                 <div style={{display:"flex",gap:6,marginTop:6}}>
                                   {[["pagamento","Protrazione a pagamento"],["recupero","Protrazione a recupero"]].map(([v,l])=>(
@@ -1744,12 +1741,7 @@ export default function App({ session }){
                                           borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
                                     </div>
                                   );
-                                })()}
-                              </>
-                            )}
-                        </>
-                      );
-                    })()}
+                                {false&&(
                   </div>
                 )}
               </div>
