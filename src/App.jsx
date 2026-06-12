@@ -380,7 +380,77 @@ export default function App({ session }){
       saveToSheets(ns.events, ns.calendars);
       return ns;
     });
+    if(form.dur==="fixed" && tInFinal && tOutFinal){
+      await syncProtrazione(dayKey, calId, form, tInFinal, tOutFinal, data.id);
+    }
     setForm(null); setDayKey(null);
+  }
+
+  async function syncProtrazione(dayKey, calId, form, tInFinal, tOutFinal, parentId){
+    const cal = store.calendars.find(c=>c.id===calId);
+    const std = calcFine6h15(tInFinal);
+    let diff = 0;
+    if(std && tOutFinal){
+      const [h1,m1]=std.split(":").map(Number);
+      const [h2,m2]=tOutFinal.split(":").map(Number);
+      diff=(h2*60+m2)-(h1*60+m1);
+    }
+
+    const existingList = store.events[dayKey]?.[calId]||[];
+    const existingProt = existingList.find(e=>e.parentId===parentId && e.label?.startsWith("PROTRAZIONE"));
+
+    if(diff<=0){
+      if(existingProt){
+        await supabase.from("events").delete().eq("id", existingProt.id).eq("user_id", userId);
+        setStore(prev=>{
+          const ns=JSON.parse(JSON.stringify(prev));
+          if(ns.events?.[dayKey]?.[calId])
+            ns.events[dayKey][calId]=ns.events[dayKey][calId].filter(e=>e.id!==existingProt.id);
+          return ns;
+        });
+      }
+      return;
+    }
+
+    const tipo = form.straordinarioTipo||"pagamento";
+    const label = tipo==="pagamento"?"PROTRAZIONE A PAGAMENTO":"PROTRAZIONE A RECUPERO";
+    const color = tipo==="pagamento"?"#8b5cf6":"#64748b";
+
+    const payload = {
+      label, color, all_day:false,
+      time_in: std, time_out: tOutFinal,
+      place:"", map_url:"", note:"",
+      modello_id:null, collega:"", auto:"",
+      parent_id: parentId,
+    };
+
+    if(existingProt){
+      await supabase.from("events").update(payload).eq("id", existingProt.id).eq("user_id", userId);
+      setStore(prev=>{
+        const ns=JSON.parse(JSON.stringify(prev));
+        const list=ns.events[dayKey]?.[calId];
+        if(list){
+          const idx=list.findIndex(e=>e.id===existingProt.id);
+          if(idx>-1) list[idx]={...list[idx], label, color, tIn:std, tOut:tOutFinal};
+        }
+        return ns;
+      });
+    } else {
+      const {data:res}=await supabase.from("events").insert({
+        user_id:userId, calendar_id:calId, date_key:dayKey, ...payload,
+      }).select().maybeSingle();
+      if(res){
+        const evt={id:res.id, color, label, allDay:false, tIn:std, tOut:tOutFinal,
+          place:"", map:"", note:"", modelloId:null, collega:"", auto:"", parentId:parentId};
+        setStore(prev=>{
+          const ns=JSON.parse(JSON.stringify(prev));
+          if(!ns.events[dayKey]) ns.events[dayKey]={};
+          if(!ns.events[dayKey][calId]) ns.events[dayKey][calId]=[];
+          ns.events[dayKey][calId].push(evt);
+          return ns;
+        });
+      }
+    }
   }
 
   function calcMinuti(tIn, tOut){
@@ -402,6 +472,74 @@ export default function App({ session }){
       saveToSheets(ns.events, ns.calendars);
       return ns;
     });
+  }
+
+  async function updateEvt(){
+    if(!form||!dayKey||!calId||!userId||!form.editId) return;
+
+    let color = form.colorOvr || (activeCal?.color||"#3b82f6");
+    let label = (form.label||"Evento").toUpperCase();
+    let tInFinal = form.dur==="allday"?"":form.tIn||"";
+    let tOutFinal = form.dur==="allday"?"":form.tOut||"";
+
+    if(form.modelloId){
+      const mod = modelli.find(m=>m.id===form.modelloId);
+      if(mod){
+        color = form.colorOvr||(mod.coloreCustom||getColorByTime(mod.inizio));
+        label = (mod.titolo||label).toUpperCase();
+        if(mod.tempo==="h24"){ tInFinal=""; tOutFinal=""; }
+        else if(mod.tempo==="6h15"){
+          tInFinal = form.tIn||mod.inizio||"";
+          tOutFinal = form.tOut||calcFine6h15(tInFinal)||"";
+        } else {
+          tInFinal = form.tIn||mod.inizio||"";
+          tOutFinal = form.tOut||mod.fine||"";
+        }
+      }
+    } else if(form.shiftId){
+      const cal = store.calendars.find(c=>c.id===calId);
+      const sh = cal?.shifts?.find(s=>s.id===form.shiftId);
+      if(sh){ color=form.colorOvr||sh.color; label=sh.label.toUpperCase(); }
+    }
+
+    if(form.dur==="fixed" && tInFinal && !form.modelloId){
+      tOutFinal = form.tOut||calcFine6h15(tInFinal);
+    }
+
+    const updateData = {
+      label, color, all_day: form.dur==="allday"&&!form.modelloId,
+      time_in: tInFinal, time_out: tOutFinal,
+      place: (form.place||"").toUpperCase(),
+      map_url: form.map||"",
+      note: (form.note||"").toUpperCase(),
+      modello_id: form.modelloId||null,
+      collega: (form.collega||"").toUpperCase(),
+      auto: (form.auto||"").toUpperCase(),
+    };
+
+    const { error } = await supabase.from("events").update(updateData)
+      .eq("id", form.editId).eq("user_id", userId);
+    if(error){ console.log(error); return; }
+
+    setStore(prev=>{
+      const ns = JSON.parse(JSON.stringify(prev));
+      const list = ns.events[dayKey]?.[calId];
+      if(list){
+        const idx = list.findIndex(e=>e.id===form.editId);
+        if(idx>-1){
+          list[idx] = {
+            ...list[idx],
+            label: updateData.label, color: updateData.color, allDay: updateData.all_day,
+            tIn: updateData.time_in, tOut: updateData.time_out,
+            place: updateData.place, map: updateData.map_url, note: updateData.note,
+            modelloId: updateData.modello_id, collega: updateData.collega, auto: updateData.auto,
+          };
+        }
+      }
+      saveToSheets(ns.events, ns.calendars);
+      return ns;
+    });
+    setForm(null); setDayKey(null);
   }
 
   async function saveToSheets(events, calendars, customUrl = sheetsUrl, customSecret = sheetsSecret) {
@@ -1499,11 +1637,24 @@ export default function App({ session }){
                       const absDiff=Math.abs(diff);
                       const isExtra=diff>0;
                       return (
-                        <div style={{fontSize:10,color:isExtra?"#22c55e":"#f97316",
-                          marginTop:3,fontWeight:700}}>
-                          {isExtra?"+":"-"}{Math.floor(absDiff/60)}h{absDiff%60>0?absDiff%60+"m":""}
-                          {" "}{isExtra?"straordinario":"monte ore"}
-                        </div>
+                        <>
+                          <div style={{fontSize:10,color:isExtra?"#22c55e":"#f97316",
+                            marginTop:3,fontWeight:700}}>
+                            {isExtra?"+":"-"}{Math.floor(absDiff/60)}h{absDiff%60>0?absDiff%60+"m":""}
+                            {" "}{isExtra?"straordinario":"monte ore"}
+                          </div>
+                          {isExtra&&(
+                            <div style={{display:"flex",gap:6,marginTop:6}}>
+                              {[["pagamento","Pagamento"],["recupero","Recupero"]].map(([v,l])=>(
+                                <button key={v} type="button" onClick={()=>setForm(f=>({...f,straordinarioTipo:v}))}
+                                  style={{flex:1,padding:"6px 4px",borderRadius:8,cursor:"pointer",fontSize:10,fontWeight:700,
+                                    background:form.straordinarioTipo===v?(v==="pagamento"?"#8b5cf6":"#64748b"):T.surface,
+                                    color:form.straordinarioTipo===v?"#fff":T.sub,
+                                    border:`1.5px solid ${form.straordinarioTipo===v?(v==="pagamento"?"#8b5cf6":"#64748b"):T.border}`}}>{l}</button>
+                              ))}
+                            </div>
+                          )}
+                        </>
                       );
                     })()}
                   </div>
