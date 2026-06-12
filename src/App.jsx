@@ -303,7 +303,7 @@ export default function App({ session }){
     if(!cal) return;
 
     let color = form.colorOvr || cal.color;
-    let label = form.label||"Evento";
+    let label = (form.label||"Evento").toUpperCase();
     let tInFinal = form.dur==="allday"?"":form.tIn||"";
     let tOutFinal = form.dur==="allday"?"":form.tOut||"";
 
@@ -311,7 +311,7 @@ export default function App({ session }){
       const mod = modelli.find(m=>m.id===form.modelloId);
       if(mod){
         color = form.colorOvr||(mod.coloreCustom||getColorByTime(mod.inizio));
-        label = mod.titolo||label;
+        label = (mod.titolo||label).toUpperCase();
         if(mod.tempo==="h24"){ tInFinal=""; tOutFinal=""; }
         else if(mod.tempo==="6h15"){
           tInFinal = form.tIn||mod.inizio||"";
@@ -323,7 +323,7 @@ export default function App({ session }){
       }
     } else if(form.shiftId){
       const sh = cal.shifts?.find(s=>s.id===form.shiftId);
-      if(sh){ color=form.colorOvr||sh.color; label=sh.label; }
+      if(sh){ color=form.colorOvr||sh.color; label=sh.label.toUpperCase(); }
     }
 
     if(form.dur==="fixed" && tInFinal && !form.modelloId){
@@ -359,7 +359,7 @@ export default function App({ session }){
       time_in: tInFinal, time_out: tOutFinal,
       place: (form.place||"").toUpperCase(),
       map_url: form.map||"",
-      note: extraNote,
+      note: (extraNote||"").toUpperCase(),
       modello_id: form.modelloId||null,
       collega: (form.collega||"").toUpperCase(),
       auto: (form.auto||"").toUpperCase(),
