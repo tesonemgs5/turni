@@ -1461,6 +1461,7 @@ export default function App({ session }){
         )}
         {curEvts.map(e=>(
           <div key={e.id} onClick={()=>{
+              if(form?.editId===e.id){ setForm(null); return; }
               setForm({
                 editId: e.id,
                 modelloId: e.modelloId||null,
