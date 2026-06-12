@@ -1720,7 +1720,7 @@ export default function App({ session }){
 
             {/* Collega di pattuglia */}
             <textarea value={form.collega||""} onChange={e=>setForm(f=>({...f,collega:e.target.value.toUpperCase()}))}
-              placeholder={"👮 Collega (uno per riga)"}
+              placeholder={"👮 Collega "}
               rows={3}
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
