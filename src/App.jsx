@@ -177,7 +177,7 @@ export default function App({ session }){
             tIn: e.time_in||"", tOut: e.time_out||"", place: e.place||"",
             map: e.map_url||"", note: e.note||"",
             modelloId: e.modello_id||null, collega: e.collega||null,
-            auto: e.auto||"",
+            auto: e.auto||"", parentId: e.parent_id||null,
           });
         });
 
@@ -383,6 +383,69 @@ export default function App({ session }){
     if(form.dur==="fixed" && tInFinal && tOutFinal){
       await syncProtrazione(dayKey, calId, form, tInFinal, tOutFinal, data.id);
     }
+    setForm(null); setDayKey(null);
+  }
+
+  async function updateEvt(){
+    if(!form||!dayKey||!calId||!userId||!form.editId) return;
+    const cal = store.calendars.find(c=>c.id===calId);
+    if(!cal) return;
+
+    let color = form.colorOvr || cal.color;
+    let label = (form.label||"Evento").toUpperCase();
+    let tInFinal = form.dur==="allday"?"":form.tIn||"";
+    let tOutFinal = form.dur==="allday"?"":form.tOut||"";
+
+    if(form.modelloId){
+      const mod = modelli.find(m=>m.id===form.modelloId);
+      if(mod){
+        color = form.colorOvr||(mod.coloreCustom||getColorByTime(mod.inizio));
+        label = (mod.titolo||label).toUpperCase();
+        if(mod.tempo==="h24"){ tInFinal=""; tOutFinal=""; }
+        else if(mod.tempo==="6h15"){
+          tInFinal = form.tIn||mod.inizio||"";
+          tOutFinal = form.tOut||calcFine6h15(tInFinal)||"";
+        } else {
+          tInFinal = form.tIn||mod.inizio||"";
+          tOutFinal = form.tOut||mod.fine||"";
+        }
+      }
+    }
+
+    const { error } = await supabase.from("events").update({
+      label, color,
+      all_day: form.dur==="allday",
+      time_in: tInFinal,
+      time_out: tOutFinal,
+      place: (form.place||"").toUpperCase(),
+      map_url: form.map||"",
+      note: (form.note||"").toUpperCase(),
+      modello_id: form.modelloId||null,
+      collega: (form.collega||"").toUpperCase(),
+      auto: (form.auto||"").toUpperCase(),
+    }).eq("id", form.editId).eq("user_id", userId);
+
+    if(error){ console.log(error); return; }
+
+    setStore(prev=>{
+      const ns = JSON.parse(JSON.stringify(prev));
+      const list = ns.events?.[dayKey]?.[calId];
+      if(list){
+        const idx = list.findIndex(e=>e.id===form.editId);
+        if(idx>-1) list[idx]={...list[idx], label, color,
+          allDay: form.dur==="allday",
+          tIn: tInFinal, tOut: tOutFinal,
+          place: (form.place||"").toUpperCase(),
+          map: form.map||"",
+          note: (form.note||"").toUpperCase(),
+          modelloId: form.modelloId||null,
+          collega: (form.collega||"").toUpperCase(),
+          auto: (form.auto||"").toUpperCase(),
+        };
+      }
+      saveToSheets(ns.events, ns.calendars);
+      return ns;
+    });
     setForm(null); setDayKey(null);
   }
 
