@@ -1513,7 +1513,7 @@ export default function App({ session }){
             <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:12}}>{form.editId?"MODIFICA EVENTO":"NUOVO EVENTO"}</div>
 
             {/* MODELLI */}
-            {modelli.length>0&&(
+            {modelli.length>0&&!form.editId&&(
               <>
                 <div style={{fontSize:10,color:T.sub,marginBottom:6,fontWeight:600}}>MODELLO TURNO</div>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
@@ -1546,7 +1546,7 @@ export default function App({ session }){
               </>
             )}
 
-            {(activeCal?.shifts||[]).length>0&&!form.modelloId&&(
+            {(activeCal?.shifts||[]).length>0&&!form.modelloId&&!form.editId&&(
               <>
                 <div style={{fontSize:10,color:T.sub,marginBottom:6,fontWeight:600}}>TURNO CALENDARIO</div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,marginBottom:12}}>
@@ -1565,7 +1565,7 @@ export default function App({ session }){
               </>
             )}
 
-            {!form.shiftId&&!form.modelloId&&(
+            {!form.shiftId&&!form.modelloId&&!form.editId&&(
               <input value={form.label||""} onChange={e=>setForm(f=>({...f,label:e.target.value}))}
                 placeholder="NOME EVENTO..."
                 style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
