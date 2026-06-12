@@ -440,6 +440,17 @@ export default function App({ session }){
     setForm(null); setDayKey(null);
   }
 
+  async function delEvt(dayKey, calId, evtId){
+    await supabase.from("events").delete().eq("id", evtId).eq("user_id", userId);
+    setStore(prev=>{
+      const ns=JSON.parse(JSON.stringify(prev));
+      if(ns.events?.[dayKey]?.[calId])
+        ns.events[dayKey][calId]=ns.events[dayKey][calId].filter(e=>e.id!==evtId);
+      saveToSheets(ns.events, ns.calendars);
+      return ns;
+    });
+  }
+
   async function syncProtrazione(dayKey, calId, form, tInFinal, tOutFinal, parentId){
     const cal = store.calendars.find(c=>c.id===calId);
     const std = calcFine6h15(tInFinal);
@@ -1452,7 +1463,7 @@ export default function App({ session }){
             Nessun evento — premi + Aggiungi
           </div>
         )}
-        {curEvts.filter(e=>!form||form.editId!==e.id).map(e=>(
+        {curEvts.filter(e=>!form||form.editId!==e.id).filter(e=>!(e.label||"").toUpperCase().startsWith("PROTRAZIONE")).map(e=>(
           <div key={e.id} onClick={()=>{
               if(form?.editId===e.id){ setForm(null); return; }
               setForm({
@@ -1506,14 +1517,19 @@ export default function App({ session }){
         ))}
         {form&&(
           <div style={{background:T.s2,borderRadius:12,padding:14,marginTop:8}}>
-            <div style={{fontSize:form.editId?24:10,color:form.editId?T.text:T.sub,fontWeight:900,marginBottom:12,letterSpacing:1}}>{form.editId?(form.label||"EVENTO").toUpperCase():"NUOVO EVENTO"}</div>
+            {!form.modelloId&&!form.editId&&(
+              <div style={{fontSize:10,color:T.sub,fontWeight:900,marginBottom:12,letterSpacing:1}}>NUOVO EVENTO</div>
+            )}
+            {form.editId&&(
+              <div style={{fontSize:24,color:T.text,fontWeight:900,marginBottom:12,letterSpacing:1}}>{(form.label||"EVENTO").toUpperCase()}</div>
+            )}
 
             {/* MODELLI */}
             {modelli.length>0&&!form.editId&&(
               <>
-                <div style={{fontSize:10,color:T.sub,marginBottom:6,fontWeight:600}}>MODELLO TURNO</div>
+                {!form.modelloId&&<div style={{fontSize:10,color:T.sub,marginBottom:6,fontWeight:600}}>MODELLO TURNO</div>}
                 <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
-                  {modelli.map(m=>{
+                  {(form.modelloId?modelli.filter(m=>m.id===form.modelloId):modelli).map(m=>{
                     const c=m.coloreCustom||getColorByTime(m.inizio);
                     return (
                       <button key={m.id}
@@ -1531,6 +1547,7 @@ export default function App({ session }){
                       </button>
                     );
                   })}
+                  {!form.modelloId&&(
                   <button onClick={()=>setForm(f=>({...f,modelloId:null}))}
                     style={{background:!form.modelloId?accent:T.surface,
                       border:`2px solid ${!form.modelloId?accent:T.border}`,
@@ -1538,6 +1555,7 @@ export default function App({ session }){
                       color:!form.modelloId?"#fff":T.sub,fontSize:11,fontWeight:700}}>
                     Libero
                   </button>
+                  )}
                 </div>
               </>
             )}
@@ -1569,6 +1587,7 @@ export default function App({ session }){
                   marginBottom:10,boxSizing:"border-box",outline:"none"}}/>
             )}
 
+            {!form.modelloId&&(
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
               <span style={{fontSize:14,color:T.sub,fontWeight:700}}>COLORE</span>
               <div style={{position:"relative"}}>
@@ -1586,6 +1605,7 @@ export default function App({ session }){
                   style={{background:"none",border:"none",color:T.sub,fontSize:13,fontWeight:700,cursor:"pointer"}}>↩ auto</button>
               )}
             </div>
+            )}
 
             <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>DURATA</div>
             <div style={{display:"flex",gap:6,marginBottom:10}}>
