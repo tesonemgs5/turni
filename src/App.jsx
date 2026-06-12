@@ -1633,7 +1633,7 @@ export default function App({ session }){
                       background:form.straordinarioTipo==="recupero"?"#64748b":T.surface,
                       color:form.straordinarioTipo==="recupero"?"#fff":T.sub,
                       border:`1.5px solid ${form.straordinarioTipo==="recupero"?"#64748b":T.border}`}}>
-                    🔘 PROTRAZIONE A RECUPERO
+                    PROTRAZIONE A RECUPERO
                   </button>
                 </div>
                 {form.dur==="custom"&&(
