@@ -697,14 +697,14 @@ export default function App({ session }){
           ))
         }
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",
         background:T.s2,borderBottom:`1px solid ${T.border}`,flexShrink:0}}>
         {DAYS.map((d,i)=>(
           <div key={i} style={{textAlign:"center",fontSize:9,fontWeight:800,
             padding:"3px 0",color:i===6?"#ef4444":T.sub}}>{d}</div>
         ))}
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",
         gridAutoRows:"minmax(54px,1fr)",flex:1,overflow:"hidden",gap:"1px 0px",background:T.gap}}>
         {cells.map((d,i)=>{
           if(!d) return <div key={i} style={{background:T.bg}}/>;
