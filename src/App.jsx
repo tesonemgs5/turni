@@ -846,7 +846,7 @@ export default function App({ session }){
                 {ds.map(c=><div key={c.id} style={{width:5,height:5,borderRadius:"50%",background:c.color}}/>)}
               </div>
               <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",gap:"1px",padding:"0 1px 1px"}}>
-                {evts.slice(0,4).map((e,ei)=>(
+                {evts.filter(e=>!(e.label||"").toUpperCase().startsWith("PROTRAZIONE")).slice(0,4).map((e,ei)=>(
                   <div key={e.id+ei} style={{background:e.color,borderRadius:3,padding:"2px 4px",
                     fontSize:9,fontWeight:800,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",
                     whiteSpace:"nowrap",flex:1,display:"flex",alignItems:"center",flexShrink:1,
