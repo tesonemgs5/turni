@@ -742,7 +742,6 @@ export default function App({ session }){
           else if(mins>=1035&&mins<1080) result.terzo++;
           else result.notte++;
           if(e.note&&e.note.includes("Protrazione:")) result.protrazioneRec++;
-          if(e.note&&e.note.includes("Pagamento:")) result.protrazionePag++;
         }
       }
     }
@@ -1507,7 +1506,7 @@ export default function App({ session }){
         ))}
         {form&&(
           <div style={{background:T.s2,borderRadius:12,padding:14,marginTop:8}}>
-            <div style={{fontSize:form.editId?20:10,color:form.editId?T.text:T.sub,fontWeight:900,marginBottom:12,letterSpacing:1}}>{form.editId?(form.label||"EVENTO").toUpperCase():"NUOVO EVENTO"}</div>
+            <div style={{fontSize:form.editId?24:10,color:form.editId?T.text:T.sub,fontWeight:900,marginBottom:12,letterSpacing:1}}>{form.editId?(form.label||"EVENTO").toUpperCase():"NUOVO EVENTO"}</div>
 
             {/* MODELLI */}
             {modelli.length>0&&!form.editId&&(
@@ -1571,9 +1570,9 @@ export default function App({ session }){
             )}
 
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-              <span style={{fontSize:10,color:T.sub,fontWeight:700}}>COLORE</span>
+              <span style={{fontSize:14,color:T.sub,fontWeight:700}}>COLORE</span>
               <div style={{position:"relative"}}>
-                <div style={{width:32,height:32,borderRadius:"50%",cursor:"pointer",
+                <div style={{width:22,height:22,borderRadius:"50%",cursor:"pointer",
                   background:form.colorOvr||(form.modelloId
                     ?(modelli.find(m=>m.id===form.modelloId)?.coloreCustom||getColorByTime(modelli.find(m=>m.id===form.modelloId)?.inizio))
                     :form.shiftId?activeCal?.shifts?.find(s=>s.id===form.shiftId)?.color
@@ -1639,7 +1638,7 @@ export default function App({ session }){
                           <div style={{fontSize:10,color:isExtra?"#22c55e":"#f97316",
                             marginTop:3,fontWeight:700}}>
                             {isExtra?"+":"-"}{Math.floor(absDiff/60)}h{absDiff%60>0?absDiff%60+"m":""}
-                            {" "}{isExtra?"protrazione":"monte ore"}
+                            {" "}{isExtra?"protrazione":"recupero"}
                           </div>
                           {isExtra&&(
                             <>
@@ -1691,7 +1690,8 @@ export default function App({ session }){
             {/* Numero auto */}
             <input value={form.auto||""} onChange={e=>{
                 const raw=e.target.value.toUpperCase();
-                const val=raw.startsWith("CH ")?raw:("CH "+raw.replace(/^CH\s*/i,""));
+                const stripped=raw.replace(/^(CH\s*)+/i,"").trim();
+                const val=stripped?"CH "+stripped:"";
                 setForm(f=>({...f,auto:val}));
               }}
               placeholder="🚗 Numero auto/pattuglia (opzionale)..."
@@ -1701,8 +1701,8 @@ export default function App({ session }){
 
             {/* Collega di pattuglia */}
             <textarea value={form.collega||""} onChange={e=>setForm(f=>({...f,collega:e.target.value.toUpperCase()}))}
-              placeholder="👮 COLLEGA DI PATTUGLIA (OPZIONALE)..."
-              rows={2}
+              placeholder={"👮 COLLEGA 1\nCOLLEGA 2\nCOLLEGA 3..."}
+              rows={3}
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
                 marginBottom:6,boxSizing:"border-box",outline:"none",resize:"vertical",fontFamily:"inherit"}}/>
