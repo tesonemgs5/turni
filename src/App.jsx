@@ -462,7 +462,111 @@ export default function App({ session }){
     return mins;
   }
 
-  async function delEvt(key,cid,eid){
+  }
+    }
+  }
+
+  async function updateEvt(){
+    let diff = 0;
+    if(std && tOutFinal){
+      const [h1,m1]=std.split(":").map(Number);
+      const [h2,m2]=tOutFinal.split(":").map(Number);
+      diff=(h2*60+m2)-(h1*60+m1);
+    }
+
+    const existingList = store.events[dayKey]?.[calId]||[];
+    const existingProt = existingList.find(e=>e.parentId===parentId && e.label?.startsWith("PROTRAZIONE"));
+
+    if(diff<=0){
+      if(existingProt){
+        await supabase.from("events").delete().eq("id", existingProt.id).eq("user_id", userId);
+        setStore(prev=>{
+          const ns=JSON.parse(JSON.stringify(prev));
+          if(ns.events?.[dayKey]?.[calId])
+            ns.events[dayKey][calId]=ns.events[dayKey][calId].filter(e=>e.id!==existingProt.id);
+          return ns;
+        });
+      }
+      return;
+    }
+
+    const tipo = form.straordinarioTipo||"pagamento";
+    const label = tipo==="pagamento"?"PROTRAZIONE A PAGAMENTO":"PROTRAZIONE A RECUPERO";
+    const color = tipo==="pagamento"?"#8b5cf6":"#64748b";
+
+    const payload = {
+      label, color, all_day:false,
+      time_in: std, time_out: tOutFinal,
+      place:"", map_url:"", note:"",
+      modello_id:null, collega:"", auto:"",
+      parent_id: parentId,
+    };
+
+    if(existingProt){
+      await supabase.from("events").update(payload).eq("id", existingProt.id).eq("user_id", userId);
+      setStore(prev=>{
+        const ns=JSON.parse(JSON.stringify(prev));
+        const list=ns.events[dayKey]?.[calId];
+        if(list){
+          const idx=list.findIndex(e=>e.id===existingProt.id);
+          if(idx>-1) list[idx]={...list[idx], label, color, tIn:std, tOut:tOutFinal};
+        }
+        return ns;
+      });
+    } else {
+      const {data:res}=await supabase.from("events").insert({
+        user_id:userId, calendar_id:calId, date_key:dayKey, ...payload,
+      }).select().maybeSingle();
+      if(res){
+        const evt={id:res.id, color, label, allDay:false, tIn:std, tOut:tOutFinal,
+          place:"", map:"", note:"", modelloId:null, collega:"", auto:"", parentId:parentId};
+        setStore(prev=>{
+          const ns=JSON.parse(JSON.stringify(prev));
+          if(!ns.events[dayKey]) ns.events[dayKey]={};
+          if(!ns.events[dayKey][calId]) ns.events[dayKey][calId]=[];
+          ns.events[dayKey][calId].push(evt);
+          return ns;
+        });
+      }
+    }
+  }
+
+  async function updateEvt(){
+    if(!form||!dayKey||!calId||!userId||!form.editId) return;
+
+    let color = form.colorOvr || (activeCal?.color||"#3b82f6");
+    let label = (form.label||"Evento").toUpperCase();
+    let tInFinal = form.dur==="allday"?"":form.tIn||"";
+    let tOutFinal = form.dur==="allday"?"":form.tOut||"";
+
+    if(form.modelloId){
+      const mod = modelli.find(m=>m.id===form.modelloId);
+      if(mod){
+        color = form.colorOvr||(mod.coloreCustom||getColorByTime(mod.inizio));
+        label = (mod.titolo||label).toUpperCase();
+        if(mod.tempo==="h24"){ tInFinal=""; tOutFinal=""; }
+        else if(mod.tempo==="6h15"){
+          tInFinal = form.tIn||mod.inizio||"";
+          tOutFinal = form.tOut||calcFine6h15(tInFinal)||"";
+        } else {
+          tInFinal = form.tIn||mod.inizio||"";
+          tOutFinal = form.tOut||mod.fine||"";
+        }
+      }
+    } else if(form.shiftId){
+      const cal = store.calendars.find(c=>c.id===calId);
+      const sh = cal?.shifts?.find(s=>s.id===form.shiftId);
+      if(sh){ color=form.colorOvr||sh.color; label=sh.label.toUpperCase(); }
+    }
+
+    if(form.dur==="fixed" && tInFinal && !form.modelloId){
+      tOutFinal = form.tOut||calcFine6h15(tInFinal);
+    }
+
+    const updateData = {
+      label, color, all_day: form.dur==="allday"&&!form.modelloId,
+      time_in: tInFinal, time_out: tOutFinal,
+      place: (form.place||"").toUpperCase(),
     if(!userId) return;
     await supabase.from("events").delete().eq("id", eid).eq("user_id", userId);
     setStore(prev=>{
@@ -1482,8 +1586,25 @@ export default function App({ session }){
           </div>
         )}
         {curEvts.map(e=>(
-          <div key={e.id} style={{background:e.color,borderRadius:10,
-            padding:"10px 12px",marginBottom:8,
+          <div key={e.id} onClick={()=>{
+              setForm({
+                editId: e.id,
+                modelloId: e.modelloId||null,
+                shiftId: null,
+                label: e.label,
+                colorOvr: e.color,
+                dur: e.allDay?"allday":(e.tIn&&e.tOut?(calcFine6h15(e.tIn)===e.tOut?"fixed":"custom"):"custom"),
+                tIn: e.tIn||"",
+                tOut: e.tOut||"",
+                place: e.place||"",
+                map: e.map||"",
+                note: e.note||"",
+                collega: e.collega||"",
+                auto: e.auto||"",
+              });
+            }}
+            style={{background:e.color,borderRadius:10,
+            padding:"10px 12px",marginBottom:8,cursor:"pointer",
             display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
             <div style={{flex:1}}>
               <div style={{color:"#fff",fontSize:14,fontWeight:800,
@@ -1509,7 +1630,7 @@ export default function App({ session }){
         ))}
         {form&&(
           <div style={{background:T.s2,borderRadius:12,padding:14,marginTop:8}}>
-            <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:12}}>NUOVO EVENTO</div>
+            <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:12}}>{form.editId?"MODIFICA EVENTO":"NUOVO EVENTO"}</div>
 
             {/* MODELLI */}
             {modelli.length>0&&(
@@ -1699,7 +1820,7 @@ export default function App({ session }){
                   borderRadius:10,color:T.sub,padding:"11px 0",cursor:"pointer",fontSize:13,fontWeight:700}}>
                 Annulla
               </button>
-              <button onClick={saveEvt}
+              <button onClick={form.editId?updateEvt:saveEvt}
                 style={{flex:2,background:accent,border:"none",borderRadius:10,
                   color:"#fff",padding:"11px 0",cursor:"pointer",fontSize:13,fontWeight:800}}>
                 💾 Salva
