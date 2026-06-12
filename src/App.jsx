@@ -466,12 +466,10 @@ export default function App({ session }){
       return;
     }
 
-    const tipo = form.straordinarioTipo||"pagamento";
-    
-    const color = tipo==="pagamento"?"#8b5cf6":"#64748b";
+    return;
 
     const payload = {
-      label, color, all_day:false,
+      label:"", color:"", all_day:false,
       time_in: std, time_out: tOutFinal,
       place:"", map_url:"", note:"",
       modello_id:null, collega:"", auto:"",
@@ -1572,10 +1570,10 @@ export default function App({ session }){
                   marginBottom:10,boxSizing:"border-box",outline:"none"}}/>
             )}
 
-            <div style={{fontSize:form.editId?20:10,color:form.editId?T.text:T.sub,fontWeight:900,marginBottom:12,letterSpacing:1}}>{form.editId?(form.label||"EVENTO").toUpperCase():"<div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
               <span style={{fontSize:10,color:T.sub,fontWeight:700}}>COLORE</span>
               <div style={{position:"relative"}}>
-                <div style={{width:32,height:32,borderRadius:"50%",cursor:"pointer",EVENTO"}</div>
+                <div style={{width:32,height:32,borderRadius:"50%",cursor:"pointer",
                   background:form.colorOvr||(form.modelloId
                     ?(modelli.find(m=>m.id===form.modelloId)?.coloreCustom||getColorByTime(modelli.find(m=>m.id===form.modelloId)?.inizio))
                     :form.shiftId?activeCal?.shifts?.find(s=>s.id===form.shiftId)?.color
@@ -1702,11 +1700,12 @@ export default function App({ session }){
                 marginBottom:6,boxSizing:"border-box",outline:"none"}}/>
 
             {/* Collega di pattuglia */}
-            <input value={form.collega||""} onChange={e=>setForm(f=>({...f,collega:e.target.value.toUpperCase()}))}
+            <textarea value={form.collega||""} onChange={e=>setForm(f=>({...f,collega:e.target.value.toUpperCase()}))}
               placeholder="👮 COLLEGA DI PATTUGLIA (OPZIONALE)..."
+              rows={2}
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
-                marginBottom:6,boxSizing:"border-box",outline:"none"}}/>
+                marginBottom:6,boxSizing:"border-box",outline:"none",resize:"vertical",fontFamily:"inherit"}}/>
 
             <input value={form.place||""} onChange={e=>setForm(f=>({...f,place:e.target.value.toUpperCase()}))}
               placeholder="📍 LUOGO (OPZIONALE)..."
