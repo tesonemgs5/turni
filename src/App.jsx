@@ -514,10 +514,6 @@ export default function App({ session }){
     let mins=(h2*60+m2)-(h1*60+m1);
     if(mins<0) mins+=24*60;
     return mins;
- saveToSheets(ns.events, ns.calendars);
-      return ns;
-    });
-    setForm(null); setDayKey(null);
   }
 
   async function saveToSheets(events, calendars, customUrl = sheetsUrl, customSecret = sheetsSecret) {
