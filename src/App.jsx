@@ -1626,15 +1626,7 @@ export default function App({ session }){
                     onChange={e=>setForm(f=>({...f,tIn:e.target.value,tOut:""}))}
                     style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                       borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
-                  <button type="button"
-                    onClick={()=>setForm(f=>({...f,straordinarioTipo:f.straordinarioTipo==="recupero"?null:"recupero"}))}
-                    style={{width:"100%",marginTop:5,padding:"6px 4px",borderRadius:8,cursor:"pointer",
-                      fontSize:10,fontWeight:800,
-                      background:form.straordinarioTipo==="recupero"?"#64748b":T.surface,
-                      color:form.straordinarioTipo==="recupero"?"#fff":T.sub,
-                      border:`1.5px solid ${form.straordinarioTipo==="recupero"?"#64748b":T.border}`}}>
-                    PROTRAZIONE A RECUPERO
-                  </button>
+                  
                 </div>
                 {form.dur==="custom"&&(
                   <div style={{flex:1}}>
@@ -1652,96 +1644,8 @@ export default function App({ session }){
                       onChange={e=>setForm(f=>({...f,tOut:e.target.value}))}
                       style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                         borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
-                    <button type="button"
-                      onClick={()=>setForm(f=>({...f,straordinarioTipo:f.straordinarioTipo==="pagamento"?null:"pagamento"}))}
-                      style={{width:"100%",marginTop:5,padding:"6px 4px",borderRadius:8,cursor:"pointer",
-                        fontSize:10,fontWeight:800,
-                        background:form.straordinarioTipo==="pagamento"?"#8b5cf6":T.surface,
-                        color:form.straordinarioTipo==="pagamento"?"#fff":T.sub,
-                        border:`1.5px solid ${form.straordinarioTipo==="pagamento"?"#8b5cf6":T.border}`}}>
-                      PROTRAZIONE A PAGAMENTO
-                    </button>
-                    {form.straordinarioTipo&&(()=>{
-                      const std=calcFine6h15(form.tIn);
-                      const oraFine=form.protrazioneOraFine||form.tOut||std||"";
-                      let durMins=0;
-                      if(oraFine&&std){
-                        const [h1,m1]=std.split(":").map(Number);
-                        const [h2,m2]=oraFine.split(":").map(Number);
-                        durMins=(h2*60+m2)-(h1*60+m1);
-                        if(durMins<0) durMins+=24*60;
-                      }
-                      const durH=Math.floor(durMins/60);
-                      const durM=durMins%60;
-                      const colore=form.straordinarioTipo==="pagamento"?"#8b5cf6":"#64748b";
-                      return (
-                        <div style={{display:"flex",gap:6,marginTop:8,alignItems:"center"}}>
-                          <div style={{flex:1,background:T.s2,borderRadius:8,padding:"6px 8px",textAlign:"center",border:`1.5px solid ${colore}33`}}>
-                            <div style={{fontSize:9,color:T.sub,fontWeight:700,marginBottom:2}}>ECCESSO</div>
-                            <div style={{fontSize:14,fontWeight:900,color:colore}}>
-                              {durMins>0?`${durH>0?durH+"h ":""}${durM>0?durM+"m":""}`.trim()||"0m":"0m"}
-                            </div>
-                          </div>
-                          <div style={{flex:1}}>
-                            <div style={{fontSize:9,color:T.sub,fontWeight:700,marginBottom:2}}>ORA FINE</div>
-                            <input type="time" value={oraFine}
-                              onChange={e=>setForm(f=>({...f,protrazioneOraFine:e.target.value,tOut:e.target.value}))}
-                              style={{width:"100%",background:T.surface,border:`1.5px solid ${colore}`,
-                                borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
-                          </div>
-                        </div>
-                      );
-                    })()}
-                    {(()=>{
-                      const tOut=form.tOut||calcFine6h15(form.tIn);
-                      const std=calcFine6h15(form.tIn);
-                      if(!tOut||!std) return null;
-                      const [h1,m1]=std.split(":").map(Number);
-                      const [h2,m2]=tOut.split(":").map(Number);
-                      let diff=(h2*60+m2)-(h1*60+m1);
-                      if(diff===0) return null;
-                      const absDiff=Math.abs(diff);
-                      const isExtra=diff>0;
-                      return (
-                        <>
-                          </>
-                      );
-                    })()}
-                              <>
-                                <div style={{display:"flex",gap:6,marginTop:6}}>
-                                  {[["pagamento","Protrazione a pagamento"],["recupero","Protrazione a recupero"]].map(([v,l])=>(
-                                    <button key={v} type="button" onClick={()=>setForm(f=>({...f,straordinarioTipo:f.straordinarioTipo===v?null:v}))}
-                                      style={{flex:1,padding:"6px 4px",borderRadius:8,cursor:"pointer",fontSize:10,fontWeight:700,
-                                        background:form.straordinarioTipo===v?(v==="pagamento"?"#8b5cf6":"#64748b"):T.surface,
-                                        color:form.straordinarioTipo===v?"#fff":T.sub,
-                                        border:`1.5px solid ${form.straordinarioTipo===v?(v==="pagamento"?"#8b5cf6":"#64748b"):T.border}`}}>{l}</button>
-                                  ))}
-                                </div>
-                                
-                                {form.straordinarioTipo&&(()=>{
-                                  const oraFineP=form.protrazioneOraFine||"";
-                                  let durProt="";
-                                  if(oraFineP && calcFine6h15(form.tIn)){
-                                    const [h1,m1]=calcFine6h15(form.tIn).split(":").map(Number);
-                                    const [h2,m2]=oraFineP.split(":").map(Number);
-                                    let d2=(h2*60+m2)-(h1*60+m1);
-                                    if(d2<0) d2+=24*60;
-                                    if(d2>0) durProt=`${Math.floor(d2/60)}h${d2%60>0?" "+d2%60+"m":""}`;
-                                  }
-                                  return (
-                                    <div style={{display:"flex",alignItems:"center",gap:8,marginTop:6}}>
-                                      <div style={{background:T.s2,borderRadius:8,padding:"7px 10px",minWidth:52,textAlign:"center",flexShrink:0}}>
-                                        <div style={{fontSize:9,color:T.sub,fontWeight:700,marginBottom:1}}>DURATA</div>
-                                        <div style={{fontSize:13,fontWeight:900,color:"#22c55e"}}>{durProt||"—"}</div>
-                                      </div>
-                                      <input type="time" value={oraFineP}
-                                        onChange={e=>setForm(f=>({...f,protrazioneOraFine:e.target.value,tOut:e.target.value}))}
-                                        placeholder="Ora fine"
-                                        style={{flex:1,background:T.surface,border:`1px solid ${T.border}`,
-                                          borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
-                                    </div>
-                                  );
-                                {false&&(
+                    
+                    
                   </div>
                 )}
               </div>
@@ -1760,12 +1664,13 @@ export default function App({ session }){
                 marginBottom:6,boxSizing:"border-box",outline:"none"}}/>
 
             {/* Collega di pattuglia */}
-            <textarea value={form.collega||""} onChange={e=>setForm(f=>({...f,collega:e.target.value.toUpperCase()}))}
+            <textarea value={form.collega||""} onChange={e=>{setForm(f=>({...f,collega:e.target.value.toUpperCase()}));e.target.style.height="auto";e.target.style.height=e.target.scrollHeight+"px";}}
               placeholder={"👮 Collega "}
-              rows={3}
+              rows={1}
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
-                marginBottom:6,boxSizing:"border-box",outline:"none",resize:"vertical",fontFamily:"inherit"}}/>
+                marginBottom:6,boxSizing:"border-box",outline:"none",resize:"none",fontFamily:"inherit",
+                overflow:"hidden",minHeight:36}}/>
 
             <input value={form.place||""} onChange={e=>setForm(f=>({...f,place:e.target.value.toUpperCase()}))}
               placeholder="📍 LUOGO (OPZIONALE)..."
