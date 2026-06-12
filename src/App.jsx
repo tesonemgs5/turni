@@ -1455,7 +1455,7 @@ export default function App({ session }){
             Nessun evento — premi + Aggiungi
           </div>
         )}
-        {curEvts.map(e=>(
+        {curEvts.filter(e=>!form||form.editId!==e.id).map(e=>(
           <div key={e.id} onClick={()=>{
               if(form?.editId===e.id){ setForm(null); return; }
               setForm({
@@ -1464,7 +1464,7 @@ export default function App({ session }){
                 shiftId: null,
                 label: e.label,
                 colorOvr: e.color,
-                dur: e.allDay?"allday":(e.tIn&&e.tOut?(calcFine6h15(e.tIn)===e.tOut?"fixed":"custom"):"custom"),
+                dur: e.allDay?"allday":"fixed",
                 tIn: e.tIn||"",
                 tOut: e.tOut||"",
                 place: e.place||"",
@@ -1497,7 +1497,7 @@ export default function App({ session }){
             <button onClick={e2=>{e2.stopPropagation();setForm({
                 editId: e.id, modelloId: e.modelloId||null, shiftId: null,
                 label: e.label, colorOvr: e.color,
-                dur: e.allDay?"allday":(e.tIn&&e.tOut?(calcFine6h15(e.tIn)===e.tOut?"fixed":"custom"):"custom"),
+                dur: e.allDay?"allday":"fixed",
                 tIn: e.tIn||"", tOut: e.tOut||"", place: e.place||"",
                 map: e.map||"", note: e.note||"", collega: e.collega||"", auto: e.auto||"",
               });}}
