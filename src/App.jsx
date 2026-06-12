@@ -349,7 +349,7 @@ export default function App({ session }){
       const [h1,m1]=std.split(":").map(Number);
       const [h2,m2]=form.tOut.split(":").map(Number);
       const diff=(h2*60+m2)-(h1*60+m1);
-      if(diff>0) extraNote=(extraNote?extraNote+" | ":"")+`Straordinario: +${Math.floor(diff/60)}h${diff%60>0?diff%60+"m":""}`;
+      if(diff>0) extraNote=(extraNote?extraNote+" | ":"")+`Protrazione: +${Math.floor(diff/60)}h${diff%60>0?diff%60+"m":""}`;
       if(diff<0) extraNote=(extraNote?extraNote+" | ":"")+`Monte ore: ${Math.floor(Math.abs(diff)/60)}h${Math.abs(diff)%60>0?Math.abs(diff)%60+"m":""}`;
     }
 
@@ -467,7 +467,7 @@ export default function App({ session }){
     }
 
     const tipo = form.straordinarioTipo||"pagamento";
-    const label = tipo==="pagamento"?"PROTRAZIONE A PAGAMENTO":"PROTRAZIONE A RECUPERO";
+    
     const color = tipo==="pagamento"?"#8b5cf6":"#64748b";
 
     const payload = {
@@ -1485,8 +1485,7 @@ export default function App({ session }){
                   🕐 {e.tIn}{e.tOut?` → ${e.tOut}`:""}
                 </div>
               )}
-              {e.note&&<div style={{color:"rgba(255,255,255,0.8)",fontSize:11,marginTop:3}}>{e.note}</div>}
-              {e.auto&&<div style={{color:"rgba(255,255,255,0.8)",fontSize:11,marginTop:3}}>🚗 {e.auto}</div>}
+              
               {e.collega&&<div style={{color:"rgba(255,255,255,0.8)",fontSize:11,marginTop:3}}>👮 {e.collega}</div>}
               {e.place&&(e.map
                 ?<a href={e.map} target="_blank" rel="noreferrer"
@@ -1510,7 +1509,7 @@ export default function App({ session }){
         ))}
         {form&&(
           <div style={{background:T.s2,borderRadius:12,padding:14,marginTop:8}}>
-            <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:12}}>{form.editId?"MODIFICA EVENTO":"NUOVO EVENTO"}</div>
+            <div style={{fontSize:form.editId?20:10,color:form.editId?T.text:T.sub,fontWeight:900,marginBottom:12,letterSpacing:1}}>{form.editId?(form.label||"EVENTO").toUpperCase():"NUOVO EVENTO"}</div>
 
             {/* MODELLI */}
             {modelli.length>0&&!form.editId&&(
@@ -1573,10 +1572,10 @@ export default function App({ session }){
                   marginBottom:10,boxSizing:"border-box",outline:"none"}}/>
             )}
 
-            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+            <div style={{fontSize:form.editId?20:10,color:form.editId?T.text:T.sub,fontWeight:900,marginBottom:12,letterSpacing:1}}>{form.editId?(form.label||"EVENTO").toUpperCase():"<div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
               <span style={{fontSize:10,color:T.sub,fontWeight:700}}>COLORE</span>
               <div style={{position:"relative"}}>
-                <div style={{width:24,height:24,borderRadius:"50%",cursor:"pointer",
+                <div style={{width:32,height:32,borderRadius:"50%",cursor:"pointer",EVENTO"}</div>
                   background:form.colorOvr||(form.modelloId
                     ?(modelli.find(m=>m.id===form.modelloId)?.coloreCustom||getColorByTime(modelli.find(m=>m.id===form.modelloId)?.inizio))
                     :form.shiftId?activeCal?.shifts?.find(s=>s.id===form.shiftId)?.color
@@ -1587,7 +1586,7 @@ export default function App({ session }){
               </div>
               {form.colorOvr&&(
                 <button onClick={()=>setForm(f=>({...f,colorOvr:null}))}
-                  style={{background:"none",border:"none",color:T.sub,fontSize:10,cursor:"pointer"}}>↩ auto</button>
+                  style={{background:"none",border:"none",color:T.sub,fontSize:13,fontWeight:700,cursor:"pointer"}}>↩ auto</button>
               )}
             </div>
 
@@ -1642,18 +1641,46 @@ export default function App({ session }){
                           <div style={{fontSize:10,color:isExtra?"#22c55e":"#f97316",
                             marginTop:3,fontWeight:700}}>
                             {isExtra?"+":"-"}{Math.floor(absDiff/60)}h{absDiff%60>0?absDiff%60+"m":""}
-                            {" "}{isExtra?"straordinario":"monte ore"}
+                            {" "}{isExtra?"protrazione":"monte ore"}
                           </div>
                           {isExtra&&(
-                            <div style={{display:"flex",gap:6,marginTop:6}}>
-                              {[["pagamento","Pagamento"],["recupero","Recupero"]].map(([v,l])=>(
-                                <button key={v} type="button" onClick={()=>setForm(f=>({...f,straordinarioTipo:v}))}
-                                  style={{flex:1,padding:"6px 4px",borderRadius:8,cursor:"pointer",fontSize:10,fontWeight:700,
-                                    background:form.straordinarioTipo===v?(v==="pagamento"?"#8b5cf6":"#64748b"):T.surface,
-                                    color:form.straordinarioTipo===v?"#fff":T.sub,
-                                    border:`1.5px solid ${form.straordinarioTipo===v?(v==="pagamento"?"#8b5cf6":"#64748b"):T.border}`}}>{l}</button>
-                              ))}
-                            </div>
+                            <>
+                              <div style={{display:"flex",gap:6,marginTop:6}}>
+                                {[["pagamento","Pagamento"],["recupero","Recupero"]].map(([v,l])=>(
+                                  <button key={v} type="button" onClick={()=>setForm(f=>({...f,straordinarioTipo:v}))}
+                                    style={{flex:1,padding:"6px 4px",borderRadius:8,cursor:"pointer",fontSize:10,fontWeight:700,
+                                      background:form.straordinarioTipo===v?(v==="pagamento"?"#8b5cf6":"#64748b"):T.surface,
+                                      color:form.straordinarioTipo===v?"#fff":T.sub,
+                                      border:`1.5px solid ${form.straordinarioTipo===v?(v==="pagamento"?"#8b5cf6":"#64748b"):T.border}`}}>{l}</button>
+                                ))}
+                              </div>
+                              {form.straordinarioTipo&&(
+                                <div style={{display:"flex",alignItems:"center",gap:8,marginTop:6,background:T.s2,borderRadius:8,padding:"6px 10px"}}>
+                                  <div style={{fontSize:11,color:T.sub,whiteSpace:"nowrap"}}>Turno: <b style={{color:T.text}}>{form.tIn} → {calcFine6h15(form.tIn)}</b></div>
+                                </div>
+                              )}
+                              {form.straordinarioTipo&&(()=>{
+                                const oraFineP=form.protrazioneOraFine||"";
+                                let durProt="";
+                                if(oraFineP && calcFine6h15(form.tIn)){
+                                  const [h1,m1]=calcFine6h15(form.tIn).split(":").map(Number);
+                                  const [h2,m2]=oraFineP.split(":").map(Number);
+                                  let d2=(h2*60+m2)-(h1*60+m1);
+                                  if(d2<0) d2+=24*60;
+                                  if(d2>0) durProt=`${Math.floor(d2/60)}h${d2%60>0?" "+d2%60+"m":""}`;
+                                }
+                                return (
+                                  <div style={{display:"flex",alignItems:"center",gap:8,marginTop:6}}>
+                                    {durProt&&<span style={{fontSize:12,fontWeight:800,color:"#22c55e",whiteSpace:"nowrap"}}>{durProt}</span>}
+                                    <input type="time" value={oraFineP}
+                                      onChange={e=>setForm(f=>({...f,protrazioneOraFine:e.target.value,tOut:e.target.value}))}
+                                      placeholder="Ora fine protrazione"
+                                      style={{flex:1,background:T.surface,border:`1px solid ${T.border}`,
+                                        borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
+                                  </div>
+                                );
+                              })()}
+                            </>
                           )}
                         </>
                       );
@@ -1664,7 +1691,11 @@ export default function App({ session }){
             )}
 
             {/* Numero auto */}
-            <input value={form.auto||""} onChange={e=>setForm(f=>({...f,auto:e.target.value.toUpperCase()}))}
+            <input value={form.auto||""} onChange={e=>{
+                const raw=e.target.value.toUpperCase();
+                const val=raw.startsWith("CH ")?raw:("CH "+raw.replace(/^CH\s*/i,""));
+                setForm(f=>({...f,auto:val}));
+              }}
               placeholder="🚗 Numero auto/pattuglia (opzionale)..."
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
