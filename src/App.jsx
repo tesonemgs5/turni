@@ -1626,6 +1626,15 @@ export default function App({ session }){
                     onChange={e=>setForm(f=>({...f,tIn:e.target.value,tOut:""}))}
                     style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                       borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
+                  <button type="button"
+                    onClick={()=>setForm(f=>({...f,straordinarioTipo:f.straordinarioTipo==="recupero"?null:"recupero"}))}
+                    style={{width:"100%",marginTop:5,padding:"6px 4px",borderRadius:8,cursor:"pointer",
+                      fontSize:10,fontWeight:800,
+                      background:form.straordinarioTipo==="recupero"?"#64748b":T.surface,
+                      color:form.straordinarioTipo==="recupero"?"#fff":T.sub,
+                      border:`1.5px solid ${form.straordinarioTipo==="recupero"?"#64748b":T.border}`}}>
+                    🔘 PROTRAZIONE A RECUPERO
+                  </button>
                 </div>
                 {form.dur==="custom"&&(
                   <div style={{flex:1}}>
@@ -1643,6 +1652,15 @@ export default function App({ session }){
                       onChange={e=>setForm(f=>({...f,tOut:e.target.value}))}
                       style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                         borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
+                    <button type="button"
+                      onClick={()=>setForm(f=>({...f,straordinarioTipo:f.straordinarioTipo==="pagamento"?null:"pagamento"}))}
+                      style={{width:"100%",marginTop:5,padding:"6px 4px",borderRadius:8,cursor:"pointer",
+                        fontSize:10,fontWeight:800,
+                        background:form.straordinarioTipo==="pagamento"?"#8b5cf6":T.surface,
+                        color:form.straordinarioTipo==="pagamento"?"#fff":T.sub,
+                        border:`1.5px solid ${form.straordinarioTipo==="pagamento"?"#8b5cf6":T.border}`}}>
+                      💜 PROTRAZIONE A PAGAMENTO
+                    </button>
                     {(()=>{
                       const tOut=form.tOut||calcFine6h15(form.tIn);
                       const std=calcFine6h15(form.tIn);
