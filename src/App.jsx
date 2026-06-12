@@ -1661,6 +1661,37 @@ export default function App({ session }){
                         border:`1.5px solid ${form.straordinarioTipo==="pagamento"?"#8b5cf6":T.border}`}}>
                       💜 PROTRAZIONE A PAGAMENTO
                     </button>
+                    {form.straordinarioTipo&&(()=>{
+                      const std=calcFine6h15(form.tIn);
+                      const oraFine=form.protrazioneOraFine||form.tOut||std||"";
+                      let durMins=0;
+                      if(oraFine&&std){
+                        const [h1,m1]=std.split(":").map(Number);
+                        const [h2,m2]=oraFine.split(":").map(Number);
+                        durMins=(h2*60+m2)-(h1*60+m1);
+                        if(durMins<0) durMins+=24*60;
+                      }
+                      const durH=Math.floor(durMins/60);
+                      const durM=durMins%60;
+                      const colore=form.straordinarioTipo==="pagamento"?"#8b5cf6":"#64748b";
+                      return (
+                        <div style={{display:"flex",gap:6,marginTop:8,alignItems:"center"}}>
+                          <div style={{flex:1,background:T.s2,borderRadius:8,padding:"6px 8px",textAlign:"center",border:`1.5px solid ${colore}33`}}>
+                            <div style={{fontSize:9,color:T.sub,fontWeight:700,marginBottom:2}}>ECCESSO</div>
+                            <div style={{fontSize:14,fontWeight:900,color:colore}}>
+                              {durMins>0?`${durH>0?durH+"h ":""}${durM>0?durM+"m":""}`.trim()||"0m":"0m"}
+                            </div>
+                          </div>
+                          <div style={{flex:1}}>
+                            <div style={{fontSize:9,color:T.sub,fontWeight:700,marginBottom:2}}>ORA FINE</div>
+                            <input type="time" value={oraFine}
+                              onChange={e=>setForm(f=>({...f,protrazioneOraFine:e.target.value,tOut:e.target.value}))}
+                              style={{width:"100%",background:T.surface,border:`1.5px solid ${colore}`,
+                                borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
+                          </div>
+                        </div>
+                      );
+                    })()}
                     {(()=>{
                       const tOut=form.tOut||calcFine6h15(form.tIn);
                       const std=calcFine6h15(form.tIn);
