@@ -1664,18 +1664,14 @@ export default function App({ session }){
                               <>
                                 <div style={{display:"flex",gap:6,marginTop:6}}>
                                   {[["pagamento","Protrazione a pagamento"],["recupero","Protrazione a recupero"]].map(([v,l])=>(
-                                    <button key={v} type="button" onClick={()=>setForm(f=>({...f,straordinarioTipo:v}))}
+                                    <button key={v} type="button" onClick={()=>setForm(f=>({...f,straordinarioTipo:f.straordinarioTipo===v?null:v}))}
                                       style={{flex:1,padding:"6px 4px",borderRadius:8,cursor:"pointer",fontSize:10,fontWeight:700,
                                         background:form.straordinarioTipo===v?(v==="pagamento"?"#8b5cf6":"#64748b"):T.surface,
                                         color:form.straordinarioTipo===v?"#fff":T.sub,
                                         border:`1.5px solid ${form.straordinarioTipo===v?(v==="pagamento"?"#8b5cf6":"#64748b"):T.border}`}}>{l}</button>
                                   ))}
                                 </div>
-                                {form.straordinarioTipo&&(
-                                  <div style={{display:"flex",alignItems:"center",gap:8,marginTop:6,background:T.s2,borderRadius:8,padding:"6px 10px"}}>
-                                    <div style={{fontSize:11,color:T.sub,whiteSpace:"nowrap"}}>Turno originale: <b style={{color:T.text}}>{form.tIn} → {calcFine6h15(form.tIn)}</b></div>
-                                  </div>
-                                )}
+                                
                                 {form.straordinarioTipo&&(()=>{
                                   const oraFineP=form.protrazioneOraFine||"";
                                   let durProt="";
@@ -1688,10 +1684,13 @@ export default function App({ session }){
                                   }
                                   return (
                                     <div style={{display:"flex",alignItems:"center",gap:8,marginTop:6}}>
-                                      {durProt&&<span style={{fontSize:14,fontWeight:900,color:"#22c55e",whiteSpace:"nowrap"}}>+{durProt}</span>}
+                                      <div style={{background:T.s2,borderRadius:8,padding:"7px 10px",minWidth:52,textAlign:"center",flexShrink:0}}>
+                                        <div style={{fontSize:9,color:T.sub,fontWeight:700,marginBottom:1}}>DURATA</div>
+                                        <div style={{fontSize:13,fontWeight:900,color:"#22c55e"}}>{durProt||"—"}</div>
+                                      </div>
                                       <input type="time" value={oraFineP}
                                         onChange={e=>setForm(f=>({...f,protrazioneOraFine:e.target.value,tOut:e.target.value}))}
-                                        placeholder="Ora fine protrazione"
+                                        placeholder="Ora fine"
                                         style={{flex:1,background:T.surface,border:`1px solid ${T.border}`,
                                           borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
                                     </div>
@@ -1721,7 +1720,7 @@ export default function App({ session }){
 
             {/* Collega di pattuglia */}
             <textarea value={form.collega||""} onChange={e=>setForm(f=>({...f,collega:e.target.value.toUpperCase()}))}
-              placeholder={"👮 COLLEGA 1\nCOLLEGA 2\nCOLLEGA 3..."}
+              placeholder={"👮 Collega (uno per riga)"}
               rows={3}
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
