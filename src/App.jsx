@@ -1645,7 +1645,7 @@ export default function App({ session }){
                       style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                         borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
                     <div style={{display:"flex",gap:6,marginTop:5}}>
-                      {[["pagamento","PAG."],["recupero","REC."]].map(([v,l])=>(
+                      {[["pagamento","PROTRAZIONE A PAGAMENTO"],["recupero","PROTRAZIONE A RECUPERO"]].map(([v,l])=>(
                         <button key={v} type="button" onClick={()=>setForm(f=>({...f,straordinarioTipo:f.straordinarioTipo===v?null:v}))}
                           style={{flex:1,padding:"6px 4px",borderRadius:8,cursor:"pointer",fontSize:10,fontWeight:800,
                             background:form.straordinarioTipo===v?(v==="pagamento"?"#8b5cf6":"#64748b"):T.surface,
