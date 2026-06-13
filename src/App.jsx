@@ -1660,11 +1660,9 @@ export default function App({ session }){
                         </div>
                       );
                     })()}
-                  </div>
                 </div>
               </div>
             )}
-                <div style={{display:"flex",gap:8,marginBottom:6}}>
                   <div style={{flex:1}}>
                     <div style={{fontSize:9,color:T.sub,marginBottom:3}}>USCITA (modif.)</div>
                     <input type="time" value={form.tOut||calcFine6h15(form.tIn)}
