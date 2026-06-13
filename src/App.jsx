@@ -30,7 +30,6 @@ function italianHols(y){
     {m:e.m,d:e.d},{m:e.m,d:e.d+1}];
 }
 
-// ── COLORI AUTOMATICI PER FASCIA ORARIA ─────────────────────
 function getColorByTime(tIn){
   if(!tIn) return "#64748b";
   const [h,m]=tIn.split(":").map(Number);
@@ -64,8 +63,6 @@ function calcDurata(tIn,tOut){
   const hh=Math.floor(mins/60),mm=mins%60;
   return `${hh}h${mm>0?` ${mm}m`:""}`;
 }
-
-// Fasce orarie per indennità
 function getShiftBand(tIn){
   if(!tIn) return "diurno";
   const [h]=tIn.split(":").map(Number);
@@ -74,19 +71,19 @@ function getShiftBand(tIn){
 }
 function isFestivo(dateKey){
   const d=new Date(dateKey);
-  const dow=d.getDay(); // 0=dom, 6=sab
-  return dow===0;
+  return d.getDay()===0;
 }
 
-const DEFAULT_REPORT_TYPES = [
-  { id:"conteggio_turni", label:"Conteggio turni", active:true },
-  { id:"indennita", label:"Indennità di servizio", active:true },
-  { id:"ore_turno", label:"Ore per turno", active:false },
-  { id:"straordinari", label:"Straordinari", active:false },
-  { id:"guadagni", label:"Guadagni", active:false },
+// ── TIPI DI REPORT DISPONIBILI ───────────────────────────────
+const REPORT_TEMPLATES = [
+  { type:"conteggio_turni", label:"Conteggio turni", desc:"Conta i turni per fascia oraria" },
+  { type:"indennita",       label:"Indennità di servizio", desc:"Calcola le indennità per fascia" },
+  { type:"ore_turno",       label:"Ore per turno", desc:"Stima ore lavorate" },
+  { type:"straordinari",    label:"Straordinari", desc:"Protrazioni e straordinari" },
+  { type:"guadagni",        label:"Guadagni", desc:"Stima guadagni da indennità" },
 ];
 
-const INIT = { calendars:[], events:{}, theme:"auto", extraHols:[], reports: DEFAULT_REPORT_TYPES, reportSettings:{} };
+const INIT = { calendars:[], events:{}, theme:"auto", extraHols:[], reports:[], reportSettings:{} };
 
 export default function App({ session }){
   const today = new Date();
@@ -95,7 +92,6 @@ export default function App({ session }){
   const [year,  setYear]  = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
   const [calId, setCalId] = useState(null);
-  // screen: "cal" | "report" | "modelli" | "settings"
   const [screen, setScreen] = useState("cal");
   const [dayKey, setDayKey] = useState(null);
   const [form,   setForm]   = useState(null);
@@ -119,7 +115,6 @@ export default function App({ session }){
   const [dbCalsCount, setDbCalsCount] = useState(0);
   const [dbEvtsCount, setDbEvtsCount] = useState(0);
 
-  // Modelli states
   const [modelliTab, setModelliTab] = useState("turni");
   const [modelli, setModelli] = useState([]);
   const [modelliSort, setModelliSort] = useState("orario");
@@ -128,31 +123,20 @@ export default function App({ session }){
   const [editModello, setEditModello] = useState(null);
   const [modelForm, setModelForm] = useState({ titolo:"", tempo:"personalizzato", inizio:"", fine:"", coloreCustom:null, posizione:"" });
 
-  // Rotazioni states
   const [rotazioni, setRotazioni] = useState([]);
   const [showRotForm, setShowRotForm] = useState(false);
   const [editRotazione, setEditRotazione] = useState(null);
   const [rotForm, setRotForm] = useState({ tipo:"personalizzata", titolo:"", dataInizio:"", nSettimane:52, modellaLavoroId:null, modelloNLId:null, modelloRSId:null });
-  const [showRotDetail, setShowRotDetail] = useState(null); // id rotazione griglia aperta
+  const [showRotDetail, setShowRotDetail] = useState(null);
   const [showModelloPicker, setShowModelloPicker] = useState(false);
 
-  // Report states
-  const [reportInterval, setReportInterval] = useState("mese"); // "mese"|"anno"|"custom"
+  const [reportInterval, setReportInterval] = useState("mese");
   const [reportDateFrom, setReportDateFrom] = useState("");
   const [reportDateTo, setReportDateTo] = useState("");
-  const [openReportConfig, setOpenReportConfig] = useState(null); // id del report aperto
+  const [openReportConfig, setOpenReportConfig] = useState(null);
   const [showIntervalPicker, setShowIntervalPicker] = useState(false);
-  // Impostazioni indennità (€ per fascia)
-  const [indennita, setIndennita] = useState({
-    diurno: "", notturno: "", festivo: "", notturno_festivo: ""
-  });
-  // Config conteggio turni
-  const [conteggioConfig, setConteggioConfig] = useState({
-    titolo: "Conteggio turni",
-    turniSelezionati: "tutti", // "tutti" | array di ids
-    mezziTurni: 0,
-    giorni: { festivi:true, lun:true, mar:true, mer:true, gio:true, ven:true, sab:true, dom:true }
-  });
+  const [indennita, setIndennita] = useState({ diurno:"", notturno:"", festivo:"", notturno_festivo:"" });
+  const [conteggioConfigs, setConteggioConfigs] = useState({});
 
   const userId = session?.user?.id;
 
@@ -167,7 +151,6 @@ export default function App({ session }){
         const calendars = (cals||[]).map(c=>({
           id: c.id, name: c.name, color: c.color, isMain: c.is_main, shifts: c.shifts||[],
         }));
-
         const events = {};
         (evts||[]).forEach(e=>{
           if(!events[e.date_key]) events[e.date_key]={};
@@ -185,12 +168,11 @@ export default function App({ session }){
         const extraHols = settings?.extra_hols||[];
         const sUrl = settings?.sheets_url || "";
         const sSec = settings?.sheets_secret || "";
-        const savedReports = settings?.reports || DEFAULT_REPORT_TYPES;
+        const savedReports = settings?.reports || [];
         const savedReportSettings = settings?.report_settings || {};
         const savedIndennita = settings?.indennita || { diurno:"", notturno:"", festivo:"", notturno_festivo:"" };
-        const savedConteggioConfig = settings?.conteggio_config || conteggioConfig;
+        const savedConteggioConfigs = settings?.conteggio_configs || {};
 
-        // Carica modelli
         const { data: modelliDb } = await supabase.from("modelli").select("*").eq("user_id", userId).order("sort_order");
         setModelli((modelliDb||[]).map(m=>({
           id:m.id, titolo:m.titolo, tempo:m.tempo,
@@ -199,7 +181,6 @@ export default function App({ session }){
           posizione:m.posizione||"", sortOrder:m.sort_order||0,
         })));
 
-        // Carica rotazioni
         const { data: rotazioniDb } = await supabase.from("rotazioni").select("*").eq("user_id", userId).order("created_at");
         setRotazioni((rotazioniDb||[]).map(r=>({
           id:r.id, tipo:r.tipo, titolo:r.titolo,
@@ -213,7 +194,7 @@ export default function App({ session }){
         setSheetsUrl(sUrl);
         setSheetsSecret(sSec);
         setIndennita(savedIndennita);
-        setConteggioConfig(savedConteggioConfig);
+        setConteggioConfigs(savedConteggioConfigs);
 
         try {
           const { data: curStats } = await supabase.from("usage_stats").select("login_count").eq("user_id", userId).maybeSingle();
@@ -224,23 +205,19 @@ export default function App({ session }){
         setStore({ calendars, events, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings });
         setCalId(calendars[0]?.id||null);
 
-        if (sUrl) {
-          setTimeout(() => { saveToSheets(events, calendars, sUrl, sSec); }, 500);
-        }
+        if (sUrl) setTimeout(() => { saveToSheets(events, calendars, sUrl, sSec); }, 500);
       } catch(e){ console.log("Errore startup:", e); }
       setLoading(false);
     })();
   },[userId]);
 
   useEffect(()=>{
-  function handleVisibilityChange(){
-    if(document.visibilityState==="visible"){
-      window.location.reload();
+    function handleVisibilityChange(){
+      if(document.visibilityState==="visible") window.location.reload();
     }
-  }
-  document.addEventListener("visibilitychange", handleVisibilityChange);
-  return ()=>document.removeEventListener("visibilitychange", handleVisibilityChange);
-},[]);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return ()=>document.removeEventListener("visibilitychange", handleVisibilityChange);
+  },[]);
 
   const sysDark = window.matchMedia?.("(prefers-color-scheme:dark)").matches??false;
   const dark = store.theme==="auto"?sysDark:store.theme==="dark";
@@ -298,25 +275,23 @@ export default function App({ session }){
     if(error){ console.log(error); return null; }
     return data;
   }
-  async function updateCalendar(calId, fields){
+  async function updateCalendar(cId, fields){
     if(!userId) return;
-    await supabase.from("calendars").update(fields).eq("id", calId).eq("user_id", userId);
+    await supabase.from("calendars").update(fields).eq("id", cId).eq("user_id", userId);
   }
-  async function deleteCalendar(calId){
+  async function deleteCalendar(cId){
     if(!userId) return;
-    await supabase.from("calendars").delete().eq("id", calId).eq("user_id", userId);
+    await supabase.from("calendars").delete().eq("id", cId).eq("user_id", userId);
   }
 
   async function saveEvt(){
     if(!form||!dayKey||!calId||!userId) return;
     const cal = store.calendars.find(c=>c.id===calId);
     if(!cal) return;
-
     let color = form.colorOvr || cal.color;
     let label = (form.label||"Evento").toUpperCase();
     let tInFinal = form.dur==="allday"?"":form.tIn||"";
     let tOutFinal = form.dur==="allday"?"":form.tOut||"";
-
     if(form.modelloId){
       const mod = modelli.find(m=>m.id===form.modelloId);
       if(mod){
@@ -335,14 +310,11 @@ export default function App({ session }){
       const sh = cal.shifts?.find(s=>s.id===form.shiftId);
       if(sh){ color=form.colorOvr||sh.color; label=sh.label.toUpperCase(); }
     }
-
     if(form.dur==="fixed" && tInFinal && !form.modelloId){
       tOutFinal = form.tOut||calcFine6h15(tInFinal);
     }
-
-    // Calcola protrazione se orario modificato rispetto al modello
     let extraNote = form.note||"";
-    if(form.modelloId && tInFinal && tOutFinal && form.modelloId){
+    if(form.modelloId && tInFinal && tOutFinal){
       const mod=modelli.find(m=>m.id===form.modelloId);
       if(mod&&mod.fine&&mod.inizio){
         const durPrevista=calcMinuti(mod.inizio,mod.fine);
@@ -352,8 +324,6 @@ export default function App({ session }){
         if(diff<0) extraNote=(extraNote?extraNote+" | ":"")+`Anticipo: ${Math.floor(Math.abs(diff)/60)}h${Math.abs(diff)%60>0?Math.abs(diff)%60+"m":""}`;
       }
     }
-
-    // Calcola straordinario/monte ore per turni fixed
     if(form.dur==="fixed" && tInFinal && form.tOut){
       const std=calcFine6h15(tInFinal);
       const [h1,m1]=std.split(":").map(Number);
@@ -362,7 +332,6 @@ export default function App({ session }){
       if(diff>0) extraNote=(extraNote?extraNote+" | ":"")+`Protrazione: +${Math.floor(diff/60)}h${diff%60>0?diff%60+"m":""}`;
       if(diff<0) extraNote=(extraNote?extraNote+" | ":"")+`Monte ore: ${Math.floor(Math.abs(diff)/60)}h${Math.abs(diff)%60>0?Math.abs(diff)%60+"m":""}`;
     }
-
     const { data, error } = await supabase.from("events").insert({
       user_id: userId, calendar_id: calId, date_key: dayKey,
       label, color, all_day: form.dur==="allday"&&!form.modelloId,
@@ -390,9 +359,6 @@ export default function App({ session }){
       saveToSheets(ns.events, ns.calendars);
       return ns;
     });
-    if(form.dur==="fixed" && tInFinal && tOutFinal){
-      await syncProtrazione(dayKey, calId, form, tInFinal, tOutFinal, data.id);
-    }
     setForm(null); setDayKey(null);
   }
 
@@ -400,24 +366,17 @@ export default function App({ session }){
     if(!form||!dayKey||!calId||!userId||!form.editId) return;
     const cal = store.calendars.find(c=>c.id===calId);
     if(!cal) return;
-
     let color = form.colorOvr || cal.color;
     let label = (form.label||"Evento").toUpperCase();
     let tInFinal = form.dur==="allday"?"":form.tIn||"";
     let tOutFinal = form.dur==="allday"?"":form.tOut||"";
-
     if(form.modelloId){
       const mod = modelli.find(m=>m.id===form.modelloId);
-      if(mod){
-        color = form.colorOvr||(mod.coloreCustom||getColorByTime(mod.inizio));
-      }
+      if(mod){ color = form.colorOvr||(mod.coloreCustom||getColorByTime(mod.inizio)); }
     }
-
     const { error } = await supabase.from("events").update({
-      label, color,
-      all_day: form.dur==="allday",
-      time_in: tInFinal,
-      time_out: tOutFinal,
+      label, color, all_day: form.dur==="allday",
+      time_in: tInFinal, time_out: tOutFinal,
       place: (form.place||"").toUpperCase(),
       map_url: form.map||"",
       note: (form.note||"").toUpperCase(),
@@ -425,23 +384,17 @@ export default function App({ session }){
       collega: (form.collega||"").toUpperCase(),
       auto: (form.auto||"").toUpperCase(),
     }).eq("id", form.editId).eq("user_id", userId);
-
     if(error){ console.log(error); return; }
-
     setStore(prev=>{
       const ns = JSON.parse(JSON.stringify(prev));
       const list = ns.events?.[dayKey]?.[calId];
       if(list){
         const idx = list.findIndex(e=>e.id===form.editId);
         if(idx>-1) list[idx]={...list[idx], label, color,
-          allDay: form.dur==="allday",
-          tIn: tInFinal, tOut: tOutFinal,
-          place: (form.place||"").toUpperCase(),
-          map: form.map||"",
-          note: (form.note||"").toUpperCase(),
-          modelloId: form.modelloId||null,
-          collega: (form.collega||"").toUpperCase(),
-          auto: (form.auto||"").toUpperCase(),
+          allDay: form.dur==="allday", tIn: tInFinal, tOut: tOutFinal,
+          place: (form.place||"").toUpperCase(), map: form.map||"",
+          note: (form.note||"").toUpperCase(), modelloId: form.modelloId||null,
+          collega: (form.collega||"").toUpperCase(), auto: (form.auto||"").toUpperCase(),
         };
       }
       saveToSheets(ns.events, ns.calendars);
@@ -450,80 +403,15 @@ export default function App({ session }){
     setForm(null); setDayKey(null);
   }
 
-  async function delEvt(dayKey, calId, evtId){
+  async function delEvt(dKey, cId, evtId){
     await supabase.from("events").delete().eq("id", evtId).eq("user_id", userId);
     setStore(prev=>{
       const ns=JSON.parse(JSON.stringify(prev));
-      if(ns.events?.[dayKey]?.[calId])
-        ns.events[dayKey][calId]=ns.events[dayKey][calId].filter(e=>e.id!==evtId);
+      if(ns.events?.[dKey]?.[cId])
+        ns.events[dKey][cId]=ns.events[dKey][cId].filter(e=>e.id!==evtId);
       saveToSheets(ns.events, ns.calendars);
       return ns;
     });
-  }
-
-  async function syncProtrazione(dayKey, calId, form, tInFinal, tOutFinal, parentId){
-    const cal = store.calendars.find(c=>c.id===calId);
-    const std = calcFine6h15(tInFinal);
-    let diff = 0;
-    if(std && tOutFinal){
-      const [h1,m1]=std.split(":").map(Number);
-      const [h2,m2]=tOutFinal.split(":").map(Number);
-      diff=(h2*60+m2)-(h1*60+m1);
-    }
-
-    const existingList = store.events[dayKey]?.[calId]||[];
-    const existingProt = existingList.find(e=>e.parentId===parentId && e.label?.startsWith("PROTRAZIONE"));
-
-    if(diff<=0){
-      if(existingProt){
-        await supabase.from("events").delete().eq("id", existingProt.id).eq("user_id", userId);
-        setStore(prev=>{
-          const ns=JSON.parse(JSON.stringify(prev));
-          if(ns.events?.[dayKey]?.[calId])
-            ns.events[dayKey][calId]=ns.events[dayKey][calId].filter(e=>e.id!==existingProt.id);
-          return ns;
-        });
-      }
-      return;
-    }
-
-    return;
-
-    const payload = {
-      label:"", color:"", all_day:false,
-      time_in: std, time_out: tOutFinal,
-      place:"", map_url:"", note:"",
-      modello_id:null, collega:"", auto:"",
-      parent_id: parentId,
-    };
-
-    if(existingProt){
-      await supabase.from("events").update(payload).eq("id", existingProt.id).eq("user_id", userId);
-      setStore(prev=>{
-        const ns=JSON.parse(JSON.stringify(prev));
-        const list=ns.events[dayKey]?.[calId];
-        if(list){
-          const idx=list.findIndex(e=>e.id===existingProt.id);
-          if(idx>-1) list[idx]={...list[idx], label, color, tIn:std, tOut:tOutFinal};
-        }
-        return ns;
-      });
-    } else {
-      const {data:res}=await supabase.from("events").insert({
-        user_id:userId, calendar_id:calId, date_key:dayKey, ...payload,
-      }).select().maybeSingle();
-      if(res){
-        const evt={id:res.id, color, label, allDay:false, tIn:std, tOut:tOutFinal,
-          place:"", map:"", note:"", modelloId:null, collega:"", auto:"", parentId:parentId};
-        setStore(prev=>{
-          const ns=JSON.parse(JSON.stringify(prev));
-          if(!ns.events[dayKey]) ns.events[dayKey]={};
-          if(!ns.events[dayKey][calId]) ns.events[dayKey][calId]=[];
-          ns.events[dayKey][calId].push(evt);
-          return ns;
-        });
-      }
-    }
   }
 
   function calcMinuti(tIn, tOut){
@@ -535,78 +423,72 @@ export default function App({ session }){
     return mins;
   }
 
-  async function saveToSheets(events, calendars, customUrl = sheetsUrl, customSecret = sheetsSecret) {
-    if (!customUrl) return "⚠️ Sheets non configurato";
+  async function saveToSheets(events, calendars, customUrl=sheetsUrl, customSecret=sheetsSecret){
+    if(!customUrl) return "⚠️ Sheets non configurato";
     try {
       await fetch(customUrl, {
-        method: "POST", mode: "no-cors",
-        headers: { "Content-Type": "text/plain" },
-        body: JSON.stringify({ secret: customSecret, action: "save", events, calendars, userId }),
+        method:"POST", mode:"no-cors",
+        headers:{"Content-Type":"text/plain"},
+        body: JSON.stringify({ secret: customSecret, action:"save", events, calendars, userId }),
       });
       return "✅ Esportato su Sheets";
-    } catch(e) { return "❌ Errore connessione Sheets"; }
+    } catch(e){ return "❌ Errore connessione Sheets"; }
   }
 
-  async function loadFromSheets(customUrl = sheetsUrl, customSecret = sheetsSecret) {
-    if (!customUrl) return null;
+  async function loadFromSheets(customUrl=sheetsUrl, customSecret=sheetsSecret){
+    if(!customUrl) return null;
     try {
       const res = await fetch(`${customUrl}?secret=${customSecret}&action=load&userId=${userId}`);
       return await res.json() || null;
-    } catch(e) { return null; }
+    } catch(e){ return null; }
   }
 
-  async function syncFromSheets(cals = store.calendars, evts = store.events, customUrl = sheetsUrl, customSecret = sheetsSecret, isBackground = false) {
-    if (!customUrl) return "⚠️ Sincronizzazione non configurata";
-    if (isBackground) setBgSyncing(true); else setSyncing(true);
+  async function syncFromSheets(cals=store.calendars, evts=store.events, customUrl=sheetsUrl, customSecret=sheetsSecret, isBackground=false){
+    if(!customUrl) return "⚠️ Sincronizzazione non configurata";
+    if(isBackground) setBgSyncing(true); else setSyncing(true);
     try {
       const data = await loadFromSheets(customUrl, customSecret);
-      if (!data || !data.data) return "❌ Nessun dato valido da Sheets";
-
-      // Cancella tutti gli eventi esistenti su Supabase
+      if(!data||!data.data) return "❌ Nessun dato valido da Sheets";
       await supabase.from("events").delete().eq("user_id", userId);
-
-      const existingNames = cals.map(c => c.name);
+      const existingNames = cals.map(c=>c.name);
       const newCals = [...cals];
-      for (const tabName of (data.tabs || Object.keys(data.data))) {
-        if (!existingNames.includes(tabName)) {
-          const dbCal = await addCalendar(tabName, PALETTE[newCals.length % PALETTE.length], newCals.length === 0);
-          if (dbCal) newCals.push({ id: dbCal.id, name: dbCal.name, color: dbCal.color, isMain: dbCal.is_main, shifts: [] });
+      for(const tabName of (data.tabs||Object.keys(data.data))){
+        if(!existingNames.includes(tabName)){
+          const dbCal = await addCalendar(tabName, PALETTE[newCals.length%PALETTE.length], newCals.length===0);
+          if(dbCal) newCals.push({id:dbCal.id,name:dbCal.name,color:dbCal.color,isMain:dbCal.is_main,shifts:[]});
         }
       }
-
-      const newEvents = {};
-      for (const cal of newCals) {
-        const calData = data.data[cal.name] || {};
-        for (const [dateKey, sheetEvts] of Object.entries(calData)) {
-          if (!newEvents[dateKey]) newEvents[dateKey] = {};
-          if (!newEvents[dateKey][cal.id]) newEvents[dateKey][cal.id] = [];
-          for (const e of sheetEvts) {
-            const { data: dbEvt } = await supabase.from("events").insert({
-              user_id: userId, calendar_id: cal.id, date_key: dateKey,
-              label: e.label || "Evento", color: e.color || cal.color,
-              all_day: e.allDay ?? true, time_in: e.tIn || "", time_out: e.tOut || "",
-              place: e.place || "", map_url: e.map || "", note: e.note || "",
-              modello_id: e.modelloId || null, collega: e.collega || "", auto: e.auto || "",
+      const newEvents={};
+      for(const cal of newCals){
+        const calData=data.data[cal.name]||{};
+        for(const [dateKey,sheetEvts] of Object.entries(calData)){
+          if(!newEvents[dateKey]) newEvents[dateKey]={};
+          if(!newEvents[dateKey][cal.id]) newEvents[dateKey][cal.id]=[];
+          for(const e of sheetEvts){
+            const {data:dbEvt}=await supabase.from("events").insert({
+              user_id:userId, calendar_id:cal.id, date_key:dateKey,
+              label:e.label||"Evento", color:e.color||cal.color,
+              all_day:e.allDay??true, time_in:e.tIn||"", time_out:e.tOut||"",
+              place:e.place||"", map_url:e.map||"", note:e.note||"",
+              modello_id:e.modelloId||null, collega:e.collega||"", auto:e.auto||"",
             }).select().maybeSingle();
-            if (dbEvt) {
-              newEvents[dateKey][cal.id].push({
-                id: dbEvt.id, color: dbEvt.color, label: dbEvt.label,
-                allDay: dbEvt.all_day, tIn: dbEvt.time_in || "", tOut: dbEvt.time_out || "",
-                place: dbEvt.place || "", map: dbEvt.map_url || "", note: dbEvt.note || "",
-                modelloId: dbEvt.modello_id || null, collega: dbEvt.collega || "", auto: dbEvt.auto || "",
-              });
-            }
+            if(dbEvt) newEvents[dateKey][cal.id].push({
+              id:dbEvt.id, color:dbEvt.color, label:dbEvt.label,
+              allDay:dbEvt.all_day, tIn:dbEvt.time_in||"", tOut:dbEvt.time_out||"",
+              place:dbEvt.place||"", map:dbEvt.map_url||"", note:dbEvt.note||"",
+              modelloId:dbEvt.modello_id||null, collega:dbEvt.collega||"", auto:dbEvt.auto||"",
+            });
           }
         }
       }
-      setStore(s => ({ ...s, calendars: newCals, events: newEvents }));
-      if (newCals.length > 0 && !calId) setCalId(newCals[0].id);
-      return "✅ Importazione completata (Supabase sincronizzato)";
-    } catch (e) {
+      setStore(s=>({...s, calendars:newCals, events:newEvents}));
+      if(newCals.length>0&&!calId) setCalId(newCals[0].id);
+      return "✅ Importazione completata";
+    } catch(e){
       console.error(e);
       return "❌ Errore sincronizzazione Sheets";
     } finally {
-      if (isBackground) setBgSyncing(false); else setSyncing(false);
+      if(isBackground) setBgSyncing(false); else setSyncing(false);
     }
   }
 
@@ -620,41 +502,40 @@ export default function App({ session }){
     const msg = await syncFromSheets(store.calendars, store.events, sheetsUrl, sheetsSecret, false);
     setSyncMsg(msg);
   }
-  async function handleSaveSheetsConfig() {
+  async function handleSaveSheetsConfig(){
     if(!userId) return;
     setSyncing(true); setSyncMsg("");
     try {
-      const { error } = await supabase.from("user_settings").upsert({
-        user_id: userId, sheets_url: sheetsUrl.trim(), sheets_secret: sheetsSecret.trim(),
-        updated_at: new Date().toISOString(),
+      const {error} = await supabase.from("user_settings").upsert({
+        user_id:userId, sheets_url:sheetsUrl.trim(), sheets_secret:sheetsSecret.trim(),
+        updated_at:new Date().toISOString(),
       });
       if(error) throw error;
       setSyncMsg("✅ Impostazioni Google Sheets salvate");
-    } catch(err) {
-      setSyncMsg("❌ Errore salvataggio: " + err.message);
-    } finally { setSyncing(false); }
+    } catch(err){ setSyncMsg("❌ Errore salvataggio: "+err.message); }
+    finally { setSyncing(false); }
   }
 
-  useEffect(() => {
-    if (screen === "settings" && session?.user?.email === 'tesonemgs5@gmail.com') {
-      (async () => {
+  useEffect(()=>{
+    if(screen==="settings" && session?.user?.email==='tesonemgs5@gmail.com'){
+      (async()=>{
         try {
-          const { data, error } = await supabase.rpc('get_app_stats');
-          if (!error && data && data.length > 0) setStats(data[0]);
-        } catch(e) { console.error(e); }
+          const {data,error}=await supabase.rpc('get_app_stats');
+          if(!error&&data&&data.length>0) setStats(data[0]);
+        } catch(e){ console.error(e); }
       })();
     }
-  }, [screen, session]);
+  },[screen, session]);
 
-  async function handleViewDbData() {
+  async function handleViewDbData(){
     setShowDbModal(true); setDbRawData(null);
     try {
-      const { data: cals } = await supabase.from("calendars").select("*").eq("user_id", userId).order("created_at");
-      const { data: evts } = await supabase.from("events").select("*").eq("user_id", userId).order("date_key", { ascending: false });
-      setDbCalsCount(cals?.length || 0);
-      setDbEvtsCount(evts?.length || 0);
-      setDbRawData({ calendars: cals || [], events: evts || [] });
-    } catch (e) { console.error(e); }
+      const {data:cals}=await supabase.from("calendars").select("*").eq("user_id",userId).order("created_at");
+      const {data:evts}=await supabase.from("events").select("*").eq("user_id",userId).order("date_key",{ascending:false});
+      setDbCalsCount(cals?.length||0);
+      setDbEvtsCount(evts?.length||0);
+      setDbRawData({calendars:cals||[],events:evts||[]});
+    } catch(e){ console.error(e); }
   }
 
   async function handleLogout(){ await supabase.auth.signOut(); }
@@ -674,9 +555,7 @@ export default function App({ session }){
     if(!userId) return;
     const coloreEff=data.coloreCustom||(data.tempo==="h24"?"#64748b":getColorByTime(data.inizio));
     const payload={
-      user_id:userId,
-      titolo:(data.titolo||"").toUpperCase(),
-      tempo:data.tempo,
+      user_id:userId, titolo:(data.titolo||"").toUpperCase(), tempo:data.tempo,
       inizio:data.inizio||null, fine:data.fine||null,
       colore:coloreEff, colore_custom:data.coloreCustom||null,
       posizione:(data.posizione||"").toUpperCase()||null,
@@ -696,12 +575,10 @@ export default function App({ session }){
     setModelli(prev=>prev.filter(m=>m.id!==id));
   }
 
-  // ── ROTAZIONI CRUD ───────────────────────────────────────────
   async function saveRotazione(data){
     if(!userId) return;
     const payload={
-      user_id:userId, tipo:data.tipo,
-      titolo:(data.titolo||"").toUpperCase(),
+      user_id:userId, tipo:data.tipo, titolo:(data.titolo||"").toUpperCase(),
       data_inizio:data.dataInizio||null, n_settimane:data.nSettimane||52,
       modello_lavoro_id:data.modellaLavoroId||null,
       modello_nl_id:data.modelloNLId||null,
@@ -727,7 +604,7 @@ export default function App({ session }){
     setRotazioni(prev=>prev.map(r=>r.id===rotId?{...r,griglia}:r));
   }
 
-  // ── REPORT HELPERS ──────────────────────────────────────────
+  // ── REPORT HELPERS ───────────────────────────────────────────
   function getReportRange(){
     const now = new Date();
     if(reportInterval==="mese"){
@@ -739,34 +616,46 @@ export default function App({ session }){
     if(reportInterval==="anno"){
       return {from:`${now.getFullYear()}-01-01`, to:`${now.getFullYear()}-12-31`, label: now.getFullYear().toString()};
     }
-    return {from: reportDateFrom, to: reportDateTo, label: reportDateFrom+" → "+reportDateTo};
+    return {from:reportDateFrom, to:reportDateTo, label:reportDateFrom+" → "+reportDateTo};
   }
 
-  function computeConteggio(){
+  // Calcola conteggio per un singolo report con le sue condizioni
+  function computeConteggioForReport(cfg){
     const {from, to} = getReportRange();
-    const result = { totale:0, mattina:0, pomeriggio:0, notte:0, terzo:0, h24:0, pianifInc:0, protrazioneRec:0, protrazionePag:0 };
+    const result = { totale:0, mattina:0, pomeriggio:0, notte:0, terzo:0, h24:0 };
     const perModello = {};
+    const fasceFiltro = cfg?.fasceFiltro || []; // [] = tutte
     for(const [dateKey, calMap] of Object.entries(store.events)){
       if(dateKey < from || dateKey > to) continue;
       for(const [, evts] of Object.entries(calMap)){
         for(const e of evts){
-          result.totale++;
-          if(e.modelloId){
-            perModello[e.modelloId]=(perModello[e.modelloId]||0)+1;
+          if(e.allDay){
+            if(fasceFiltro.length===0||fasceFiltro.includes("h24")){
+              result.totale++; result.h24++;
+              if(e.modelloId) perModello[e.modelloId]=(perModello[e.modelloId]||0)+1;
+            }
+            continue;
           }
-          if(e.allDay){ result.h24++; continue; }
           if(!e.tIn) continue;
           const [h,m]=e.tIn.split(":").map(Number);
           const mins=h*60+m;
-          if(mins>=360&&mins<705) result.mattina++;
-          else if(mins>=705&&mins<1035) result.pomeriggio++;
-          else if(mins>=1035&&mins<1080) result.terzo++;
-          else result.notte++;
-          if(e.note&&e.note.includes("Protrazione:")) result.protrazioneRec++;
+          let fascia="";
+          if(mins>=360&&mins<705) fascia="mattina";
+          else if(mins>=705&&mins<1035) fascia="pomeriggio";
+          else if(mins>=1035&&mins<1080) fascia="terzo";
+          else fascia="notte";
+          if(fasceFiltro.length>0 && !fasceFiltro.includes(fascia)) continue;
+          result.totale++;
+          result[fascia]++;
+          if(e.modelloId) perModello[e.modelloId]=(perModello[e.modelloId]||0)+1;
         }
       }
     }
     return {...result, perModello};
+  }
+
+  function computeConteggio(){
+    return computeConteggioForReport({fasceFiltro:[]});
   }
 
   function computeIndennita(){
@@ -789,7 +678,51 @@ export default function App({ session }){
     return totals;
   }
 
-  // ── CALENDAR GRID ───────────────────────────────────────────
+  // ── GESTIONE REPORTS ─────────────────────────────────────────
+  // reports = array di { id, type, label, active }
+  const activeReports = (store.reports||[]).filter(r=>r.active);
+  const inactiveTypes = REPORT_TEMPLATES; // mostra sempre tutti nel pannello aggiungi
+
+  function addReport(type){
+    const tmpl = REPORT_TEMPLATES.find(t=>t.type===type);
+    if(!tmpl) return;
+    const newReport = {
+      id: uid(),
+      type,
+      label: tmpl.label,
+      active: true,
+    };
+    const newRep = [...(store.reports||[]), newReport];
+    setStore(s=>({...s, reports:newRep}));
+    saveSettings({reports:newRep});
+  }
+
+  function removeReport(id){
+    const newRep = (store.reports||[]).filter(r=>r.id!==id);
+    setStore(s=>({...s, reports:newRep}));
+    saveSettings({reports:newRep});
+  }
+
+  function renameReport(id, label){
+    const newRep = (store.reports||[]).map(r=>r.id===id?{...r,label}:r);
+    setStore(s=>({...s, reports:newRep}));
+    saveSettings({reports:newRep});
+  }
+
+  function getConteggioConfig(reportId){
+    return conteggioConfigs[reportId] || { fasceFiltro:[] };
+  }
+
+  function updateConteggioConfig(reportId, cfg){
+    const newCfg = {...conteggioConfigs, [reportId]: cfg};
+    setConteggioConfigs(newCfg);
+    saveSettings({conteggio_configs: newCfg});
+  }
+
+  // Calcola totale globale per percentuali
+  const totaleTurni = computeConteggio().totale;
+
+  // ── CALENDAR GRID ─────────────────────────────────────────────
   const totalDays = daysInMonth(year,month);
   const fd = firstDay(year,month);
   const cells = [...Array(fd).fill(null), ...Array.from({length:totalDays},(_,i)=>i+1)];
@@ -800,37 +733,37 @@ export default function App({ session }){
     </div>
   );
 
-  // ── VIEWS ────────────────────────────────────────────────────
+  // ── VIEWS ─────────────────────────────────────────────────────
+  const selectStyle = {
+    background:"rgba(255,255,255,0.15)",
+    border:"1px solid rgba(255,255,255,0.4)",
+    borderRadius:8, color:"#fff", fontSize:12, fontWeight:900,
+    fontFamily:"Georgia,serif", padding:"2px 0px", cursor:"pointer",
+    outline:"none", flexShrink:0,
+    appearance:"none", WebkitAppearance:"none",
+  };
 
   const calView = (
     <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
       <div style={{background:accent,display:"flex",alignItems:"center",
         gap:5,padding:"6px 8px",overflowX:"auto",scrollbarWidth:"none",flexShrink:0}}>
-        <span style={{color:"#fff",fontSize:13,fontWeight:900,flexShrink:0,fontFamily:"Georgia,serif"}}>
-          <select
-  value={month}
-  onChange={e=>setMonth(Number(e.target.value))}
-  style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.4)",
-    borderRadius:8,color:"#fff",fontSize:12,fontWeight:900,fontFamily:"Georgia,serif",
-    padding:"2px 2px",cursor:"pointer",outline:"none",flexShrink:0,maxWidth:90}}>
-  {MONTHS.map((m,i)=>(
-    <option key={i} value={i} style={{background:"#1e293b",color:"#fff"}}>
-      {m.toUpperCase()}
-    </option>
-  ))}
-</select>
-<select
-  value={year}
-  onChange={e=>setYear(Number(e.target.value))}
-  style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.4)",
-    borderRadius:8,color:"#fff",fontSize:12,fontWeight:900,fontFamily:"Georgia,serif",
-    padding:"2px 2px",cursor:"pointer",outline:"none",flexShrink:0,maxWidth:62}}>
-  {Array.from({length:21},(_,i)=>2023+i).map(y=>(
-    <option key={y} value={y} style={{background:"#1e293b",color:"#fff"}}>{y}</option>
-  ))}
-</select>
-{bgSyncing&&<span style={{color:"rgba(255,255,255,0.7)",fontSize:11}}>🔄</span>}
-        </span>
+        <button onClick={()=>month===0?(setYear(y=>y-1),setMonth(11)):setMonth(m=>m-1)} style={NB}>‹</button>
+        <select value={month} onChange={e=>setMonth(Number(e.target.value))}
+          style={{...selectStyle, maxWidth:80}}>
+          {MONTHS.map((mn,i)=>(
+            <option key={i} value={i} style={{background:"#1e293b",color:"#fff"}}>
+              {mn.toUpperCase()}
+            </option>
+          ))}
+        </select>
+        <select value={year} onChange={e=>setYear(Number(e.target.value))}
+          style={{...selectStyle, maxWidth:50}}>
+          {Array.from({length:21},(_,i)=>2023+i).map(y=>(
+            <option key={y} value={y} style={{background:"#1e293b",color:"#fff"}}>{y}</option>
+          ))}
+        </select>
+        {bgSyncing&&<span style={{color:"rgba(255,255,255,0.7)",fontSize:11}}>🔄</span>}
+        <button onClick={()=>month===11?(setYear(y=>y+1),setMonth(0)):setMonth(m=>m+1)} style={NB}>›</button>
         <div style={{width:1,height:14,background:"rgba(255,255,255,0.3)",flexShrink:0,marginLeft:2}}/>
         {store.calendars.length===0
           ? <span style={{color:"rgba(255,255,255,0.6)",fontSize:10,fontStyle:"italic"}}>→ Impostazioni</span>
@@ -893,43 +826,56 @@ export default function App({ session }){
     </div>
   );
 
-  // ── REPORT VIEW ──────────────────────────────────────────────
+  // ── REPORT VIEW ───────────────────────────────────────────────
   const range = getReportRange();
-  const conteggio = computeConteggio();
   const indennitaCalc = computeIndennita();
-
-  const activeReports = (store.reports||[]).filter(r=>r.active);
-  const inactiveReports = (store.reports||[]).filter(r=>!r.active);
-
-  function toggleReport(id){
-    const newRep = store.reports.map(r=>r.id===id?{...r,active:!r.active}:r);
-    setStore(s=>({...s,reports:newRep}));
-    saveSettings({ reports: newRep });
-  }
 
   function renderReportCard(r){
     const isOpen = openReportConfig===r.id;
+    const cfg = getConteggioConfig(r.id);
+    const data = r.type==="conteggio_turni" ? computeConteggioForReport(cfg) : computeConteggio();
+    const pct = totaleTurni>0 ? Math.round((data.totale/totaleTurni)*100) : 0;
+
     return (
       <div key={r.id}>
         <div style={{display:"flex",alignItems:"center",padding:"12px 14px",
           borderBottom:`1px solid ${T.border}`,cursor:"pointer"}}
           onClick={()=>setOpenReportConfig(isOpen?null:r.id)}>
-          <button onClick={e=>{e.stopPropagation();toggleReport(r.id);}}
+          <button onClick={e=>{e.stopPropagation();removeReport(r.id);}}
             style={{width:26,height:26,borderRadius:"50%",border:"none",cursor:"pointer",
               background:"#ef4444",color:"#fff",fontSize:16,fontWeight:700,
               display:"flex",alignItems:"center",justifyContent:"center",marginRight:12,flexShrink:0}}>
             –
           </button>
-          <span style={{flex:1,fontSize:14,fontWeight:700,color:T.text}}>{r.id==="conteggio_turni"?conteggioConfig.titolo:r.label}</span>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:14,fontWeight:700,color:T.text,overflow:"hidden",
+              textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.label}</div>
+            {r.type==="conteggio_turni"&&(
+              <div style={{fontSize:11,color:T.sub}}>
+                {data.totale} turni
+                {totaleTurni>0&&r.id!==activeReports[0]?.id&&` • ${pct}% del totale`}
+              </div>
+            )}
+          </div>
           <span style={{color:T.sub,fontSize:12}}>›</span>
         </div>
         {isOpen && (
           <div style={{background:T.s2,padding:14,borderBottom:`1px solid ${T.border}`}}>
-            {r.id==="conteggio_turni" && <ConteggioConfig T={T} cfg={conteggioConfig} setCfg={setConteggioConfig} data={conteggio} calendars={store.calendars} modelli={modelli}/>}
-            {r.id==="indennita" && <IndennitaConfig T={T} values={indennita} setValues={setIndennita} calc={indennitaCalc} onSave={()=>saveSettings({indennita})}/>}
-            {r.id==="ore_turno" && <OrePerTurnoView T={T} data={conteggio}/>}
-            {r.id==="straordinari" && <StraordinariView T={T} data={conteggio}/>}
-            {r.id==="guadagni" && <GuadagniView T={T} indennita={indennita} calc={indennitaCalc}/>}
+            {r.type==="conteggio_turni" && (
+              <ConteggioConfigCard T={T} r={r} cfg={cfg} data={data} totaleTurni={totaleTurni}
+                modelli={modelli} accent={accent}
+                onRename={label=>renameReport(r.id, label)}
+                onUpdateCfg={newCfg=>updateConteggioConfig(r.id, newCfg)}/>
+            )}
+            {r.type==="indennita" && (
+              <IndennitaConfig T={T} values={indennita} setValues={setIndennita}
+                calc={indennitaCalc} onSave={()=>saveSettings({indennita})}/>
+            )}
+            {r.type==="ore_turno" && <OrePerTurnoView T={T} data={data}/>}
+            {r.type==="straordinari" && <StraordinariView T={T} data={data}/>}
+            {r.type==="guadagni" && (
+              <GuadagniView T={T} indennita={indennita} calc={indennitaCalc}/>
+            )}
           </div>
         )}
       </div>
@@ -957,29 +903,27 @@ export default function App({ session }){
         </div>
       )}
 
-      {inactiveReports.length>0 && (
-        <div style={{margin:"16px 12px 0"}}>
-          <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:6,paddingLeft:4}}>Altri report</div>
-          <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
-            {inactiveReports.map(r=>(
-              <div key={r.id} style={{display:"flex",alignItems:"center",padding:"12px 14px",
-                borderBottom:`1px solid ${T.border}`}}>
-                <button onClick={()=>toggleReport(r.id)}
-                  style={{width:26,height:26,borderRadius:"50%",border:"none",cursor:"pointer",
-                    background:"#22c55e",color:"#fff",fontSize:18,fontWeight:700,
-                    display:"flex",alignItems:"center",justifyContent:"center",marginRight:12,flexShrink:0}}>
-                  +
-                </button>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:14,fontWeight:700,color:T.text}}>{r.label}</div>
-                  {r.id==="ore_turno"&&<div style={{fontSize:11,color:T.sub}}>es. Ore totali per turno</div>}
-                  {r.id==="conteggio_turni"&&<div style={{fontSize:11,color:T.sub}}>es. Giorni di ferie</div>}
-                </div>
+      {/* Pannello aggiungi report */}
+      <div style={{margin:"16px 12px 0"}}>
+        <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:6,paddingLeft:4}}>Aggiungi report</div>
+        <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+          {REPORT_TEMPLATES.map((tmpl,i,arr)=>(
+            <div key={tmpl.type} style={{display:"flex",alignItems:"center",padding:"12px 14px",
+              borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
+              <button onClick={()=>addReport(tmpl.type)}
+                style={{width:26,height:26,borderRadius:"50%",border:"none",cursor:"pointer",
+                  background:"#22c55e",color:"#fff",fontSize:18,fontWeight:700,
+                  display:"flex",alignItems:"center",justifyContent:"center",marginRight:12,flexShrink:0}}>
+                +
+              </button>
+              <div style={{flex:1}}>
+                <div style={{fontSize:14,fontWeight:700,color:T.text}}>{tmpl.label}</div>
+                <div style={{fontSize:11,color:T.sub}}>{tmpl.desc}</div>
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
-      )}
+      </div>
 
       {showIntervalPicker && (
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:400,
@@ -1016,7 +960,7 @@ export default function App({ session }){
                 </div>
               </div>
             )}
-            {reportInterval==="custom" && reportDateFrom && reportDateTo && (
+            {reportInterval==="custom"&&reportDateFrom&&reportDateTo&&(
               <button onClick={()=>setShowIntervalPicker(false)}
                 style={{width:"100%",marginTop:12,background:accent,border:"none",borderRadius:10,
                   color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:13}}>
@@ -1029,7 +973,7 @@ export default function App({ session }){
     </div>
   );
 
-  // ── MODELLI VIEW ─────────────────────────────────────────────
+  // ── MODELLI VIEW ──────────────────────────────────────────────
   const modelliView = (
     <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 16px 8px"}}>
@@ -1048,9 +992,8 @@ export default function App({ session }){
               setRotForm({tipo:"personalizzata",titolo:"",dataInizio:"",nSettimane:52,modellaLavoroId:null,modelloNLId:null,modelloRSId:null});
               setShowRotForm(true);
             }
-          }}
-            style={{background:accent,border:"none",borderRadius:8,padding:"6px 16px",
-              fontSize:20,fontWeight:800,cursor:"pointer",color:"#fff"}}>+</button>
+          }} style={{background:accent,border:"none",borderRadius:8,padding:"6px 16px",
+            fontSize:20,fontWeight:800,cursor:"pointer",color:"#fff"}}>+</button>
           {showSortMenu&&(
             <div style={{position:"absolute",top:40,right:0,background:T.surface,
               border:`1px solid ${T.border}`,borderRadius:12,padding:8,zIndex:200,
@@ -1148,8 +1091,7 @@ export default function App({ session }){
         const rot=rotazioni.find(r=>r.id===showRotDetail);
         if(!rot) return null;
         return (
-          <div style={{position:"fixed",inset:0,background:T.bg,zIndex:400,
-            display:"flex",flexDirection:"column"}}>
+          <div style={{position:"fixed",inset:0,background:T.bg,zIndex:400,display:"flex",flexDirection:"column"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
               padding:"16px 16px 8px",borderBottom:`1px solid ${T.border}`,background:T.surface}}>
               <button onClick={()=>setShowRotDetail(null)}
@@ -1183,7 +1125,7 @@ export default function App({ session }){
     </div>
   );
 
-  // ── SETTINGS VIEW ────────────────────────────────────────────
+  // ── SETTINGS VIEW ─────────────────────────────────────────────
   const settingsView = (
     <div style={{flex:1,overflowY:"auto",padding:"12px 12px 80px",color:T.text}}>
       <div style={{fontSize:18,fontWeight:900,fontFamily:"Georgia,serif",marginBottom:14}}>Impostazioni</div>
@@ -1219,7 +1161,7 @@ export default function App({ session }){
                   border:`2px solid ${T.border}`,cursor:"pointer"}}
                   onClick={e=>{e.stopPropagation();setPal(pal===c.id?null:c.id);}}/>
                 {pal===c.id&&<Pal T={T} cur={c.color} onPick={p=>{
-                  const newCals = JSON.parse(JSON.stringify(store.calendars));
+                  const newCals=JSON.parse(JSON.stringify(store.calendars));
                   newCals[ci].color=p;
                   setStore(s=>({...s,calendars:newCals}));
                   updateCalendar(c.id,{color:p});
@@ -1227,28 +1169,22 @@ export default function App({ session }){
                 }}/>}
               </div>
               <input value={c.name}
-                onChange={e=>{
-                  const newCals=JSON.parse(JSON.stringify(store.calendars));
-                  newCals[ci].name=e.target.value;
-                  setStore(s=>({...s,calendars:newCals}));
-                }}
+                onChange={e=>{const newCals=JSON.parse(JSON.stringify(store.calendars));newCals[ci].name=e.target.value;setStore(s=>({...s,calendars:newCals}));}}
                 onBlur={e=>updateCalendar(c.id,{name:e.target.value})}
                 style={{flex:1,background:"transparent",border:"none",outline:"none",color:T.text,fontSize:13,fontWeight:700}}/>
               <button onClick={async()=>{
                 const newCals=store.calendars.map((x,j)=>({...x,isMain:j===ci}));
                 setStore(s=>({...s,calendars:newCals}));
-                for(const cal of store.calendars){
-                  await updateCalendar(cal.id,{is_main: cal.id===c.id});
-                }
+                for(const cal of store.calendars) await updateCalendar(cal.id,{is_main:cal.id===c.id});
               }} style={{background:"none",border:"none",cursor:"pointer",fontSize:16,color:c.isMain?"#f59e0b":T.sub}}>★</button>
               <button onClick={()=>setExCal(exCal===c.id?null:c.id)}
                 style={{background:"none",border:"none",color:T.sub,cursor:"pointer",fontSize:12}}>
                 {exCal===c.id?"▲":"▼"}</button>
               <button onClick={async()=>{
                 await deleteCalendar(c.id);
-                const newCals = store.calendars.filter(x=>x.id!==c.id);
+                const newCals=store.calendars.filter(x=>x.id!==c.id);
                 setStore(s=>({...s,calendars:newCals}));
-                saveToSheets(store.events, newCals);
+                saveToSheets(store.events,newCals);
               }} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:18}}>×</button>
             </div>
             {exCal===c.id&&(
@@ -1268,12 +1204,8 @@ export default function App({ session }){
                       }}/>}
                     </div>
                     <input value={sh.label}
-                      onChange={e=>{
-                        const newCals=JSON.parse(JSON.stringify(store.calendars));
-                        newCals[ci].shifts[si].label=e.target.value;
-                        setStore(s=>({...s,calendars:newCals}));
-                      }}
-                      onBlur={()=>{ updateCalendar(c.id,{shifts:store.calendars[ci].shifts}); }}
+                      onChange={e=>{const newCals=JSON.parse(JSON.stringify(store.calendars));newCals[ci].shifts[si].label=e.target.value;setStore(s=>({...s,calendars:newCals}));}}
+                      onBlur={()=>updateCalendar(c.id,{shifts:store.calendars[ci].shifts})}
                       style={{flex:1,background:"transparent",border:"none",outline:"none",color:T.text,fontSize:12}}/>
                     <button onClick={()=>{
                       const newCals=JSON.parse(JSON.stringify(store.calendars));
@@ -1290,8 +1222,7 @@ export default function App({ session }){
                       onClick={e=>{e.stopPropagation();setPal(pal==="ns"?null:"ns");}}/>
                     {pal==="ns"&&<Pal T={T} cur={nsColor} onPick={p=>{setNsColor(p);setPal(null);}}/>}
                   </div>
-                  <input value={nsName} onChange={e=>setNsName(e.target.value)}
-                    placeholder="Nome turno..."
+                  <input value={nsName} onChange={e=>setNsName(e.target.value)} placeholder="Nome turno..."
                     style={{flex:1,background:T.surface,border:`1px solid ${T.border}`,
                       borderRadius:8,padding:"7px 10px",color:T.text,fontSize:12,outline:"none"}}/>
                   <button onClick={()=>{
@@ -1302,8 +1233,7 @@ export default function App({ session }){
                     setStore(s=>({...s,calendars:newCals}));
                     updateCalendar(c.id,{shifts:newCals[ci].shifts});
                     setNsName("");
-                  }} style={{background:"#3b82f6",border:"none",borderRadius:8,
-                    color:"#fff",padding:"7px 12px",cursor:"pointer",fontWeight:800,fontSize:14}}>+</button>
+                  }} style={{background:"#3b82f6",border:"none",borderRadius:8,color:"#fff",padding:"7px 12px",cursor:"pointer",fontWeight:800,fontSize:14}}>+</button>
                 </div>
               </div>
             )}
@@ -1316,24 +1246,21 @@ export default function App({ session }){
               onClick={e=>{e.stopPropagation();setPal(pal==="nc"?null:"nc");}}/>
             {pal==="nc"&&<Pal T={T} cur={ncColor} onPick={p=>{setNcColor(p);setPal(null);}}/>}
           </div>
-          <input value={ncName} onChange={e=>setNcName(e.target.value)}
-            placeholder="Nome calendario..."
+          <input value={ncName} onChange={e=>setNcName(e.target.value)} placeholder="Nome calendario..."
             style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
               borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,outline:"none"}}/>
           <button onClick={async()=>{
             if(!ncName.trim()) return;
             const isFirst=store.calendars.length===0;
-            const dbCal = await addCalendar(ncName.trim(), ncColor, isFirst);
+            const dbCal=await addCalendar(ncName.trim(),ncColor,isFirst);
             if(dbCal){
-              const newCals = [...store.calendars,
-                {id:dbCal.id,name:dbCal.name,color:dbCal.color,isMain:dbCal.is_main,shifts:[]}];
+              const newCals=[...store.calendars,{id:dbCal.id,name:dbCal.name,color:dbCal.color,isMain:dbCal.is_main,shifts:[]}];
               setStore(s=>({...s,calendars:newCals}));
               if(!calId) setCalId(dbCal.id);
-              saveToSheets(store.events, newCals);
+              saveToSheets(store.events,newCals);
             }
             setNcName("");
-          }} style={{background:"#3b82f6",border:"none",borderRadius:8,
-            color:"#fff",padding:"8px 14px",cursor:"pointer",fontWeight:800,fontSize:14}}>+</button>
+          }} style={{background:"#3b82f6",border:"none",borderRadius:8,color:"#fff",padding:"8px 14px",cursor:"pointer",fontWeight:800,fontSize:14}}>+</button>
         </div>
       </Sec>
 
@@ -1366,8 +1293,9 @@ export default function App({ session }){
             {syncing?"⏳ ...":"📥 Importa da Sheets"}
           </button>
         </div>
-        {sheetsUrl && (
-          <a href="https://docs.google.com/spreadsheets/d/106C8GAh0Ka2WS8O8Ezx0nUnDgX0hyS7Crvixy84uDSA/edit" target="_blank" rel="noreferrer"
+        {sheetsUrl&&(
+          <a href="https://docs.google.com/spreadsheets/d/106C8GAh0Ka2WS8O8Ezx0nUnDgX0hyS7Crvixy84uDSA/edit"
+            target="_blank" rel="noreferrer"
             style={{display:"block",textAlign:"center",fontSize:11,color:"#16a34a",fontWeight:700,
               textDecoration:"none",background:"#dcfce7",borderRadius:8,padding:"8px 0"}}>
             📊 Apri Google Sheets
@@ -1379,7 +1307,7 @@ export default function App({ session }){
 
       <Sec label="DATABASE CLOUD SUPABASE" T={T}>
         <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
-          Controlla lo stato dei dati memorizzati nel cloud Supabase per il tuo account.
+          Controlla lo stato dei dati memorizzati nel cloud Supabase.
         </div>
         <button onClick={handleViewDbData}
           style={{width:"100%",background:"#475569",border:"none",borderRadius:10,
@@ -1388,9 +1316,9 @@ export default function App({ session }){
         </button>
       </Sec>
 
-      {session?.user?.email === 'tesonemgs5@gmail.com' && (
+      {session?.user?.email==='tesonemgs5@gmail.com'&&(
         <Sec label="STATISTICHE DI UTILIZZO (ADMIN)" T={T}>
-          {stats ? (
+          {stats?(
             <div style={{display:"flex",flexDirection:"column",gap:6,background:T.s2,borderRadius:10,padding:12}}>
               <div style={{display:"flex",justifyContent:"space-between",fontSize:12}}>
                 <span style={{color:T.sub}}>Utenti Registrati Totali:</span>
@@ -1401,7 +1329,7 @@ export default function App({ session }){
                 <span style={{fontWeight:800,color:"#22c55e"}}>{stats.active_users_7d}</span>
               </div>
             </div>
-          ) : (
+          ):(
             <div style={{fontSize:11,color:T.sub,textAlign:"center",padding:6}}>⏳ Caricamento statistiche...</div>
           )}
         </Sec>
@@ -1418,7 +1346,7 @@ export default function App({ session }){
             <button onClick={()=>{
               const newH=(store.extraHols||[]).filter((_,j)=>j!==i);
               setStore(s=>({...s,extraHols:newH}));
-              saveSettings({theme:store.theme, extra_hols:newH});
+              saveSettings({theme:store.theme,extra_hols:newH});
             }} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:16}}>×</button>
           </div>
         ))}
@@ -1436,7 +1364,7 @@ export default function App({ session }){
             if(!nhName.trim()||!nhD||!nhM) return;
             const newH=[...(store.extraHols||[]),{name:nhName.trim(),d:nhD,m:nhM}];
             setStore(s=>({...s,extraHols:newH}));
-            saveSettings({theme:store.theme, extra_hols:newH});
+            saveSettings({theme:store.theme,extra_hols:newH});
             setNhName(""); setNhD(""); setNhM("");
           }} style={{background:"#ef4444",border:"none",borderRadius:8,
             color:"#fff",padding:"7px 12px",cursor:"pointer",fontWeight:800}}>+</button>
@@ -1496,34 +1424,19 @@ export default function App({ session }){
         {curEvts.filter(e=>!form||form.editId!==e.id).filter(e=>!(e.label||"").toUpperCase().startsWith("PROTRAZIONE")).map(e=>(
           <div key={e.id} onClick={()=>{
               if(form?.editId===e.id){ setForm(null); return; }
-              setForm({
-                editId: e.id,
-                modelloId: e.modelloId||null,
-                shiftId: null,
-                label: e.label,
-                colorOvr: e.color,
-                dur: e.allDay?"allday":"fixed",
-                tIn: e.tIn||"",
-                tOut: e.tOut||"",
-                place: e.place||"",
-                map: e.map||"",
-                note: e.note||"",
-                collega: e.collega||"",
-                auto: e.auto||"",
-              });
+              setForm({ editId:e.id, modelloId:e.modelloId||null, shiftId:null, label:e.label,
+                colorOvr:e.color, dur:e.allDay?"allday":"fixed", tIn:e.tIn||"", tOut:e.tOut||"",
+                place:e.place||"", map:e.map||"", note:e.note||"", collega:e.collega||"", auto:e.auto||"" });
             }}
-            style={{background:e.color,borderRadius:10,
-            padding:"10px 12px",marginBottom:8,cursor:"pointer",
-            display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+            style={{background:e.color,borderRadius:10,padding:"10px 12px",marginBottom:8,cursor:"pointer",
+              display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
             <div style={{flex:1}}>
-              <div style={{color:"#fff",fontSize:14,fontWeight:800,
-                textShadow:"0 1px 3px rgba(0,0,0,0.3)"}}>{e.label}</div>
+              <div style={{color:"#fff",fontSize:14,fontWeight:800,textShadow:"0 1px 3px rgba(0,0,0,0.3)"}}>{e.label}</div>
               {!e.allDay&&e.tIn&&(
                 <div style={{color:"rgba(255,255,255,0.85)",fontSize:11,marginTop:2}}>
                   🕐 {e.tIn}{e.tOut?` → ${e.tOut}`:""}
                 </div>
               )}
-              
               {e.collega&&<div style={{color:"rgba(255,255,255,0.8)",fontSize:11,marginTop:3}}>👮 {e.collega}</div>}
               {e.place&&(e.map
                 ?<a href={e.map} target="_blank" rel="noreferrer"
@@ -1532,11 +1445,9 @@ export default function App({ session }){
               )}
             </div>
             <button onClick={e2=>{e2.stopPropagation();setForm({
-                editId: e.id, modelloId: e.modelloId||null, shiftId: null,
-                label: e.label, colorOvr: e.color,
-                dur: e.allDay?"allday":"fixed",
-                tIn: e.tIn||"", tOut: e.tOut||"", place: e.place||"",
-                map: e.map||"", note: e.note||"", collega: e.collega||"", auto: e.auto||"",
+                editId:e.id,modelloId:e.modelloId||null,shiftId:null,label:e.label,colorOvr:e.color,
+                dur:e.allDay?"allday":"fixed",tIn:e.tIn||"",tOut:e.tOut||"",place:e.place||"",
+                map:e.map||"",note:e.note||"",collega:e.collega||"",auto:e.auto||"",
               });}}
               style={{background:"rgba(0,0,0,0.2)",border:"none",borderRadius:6,
                 color:"#fff",width:26,height:26,cursor:"pointer",fontSize:14,marginLeft:4,flexShrink:0}}>✏️</button>
@@ -1553,8 +1464,6 @@ export default function App({ session }){
             {form.editId&&(
               <div style={{fontSize:24,color:T.text,fontWeight:900,marginBottom:12,letterSpacing:1}}>{(form.label||"EVENTO").toUpperCase()}</div>
             )}
-
-            {/* MODELLI */}
             {modelli.length>0&&!form.editId&&(
               <>
                 {!form.modelloId&&<div style={{fontSize:10,color:T.sub,marginBottom:6,fontWeight:600}}>MODELLO TURNO</div>}
@@ -1563,8 +1472,7 @@ export default function App({ session }){
                     const c=m.coloreCustom||getColorByTime(m.inizio);
                     return (
                       <button key={m.id}
-                        onClick={()=>setForm(f=>({...f,modelloId:m.id,shiftId:null,
-                          label:m.titolo,colorOvr:null,
+                        onClick={()=>setForm(f=>({...f,modelloId:m.id,shiftId:null,label:m.titolo,colorOvr:null,
                           dur:m.tempo==="h24"?"allday":m.tempo==="6h15"?"fixed":"custom",
                           tIn:m.inizio||"",tOut:m.fine||""}))}
                         style={{background:form.modelloId===m.id?c:T.surface,
@@ -1578,18 +1486,17 @@ export default function App({ session }){
                     );
                   })}
                   {!form.modelloId&&(
-                  <button onClick={()=>setForm(f=>({...f,modelloId:null}))}
-                    style={{background:!form.modelloId?accent:T.surface,
-                      border:`2px solid ${!form.modelloId?accent:T.border}`,
-                      borderRadius:10,padding:"6px 10px",cursor:"pointer",
-                      color:!form.modelloId?"#fff":T.sub,fontSize:11,fontWeight:700}}>
-                    Libero
-                  </button>
+                    <button onClick={()=>setForm(f=>({...f,modelloId:null}))}
+                      style={{background:!form.modelloId?accent:T.surface,
+                        border:`2px solid ${!form.modelloId?accent:T.border}`,
+                        borderRadius:10,padding:"6px 10px",cursor:"pointer",
+                        color:!form.modelloId?"#fff":T.sub,fontSize:11,fontWeight:700}}>
+                      Libero
+                    </button>
                   )}
                 </div>
               </>
             )}
-
             {(activeCal?.shifts||[]).length>0&&!form.modelloId&&!form.editId&&(
               <>
                 <div style={{fontSize:10,color:T.sub,marginBottom:6,fontWeight:600}}>TURNO CALENDARIO</div>
@@ -1608,7 +1515,6 @@ export default function App({ session }){
                 </div>
               </>
             )}
-
             {!form.shiftId&&!form.modelloId&&!form.editId&&(
               <input value={form.label||""} onChange={e=>setForm(f=>({...f,label:e.target.value}))}
                 placeholder="NOME EVENTO..."
@@ -1616,27 +1522,22 @@ export default function App({ session }){
                   borderRadius:8,padding:"9px 10px",color:T.text,fontSize:13,
                   marginBottom:10,boxSizing:"border-box",outline:"none"}}/>
             )}
-
             {!form.modelloId&&(
-            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-              <span style={{fontSize:14,color:T.sub,fontWeight:700}}>COLORE</span>
-              <div style={{position:"relative"}}>
-                <div style={{width:22,height:22,borderRadius:"50%",cursor:"pointer",
-                  background:form.colorOvr||(form.modelloId
-                    ?(modelli.find(m=>m.id===form.modelloId)?.coloreCustom||getColorByTime(modelli.find(m=>m.id===form.modelloId)?.inizio))
-                    :form.shiftId?activeCal?.shifts?.find(s=>s.id===form.shiftId)?.color
-                    :activeCal?.color)||"#94a3b8",
-                  border:`2px solid ${T.border}`}}
-                  onClick={e=>{e.stopPropagation();setPal(pal==="ec"?null:"ec");}}/>
-                {pal==="ec"&&<Pal T={T} onPick={p=>{setForm(f=>({...f,colorOvr:p}));setPal(null);}} up/>}
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+                <span style={{fontSize:14,color:T.sub,fontWeight:700}}>COLORE</span>
+                <div style={{position:"relative"}}>
+                  <div style={{width:22,height:22,borderRadius:"50%",cursor:"pointer",
+                    background:form.colorOvr||(form.shiftId?activeCal?.shifts?.find(s=>s.id===form.shiftId)?.color:activeCal?.color)||"#94a3b8",
+                    border:`2px solid ${T.border}`}}
+                    onClick={e=>{e.stopPropagation();setPal(pal==="ec"?null:"ec");}}/>
+                  {pal==="ec"&&<Pal T={T} onPick={p=>{setForm(f=>({...f,colorOvr:p}));setPal(null);}} up/>}
+                </div>
+                {form.colorOvr&&(
+                  <button onClick={()=>setForm(f=>({...f,colorOvr:null}))}
+                    style={{background:"none",border:"none",color:T.sub,fontSize:13,fontWeight:700,cursor:"pointer"}}>↩ auto</button>
+                )}
               </div>
-              {form.colorOvr&&(
-                <button onClick={()=>setForm(f=>({...f,colorOvr:null}))}
-                  style={{background:"none",border:"none",color:T.sub,fontSize:13,fontWeight:700,cursor:"pointer"}}>↩ auto</button>
-              )}
-            </div>
             )}
-
             <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>DURATA</div>
             <div style={{display:"flex",gap:6,marginBottom:10}}>
               {[["allday","Tutto il giorno"],["fixed","6h 15m"],["custom","Orario libero"]].map(([v,l])=>(
@@ -1647,7 +1548,6 @@ export default function App({ session }){
                     border:`1.5px solid ${form.dur===v?accent:T.border}`}}>{l}</button>
               ))}
             </div>
-
             {form.dur!=="allday"&&(
               <div style={{display:"flex",gap:8,marginBottom:10}}>
                 <div style={{flex:1}}>
@@ -1656,7 +1556,6 @@ export default function App({ session }){
                     onChange={e=>setForm(f=>({...f,tIn:e.target.value,tOut:""}))}
                     style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                       borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
-                  
                 </div>
                 {form.dur==="custom"&&(
                   <div style={{flex:1}}>
@@ -1674,68 +1573,25 @@ export default function App({ session }){
                       onChange={e=>setForm(f=>({...f,tOut:e.target.value}))}
                       style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                         borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
-                    <div style={{display:"flex",gap:6,marginTop:5}}>
-                      {[["pagamento","PROTRAZIONE A PAGAMENTO"],["recupero","PROTRAZIONE A RECUPERO"]].map(([v,l])=>(
-                        <button key={v} type="button" onClick={()=>setForm(f=>({...f,straordinarioTipo:f.straordinarioTipo===v?null:v}))}
-                          style={{flex:1,padding:"5px 2px",borderRadius:8,cursor:"pointer",fontSize:9,fontWeight:800,
-                            lineHeight:1.2,textAlign:"center",whiteSpace:"nowrap",
-                            background:form.straordinarioTipo===v?(v==="pagamento"?"#8b5cf6":"#64748b"):T.surface,
-                            color:form.straordinarioTipo===v?"#fff":T.sub,
-                            border:`1.5px solid ${form.straordinarioTipo===v?(v==="pagamento"?"#8b5cf6":"#64748b"):T.border}`}}>{l}</button>
-                      ))}
-                    </div>
-                    {form.straordinarioTipo&&(()=>{
-                      const oraFineP=form.protrazioneOraFine||"";
-                      let durProt="";
-                      if(oraFineP && calcFine6h15(form.tIn)){
-                        const [h1,m1]=calcFine6h15(form.tIn).split(":").map(Number);
-                        const [h2,m2]=oraFineP.split(":").map(Number);
-                        let d2=(h2*60+m2)-(h1*60+m1);
-                        if(d2<0) d2+=24*60;
-                        if(d2>0) durProt=`${Math.floor(d2/60)}h${d2%60>0?" "+d2%60+"m":""}`;
-                      }
-                      return (
-                        <div style={{display:"flex",alignItems:"center",gap:8,marginTop:6}}>
-                          <div style={{background:T.s2,borderRadius:8,padding:"7px 10px",minWidth:52,textAlign:"center",flexShrink:0}}>
-                            <div style={{fontSize:9,color:T.sub,fontWeight:700,marginBottom:1}}>DURATA</div>
-                            <div style={{fontSize:13,fontWeight:900,color:form.straordinarioTipo==="pagamento"?"#8b5cf6":"#64748b"}}>{durProt||"—"}</div>
-                          </div>
-                          <input type="time" value={oraFineP}
-                            onChange={e=>setForm(f=>({...f,protrazioneOraFine:e.target.value,tOut:e.target.value}))}
-                            placeholder="Ora fine"
-                            style={{flex:1,background:T.surface,border:`1px solid ${T.border}`,
-                              borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
-                        </div>
-                      );
-                    })()}
-                    
-                    
                   </div>
                 )}
               </div>
             )}
-
-            {/* Numero auto */}
             <input value={form.auto||""} onChange={e=>{
                 const raw=e.target.value.toUpperCase();
                 const stripped=raw.replace(/^(CH\s*)+/i,"").trim();
-                const val=stripped?"CH "+stripped:"";
-                setForm(f=>({...f,auto:val}));
+                setForm(f=>({...f,auto:stripped?"CH "+stripped:""}));
               }}
               placeholder="🚗 Numero auto/pattuglia (opzionale)..."
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
                 marginBottom:6,boxSizing:"border-box",outline:"none"}}/>
-
-            {/* Collega di pattuglia */}
             <textarea value={form.collega||""} onChange={e=>{setForm(f=>({...f,collega:e.target.value.toUpperCase()}));e.target.style.height="auto";e.target.style.height=e.target.scrollHeight+"px";}}
-              placeholder={"👮 Collega "}
-              rows={1}
+              placeholder="👮 Collega" rows={1}
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
                 marginBottom:6,boxSizing:"border-box",outline:"none",resize:"none",fontFamily:"inherit",
                 overflow:"hidden",minHeight:36}}/>
-
             <input value={form.place||""} onChange={e=>setForm(f=>({...f,place:e.target.value.toUpperCase()}))}
               placeholder="📍 LUOGO (OPZIONALE)..."
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
@@ -1771,7 +1627,7 @@ export default function App({ session }){
     </div>
   );
 
-  // ── DB MODAL ─────────────────────────────────────────────────
+  // ── DB MODAL ──────────────────────────────────────────────────
   const dbModal = showDbModal && (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:300,
       display:"flex",alignItems:"center",justifyContent:"center",padding:12}}
@@ -1795,7 +1651,7 @@ export default function App({ session }){
               <div style={{fontSize:22,fontWeight:900,color:"#10b981"}}>{dbEvtsCount}</div>
             </div>
           </div>
-          {dbRawData ? (
+          {dbRawData?(
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
               <div>
                 <div style={{fontSize:10,fontWeight:800,color:T.sub,marginBottom:6}}>I TUOI CALENDARI ({dbRawData.calendars.length})</div>
@@ -1837,7 +1693,7 @@ export default function App({ session }){
     </div>
   );
 
-  // ── MAIN RENDER ──────────────────────────────────────────────
+  // ── MAIN RENDER ───────────────────────────────────────────────
   const NAV_ITEMS = [
     { id:"cal",      icon:"▦",  label:"Calendario" },
     { id:"report",   icon:"📊", label:"Report" },
@@ -1891,7 +1747,7 @@ export default function App({ session }){
           </div>
         </div>
       )}
-      {showModelloPicker && (
+      {showModelloPicker&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:500,
           display:"flex",flexDirection:"column"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
@@ -1902,14 +1758,14 @@ export default function App({ session }){
             <div style={{width:32}}/>
           </div>
           <div style={{flex:1,overflowY:"auto",padding:12,background:T.bg}}>
-            {modelli.length===0 && (
+            {modelli.length===0&&(
               <div style={{textAlign:"center",padding:"40px 24px",color:T.sub}}>
                 <div style={{fontSize:36,marginBottom:10}}>📋</div>
                 <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Nessun modello</div>
                 <div style={{fontSize:13}}>Crea il tuo primo modello turno</div>
               </div>
             )}
-            {modelli.length>0 && (
+            {modelli.length>0&&(
               <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:12}}>
                 {modelli.map((m,i,arr)=>{
                   const c=m.coloreCustom||getColorByTime(m.inizio);
@@ -1942,7 +1798,7 @@ export default function App({ session }){
                 })}
               </div>
             )}
-            {(activeCal?.shifts||[]).length>0 && (
+            {(activeCal?.shifts||[]).length>0&&(
               <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:12}}>
                 {activeCal.shifts.map((s,i,arr)=>(
                   <div key={s.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
@@ -1988,37 +1844,111 @@ export default function App({ session }){
   );
 }
 
-// ── REPORT SUB-COMPONENTS ────────────────────────────────────
+// ── REPORT SUB-COMPONENTS ─────────────────────────────────────
 
-function ConteggioConfig({T, cfg, setCfg, data, calendars, modelli}){
+function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, onRename, onUpdateCfg}){
+  const [editingName, setEditingName] = useState(false);
+  const [tmpName, setTmpName] = useState(r.label);
+  const pct = totaleTurni>0 ? Math.round((data.totale/totaleTurni)*100) : 0;
+
+  const FASCE = [
+    {key:"mattina",   label:"Mattina (06:00-11:45)",   count:data.mattina},
+    {key:"pomeriggio",label:"Pomeriggio (11:45-17:15)",count:data.pomeriggio},
+    {key:"terzo",     label:"3° Turno (17:15-18:00)",  count:data.terzo},
+    {key:"notte",     label:"Notte",                    count:data.notte},
+    {key:"h24",       label:"H24 / Tutto il giorno",   count:data.h24},
+  ];
+
+  function toggleFascia(key){
+    const cur = cfg.fasceFiltro||[];
+    const next = cur.includes(key) ? cur.filter(f=>f!==key) : [...cur, key];
+    onUpdateCfg({...cfg, fasceFiltro: next});
+  }
+
+  const isFiltered = (cfg.fasceFiltro||[]).length>0;
+
   return (
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
-      <div>
-        <div style={{fontSize:10,color:T.sub,marginBottom:4}}>TITOLO</div>
-        <input value={cfg.titolo} onChange={e=>setCfg(c=>({...c,titolo:e.target.value}))}
-          style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
-            borderRadius:8,padding:"8px 10px",color:T.text,fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+      {/* Nome report */}
+      <div style={{background:T.surface,borderRadius:10,padding:"10px 12px"}}>
+        <div style={{fontSize:10,color:T.sub,marginBottom:4}}>NOME REPORT</div>
+        {editingName?(
+          <div style={{display:"flex",gap:6}}>
+            <input value={tmpName} onChange={e=>setTmpName(e.target.value)}
+              style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
+                borderRadius:8,padding:"6px 10px",color:T.text,fontSize:13,outline:"none"}}/>
+            <button onClick={()=>{onRename(tmpName);setEditingName(false);}}
+              style={{background:accent,border:"none",borderRadius:8,color:"#fff",
+                padding:"6px 12px",cursor:"pointer",fontWeight:800,fontSize:12}}>✓</button>
+          </div>
+        ):(
+          <div style={{display:"flex",alignItems:"center",gap:8}} onClick={()=>setEditingName(true)}>
+            <span style={{fontSize:14,fontWeight:700,color:T.text,flex:1}}>{r.label}</span>
+            <span style={{fontSize:11,color:accent,cursor:"pointer"}}>✏️ modifica</span>
+          </div>
+        )}
       </div>
-      <div style={{background:T.surface,borderRadius:10,padding:12}}>
-        <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:8}}>RIEPILOGO FASCE ORARIE</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
-          {[
-            ["Totale turni", data.totale],
-            ["Mattina (06-11:45)", data.mattina],
-            ["Pomeriggio (11:45-17:15)", data.pomeriggio],
-            ["3° Turno (17:15-18)", data.terzo],
-            ["Notte", data.notte],
-            ["H24", data.h24],
-          ].map(([l,v])=>(
-            <div key={l} style={{display:"flex",justifyContent:"space-between",
-              padding:"6px 8px",background:T.s2,borderRadius:6}}>
-              <span style={{fontSize:11,color:T.sub}}>{l}</span>
-              <span style={{fontSize:13,fontWeight:800,color:T.text}}>{v}</span>
+
+      {/* Statistiche */}
+      <div style={{background:T.surface,borderRadius:10,padding:"10px 12px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <div style={{fontSize:10,color:T.sub,fontWeight:700}}>TOTALE TURNI</div>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontSize:20,fontWeight:900,color:T.text}}>{data.totale}</span>
+            {totaleTurni>0&&(
+              <span style={{fontSize:13,fontWeight:700,color:accent,background:accent+"22",
+                borderRadius:8,padding:"2px 8px"}}>{pct}%</span>
+            )}
+          </div>
+        </div>
+        {/* Barra percentuale */}
+        {totaleTurni>0&&(
+          <div style={{height:6,background:T.s2,borderRadius:3,marginBottom:10,overflow:"hidden"}}>
+            <div style={{width:`${pct}%`,height:"100%",background:accent,borderRadius:3,transition:"width 0.3s"}}/>
+          </div>
+        )}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
+          {FASCE.map(f=>(
+            <div key={f.key} style={{display:"flex",justifyContent:"space-between",
+              padding:"5px 8px",background:T.s2,borderRadius:6}}>
+              <span style={{fontSize:10,color:T.sub}}>{f.label}</span>
+              <span style={{fontSize:12,fontWeight:800,color:T.text}}>{f.count}</span>
             </div>
           ))}
         </div>
       </div>
 
+      {/* Filtro fasce */}
+      <div>
+        <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>
+          FILTRA PER FASCIA ORARIA
+          {isFiltered&&<span style={{color:accent,marginLeft:6}}>({(cfg.fasceFiltro||[]).length} selezionate)</span>}
+        </div>
+        <div style={{background:T.surface,borderRadius:10,overflow:"hidden",border:`1px solid ${T.border}`}}>
+          <div onClick={()=>onUpdateCfg({...cfg,fasceFiltro:[]})}
+            style={{display:"flex",alignItems:"center",padding:"10px 14px",
+              borderBottom:`1px solid ${T.border}`,cursor:"pointer",
+              background:!isFiltered?accent+"15":"transparent"}}>
+            {!isFiltered&&<span style={{color:accent,marginRight:8,fontSize:12}}>✓</span>}
+            <span style={{fontSize:13,fontWeight:!isFiltered?700:400,color:!isFiltered?accent:T.text}}>Tutte le fasce</span>
+          </div>
+          {FASCE.map((f,i,arr)=>{
+            const sel=(cfg.fasceFiltro||[]).includes(f.key);
+            return (
+              <div key={f.key} onClick={()=>toggleFascia(f.key)}
+                style={{display:"flex",alignItems:"center",padding:"10px 14px",cursor:"pointer",
+                  borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none",
+                  background:sel?accent+"15":"transparent"}}>
+                {sel&&<span style={{color:accent,marginRight:8,fontSize:12}}>✓</span>}
+                <span style={{flex:1,fontSize:13,fontWeight:sel?700:400,color:sel?accent:T.text}}>{f.label}</span>
+                <span style={{fontSize:12,fontWeight:800,color:T.sub}}>{f.count}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Per modello */}
       {modelli.length>0&&data.perModello&&Object.keys(data.perModello).length>0&&(
         <div style={{background:T.surface,borderRadius:10,padding:12}}>
           <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:8}}>PER MODELLO</div>
@@ -2026,46 +1956,29 @@ function ConteggioConfig({T, cfg, setCfg, data, calendars, modelli}){
             const m=modelli.find(x=>x.id===mid);
             if(!m) return null;
             const c=m.coloreCustom||getColorByTime(m.inizio);
+            const mp=data.totale>0?Math.round((cnt/data.totale)*100):0;
             return (
               <div key={mid} style={{display:"flex",alignItems:"center",gap:8,
                 padding:"6px 8px",background:T.s2,borderRadius:6,marginBottom:4}}>
                 <div style={{width:10,height:10,borderRadius:"50%",background:c}}/>
                 <span style={{flex:1,fontSize:12,color:T.text}}>{m.titolo}</span>
+                <span style={{fontSize:11,color:T.sub}}>{mp}%</span>
                 <span style={{fontSize:14,fontWeight:800,color:T.text}}>{cnt}</span>
               </div>
             );
           })}
         </div>
       )}
-
-      <div>
-        <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>INCLUDI GIORNI</div>
-        <div style={{background:T.surface,borderRadius:10,overflow:"hidden",border:`1px solid ${T.border}`}}>
-          {[["festivi","Festività"],["lun","Lunedì"],["mar","Martedì"],["mer","Mercoledì"],
-            ["gio","Giovedì"],["ven","Venerdì"],["sab","Sabato"],["dom","Domenica"]].map(([k,l],i,arr)=>(
-            <div key={k} style={{display:"flex",alignItems:"center",justifyContent:"space-between",
-              padding:"12px 14px",borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
-              <span style={{fontSize:13,color:T.text}}>{l}</span>
-              <div onClick={()=>setCfg(c=>({...c,giorni:{...c.giorni,[k]:!c.giorni[k]}}))}
-                style={{width:44,height:26,borderRadius:13,cursor:"pointer",position:"relative",
-                  background:cfg.giorni[k]?"#3b82f6":"#94a3b8",transition:"background 0.2s"}}>
-                <div style={{position:"absolute",top:3,left:cfg.giorni[k]?20:3,width:20,height:20,
-                  borderRadius:"50%",background:"#fff",transition:"left 0.2s"}}/>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }
 
 function IndennitaConfig({T, values, setValues, calc, onSave}){
   const fasce = [
-    { key:"diurno", label:"Diurno (06:00 - 22:00)", count: calc.diurno },
-    { key:"notturno", label:"Notturno", count: calc.notturno },
-    { key:"festivo", label:"Festivo", count: calc.festivo },
-    { key:"notturno_festivo", label:"Notturno festivo", count: calc.notturno_festivo },
+    { key:"diurno",          label:"Diurno (06:00 - 22:00)", count:calc.diurno },
+    { key:"notturno",        label:"Notturno",                count:calc.notturno },
+    { key:"festivo",         label:"Festivo",                 count:calc.festivo },
+    { key:"notturno_festivo",label:"Notturno festivo",        count:calc.notturno_festivo },
   ];
   return (
     <div style={{display:"flex",flexDirection:"column",gap:8}}>
@@ -2080,8 +1993,7 @@ function IndennitaConfig({T, values, setValues, calc, onSave}){
           <div style={{display:"flex",alignItems:"center",gap:4}}>
             <span style={{fontSize:13,color:T.sub}}>€</span>
             <input type="number" value={values[f.key]||""} onChange={e=>setValues(v=>({...v,[f.key]:e.target.value}))}
-              onBlur={onSave}
-              placeholder="0.00" step="0.01"
+              onBlur={onSave} placeholder="0.00" step="0.01"
               style={{width:70,background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
                 padding:"6px 8px",color:T.text,fontSize:13,outline:"none",textAlign:"right"}}/>
           </div>
@@ -2093,7 +2005,7 @@ function IndennitaConfig({T, values, setValues, calc, onSave}){
         <span style={{fontSize:16,fontWeight:900,color:"#22c55e"}}>
           € {fasce.reduce((sum,f)=>{
             const v=parseFloat(values[f.key])||0;
-            return sum + v*f.count;
+            return sum+v*f.count;
           },0).toFixed(2)}
         </span>
       </div>
@@ -2130,7 +2042,7 @@ function StraordinariView({T, data}){
 
 function GuadagniView({T, indennita, calc}){
   const tot = ["diurno","notturno","festivo","notturno_festivo"].reduce((s,k)=>{
-    return s + (parseFloat(indennita[k])||0)*calc[k];
+    return s+(parseFloat(indennita[k])||0)*calc[k];
   },0);
   return (
     <div style={{background:T.surface,borderRadius:10,padding:12}}>
@@ -2143,7 +2055,7 @@ function GuadagniView({T, indennita, calc}){
   );
 }
 
-// ── SHARED COMPONENTS ────────────────────────────────────────
+// ── SHARED COMPONENTS ─────────────────────────────────────────
 function Pal({T, cur, onPick, up=false}){
   return (
     <div style={{position:"absolute",zIndex:500,
@@ -2204,21 +2116,17 @@ function ModelForm({T, form, setForm, accent, dark, onSave}){
   const coloreVis=form.coloreCustom||autoColore;
   const fineAuto=form.tempo==="6h15"&&form.inizio?calcFine6h15(form.inizio):null;
   const [showPal,setShowPal]=useState(false);
-  const PALETTE_M=[
-    "#ef4444","#f97316","#f59e0b","#eab308","#84cc16","#22c55e",
+  const PALETTE_M=["#ef4444","#f97316","#f59e0b","#eab308","#84cc16","#22c55e",
     "#10b981","#14b8a6","#06b6d4","#3b82f6","#6366f1","#8b5cf6",
-    "#a855f7","#ec4899","#64748b","#1e40af","#0f172a","#ffffff",
-  ];
+    "#a855f7","#ec4899","#64748b","#1e40af","#0f172a","#ffffff"];
   return (
     <div style={{padding:"16px 14px 40px"}}>
-      <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,
-        overflow:"hidden",marginBottom:16}}>
+      <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:16}}>
         <input value={form.titolo} onChange={e=>setForm(f=>({...f,titolo:e.target.value}))}
           placeholder="TITOLO"
           style={{width:"100%",padding:"14px 16px",background:"transparent",border:"none",
             outline:"none",color:T.text,fontSize:16,fontWeight:600,boxSizing:"border-box"}}/>
       </div>
-
       <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>TIPO DI TURNO</div>
       <div style={{display:"flex",gap:8,marginBottom:16}}>
         {[["h24","H24"],["6h15","6h 15m"],["personalizzato","Personalizzato"]].map(([v,l])=>(
@@ -2229,16 +2137,12 @@ function ModelForm({T, form, setForm, accent, dark, onSave}){
               color:form.tempo===v?"#fff":T.sub}}>{l}</button>
         ))}
       </div>
-
       {form.tempo!=="h24"&&(
-        <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,
-          overflow:"hidden",marginBottom:16}}>
-          <div style={{display:"flex",alignItems:"center",padding:"14px 16px",
-            borderBottom:`1px solid ${T.border}`}}>
+        <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:16}}>
+          <div style={{display:"flex",alignItems:"center",padding:"14px 16px",borderBottom:`1px solid ${T.border}`}}>
             <span style={{flex:1,fontSize:15,color:T.text}}>Inizio</span>
             <input type="time" value={form.inizio} onChange={e=>setForm(f=>({...f,inizio:e.target.value}))}
-              style={{background:"transparent",border:"none",outline:"none",
-                color:T.text,fontSize:15,fontWeight:700}}/>
+              style={{background:"transparent",border:"none",outline:"none",color:T.text,fontSize:15,fontWeight:700}}/>
           </div>
           <div style={{display:"flex",alignItems:"center",padding:"14px 16px"}}>
             <span style={{flex:1,fontSize:15,color:T.text}}>Fine</span>
@@ -2246,16 +2150,13 @@ function ModelForm({T, form, setForm, accent, dark, onSave}){
               <span style={{fontSize:15,fontWeight:700,color:T.sub}}>{fineAuto} (auto)</span>
             ):(
               <input type="time" value={form.fine} onChange={e=>setForm(f=>({...f,fine:e.target.value}))}
-                style={{background:"transparent",border:"none",outline:"none",
-                  color:T.text,fontSize:15,fontWeight:700}}/>
+                style={{background:"transparent",border:"none",outline:"none",color:T.text,fontSize:15,fontWeight:700}}/>
             )}
           </div>
         </div>
       )}
-
       <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>COLORE</div>
-      <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,
-        padding:"12px 14px",marginBottom:16}}>
+      <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,padding:"12px 14px",marginBottom:16}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <div style={{width:36,height:36,borderRadius:"50%",background:coloreVis,
             border:`3px solid ${T.border}`,cursor:"pointer",flexShrink:0}}
@@ -2264,9 +2165,6 @@ function ModelForm({T, form, setForm, accent, dark, onSave}){
             <div style={{fontSize:13,fontWeight:700,color:T.text}}>
               {form.coloreCustom?"Personalizzato":`Auto — ${form.tempo==="h24"?"H24":getColorLabel(form.inizio)||"imposta orario"}`}
             </div>
-            {!form.coloreCustom&&form.tempo!=="h24"&&form.inizio&&(
-              <div style={{fontSize:11,color:T.sub}}>{getColorLabel(form.inizio)}</div>
-            )}
           </div>
           {form.coloreCustom&&(
             <button onClick={()=>setForm(f=>({...f,coloreCustom:null}))}
@@ -2283,16 +2181,13 @@ function ModelForm({T, form, setForm, accent, dark, onSave}){
           </div>
         )}
       </div>
-
       <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>POSIZIONE</div>
-      <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,
-        overflow:"hidden",marginBottom:24}}>
+      <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:24}}>
         <input value={form.posizione||""} onChange={e=>setForm(f=>({...f,posizione:e.target.value.toUpperCase()}))}
           placeholder="LUOGO DI LAVORO (OPZIONALE)"
           style={{width:"100%",padding:"14px 16px",background:"transparent",border:"none",
             outline:"none",color:T.text,fontSize:15,boxSizing:"border-box"}}/>
       </div>
-
       <button onClick={onSave}
         style={{width:"100%",background:accent,border:"none",borderRadius:14,
           color:"#fff",padding:"14px 0",cursor:"pointer",fontWeight:800,fontSize:15}}>
@@ -2302,11 +2197,8 @@ function ModelForm({T, form, setForm, accent, dark, onSave}){
   );
 }
 
-
 const NB={background:"none",border:"none",fontSize:22,cursor:"pointer",
   padding:"0 4px",lineHeight:1,flexShrink:0,color:"rgba(255,255,255,0.8)"};
-
-// ── ROTAZIONI COMPONENTS ─────────────────────────────────────
 
 function RotazioneCard({r, T, accent, modelli, onOpen, onDelete}){
   const tipoLabel = r.tipo==="domeniche"?"🗓 Domeniche":r.tipo==="nlrs"?"🔄 NL / RS":"📋 Personalizzata";
@@ -2338,19 +2230,15 @@ function RotazioneForm({T, form, setForm, accent, modelli, onSave}){
               color:form.tipo===v?"#fff":T.sub}}>{l}</button>
         ))}
       </div>
-
       <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:16}}>
         <input value={form.titolo} onChange={e=>setForm(f=>({...f,titolo:e.target.value}))}
-          placeholder={form.tipo==="domeniche"?"ES. ROTAZIONE DOMENICHE":form.tipo==="nlrs"?"ES. ROTAZIONE NL/RS":"TITOLO ROTAZIONE"}
+          placeholder="TITOLO ROTAZIONE"
           style={{width:"100%",padding:"14px 16px",background:"transparent",border:"none",
             outline:"none",color:T.text,fontSize:16,fontWeight:600,boxSizing:"border-box"}}/>
       </div>
-
       <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:16}}>
         <div style={{display:"flex",alignItems:"center",padding:"14px 16px",borderBottom:`1px solid ${T.border}`}}>
-          <span style={{flex:1,fontSize:15,color:T.text}}>
-            {form.tipo==="nlrs"?"Data primo NL":"Data inizio ciclo"}
-          </span>
+          <span style={{flex:1,fontSize:15,color:T.text}}>Data inizio ciclo</span>
           <input type="date" value={form.dataInizio} onChange={e=>setForm(f=>({...f,dataInizio:e.target.value}))}
             style={{background:"transparent",border:"none",outline:"none",color:T.text,fontSize:14,fontWeight:700}}/>
         </div>
@@ -2362,35 +2250,28 @@ function RotazioneForm({T, form, setForm, accent, modelli, onSave}){
               padding:"6px 8px",color:T.text,fontSize:14,fontWeight:700,outline:"none",textAlign:"center"}}/>
         </div>
       </div>
-
       {form.tipo==="domeniche"&&(
         <div style={{marginBottom:16}}>
           <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>MODELLI</div>
           <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
             <ModelloSelector label="Domenica lavoro" value={form.modellaLavoroId}
-              onChange={id=>setForm(f=>({...f,modellaLavoroId:id}))}
-              modelli={modelli} T={T} required/>
+              onChange={id=>setForm(f=>({...f,modellaLavoroId:id}))} modelli={modelli} T={T} required/>
             <ModelloSelector label="Domenica festa (opzionale)" value={form.modelloNLId}
-              onChange={id=>setForm(f=>({...f,modelloNLId:id}))}
-              modelli={modelli} T={T} last/>
+              onChange={id=>setForm(f=>({...f,modelloNLId:id}))} modelli={modelli} T={T} last/>
           </div>
         </div>
       )}
-
       {form.tipo==="nlrs"&&(
         <div style={{marginBottom:16}}>
           <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>MODELLI</div>
           <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
             <ModelloSelector label="NL (Non Lavoro)" value={form.modelloNLId}
-              onChange={id=>setForm(f=>({...f,modelloNLId:id}))}
-              modelli={modelli} T={T}/>
+              onChange={id=>setForm(f=>({...f,modelloNLId:id}))} modelli={modelli} T={T}/>
             <ModelloSelector label="RS (Riposo Settimanale)" value={form.modelloRSId}
-              onChange={id=>setForm(f=>({...f,modelloRSId:id}))}
-              modelli={modelli} T={T} last/>
+              onChange={id=>setForm(f=>({...f,modelloRSId:id}))} modelli={modelli} T={T} last/>
           </div>
         </div>
       )}
-
       <button onClick={onSave}
         style={{width:"100%",background:accent,border:"none",borderRadius:14,
           color:"#fff",padding:"14px 0",cursor:"pointer",fontWeight:800,fontSize:15}}>
@@ -2453,11 +2334,9 @@ function ModelloSelector({label, value, onChange, modelli, T, required=false, la
   );
 }
 
-// Griglia 365 giorni per rotazione personalizzata
 function GrigliaRotazione({rot, T, accent, modelli, onUpdate}){
   const [selModello, setSelModello] = useState(modelli[0]?.id||null);
   const griglia = rot.griglia||{};
-
   function getDays(){
     const days=[];
     const inizio=rot.dataInizio?new Date(rot.dataInizio):new Date(new Date().getFullYear(),0,1);
@@ -2469,14 +2348,9 @@ function GrigliaRotazione({rot, T, accent, modelli, onUpdate}){
     }
     return days;
   }
-
   const days=getDays();
   const weeks=[];
   for(let i=0;i<days.length;i+=7) weeks.push(days.slice(i,i+7));
-
-  const selM=modelli.find(m=>m.id===selModello);
-  const selColore=selM?(selM.coloreCustom||getColorByTime(selM.inizio)):"#3b82f6";
-
   return (
     <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
       <div style={{flex:1,overflowY:"auto",padding:"8px 8px 0"}}>
@@ -2509,7 +2383,7 @@ function GrigliaRotazione({rot, T, accent, modelli, onUpdate}){
                         onUpdate(newG);
                       }}
                       style={{height:32,borderRadius:6,cursor:"pointer",
-                        background:c||( isDOM?(T.bg==="#f1f5f9"?"#fff5f5":"#2d0a0a"):T.s2),
+                        background:c||(isDOM?(T.bg==="#f1f5f9"?"#fff5f5":"#2d0a0a"):T.s2),
                         border:`1px solid ${c?c+"88":T.border}`,
                         display:"flex",alignItems:"center",justifyContent:"center",
                         fontSize:9,fontWeight:700,color:c?"#fff":T.sub}}>
@@ -2545,12 +2419,10 @@ function GrigliaRotazione({rot, T, accent, modelli, onUpdate}){
   );
 }
 
-// Vista rotazione Domeniche
 function DomenicheView({rot, T, accent, modelli, onUpdate}){
   const griglia=rot.griglia||{};
   const modLav=modelli.find(m=>m.id===rot.modellaLavoroId);
   const modFesta=modelli.find(m=>m.id===rot.modelloNLId);
-
   function getDomeniche(){
     if(!rot.dataInizio) return [];
     const inizio=new Date(rot.dataInizio);
@@ -2564,7 +2436,6 @@ function DomenicheView({rot, T, accent, modelli, onUpdate}){
     }
     return domeniche;
   }
-
   const domeniche=getDomeniche();
   return (
     <div style={{flex:1,overflowY:"auto",padding:12}}>
@@ -2589,7 +2460,6 @@ function DomenicheView({rot, T, accent, modelli, onUpdate}){
                 <div style={{fontSize:13,fontWeight:700,color:T.text}}>
                   {isLavoro?"🔵 Lavoro":"⚪ Festa"} · {effM?.titolo||(isLavoro?"Nessun modello assegnato":"Riposo")}
                 </div>
-                {ovrM&&<div style={{fontSize:10,color:accent,marginTop:1}}>Personalizzato</div>}
               </div>
               {ovrM&&(
                 <button onClick={()=>{const g={...griglia};delete g[dom.key];onUpdate(g);}}
@@ -2603,11 +2473,9 @@ function DomenicheView({rot, T, accent, modelli, onUpdate}){
   );
 }
 
-// Vista rotazione NL/RS
 function NLRSView({rot, T, accent, modelli}){
   const modNL=modelli.find(m=>m.id===rot.modelloNLId);
   const modRS=modelli.find(m=>m.id===rot.modelloRSId);
-
   function getCiclo(){
     if(!rot.dataInizio) return [];
     const inizio=new Date(rot.dataInizio);
@@ -2630,7 +2498,6 @@ function NLRSView({rot, T, accent, modelli}){
     }
     return ciclo;
   }
-
   const ciclo=getCiclo();
   return (
     <div style={{flex:1,overflowY:"auto",padding:12}}>
@@ -2643,10 +2510,10 @@ function NLRSView({rot, T, accent, modelli}){
         <div style={{marginBottom:10,background:T.surface,borderRadius:10,padding:"10px 14px",
           display:"flex",gap:16,flexWrap:"wrap"}}>
           <div style={{fontSize:12,color:T.sub}}>
-            <span style={{fontWeight:700,color:"#3b82f6"}}>NL</span> — Modello: {modNL?.titolo||"Non assegnato"}
+            <span style={{fontWeight:700,color:"#3b82f6"}}>NL</span> — {modNL?.titolo||"Non assegnato"}
           </div>
           <div style={{fontSize:12,color:T.sub}}>
-            <span style={{fontWeight:700,color:"#8b5cf6"}}>RS</span> — Modello: {modRS?.titolo||"Non assegnato"}
+            <span style={{fontWeight:700,color:"#8b5cf6"}}>RS</span> — {modRS?.titolo||"Non assegnato"}
           </div>
         </div>
       )}
