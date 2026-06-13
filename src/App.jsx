@@ -1574,12 +1574,12 @@ export default function App({ session }){
                     <div style={{fontSize:9,color:T.sub,marginBottom:3}}>USCITA (modif.)</div>
                     <input type="time" value={form.tOut||calcFine6h15(form.tIn)}
                       onChange={e=>setForm(f=>({...f,tOut:e.target.value}))}
-                      style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
+                      style={{width:"auto",background:T.surface,border:`1px solid ${T.border}`,
                         borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
-                    <div style={{display:"flex",gap:6,marginTop:6}}>
+                    <div style={{display:"flex",gap:6,marginTop:6,justifyContent:"center"}}>
                       <button type="button"
                         onClick={()=>setForm(f=>({...f,tipoProtrazione:f.tipoProtrazione==="pagamento"?null:"pagamento"}))}
-                        style={{flex:1,padding:"5px 8px",borderRadius:8,cursor:"pointer",fontSize:9,fontWeight:800,
+                        style={{flex:1,maxWidth:160,padding:"5px 8px",borderRadius:8,cursor:"pointer",fontSize:9,fontWeight:800,
                           lineHeight:1,textAlign:"center",whiteSpace:"nowrap",
                           background:form.tipoProtrazione==="pagamento"?"#8b5cf6":T.surface,
                           color:form.tipoProtrazione==="pagamento"?"#fff":T.sub,
