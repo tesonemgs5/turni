@@ -1656,7 +1656,7 @@ export default function App({ session }){
                             <div style={{fontSize:13,fontWeight:900,color:"#64748b"}}>{diffLabel}</div>
                           </div>
                         )}
-                      </div>
+</div>
                     </div>
                   );
                 })()}
