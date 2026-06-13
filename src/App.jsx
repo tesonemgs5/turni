@@ -327,6 +327,8 @@ export default function App({ session }){
     }
     if(form.dur==="fixed" && tInFinal && form.tOut){
       const std=calcFine6h15(tInFinal);
+      const diff=calcMinuti(std, form.tOut);
+      if(diff>0&&form.tipoProtrazione) extraNote=(extraNote?extraNote+" | ":"")+`Protrazione (${form.tipoProtrazione==="pagamento"?"PAG":"REC"}): +${Math.floor(diff/60)}h${diff%60>0?diff%60+"m":""}`;
       const [h1,m1]=std.split(":").map(Number);
       const [h2,m2]=form.tOut.split(":").map(Number);
       const diff=(h2*60+m2)-(h1*60+m1);
