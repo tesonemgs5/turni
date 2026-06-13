@@ -1,7 +1,5 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabase";
-import { MONTHS, DAYS, PALETTE, uid, daysInMonth, firstDay, dkey, easter, italianHols, getColorByTime, getColorLabel, calcFine6h15, calcDurata, getShiftBand, isFestivo, REPORT_TEMPLATES, INIT, NB } from "./constants";
-
 const MONTHS = ["Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno",
                 "Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"];
 const DAYS = ["L","M","M","G","V","S","D"];
