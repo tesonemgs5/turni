@@ -262,6 +262,8 @@ export default function App({ session }){
       user_id: userId,
       theme: store.theme,
       extra_hols: store.extraHols,
+      indennita,
+      conteggio_configs: conteggioConfigs,
       ...updates,
       updated_at: new Date().toISOString(),
     });
@@ -508,6 +510,7 @@ export default function App({ session }){
     try {
       const {error} = await supabase.from("user_settings").upsert({
         user_id:userId, sheets_url:sheetsUrl.trim(), sheets_secret:sheetsSecret.trim(),
+        indennita, conteggio_configs: conteggioConfigs,
         updated_at:new Date().toISOString(),
       });
       if(error) throw error;
@@ -686,10 +689,11 @@ export default function App({ session }){
   function addReport(type){
     const tmpl = REPORT_TEMPLATES.find(t=>t.type===type);
     if(!tmpl) return;
+    const existing = (store.reports||[]).filter(r=>r.type===type).length;
     const newReport = {
       id: uid(),
       type,
-      label: tmpl.label,
+      label: existing>0 ? `${tmpl.label} ${existing+1}` : tmpl.label,
       active: true,
     };
     const newRep = [...(store.reports||[]), newReport];
@@ -2200,7 +2204,7 @@ function ModelForm({T, form, setForm, accent, dark, onSave}){
 const NB={background:"none",border:"none",fontSize:22,cursor:"pointer",
   padding:"0 4px",lineHeight:1,flexShrink:0,color:"rgba(255,255,255,0.8)"};
 
-function RotazioneCard({r, T, accent, modelli, onOpen, onDelete}){
+export default function App({r, T, accent, modelli, onOpen, onDelete}){
   const tipoLabel = r.tipo==="domeniche"?"🗓 Domeniche":r.tipo==="nlrs"?"🔄 NL / RS":"📋 Personalizzata";
   const modelloLav = modelli.find(m=>m.id===r.modellaLavoroId);
   return (
