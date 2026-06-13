@@ -1577,8 +1577,52 @@ export default function App({ session }){
                       onChange={e=>setForm(f=>({...f,tOut:e.target.value}))}
                       style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                         borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
-                  </div>
-                )}
+                    <div style={{display:"flex",gap:6,marginTop:6}}>
+                      <button type="button"
+                        onClick={()=>setForm(f=>({...f,tipoProtrazione:f.tipoProtrazione==="pagamento"?null:"pagamento"}))}
+                        style={{flex:1,padding:"5px 4px",borderRadius:8,cursor:"pointer",fontSize:9,fontWeight:800,
+                          lineHeight:1.2,textAlign:"center",
+                          background:form.tipoProtrazione==="pagamento"?"#8b5cf6":T.surface,
+                          color:form.tipoProtrazione==="pagamento"?"#fff":T.sub,
+                          border:`1.5px solid ${form.tipoProtrazione==="pagamento"?"#8b5cf6":T.border}`}}>
+                        PROTRAZIONE<br/>A PAGAMENTO
+                      </button>
+                      <button type="button"
+                        onClick={()=>setForm(f=>({...f,tipoProtrazione:f.tipoProtrazione==="recupero"?null:"recupero"}))}
+                        style={{flex:1,padding:"5px 4px",borderRadius:8,cursor:"pointer",fontSize:9,fontWeight:800,
+                          lineHeight:1.2,textAlign:"center",
+                          background:form.tipoProtrazione==="recupero"?"#64748b":T.surface,
+                          color:form.tipoProtrazione==="recupero"?"#fff":T.sub,
+                          border:`1.5px solid ${form.tipoProtrazione==="recupero"?"#64748b":T.border}`}}>
+                        PROTRAZIONE<br/>A RECUPERO
+                      </button>
+                    </div>
+                    {form.tipoProtrazione==="pagamento"&&(()=>{
+                      const fineStd=calcFine6h15(form.tIn);
+                      const tOut=form.tOut||fineStd;
+                      let ore=0,minuti=0;
+                      if(tOut&&fineStd){
+                        const [h1,m1]=fineStd.split(":").map(Number);
+                        const [h2,m2]=tOut.split(":").map(Number);
+                        let diff=(h2*60+m2)-(h1*60+m1);
+                        if(diff<0) diff+=24*60;
+                        ore=Math.floor(diff/60); minuti=diff%60;
+                      }
+                      return (
+                        <div style={{marginTop:8,background:T.s2,borderRadius:10,padding:"10px 12px"}}>
+                          <div style={{fontSize:9,color:"#8b5cf6",fontWeight:800,marginBottom:6}}>ORE IN ECCESSO (PAGAMENTO)</div>
+                          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                            <div style={{flex:1}}>
+                              <div style={{fontSize:9,color:T.sub,marginBottom:3}}>ORE</div>
+                              <input type="number" min={0} max={23}
+                                value={ore}
+                                onChange={e=>{
+                                  const newOre=parseInt(e.target.value)||0;
+                                  const fineStd=calcFine6h15(form.tIn);
+                                  const [h1,m1]=fineStd.split(":").map(Number);
+                                  const tot=(h1*60+m1)+newOre*60+minuti;
+                                  const newTOut=`${String(Math.floor(tot/60)%24).padStart(2,"0")}:${String(tot%60).padStart(2,"0")}`;
+                                  setForm(f=>({...f,tOut:newTOut}));
               </div>
             )}
             <input value={form.auto||""} onChange={e=>{
