@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabase";
+import { MONTHS, DAYS, PALETTE, uid, daysInMonth, firstDay, dkey, easter, italianHols, getColorByTime, getColorLabel, calcFine6h15, calcDurata, getShiftBand, isFestivo, REPORT_TEMPLATES, INIT, NB } from "./constants";
 
 const MONTHS = ["Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno",
                 "Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"];
@@ -331,7 +332,7 @@ export default function App({ session }){
       const [h1,m1]=std.split(":").map(Number);
       const [h2,m2]=form.tOut.split(":").map(Number);
       const diff=(h2*60+m2)-(h1*60+m1);
-      if(diff>0) extraNote=(extraNote?extraNote+" | ":"")+`Protrazione: +${Math.floor(diff/60)}h${diff%60>0?diff%60+"m":""}`;
+      if(diff>0&&form.tipoProtrazione) extraNote=(extraNote?extraNote+" | ":"")+`Protrazione (${form.tipoProtrazione==="pagamento"?"PAG":"REC"}): +${Math.floor(diff/60)}h${diff%60>0?diff%60+"m":""}`;
       if(diff<0) extraNote=(extraNote?extraNote+" | ":"")+`Monte ore: ${Math.floor(Math.abs(diff)/60)}h${Math.abs(diff)%60>0?Math.abs(diff)%60+"m":""}`;
     }
     const { data, error } = await supabase.from("events").insert({
@@ -1580,21 +1581,21 @@ export default function App({ session }){
                     <div style={{display:"flex",gap:6,marginTop:6}}>
                       <button type="button"
                         onClick={()=>setForm(f=>({...f,tipoProtrazione:f.tipoProtrazione==="pagamento"?null:"pagamento"}))}
-                        style={{flex:1,padding:"5px 4px",borderRadius:8,cursor:"pointer",fontSize:9,fontWeight:800,
-                          lineHeight:1.2,textAlign:"center",
+                        style={{flex:1,padding:"5px 8px",borderRadius:8,cursor:"pointer",fontSize:9,fontWeight:800,
+                          lineHeight:1,textAlign:"center",whiteSpace:"nowrap",
                           background:form.tipoProtrazione==="pagamento"?"#8b5cf6":T.surface,
                           color:form.tipoProtrazione==="pagamento"?"#fff":T.sub,
                           border:`1.5px solid ${form.tipoProtrazione==="pagamento"?"#8b5cf6":T.border}`}}>
-                        PROTRAZIONE<br/>A PAGAMENTO
+                        PROTRAZIONE A PAGAMENTO
                       </button>
                       <button type="button"
                         onClick={()=>setForm(f=>({...f,tipoProtrazione:f.tipoProtrazione==="recupero"?null:"recupero"}))}
-                        style={{flex:1,padding:"5px 4px",borderRadius:8,cursor:"pointer",fontSize:9,fontWeight:800,
-                          lineHeight:1.2,textAlign:"center",
+                        style={{flex:1,padding:"5px 8px",borderRadius:8,cursor:"pointer",fontSize:9,fontWeight:800,
+                          lineHeight:1,textAlign:"center",whiteSpace:"nowrap",
                           background:form.tipoProtrazione==="recupero"?"#64748b":T.surface,
                           color:form.tipoProtrazione==="recupero"?"#fff":T.sub,
                           border:`1.5px solid ${form.tipoProtrazione==="recupero"?"#64748b":T.border}`}}>
-                        PROTRAZIONE<br/>A RECUPERO
+                        PROTRAZIONE A RECUPERO
                       </button>
                     </div>
                     {form.tipoProtrazione==="pagamento"&&(()=>{
@@ -1610,43 +1611,19 @@ export default function App({ session }){
                       }
                       return (
                         <div style={{marginTop:8,background:T.s2,borderRadius:10,padding:"10px 12px"}}>
-                          <div style={{fontSize:9,color:"#8b5cf6",fontWeight:800,marginBottom:6}}>ORE IN ECCESSO (PAGAMENTO)</div>
-                          <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                            <div style={{flex:1}}>
-                              <div style={{fontSize:9,color:T.sub,marginBottom:3}}>ORE</div>
-                              <input type="number" min={0} max={23}
-                                value={ore}
-                                onChange={e=>{
-                                  const newOre=parseInt(e.target.value)||0;
-                                  const fineStd=calcFine6h15(form.tIn);
-                                  const [h1,m1]=fineStd.split(":").map(Number);
-                                  const tot=(h1*60+m1)+newOre*60+minuti;
-                                  const newTOut=`${String(Math.floor(tot/60)%24).padStart(2,"0")}:${String(tot%60).padStart(2,"0")}`;
-                                  setForm(f=>({...f,tOut:newTOut}));
-                                }}
-                                style={{width:"100%",background:T.surface,border:`1px solid #8b5cf6`,
-                                  borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none",textAlign:"center"}}/>
+                          <div style={{display:"flex",alignItems:"center",gap:10}}>
+                            <div style={{fontSize:13,fontWeight:900,color:"#8b5cf6",flexShrink:0}}>
+                              ORE IN ECCESSO
                             </div>
-                            <div style={{flex:1}}>
-                              <div style={{fontSize:9,color:T.sub,marginBottom:3}}>MINUTI</div>
-                              <input type="number" min={0} max={59}
-                                value={minuti}
-                                onChange={e=>{
-                                  const newMin=parseInt(e.target.value)||0;
-                                  const fineStd=calcFine6h15(form.tIn);
-                                  const [h1,m1]=fineStd.split(":").map(Number);
-                                  const tot=(h1*60+m1)+ore*60+newMin;
-                                  const newTOut=`${String(Math.floor(tot/60)%24).padStart(2,"0")}:${String(tot%60).padStart(2,"0")}`;
-                                  setForm(f=>({...f,tOut:newTOut}));
-                                }}
-                                style={{width:"100%",background:T.surface,border:`1px solid #8b5cf6`,
-                                  borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none",textAlign:"center"}}/>
+                            <div style={{fontSize:20,fontWeight:900,color:"#8b5cf6",flex:1}}>
+                              {ore>0||minuti>0?`${ore}h${minuti>0?" "+minuti+"m":""}`:"—"}
                             </div>
-                            <div style={{flexShrink:0,textAlign:"center"}}>
-                              <div style={{fontSize:9,color:T.sub,marginBottom:3}}>TOTALE</div>
-                              <div style={{fontSize:13,fontWeight:900,color:"#8b5cf6"}}>
-                                {ore}h {minuti>0?minuti+"m":""}
-                              </div>
+                            <div style={{flexShrink:0}}>
+                              <div style={{fontSize:9,color:T.sub,marginBottom:3}}>ORA FINE</div>
+                              <input type="time" value={form.tOut||calcFine6h15(form.tIn)}
+                                onChange={e=>setForm(f=>({...f,tOut:e.target.value}))}
+                                style={{background:T.surface,border:`1px solid #8b5cf6`,
+                                  borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
                             </div>
                           </div>
                         </div>
