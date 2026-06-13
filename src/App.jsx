@@ -1601,8 +1601,6 @@ export default function App({ session }){
                           border:`1.5px solid ${form.tipoProtrazione==="recupero"?"#64748b":T.border}`}}>
                         PROTRAZIONE A RECUPERO
                       </button>
-                    </div>
-                    </div>
                     {form.tipoProtrazione==="pagamento"&&(()=>{
                       const fineStd=calcFine6h15(form.tIn);
                       const tOut=form.tOut||fineStd;
