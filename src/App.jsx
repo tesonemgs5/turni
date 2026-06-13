@@ -331,6 +331,7 @@ export default function App({ session }){
       const [h2,m2]=form.tOut.split(":").map(Number);
       const diff=(h2*60+m2)-(h1*60+m1);
       const diff=calcMinuti(std, form.tOut);
+const diff=calcMinuti(std, form.tOut);
 if(diff>0&&form.tipoProtrazione) extraNote=(extraNote?extraNote+" | ":"")+`Protrazione (${form.tipoProtrazione==="pagamento"?"PAG":"REC"}): +${Math.floor(diff/60)}h${diff%60>0?diff%60+"m":""}`;
       if(diff<0) extraNote=(extraNote?extraNote+" | ":"")+`Monte ore: ${Math.floor(Math.abs(diff)/60)}h${Math.abs(diff)%60>0?Math.abs(diff)%60+"m":""}`;
     }
