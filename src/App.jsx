@@ -2204,7 +2204,7 @@ function ModelForm({T, form, setForm, accent, dark, onSave}){
 const NB={background:"none",border:"none",fontSize:22,cursor:"pointer",
   padding:"0 4px",lineHeight:1,flexShrink:0,color:"rgba(255,255,255,0.8)"};
 
-export default function App({r, T, accent, modelli, onOpen, onDelete}){
+function RotazioneCard({r, T, accent, modelli, onOpen, onDelete}){
   const tipoLabel = r.tipo==="domeniche"?"🗓 Domeniche":r.tipo==="nlrs"?"🔄 NL / RS":"📋 Personalizzata";
   const modelloLav = modelli.find(m=>m.id===r.modellaLavoroId);
   return (
