@@ -230,7 +230,15 @@ export default function App({ session }){
       } catch(e){ console.log("Errore startup:", e); }
       setLoading(false);
     })();
-  },[userId]);
+  useEffect(()=>{
+  function handleVisibilityChange(){
+    if(document.visibilityState==="visible"){
+      window.location.reload();
+    }
+  }
+  document.addEventListener("visibilitychange", handleVisibilityChange);
+  return ()=>document.removeEventListener("visibilitychange", handleVisibilityChange);
+},[]);
 
   const sysDark = window.matchMedia?.("(prefers-color-scheme:dark)").matches??false;
   const dark = store.theme==="auto"?sysDark:store.theme==="dark";
@@ -798,7 +806,29 @@ export default function App({ session }){
         gap:5,padding:"6px 8px",overflowX:"auto",scrollbarWidth:"none",flexShrink:0}}>
         <button onClick={()=>month===0?(setYear(y=>y-1),setMonth(11)):setMonth(m=>m-1)} style={NB}>‹</button>
         <span style={{color:"#fff",fontSize:13,fontWeight:900,flexShrink:0,fontFamily:"Georgia,serif"}}>
-          {MONTHS[month].slice(0,3).toUpperCase()} {year} {bgSyncing&&" 🔄"}
+          <select
+  value={month}
+  onChange={e=>setMonth(Number(e.target.value))}
+  style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.4)",
+    borderRadius:8,color:"#fff",fontSize:12,fontWeight:900,fontFamily:"Georgia,serif",
+    padding:"2px 4px",cursor:"pointer",outline:"none",flexShrink:0}}>
+  {MONTHS.map((m,i)=>(
+    <option key={i} value={i} style={{background:"#1e293b",color:"#fff"}}>
+      {m.toUpperCase()}
+    </option>
+  ))}
+</select>
+<select
+  value={year}
+  onChange={e=>setYear(Number(e.target.value))}
+  style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.4)",
+    borderRadius:8,color:"#fff",fontSize:12,fontWeight:900,fontFamily:"Georgia,serif",
+    padding:"2px 4px",cursor:"pointer",outline:"none",flexShrink:0}}>
+  {Array.from({length:10},(_,i)=>today.getFullYear()-3+i).map(y=>(
+    <option key={y} value={y} style={{background:"#1e293b",color:"#fff"}}>{y}</option>
+  ))}
+</select>
+{bgSyncing&&<span style={{color:"rgba(255,255,255,0.7)",fontSize:11}}>🔄</span>}
         </span>
         <button onClick={()=>month===11?(setYear(y=>y+1),setMonth(0)):setMonth(m=>m+1)} style={NB}>›</button>
         <div style={{width:1,height:14,background:"rgba(255,255,255,0.3)",flexShrink:0,marginLeft:2}}/>
