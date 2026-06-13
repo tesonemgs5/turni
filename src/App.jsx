@@ -1662,8 +1662,7 @@ export default function App({ session }){
                 })()}
               </div>
             </div>
-          )}                    
-            <input value={form.auto||""} onChange={e=>{
+          )}          <input value={form.auto||""} onChange={e=>{
                 const raw=e.target.value.toUpperCase();
                 const stripped=raw.replace(/^(CH\s*)+/i,"").trim();
                 setForm(f=>({...f,auto:stripped?"CH "+stripped:""}));
