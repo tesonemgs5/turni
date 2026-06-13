@@ -826,7 +826,7 @@ export default function App({ session }){
   style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.4)",
     borderRadius:8,color:"#fff",fontSize:12,fontWeight:900,fontFamily:"Georgia,serif",
     padding:"2px 4px",cursor:"pointer",outline:"none",flexShrink:0}}>
-  {Array.from({length:10},(_,i)=>today.getFullYear()-3+i).map(y=>(
+  {Array.from({length:21},(_,i)=>2023+i).map(y=>(
     <option key={y} value={y} style={{background:"#1e293b",color:"#fff"}}>{y}</option>
   ))}
 </select>
