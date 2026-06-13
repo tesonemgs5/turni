@@ -1623,9 +1623,55 @@ export default function App({ session }){
                                   const tot=(h1*60+m1)+newOre*60+minuti;
                                   const newTOut=`${String(Math.floor(tot/60)%24).padStart(2,"0")}:${String(tot%60).padStart(2,"0")}`;
                                   setForm(f=>({...f,tOut:newTOut}));
-              </div>
-            )}
-            <input value={form.auto||""} onChange={e=>{
+                                }}
+                                style={{width:"100%",background:T.surface,border:`1px solid #8b5cf6`,
+                                  borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none",textAlign:"center"}}/>
+                            </div>
+                            <div style={{flex:1}}>
+                              <div style={{fontSize:9,color:T.sub,marginBottom:3}}>MINUTI</div>
+                              <input type="number" min={0} max={59}
+                                value={minuti}
+                                onChange={e=>{
+                                  const newMin=parseInt(e.target.value)||0;
+                                  const fineStd=calcFine6h15(form.tIn);
+                                  const [h1,m1]=fineStd.split(":").map(Number);
+                                  const tot=(h1*60+m1)+ore*60+newMin;
+                                  const newTOut=`${String(Math.floor(tot/60)%24).padStart(2,"0")}:${String(tot%60).padStart(2,"0")}`;
+                                  setForm(f=>({...f,tOut:newTOut}));
+                                }}
+                                style={{width:"100%",background:T.surface,border:`1px solid #8b5cf6`,
+                                  borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none",textAlign:"center"}}/>
+                            </div>
+                            <div style={{flexShrink:0,textAlign:"center"}}>
+                              <div style={{fontSize:9,color:T.sub,marginBottom:3}}>TOTALE</div>
+                              <div style={{fontSize:13,fontWeight:900,color:"#8b5cf6"}}>
+                                {ore}h {minuti>0?minuti+"m":""}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    {form.tipoProtrazione==="recupero"&&(()=>{
+                      const fineStd=calcFine6h15(form.tIn);
+                      const tOut=form.tOut||fineStd;
+                      let diffLabel="";
+                      if(tOut&&fineStd){
+                        const [h1,m1]=fineStd.split(":").map(Number);
+                        const [h2,m2]=tOut.split(":").map(Number);
+                        let diff=(h2*60+m2)-(h1*60+m1);
+                        if(diff<0) diff+=24*60;
+                        if(diff>0) diffLabel=`+${Math.floor(diff/60)}h${diff%60>0?" "+diff%60+"m":""}`;
+                      }
+                      return (
+                        <div style={{marginTop:8,background:T.s2,borderRadius:10,padding:"10px 12px"}}>
+                          <div style={{fontSize:9,color:"#64748b",fontWeight:800,marginBottom:6}}>ORA FINE EFFETTIVA (RECUPERO)</div>
+                          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                            <input type="time" value={tOut}
+                              onChange={e=>setForm(f=>({...f,tOut:e.target.value}))}
+                              style={{flex:1,background:T.surface,border:`1px solid #64748b`,
+                                borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
+                            {diffLabel&&( onChange={e=>{
                 const raw=e.target.value.toUpperCase();
                 const stripped=raw.replace(/^(CH\s*)+/i,"").trim();
                 setForm(f=>({...f,auto:stripped?"CH "+stripped:""}));
