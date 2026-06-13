@@ -1671,7 +1671,21 @@ export default function App({ session }){
                               onChange={e=>setForm(f=>({...f,tOut:e.target.value}))}
                               style={{flex:1,background:T.surface,border:`1px solid #64748b`,
                                 borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
-                            {diffLabel&&( onChange={e=>{
+                            {diffLabel&&(
+                              <div style={{flexShrink:0,textAlign:"center"}}>
+                                <div style={{fontSize:9,color:T.sub,marginBottom:3}}>ECCESSO</div>
+                                <div style={{fontSize:13,fontWeight:900,color:"#64748b"}}>{diffLabel}</div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+              </div>
+            )}
+            <input value={form.auto||""} onChange={e=>{
                 const raw=e.target.value.toUpperCase();
                 const stripped=raw.replace(/^(CH\s*)+/i,"").trim();
                 setForm(f=>({...f,auto:stripped?"CH "+stripped:""}));
