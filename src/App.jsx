@@ -230,6 +230,8 @@ export default function App({ session }){
       } catch(e){ console.log("Errore startup:", e); }
       setLoading(false);
     })();
+  },[userId]);
+
   useEffect(()=>{
   function handleVisibilityChange(){
     if(document.visibilityState==="visible"){
