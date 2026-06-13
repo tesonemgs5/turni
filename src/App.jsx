@@ -327,8 +327,6 @@ export default function App({ session }){
     }
     if(form.dur==="fixed" && tInFinal && form.tOut){
       const std=calcFine6h15(tInFinal);
-      const diff=calcMinuti(std, form.tOut);
-      if(diff>0&&form.tipoProtrazione) extraNote=(extraNote?extraNote+" | ":"")+`Protrazione (${form.tipoProtrazione==="pagamento"?"PAG":"REC"}): +${Math.floor(diff/60)}h${diff%60>0?diff%60+"m":""}`;
       const [h1,m1]=std.split(":").map(Number);
       const [h2,m2]=form.tOut.split(":").map(Number);
       const diff=(h2*60+m2)-(h1*60+m1);
@@ -1649,22 +1647,22 @@ export default function App({ session }){
                       <div style={{fontSize:9,color:"#64748b",fontWeight:800,marginBottom:6}}>ORA FINE EFFETTIVA (RECUPERO)</div>
                       <div style={{display:"flex",gap:8,alignItems:"center"}}>
                         <input type="time" value={tOut}
-                              onChange={e=>setForm(f=>({...f,tOut:e.target.value}))}
-                              style={{flex:1,background:T.surface,border:`1px solid #64748b`,
-                                borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
-                            {diffLabel&&(
-                              <div style={{flexShrink:0,textAlign:"center"}}>
-                                <div style={{fontSize:9,color:T.sub,marginBottom:3}}>ECCESSO</div>
-                                <div style={{fontSize:13,fontWeight:900,color:"#64748b"}}>{diffLabel}</div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })()}
-                </div>
+                  onChange={e=>setForm(f=>({...f,tOut:e.target.value}))}
+                  style={{flex:1,background:T.surface,border:`1px solid #64748b`,
+                    borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
+                {diffLabel&&(
+                  <div style={{flexShrink:0,textAlign:"center"}}>
+                    <div style={{fontSize:9,color:T.sub,marginBottom:3}}>ECCESSO</div>
+                    <div style={{fontSize:13,fontWeight:900,color:"#64748b"}}>{diffLabel}</div>
+                  </div>
+                )}
               </div>
-            )}
+            </div>
+          );
+        })()}
+      </div>
+    </div>
+  )}
                     
             <input value={form.auto||""} onChange={e=>{
                 const raw=e.target.value.toUpperCase();
