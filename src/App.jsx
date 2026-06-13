@@ -1569,14 +1569,20 @@ export default function App({ session }){
                         borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
                   </div>
                 )}
-                {form.dur==="fixed"&&form.tIn&&(
+              </div>
+            )}
+            {form.dur==="fixed"&&form.tIn&&(
+              <div style={{marginBottom:10}}>
+                <div style={{display:"flex",gap:8,marginBottom:6}}>
                   <div style={{flex:1}}>
                     <div style={{fontSize:9,color:T.sub,marginBottom:3}}>USCITA (modif.)</div>
                     <input type="time" value={form.tOut||calcFine6h15(form.tIn)}
                       onChange={e=>setForm(f=>({...f,tOut:e.target.value}))}
                       style={{width:"auto",background:T.surface,border:`1px solid ${T.border}`,
                         borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
-                    <div style={{display:"flex",gap:6,marginTop:6,justifyContent:"center"}}>
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:6,marginBottom:6}}>
                       <button type="button"
                         onClick={()=>setForm(f=>({...f,tipoProtrazione:f.tipoProtrazione==="pagamento"?null:"pagamento"}))}
                         style={{flex:1,maxWidth:160,padding:"5px 8px",borderRadius:8,cursor:"pointer",fontSize:9,fontWeight:800,
@@ -1595,6 +1601,7 @@ export default function App({ session }){
                           border:`1.5px solid ${form.tipoProtrazione==="recupero"?"#64748b":T.border}`}}>
                         PROTRAZIONE A RECUPERO
                       </button>
+                    </div>
                     </div>
                     {form.tipoProtrazione==="pagamento"&&(()=>{
                       const fineStd=calcFine6h15(form.tIn);
