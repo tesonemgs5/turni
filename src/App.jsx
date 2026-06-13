@@ -1663,8 +1663,6 @@ export default function App({ session }){
                 </div>
               </div>
             )}
-                  <div style={{flex:1}}>
-                    <div style={{fontSize:9,color:T.sub,marginBottom:3}}>USCITA (modif.)</div>
                     <input type="time" value={form.tOut||calcFine6h15(form.tIn)}
                       onChange={e=>setForm(f=>({...f,tOut:e.target.value}))}
                       style={{width:"auto",background:T.surface,border:`1px solid ${T.border}`,
