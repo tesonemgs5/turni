@@ -806,14 +806,13 @@ export default function App({ session }){
     <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
       <div style={{background:accent,display:"flex",alignItems:"center",
         gap:5,padding:"6px 8px",overflowX:"auto",scrollbarWidth:"none",flexShrink:0}}>
-        <button onClick={()=>month===0?(setYear(y=>y-1),setMonth(11)):setMonth(m=>m-1)} style={NB}>‹</button>
         <span style={{color:"#fff",fontSize:13,fontWeight:900,flexShrink:0,fontFamily:"Georgia,serif"}}>
           <select
   value={month}
   onChange={e=>setMonth(Number(e.target.value))}
   style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.4)",
     borderRadius:8,color:"#fff",fontSize:12,fontWeight:900,fontFamily:"Georgia,serif",
-    padding:"2px 4px",cursor:"pointer",outline:"none",flexShrink:0}}>
+    padding:"2px 2px",cursor:"pointer",outline:"none",flexShrink:0,maxWidth:90}}>
   {MONTHS.map((m,i)=>(
     <option key={i} value={i} style={{background:"#1e293b",color:"#fff"}}>
       {m.toUpperCase()}
@@ -825,14 +824,13 @@ export default function App({ session }){
   onChange={e=>setYear(Number(e.target.value))}
   style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.4)",
     borderRadius:8,color:"#fff",fontSize:12,fontWeight:900,fontFamily:"Georgia,serif",
-    padding:"2px 4px",cursor:"pointer",outline:"none",flexShrink:0}}>
+    padding:"2px 2px",cursor:"pointer",outline:"none",flexShrink:0,maxWidth:62}}>
   {Array.from({length:21},(_,i)=>2023+i).map(y=>(
     <option key={y} value={y} style={{background:"#1e293b",color:"#fff"}}>{y}</option>
   ))}
 </select>
 {bgSyncing&&<span style={{color:"rgba(255,255,255,0.7)",fontSize:11}}>🔄</span>}
         </span>
-        <button onClick={()=>month===11?(setYear(y=>y+1),setMonth(0)):setMonth(m=>m+1)} style={NB}>›</button>
         <div style={{width:1,height:14,background:"rgba(255,255,255,0.3)",flexShrink:0,marginLeft:2}}/>
         {store.calendars.length===0
           ? <span style={{color:"rgba(255,255,255,0.6)",fontSize:10,fontStyle:"italic"}}>→ Impostazioni</span>
