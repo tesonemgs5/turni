@@ -588,19 +588,32 @@ export default function App({ session }){
     };
     if(data.id){
       await supabase.from("modelli").update(payload).eq("id",data.id).eq("user_id",userId);
-      setModelli(prev=>prev.map(m=>m.id===data.id?{...m,...data,colore:coloreEff}:m));
+      setModelli(prev=>{
+        const updated=prev.map(m=>m.id===data.id?{...m,...data,colore:coloreEff}:m);
+        if(sheetsUrl) fetch(sheetsUrl,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain"},
+          body:JSON.stringify({secret:sheetsSecret,action:"save_modelli",modelli:updated})});
+        return updated;
+      });
     } else {
       const {data:res}=await supabase.from("modelli").insert(payload).select().maybeSingle();
       if(res) setModelli(prev=>{
   const toMins=t=>{if(!t)return 9999;const[h,m]=t.split(":").map(Number);return h*60+m;};
-  return [...prev,{...data,id:res.id,colore:coloreEff}].sort((a,b)=>toMins(a.inizio)-toMins(b.inizio));
+  const updated=[...prev,{...data,id:res.id,colore:coloreEff}].sort((a,b)=>toMins(a.inizio)-toMins(b.inizio));
+  if(sheetsUrl) fetch(sheetsUrl,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain"},
+    body:JSON.stringify({secret:sheetsSecret,action:"save_modelli",modelli:updated})});
+  return updated;
 });
     }
   }
 
   async function deleteModello(id){
     await supabase.from("modelli").delete().eq("id",id).eq("user_id",userId);
-    setModelli(prev=>prev.filter(m=>m.id!==id));
+    setModelli(prev=>{
+      const updated=prev.filter(m=>m.id!==id);
+      if(sheetsUrl) fetch(sheetsUrl,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain"},
+        body:JSON.stringify({secret:sheetsSecret,action:"save_modelli",modelli:updated})});
+      return updated;
+    });
   }
 
   async function saveRotazione(data){
