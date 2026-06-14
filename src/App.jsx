@@ -1956,7 +1956,7 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, onR
           <div style={{fontSize:10,color:T.sub,fontWeight:700}}>TOTALE TURNI</div>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <span style={{fontSize:20,fontWeight:900,color:T.text}}>{data.totale}</span>
-            {totaleTurni>0&&(
+            {totaleTurni>0&&r.id!==activeReports[0]?.id&&(
               <span style={{fontSize:13,fontWeight:700,color:accent,background:accent+"22",
                 borderRadius:8,padding:"2px 8px"}}>{pct}%</span>
             )}
