@@ -1197,7 +1197,7 @@ if (sUrl) setTimeout(() => { saveToSheets(events, calendars, sUrl, sSec, modelli
         </div>
       </Sec>
 
-      <Sec label="CALENDARI" T={T}>
+      <SecCollapsible label="CALENDARI" T={T}>
         {store.calendars.map((c,ci)=>(
           <div key={c.id} style={{marginBottom:10}}>
             <div style={{display:"flex",alignItems:"center",gap:8,background:T.s2,borderRadius:10,padding:"8px 10px"}}>
@@ -1307,9 +1307,9 @@ if (sUrl) setTimeout(() => { saveToSheets(events, calendars, sUrl, sSec, modelli
             setNcName("");
           }} style={{background:"#3b82f6",border:"none",borderRadius:8,color:"#fff",padding:"8px 14px",cursor:"pointer",fontWeight:800,fontSize:14}}>+</button>
         </div>
-      </Sec>
+      </SecCollapsible>
 
-      <Sec label="ARCHIVIO GOOGLE SHEETS" T={T}>
+      <SecCollapsible label="ARCHIVIO GOOGLE SHEETS" T={T}>
         <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
           Configura il tuo script Google Sheets per importare ed esportare i dati.
         </div>
@@ -1348,7 +1348,7 @@ if (sUrl) setTimeout(() => { saveToSheets(events, calendars, sUrl, sSec, modelli
         )}
         {syncMsg&&<div style={{fontSize:11,color:T.text,padding:"8px 10px",
           background:T.s2,borderRadius:8,textAlign:"center",marginTop:8}}>{syncMsg}</div>}
-      </Sec>
+      </SecCollapsible>
 
       <Sec label="DATABASE CLOUD SUPABASE" T={T}>
         <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
@@ -2223,6 +2223,22 @@ function Pal({T, cur, onPick, up=false}){
               outlineOffset:2}}/>
         ))}
       </div>
+    </div>
+  );
+}
+
+function SecCollapsible({label,children,T}){
+  const [open,setOpen]=useState(false);
+  return (
+    <div style={{background:T.surface,border:`1px solid ${T.border}`,
+      borderRadius:12,marginBottom:14,overflow:"hidden"}}>
+      <div onClick={()=>setOpen(o=>!o)}
+        style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+          padding:"12px 14px",cursor:"pointer"}}>
+        <div style={{fontSize:10,fontWeight:800,color:T.sub,letterSpacing:"0.8px"}}>{label}</div>
+        <span style={{color:T.sub,fontSize:12}}>{open?"▲":"▼"}</span>
+      </div>
+      {open&&<div style={{padding:"0 14px 14px"}}>{children}</div>}
     </div>
   );
 }
