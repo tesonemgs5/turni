@@ -566,7 +566,10 @@ export default function App({ session }){
       setModelli(prev=>prev.map(m=>m.id===data.id?{...m,...data,colore:coloreEff}:m));
     } else {
       const {data:res}=await supabase.from("modelli").insert(payload).select().maybeSingle();
-      if(res) setModelli(prev=>[...prev,{...data,id:res.id,colore:coloreEff}]);
+      if(res) setModelli(prev=>{
+  const toMins=t=>{if(!t)return 9999;const[h,m]=t.split(":").map(Number);return h*60+m;};
+  return [...prev,{...data,id:res.id,colore:coloreEff}].sort((a,b)=>toMins(a.inizio)-toMins(b.inizio));
+});
     }
   }
 
