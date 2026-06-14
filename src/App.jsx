@@ -1627,7 +1627,7 @@ export default function App({ session }){
                             <div style={{fontSize:12,fontWeight:900,color:"#64748b"}}>{durProt||"—"}</div>
                           </div>
                           <input type="time" value={oraFineR}
-                            onChange={e=>setForm(f=>({...f,protrazioneOraFine:e.target.value,tOut:e.target.value}))}
+                            onChange={e=>setForm(f=>({...f,protrazioneOraFine:e.target.value}))}
                             placeholder="Ora fine"
                             style={{flex:1,background:T.surface,border:`1px solid ${T.border}`,
                               borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
