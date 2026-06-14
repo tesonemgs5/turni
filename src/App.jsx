@@ -555,7 +555,7 @@ export default function App({ session }){
     if(!userId) return;
     const coloreEff=data.coloreCustom||(data.tempo==="h24"?"#64748b":getColorByTime(data.inizio));
     const payload={
-      user_id:userId, tempo:data.tempo,
+      user_id:userId, titolo:(data.titolo||"").toUpperCase(), tempo:data.tempo,
       inizio:data.inizio||null, fine:data.fine||null,
       colore:coloreEff, colore_custom:data.coloreCustom||null,
       posizione:(data.posizione||"").toUpperCase()||null,
