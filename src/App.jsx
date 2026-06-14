@@ -1909,6 +1909,7 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, onR
   const [editingName, setEditingName] = useState(false);
   const [tmpName, setTmpName] = useState(r.label);
   const pct = totaleTurni>0 ? Math.round((data.totale/totaleTurni)*100) : 0;
+  const [showTurniList, setShowTurniList] = useState(false);
 
   const FASCE = [
     {key:"primo",   label:"1° TURNO (06:00-11:45)", count:data.primo||0},
@@ -1951,13 +1952,33 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, onR
       {/* Statistiche */}
       <div style={{background:T.surface,borderRadius:10,padding:"10px 12px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-          <div style={{fontSize:10,color:T.sub,fontWeight:700}}>TOTALE TURNI</div>
+          <div onClick={()=>setShowTurniList(s=>!s)}
+  style={{fontSize:10,color:T.sub,fontWeight:700,cursor:"pointer",
+    display:"flex",alignItems:"center",gap:4}}>
+  TOTALE TURNI {showTurniList?"▲":"▼"}
+</div>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <span style={{fontSize:20,fontWeight:900,color:T.text}}>{data.totale}</span>
 
           </div>
         </div>
-        {/* Barra percentuale */}
+        {showTurniList&&(
+  <div style={{background:T.s2,borderRadius:8,padding:"8px 10px",marginBottom:8}}>
+    {Object.entries(data.perModello||{}).map(([mid,cnt])=>{
+      const m=modelli.find(x=>x.id===mid);
+      if(!m) return null;
+      const c=m.coloreCustom||getColorByTime(m.inizio);
+      return (
+        <div key={mid} style={{display:"flex",alignItems:"center",gap:8,
+          padding:"5px 0",borderBottom:`1px solid ${T.border}`}}>
+          <div style={{width:8,height:8,borderRadius:"50%",background:c,flexShrink:0}}/>
+          <span style={{flex:1,fontSize:12,color:T.text}}>{m.titolo}</span>
+          <span style={{fontSize:13,fontWeight:800,color:T.text}}>{cnt}</span>
+        </div>
+      );
+    })}
+  </div>
+)}
         {totaleTurni>0&&(
           <div style={{height:6,background:T.s2,borderRadius:3,marginBottom:10,overflow:"hidden"}}>
             <div style={{width:`${pct}%`,height:"100%",background:accent,borderRadius:3,transition:"width 0.3s"}}/>
