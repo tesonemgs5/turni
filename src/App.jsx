@@ -1600,6 +1600,40 @@ export default function App({ session }){
                       onChange={e=>setForm(f=>({...f,tOut:e.target.value}))}
                       style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                         borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
+                    <button type="button" onClick={()=>setForm(f=>({...f,straordinarioTipo:f.straordinarioTipo==="recupero"?null:"recupero"}))}
+                      style={{width:"100%",marginTop:5,padding:"5px 2px",borderRadius:8,cursor:"pointer",
+                        fontSize:9,fontWeight:800,lineHeight:1.2,textAlign:"center",
+                        background:form.straordinarioTipo==="recupero"?"#64748b":T.surface,
+                        color:form.straordinarioTipo==="recupero"?"#fff":T.sub,
+                        border:`1.5px solid ${form.straordinarioTipo==="recupero"?"#64748b":T.border}`}}>
+                      PROTRAZIONE A RECUPERO
+                    </button>
+                    {form.straordinarioTipo==="recupero"&&(()=>{
+                      const oraFineR=form.protrazioneOraFine||"";
+                      let durProt="";
+                      if(oraFineR&&form.tIn){
+                        const std=calcFine6h15(form.tIn);
+                        const [h1,m1]=std.split(":").map(Number);
+                        const [h2,m2]=oraFineR.split(":").map(Number);
+                        let d2=(h2*60+m2)-(h1*60+m1);
+                        if(d2<0) d2+=24*60;
+                        if(d2>0) durProt=`${Math.floor(d2/60)}h${d2%60>0?" "+d2%60+"m":""}`;
+                      }
+                      return (
+                        <div style={{display:"flex",alignItems:"center",gap:6,marginTop:5}}>
+                          <div style={{background:T.s2,borderRadius:8,padding:"5px 8px",
+                            minWidth:44,textAlign:"center",flexShrink:0}}>
+                            <div style={{fontSize:8,color:T.sub,fontWeight:700}}>DURATA</div>
+                            <div style={{fontSize:12,fontWeight:900,color:"#64748b"}}>{durProt||"—"}</div>
+                          </div>
+                          <input type="time" value={oraFineR}
+                            onChange={e=>setForm(f=>({...f,protrazioneOraFine:e.target.value,tOut:e.target.value}))}
+                            placeholder="Ora fine"
+                            style={{flex:1,background:T.surface,border:`1px solid ${T.border}`,
+                              borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
