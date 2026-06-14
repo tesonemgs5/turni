@@ -567,18 +567,31 @@ if(!isInitialized.current) return;
   function sortedModelli(){
     const withTime=modelli.filter(m=>m.tempo!=="h24"&&m.inizio);
     const noTime=modelli.filter(m=>m.tempo==="h24"||!m.inizio);
-    if(modelliSort==="orario"){
-      withTime.sort((a,b)=>{
-        const toMins=t=>{if(!t)return 9999;const[h,m]=t.split(":").map(Number);return h*60+m;};
-        const diffInizio=toMins(a.inizio)-toMins(b.inizio);
-        if(diffInizio!==0) return diffInizio;
-        const fineA=a.tempo==="6h15"?calcFine6h15(a.inizio):a.fine||"";
-        const fineB=b.tempo==="6h15"?calcFine6h15(b.inizio):b.fine||"";
-        return toMins(fineA)-toMins(fineB);
-      });
-      return [...withTime,...noTime];
-    }
-    return [...modelli].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
+    withTime.sort((a,b)=>{
+      const toMins=t=>{if(!t)return 9999;const[h,m]=t.split(":").map(Number);return h*60+m;};
+      const diffInizio=toMins(a.inizio)-toMins(b.inizio);
+      if(diffInizio!==0) return diffInizio;
+      const fineA=a.tempo==="6h15"?calcFine6h15(a.inizio):a.fine||"";
+      const fineB=b.tempo==="6h15"?calcFine6h15(b.inizio):b.fine||"";
+      return toMins(fineA)-toMins(fineB);
+    });
+    const noTimeSorted=[...noTime].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
+    return [...withTime,...noTimeSorted];
+  }
+
+  async function moveH24(id, dir){
+    const noTime=modelli.filter(m=>m.tempo==="h24"||!m.inizio);
+    const sorted=[...noTime].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
+    const idx=sorted.findIndex(m=>m.id===id);
+    if(idx===-1) return;
+    const swapIdx=dir==="up"?idx-1:idx+1;
+    if(swapIdx<0||swapIdx>=sorted.length) return;
+    const a=sorted[idx], b=sorted[swapIdx];
+    const newA={...a,sortOrder:b.sortOrder||0};
+    const newB={...b,sortOrder:a.sortOrder||0};
+    await supabase.from("modelli").update({sort_order:newA.sortOrder}).eq("id",newA.id).eq("user_id",userId);
+    await supabase.from("modelli").update({sort_order:newB.sortOrder}).eq("id",newB.id).eq("user_id",userId);
+    setModelli(prev=>prev.map(m=>m.id===newA.id?{...m,sortOrder:newA.sortOrder}:m.id===newB.id?{...m,sortOrder:newB.sortOrder}:m));
   }
 
   async function saveModello(data){
@@ -1078,7 +1091,9 @@ if(!isInitialized.current) return;
                 <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                   <ModelloCard m={m} T={T} accent={accent}
                     onEdit={()=>{ setEditModello(m); setModelForm(m); setShowModelForm(true); }}
-                    onDelete={()=>deleteModello(m.id)}/>
+                    onDelete={()=>deleteModello(m.id)}
+                    onMoveUp={m.tempo==="h24"||!m.inizio?()=>moveH24(m.id,"up"):null}
+                    onMoveDown={m.tempo==="h24"||!m.inizio?()=>moveH24(m.id,"down"):null}/>
                 </div>
               ))}
             </div>
@@ -2249,7 +2264,7 @@ function Sec({label,children,T}){
   );
 }
 
-function ModelloCard({m, T, accent, onEdit, onDelete}){
+function ModelloCard({m, T, accent, onEdit, onDelete, onMoveUp, onMoveDown}){
   const colore=m.coloreCustom||(m.tempo==="h24"?"#64748b":getColorByTime(m.inizio));
   const durata=m.tempo==="h24"?"Tutto il giorno"
     :m.tempo==="6h15"&&m.inizio?`${m.inizio} - ${calcFine6h15(m.inizio)} • 6h 15m`
@@ -2267,6 +2282,10 @@ function ModelloCard({m, T, accent, onEdit, onDelete}){
           textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.titolo||"Senza nome"}</div>
         <div style={{fontSize:12,color:T.sub,marginTop:1}}>{durata}</div>
       </div>
+      {onMoveUp&&<button onClick={e=>{e.stopPropagation();onMoveUp();}}
+        style={{background:"none",border:"none",color:"#94a3b8",cursor:"pointer",fontSize:16,padding:"0 2px"}}>▲</button>}
+      {onMoveDown&&<button onClick={e=>{e.stopPropagation();onMoveDown();}}
+        style={{background:"none",border:"none",color:"#94a3b8",cursor:"pointer",fontSize:16,padding:"0 2px"}}>▼</button>}
       <button onClick={e=>{e.stopPropagation();if(window.confirm("Eliminare questo modello?"))onDelete();}}
         style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:18,
           padding:"0 4px",marginRight:4}}>×</button>
