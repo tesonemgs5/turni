@@ -808,7 +808,7 @@ export default function App({ session }){
                 {evts.filter(e=>!(e.label||"").toUpperCase().startsWith("PROTRAZIONE")).slice(0,4).map((e,ei)=>(
                   <div key={e.id+ei} style={{background:e.color,borderRadius:3,padding:"2px 4px",
                     fontSize:13,fontWeight:800,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",
-                    whiteSpace:"nowrap",flex:1,display:"flex",alignItems:"center",flexShrink:1,
+                    whiteSpace:"nowrap",height:18,minHeight:18,display:"flex",alignItems:"center",flexShrink:0,
                     textShadow:"0 1px 2px rgba(0,0,0,0.35)"}}>
                     {e.label}
                   </div>
