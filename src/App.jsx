@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabase";
+
 const MONTHS = ["Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno",
                 "Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"];
 const DAYS = ["L","M","M","G","V","S","D"];
@@ -261,8 +262,6 @@ export default function App({ session }){
       user_id: userId,
       theme: store.theme,
       extra_hols: store.extraHols,
-      indennita,
-      conteggio_configs: conteggioConfigs,
       ...updates,
       updated_at: new Date().toISOString(),
     });
@@ -330,7 +329,7 @@ export default function App({ session }){
       const [h1,m1]=std.split(":").map(Number);
       const [h2,m2]=form.tOut.split(":").map(Number);
       const diff=(h2*60+m2)-(h1*60+m1);
-      if(diff>0&&form.tipoProtrazione) extraNote=(extraNote?extraNote+" | ":"")+`Protrazione (${form.tipoProtrazione==="pagamento"?"PAG":"REC"}): +${Math.floor(diff/60)}h${diff%60>0?diff%60+"m":""}`;
+      if(diff>0) extraNote=(extraNote?extraNote+" | ":"")+`Protrazione: +${Math.floor(diff/60)}h${diff%60>0?diff%60+"m":""}`;
       if(diff<0) extraNote=(extraNote?extraNote+" | ":"")+`Monte ore: ${Math.floor(Math.abs(diff)/60)}h${Math.abs(diff)%60>0?Math.abs(diff)%60+"m":""}`;
     }
     const { data, error } = await supabase.from("events").insert({
@@ -509,7 +508,6 @@ export default function App({ session }){
     try {
       const {error} = await supabase.from("user_settings").upsert({
         user_id:userId, sheets_url:sheetsUrl.trim(), sheets_secret:sheetsSecret.trim(),
-        indennita, conteggio_configs: conteggioConfigs,
         updated_at:new Date().toISOString(),
       });
       if(error) throw error;
@@ -688,11 +686,10 @@ export default function App({ session }){
   function addReport(type){
     const tmpl = REPORT_TEMPLATES.find(t=>t.type===type);
     if(!tmpl) return;
-    const existing = (store.reports||[]).filter(r=>r.type===type).length;
     const newReport = {
       id: uid(),
       type,
-      label: existing>0 ? `${tmpl.label} ${existing+1}` : tmpl.label,
+      label: tmpl.label,
       active: true,
     };
     const newRep = [...(store.reports||[]), newReport];
@@ -1569,100 +1566,18 @@ export default function App({ session }){
                         borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
                   </div>
                 )}
-              </div>
-            )}
-            {form.dur==="fixed"&&form.tIn&&(
-              <div style={{marginBottom:10}}>
-                <div style={{display:"flex",gap:8,marginBottom:6}}>
-                  <div>
+                {form.dur==="fixed"&&form.tIn&&(
+                  <div style={{flex:1}}>
                     <div style={{fontSize:9,color:T.sub,marginBottom:3}}>USCITA (modif.)</div>
                     <input type="time" value={form.tOut||calcFine6h15(form.tIn)}
                       onChange={e=>setForm(f=>({...f,tOut:e.target.value}))}
-                      style={{width:"auto",background:T.surface,border:`1px solid ${T.border}`,
+                      style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                         borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
                   </div>
-                </div>
-                <div style={{display:"flex",gap:6,marginBottom:6}}>
-                  <button type="button"
-                    onClick={()=>setForm(f=>({...f,tipoProtrazione:f.tipoProtrazione==="pagamento"?null:"pagamento"}))}
-                    style={{flex:1,padding:"5px 8px",borderRadius:8,cursor:"pointer",fontSize:9,fontWeight:800,
-                      lineHeight:1,textAlign:"center",whiteSpace:"nowrap",transition:"background 0.15s",
-                      background:form.tipoProtrazione==="pagamento"?"#8b5cf6":T.surface,
-                      color:form.tipoProtrazione==="pagamento"?"#fff":T.sub,
-                      border:`1.5px solid ${form.tipoProtrazione==="pagamento"?"#8b5cf6":T.border}`}}>
-                    PROTRAZIONE A PAGAMENTO
-                  </button>
-                  <button type="button"
-                    onClick={()=>setForm(f=>({...f,tipoProtrazione:f.tipoProtrazione==="recupero"?null:"recupero"}))}
-                    style={{flex:1,padding:"5px 8px",borderRadius:8,cursor:"pointer",fontSize:9,fontWeight:800,
-                      lineHeight:1,textAlign:"center",whiteSpace:"nowrap",transition:"background 0.15s",
-                      background:form.tipoProtrazione==="recupero"?"#64748b":T.surface,
-                      color:form.tipoProtrazione==="recupero"?"#fff":T.sub,
-                      border:`1.5px solid ${form.tipoProtrazione==="recupero"?"#64748b":T.border}`}}>
-                    PROTRAZIONE A RECUPERO
-                  </button>
-                </div>
-                {form.tipoProtrazione==="pagamento"&&(()=>{
-                  const fineStd=calcFine6h15(form.tIn);
-                  const tOut=form.tOut||fineStd;
-                  let ore=0,minuti=0;
-                  if(tOut&&fineStd){
-                    const [h1,m1]=fineStd.split(":").map(Number);
-                    const [h2,m2]=tOut.split(":").map(Number);
-                    let diff=(h2*60+m2)-(h1*60+m1);
-                    if(diff<0) diff+=24*60;
-                    ore=Math.floor(diff/60); minuti=diff%60;
-                  }
-                  return (
-                    <div style={{marginTop:8,background:T.s2,borderRadius:10,padding:"10px 12px"}}>
-                      <div style={{display:"flex",alignItems:"center",gap:10}}>
-                        <div style={{fontSize:13,fontWeight:900,color:"#8b5cf6",flexShrink:0}}>ORE IN ECCESSO</div>
-                        <div style={{fontSize:20,fontWeight:900,color:"#8b5cf6",flex:1}}>
-                          {ore>0||minuti>0?`${ore}h${minuti>0?" "+minuti+"m":""}`:"—"}
-                        </div>
-                        <div style={{flexShrink:0}}>
-                          <div style={{fontSize:9,color:T.sub,marginBottom:3}}>ORA FINE</div>
-                          <input type="time" value={form.tOut||calcFine6h15(form.tIn)}
-                            onChange={e=>setForm(f=>({...f,tOut:e.target.value}))}
-                            style={{background:T.surface,border:`1px solid #8b5cf6`,
-                              borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-                {form.tipoProtrazione==="recupero"&&(()=>{
-                  const fineStd=calcFine6h15(form.tIn);
-                  const tOut=form.tOut||fineStd;
-                  let diffLabel="";
-                  if(tOut&&fineStd){
-                    const [h1,m1]=fineStd.split(":").map(Number);
-                    const [h2,m2]=tOut.split(":").map(Number);
-                    let diff=(h2*60+m2)-(h1*60+m1);
-                    if(diff<0) diff+=24*60;
-                    if(diff>0) diffLabel=`+${Math.floor(diff/60)}h${diff%60>0?" "+diff%60+"m":""}`;
-                  }
-                  return (
-                    <div style={{marginTop:8,background:T.s2,borderRadius:10,padding:"10px 12px"}}>
-                      <div style={{fontSize:9,color:"#64748b",fontWeight:800,marginBottom:6}}>ORA FINE EFFETTIVA (RECUPERO)</div>
-                      <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                        <input type="time" value={tOut}
-                          onChange={e=>setForm(f=>({...f,tOut:e.target.value}))}
-                          style={{flex:1,background:T.surface,border:`1px solid #64748b`,
-                            borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
-                        {diffLabel&&(
-                          <div style={{flexShrink:0,textAlign:"center"}}>
-                            <div style={{fontSize:9,color:T.sub,marginBottom:3}}>ECCESSO</div>
-                            <div style={{fontSize:13,fontWeight:900,color:"#64748b"}}>{diffLabel}</div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })()}
+                )}
               </div>
-            </div>
-          )}          <input value={form.auto||""} onChange={e=>{
+            )}
+            <input value={form.auto||""} onChange={e=>{
                 const raw=e.target.value.toUpperCase();
                 const stripped=raw.replace(/^(CH\s*)+/i,"").trim();
                 setForm(f=>({...f,auto:stripped?"CH "+stripped:""}));
