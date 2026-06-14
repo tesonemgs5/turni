@@ -416,7 +416,7 @@ export default function App({ session }){
     return mins;
   }
 
-  async function saveToSheets(events, calendars, customUrl=sheetsUrl, customSecret=sheetsSecret){
+  async function saveToSheets(events, calendars, customUrl=sheetsUrl, customSecret=sheetsSecret, modelliToSave=modelli){
     if(!customUrl) return "⚠️ Sheets non configurato";
     try {
       await fetch(customUrl, {
@@ -427,7 +427,7 @@ export default function App({ session }){
       await fetch(customUrl, {
         method:"POST", mode:"no-cors",
         headers:{"Content-Type":"text/plain"},
-        body: JSON.stringify({ secret: customSecret, action:"save_modelli", modelli }),
+        body: JSON.stringify({ secret: customSecret, action:"save_modelli", modelli: modelliToSave }),
       });
       return "✅ Esportato su Sheets";
     } catch(e){ return "❌ Errore connessione Sheets"; }
@@ -590,8 +590,7 @@ export default function App({ session }){
       await supabase.from("modelli").update(payload).eq("id",data.id).eq("user_id",userId);
       setModelli(prev=>{
         const updated=prev.map(m=>m.id===data.id?{...m,...data,colore:coloreEff}:m);
-        if(sheetsUrl) fetch(sheetsUrl,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain"},
-          body:JSON.stringify({secret:sheetsSecret,action:"save_modelli",modelli:updated})});
+        if(sheetsUrl) saveToSheets(store.events, store.calendars, sheetsUrl, sheetsSecret, updated);
         return updated;
       });
     } else {
@@ -599,8 +598,7 @@ export default function App({ session }){
       if(res) setModelli(prev=>{
   const toMins=t=>{if(!t)return 9999;const[h,m]=t.split(":").map(Number);return h*60+m;};
   const updated=[...prev,{...data,id:res.id,colore:coloreEff}].sort((a,b)=>toMins(a.inizio)-toMins(b.inizio));
-  if(sheetsUrl) fetch(sheetsUrl,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain"},
-    body:JSON.stringify({secret:sheetsSecret,action:"save_modelli",modelli:updated})});
+  if(sheetsUrl) saveToSheets(store.events, store.calendars, sheetsUrl, sheetsSecret, updated);
   return updated;
 });
     }
@@ -610,8 +608,7 @@ export default function App({ session }){
     await supabase.from("modelli").delete().eq("id",id).eq("user_id",userId);
     setModelli(prev=>{
       const updated=prev.filter(m=>m.id!==id);
-      if(sheetsUrl) fetch(sheetsUrl,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain"},
-        body:JSON.stringify({secret:sheetsSecret,action:"save_modelli",modelli:updated})});
+      if(sheetsUrl) saveToSheets(store.events, store.calendars, sheetsUrl, sheetsSecret, updated);
       return updated;
     });
   }
