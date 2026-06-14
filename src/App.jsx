@@ -587,11 +587,13 @@ if(!isInitialized.current) return;
     const swapIdx=dir==="up"?idx-1:idx+1;
     if(swapIdx<0||swapIdx>=sorted.length) return;
     const a=sorted[idx], b=sorted[swapIdx];
-    const newA={...a,sortOrder:b.sortOrder||0};
-    const newB={...b,sortOrder:a.sortOrder||0};
+    const sortA=a.sortOrder??idx;
+    const sortB=b.sortOrder??swapIdx;
+    const newA={...a,sortOrder:sortB};
+    const newB={...b,sortOrder:sortA};
     await supabase.from("modelli").update({sort_order:newA.sortOrder}).eq("id",newA.id).eq("user_id",userId);
     await supabase.from("modelli").update({sort_order:newB.sortOrder}).eq("id",newB.id).eq("user_id",userId);
-    setModelli(prev=>prev.map(m=>m.id===newA.id?{...m,sortOrder:newA.sortOrder}:m.id===newB.id?{...m,sortOrder:newB.sortOrder}:m));
+    setModelli(prev=>prev.map(m=>m.id===newA.id?{...m,sortOrder:newA.sortOrder}:m.id===newB.id?{...m,sortOrder:newB.sortOrder}:m).slice());
   }
 
   async function saveModello(data){
