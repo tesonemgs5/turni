@@ -1549,6 +1549,40 @@ export default function App({ session }){
                     onChange={e=>setForm(f=>({...f,tIn:e.target.value,tOut:""}))}
                     style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                       borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
+                  <button type="button" onClick={()=>setForm(f=>({...f,straordinarioTipo:f.straordinarioTipo==="pagamento"?null:"pagamento"}))}
+                    style={{width:"100%",marginTop:5,padding:"5px 2px",borderRadius:8,cursor:"pointer",
+                      fontSize:9,fontWeight:800,lineHeight:1.2,textAlign:"center",
+                      background:form.straordinarioTipo==="pagamento"?"#8b5cf6":T.surface,
+                      color:form.straordinarioTipo==="pagamento"?"#fff":T.sub,
+                      border:`1.5px solid ${form.straordinarioTipo==="pagamento"?"#8b5cf6":T.border}`}}>
+                    PROTRAZIONE A PAGAMENTO
+                  </button>
+                  {form.straordinarioTipo==="pagamento"&&(()=>{
+                    const oraFineP=form.protrazioneOraFine||"";
+                    let durProt="";
+                    if(oraFineP&&form.tIn){
+                      const std=calcFine6h15(form.tIn);
+                      const [h1,m1]=std.split(":").map(Number);
+                      const [h2,m2]=oraFineP.split(":").map(Number);
+                      let d2=(h2*60+m2)-(h1*60+m1);
+                      if(d2<0) d2+=24*60;
+                      if(d2>0) durProt=`${Math.floor(d2/60)}h${d2%60>0?" "+d2%60+"m":""}`;
+                    }
+                    return (
+                      <div style={{display:"flex",alignItems:"center",gap:6,marginTop:5}}>
+                        <div style={{background:T.s2,borderRadius:8,padding:"5px 8px",
+                          minWidth:44,textAlign:"center",flexShrink:0}}>
+                          <div style={{fontSize:8,color:T.sub,fontWeight:700}}>DURATA</div>
+                          <div style={{fontSize:12,fontWeight:900,color:"#8b5cf6"}}>{durProt||"—"}</div>
+                        </div>
+                        <input type="time" value={oraFineP}
+                          onChange={e=>setForm(f=>({...f,protrazioneOraFine:e.target.value,tOut:e.target.value}))}
+                          placeholder="Ora fine"
+                          style={{flex:1,background:T.surface,border:`1px solid ${T.border}`,
+                            borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
+                      </div>
+                    );
+                  })()}
                 </div>
                 {form.dur==="custom"&&(
                   <div style={{flex:1}}>
