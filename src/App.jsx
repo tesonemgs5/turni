@@ -424,6 +424,11 @@ export default function App({ session }){
         headers:{"Content-Type":"text/plain"},
         body: JSON.stringify({ secret: customSecret, action:"save", events, calendars, userId }),
       });
+      await fetch(customUrl, {
+        method:"POST", mode:"no-cors",
+        headers:{"Content-Type":"text/plain"},
+        body: JSON.stringify({ secret: customSecret, action:"save_modelli", modelli }),
+      });
       return "✅ Esportato su Sheets";
     } catch(e){ return "❌ Errore connessione Sheets"; }
   }
@@ -476,6 +481,26 @@ export default function App({ session }){
       }
       setStore(s=>({...s, calendars:newCals, events:newEvents}));
       if(newCals.length>0&&!calId) setCalId(newCals[0].id);
+      try {
+        const resMod = await fetch(`${customUrl}?secret=${customSecret}&action=load_modelli`);
+        const dataMod = await resMod.json();
+        if(dataMod.modelli&&dataMod.modelli.length>0){
+          await supabase.from("modelli").delete().eq("user_id",userId);
+          const newModelli=[];
+          for(const m of dataMod.modelli){
+            const coloreEff=m.tempo==="h24"?"#64748b":getColorByTime(m.inizio);
+            const {data:res2}=await supabase.from("modelli").insert({
+              user_id:userId, titolo:m.titolo.toUpperCase(), tempo:m.tempo,
+              inizio:m.inizio||null, fine:m.fine||null,
+              colore:coloreEff, sort_order:newModelli.length,
+            }).select().maybeSingle();
+            if(res2) newModelli.push({id:res2.id,titolo:res2.titolo,tempo:res2.tempo,
+              inizio:res2.inizio||"",fine:res2.fine||"",colore:coloreEff,
+              coloreCustom:null,posizione:"",sortOrder:res2.sort_order||0});
+          }
+          setModelli(newModelli);
+        }
+      } catch(e){ console.error("Errore import modelli:",e); }
       return "✅ Importazione completata";
     } catch(e){
       console.error(e);
@@ -1304,55 +1329,6 @@ export default function App({ session }){
         )}
         {syncMsg&&<div style={{fontSize:11,color:T.text,padding:"8px 10px",
           background:T.s2,borderRadius:8,textAlign:"center",marginTop:8}}>{syncMsg}</div>}
-        <div style={{marginTop:12,borderTop:`1px solid ${T.border}`,paddingTop:12}}>
-          <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:8}}>MODELLI</div>
-          <div style={{display:"flex",gap:8}}>
-            <button onClick={async()=>{
-              if(!sheetsUrl) return;
-              setSyncing(true); setSyncMsg("");
-              try {
-                await fetch(sheetsUrl, {method:"POST",mode:"no-cors",
-                  headers:{"Content-Type":"text/plain"},
-                  body:JSON.stringify({secret:sheetsSecret,action:"save_modelli",modelli})});
-                setSyncMsg("✅ Modelli esportati su Sheets");
-              } catch(e){ setSyncMsg("❌ Errore esportazione modelli"); }
-              setSyncing(false);
-            }} disabled={!sheetsUrl||syncing}
-              style={{flex:1,background:sheetsUrl?"#16a34a":"#94a3b8",border:"none",borderRadius:10,
-                color:"#fff",padding:"11px 0",cursor:sheetsUrl?"pointer":"not-allowed",fontWeight:800,fontSize:12}}>
-              📤 Esporta modelli
-            </button>
-            <button onClick={async()=>{
-              if(!sheetsUrl) return;
-              setSyncing(true); setSyncMsg("");
-              try {
-                const res = await fetch(`${sheetsUrl}?secret=${sheetsSecret}&action=load_modelli`);
-                const data = await res.json();
-                if(data.modelli&&data.modelli.length>0){
-                  for(const m of data.modelli){
-                    const coloreEff = m.tempo==="h24"?"#64748b":getColorByTime(m.inizio);
-                    const {data:res2} = await supabase.from("modelli").insert({
-                      user_id:userId, titolo:m.titolo.toUpperCase(), tempo:m.tempo,
-                      inizio:m.inizio||null, fine:m.fine||null,
-                      colore:coloreEff, sort_order:modelli.length,
-                    }).select().maybeSingle();
-                    if(res2) setModelli(prev=>[...prev,{
-                      id:res2.id, titolo:res2.titolo, tempo:res2.tempo,
-                      inizio:res2.inizio||"", fine:res2.fine||"",
-                      colore:coloreEff, coloreCustom:null, posizione:"", sortOrder:res2.sort_order||0,
-                    }]);
-                  }
-                  setSyncMsg(`✅ ${data.modelli.length} modelli importati`);
-                } else { setSyncMsg("⚠️ Nessun modello trovato su Sheets"); }
-              } catch(e){ setSyncMsg("❌ Errore importazione modelli"); }
-              setSyncing(false);
-            }} disabled={!sheetsUrl||syncing}
-              style={{flex:1,background:sheetsUrl?"#2563eb":"#94a3b8",border:"none",borderRadius:10,
-                color:"#fff",padding:"11px 0",cursor:sheetsUrl?"pointer":"not-allowed",fontWeight:800,fontSize:12}}>
-              📥 Importa modelli
-            </button>
-          </div>
-        </div>
       </Sec>
 
       <Sec label="DATABASE CLOUD SUPABASE" T={T}>
