@@ -427,7 +427,10 @@ export default function App({ session }){
       await fetch(customUrl, {
         method:"POST", mode:"no-cors",
         headers:{"Content-Type":"text/plain"},
-        body: JSON.stringify({ secret: customSecret, action:"save_modelli", modelli: modelliToSave }),
+        body: JSON.stringify({ secret: customSecret, action:"save_modelli", modelli: modelliToSave.map(m=>({
+  ...m,
+  fine: m.tempo==="6h15"&&m.inizio ? calcFine6h15(m.inizio) : m.fine||"",
+})) }),
       });
       return "✅ Esportato su Sheets";
     } catch(e){ return "❌ Errore connessione Sheets"; }
@@ -2270,7 +2273,7 @@ function ModelForm({T, form, setForm, accent, dark, onSave}){
           style={{width:"100%",padding:"14px 16px",background:"transparent",border:"none",
             outline:"none",color:T.text,fontSize:16,fontWeight:600,boxSizing:"border-box"}}/>
       </div>
-      <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>TIPO DI TURNO</div>
+      <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>DURATA TURNO</div>
       <div style={{display:"flex",gap:8,marginBottom:16}}>
         {[["h24","H24"],["6h15","6h 15m"],["personalizzato","Personalizzato"]].map(([v,l])=>(
           <button key={v} onClick={()=>setForm(f=>({...f,tempo:v}))}
