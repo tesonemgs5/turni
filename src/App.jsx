@@ -429,7 +429,7 @@ export default function App({ session }){
         headers:{"Content-Type":"text/plain"},
         body: JSON.stringify({ secret: customSecret, action:"save_modelli", modelli: modelliToSave.map(m=>({
   ...m,
-  fine: m.tempo==="6h15"&&m.inizio ? calcFine6h15(m.inizio) : m.fine||"",
+  fine: (m.tempo==="6h15"||m.tempo==="6h 15m")&&m.inizio ? calcFine6h15(m.inizio) : m.fine||"",
 })) }),
       });
       return "✅ Esportato su Sheets";
