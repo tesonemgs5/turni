@@ -844,7 +844,7 @@ export default function App({ session }){
             {r.type==="conteggio_turni"&&(
               <div style={{fontSize:11,color:T.sub}}>
                 {data.totale} turni
-                {totaleTurni>0&&r.id!==activeReports[0]?.id&&` • ${pct}% del totale`}
+                
               </div>
             )}
           </div>
@@ -1913,7 +1913,7 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, onR
   const FASCE = [
     {key:"primo",   label:"1° TURNO (06:00-11:45)", count:data.primo||0},
     {key:"secondo", label:"2° TURNO (12:00-23:59)", count:data.secondo||0},
-    {key:"h24",     label:"H24 / Tutto il giorno",  count:data.h24||0},
+    
   ];
   const pct1 = data.totale>0 ? Math.round(((data.primo||0)/data.totale)*100) : 0;
   const pct2 = data.totale>0 ? Math.round(((data.secondo||0)/data.totale)*100) : 0;
@@ -1985,11 +1985,7 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, onR
               <span style={{fontSize:16,fontWeight:900,color:T.text}}>{data.secondo||0}</span>
             </div>
           </div>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
-            padding:"8px 10px",background:T.s2,borderRadius:8}}>
-            <span style={{fontSize:13,fontWeight:700,color:T.sub}}>H24 / Tutto il giorno</span>
-            <span style={{fontSize:16,fontWeight:900,color:T.text}}>{data.h24||0}</span>
-          </div>
+          
         </div>
       </div>
 
