@@ -538,7 +538,12 @@ export default function App({ session }){
     const withTime=modelli.filter(m=>m.tempo!=="h24"&&m.inizio);
     const noTime=modelli.filter(m=>m.tempo==="h24"||!m.inizio);
     if(modelliSort==="orario"){
-      withTime.sort((a,b)=>a.inizio.localeCompare(b.inizio));
+      withTime.sort((a,b)=>{
+        if(a.inizio!==b.inizio) return a.inizio.localeCompare(b.inizio);
+        const fineA=a.tempo==="6h15"?calcFine6h15(a.inizio):a.fine||"";
+        const fineB=b.tempo==="6h15"?calcFine6h15(b.inizio):b.fine||"";
+        return fineA.localeCompare(fineB);
+      });
       return [...withTime,...noTime];
     }
     return [...modelli].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
