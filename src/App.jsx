@@ -804,7 +804,7 @@ export default function App({ session }){
               <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",gap:"1px",padding:"0 1px 1px"}}>
                 {evts.filter(e=>!(e.label||"").toUpperCase().startsWith("PROTRAZIONE")).slice(0,4).map((e,ei)=>(
                   <div key={e.id+ei} style={{background:e.color,borderRadius:3,padding:"2px 4px",
-                    fontSize:11,fontWeight:800,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",
+                    fontSize:13,fontWeight:800,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",
                     whiteSpace:"nowrap",flex:1,display:"flex",alignItems:"center",flexShrink:1,
                     textShadow:"0 1px 2px rgba(0,0,0,0.35)"}}>
                     {e.label}
