@@ -1975,7 +1975,7 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, onR
           <div style={{flex:1}}>
   <span style={{fontSize:12,fontWeight:700,color:T.text}}>{m.titolo}</span>
   <span style={{fontSize:10,color:T.sub,marginLeft:6}}>
-    {m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${m.fine?` - ${m.fine}`:""}`:""} 
+    {m.tempo==="h24"?"H24":m.tempo==="6h15"&&m.inizio?`${m.inizio} - ${calcFine6h15(m.inizio)}`:m.inizio&&m.fine?`${m.inizio} - ${m.fine}`:m.inizio||""} 
   </span>
 </div>
 <span style={{fontSize:13,fontWeight:800,color:T.text}}>{cnt}</span>
