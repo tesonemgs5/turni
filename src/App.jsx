@@ -553,7 +553,7 @@ export default function App({ session }){
     if(!userId) return;
     const coloreEff=data.coloreCustom||(data.tempo==="h24"?"#64748b":getColorByTime(data.inizio));
     const payload={
-      user_id:userId, titolo:(data.titolo||"").toUpperCase(), tempo:data.tempo,
+      user_id:userId, <input value={form.titolo} onChange={e=>setForm(f=>({...f,titolo:e.target.value}))} tempo:data.tempo,
       inizio:data.inizio||null, fine:data.fine||null,
       colore:coloreEff, colore_custom:data.coloreCustom||null,
       posizione:(data.posizione||"").toUpperCase()||null,
@@ -576,7 +576,7 @@ export default function App({ session }){
   async function saveRotazione(data){
     if(!userId) return;
     const payload={
-      user_id:userId, tipo:data.tipo, titolo:(data.titolo||"").toUpperCase(),
+      user_id:userId, tipo:data.tipo, <input value={form.titolo} onChange={e=>setForm(f=>({...f,titolo:e.target.value}))}
       data_inizio:data.dataInizio||null, n_settimane:data.nSettimane||52,
       modello_lavoro_id:data.modellaLavoroId||null,
       modello_nl_id:data.modelloNLId||null,
