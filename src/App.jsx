@@ -633,13 +633,11 @@ export default function App({ session }){
           const [h,m]=e.tIn.split(":").map(Number);
           const mins=h*60+m;
           let fascia="";
-          if(mins>=360&&mins<705) fascia="mattina";
-          else if(mins>=705&&mins<1035) fascia="pomeriggio";
-          else if(mins>=1035&&mins<1080) fascia="terzo";
-          else fascia="notte";
+          if(mins>=360&&mins<705) fascia="primo";
+          else fascia="secondo";
           if(fasceFiltro.length>0 && !fasceFiltro.includes(fascia)) continue;
           result.totale++;
-          result[fascia]++;
+          result[fascia]=(result[fascia]||0)+1;
           if(e.modelloId) perModello[e.modelloId]=(perModello[e.modelloId]||0)+1;
         }
       }
@@ -1913,12 +1911,12 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, onR
   const pct = totaleTurni>0 ? Math.round((data.totale/totaleTurni)*100) : 0;
 
   const FASCE = [
-    {key:"mattina",   label:"Mattina (06:00-11:45)",   count:data.mattina},
-    {key:"pomeriggio",label:"Pomeriggio (11:45-17:15)",count:data.pomeriggio},
-    {key:"terzo",     label:"3° Turno (17:15-18:00)",  count:data.terzo},
-    {key:"notte",     label:"Notte",                    count:data.notte},
-    {key:"h24",       label:"H24 / Tutto il giorno",   count:data.h24},
+    {key:"primo",   label:"1° TURNO (06:00-11:44)", count:data.primo||0},
+    {key:"secondo", label:"2° TURNO (12:00-23:59)", count:data.secondo||0},
+    {key:"h24",     label:"H24 / Tutto il giorno",  count:data.h24||0},
   ];
+  const pct1 = data.totale>0 ? Math.round(((data.primo||0)/data.totale)*100) : 0;
+  const pct2 = data.totale>0 ? Math.round(((data.secondo||0)/data.totale)*100) : 0;
 
   function toggleFascia(key){
     const cur = cfg.fasceFiltro||[];
@@ -1956,7 +1954,7 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, onR
           <div style={{fontSize:10,color:T.sub,fontWeight:700}}>TOTALE TURNI</div>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <span style={{fontSize:20,fontWeight:900,color:T.text}}>{data.totale}</span>
-            {totaleTurni>0&&r.id!==activeReports[0]?.id&&(
+            {totaleTurni>0&&(
               <span style={{fontSize:13,fontWeight:700,color:accent,background:accent+"22",
                 borderRadius:8,padding:"2px 8px"}}>{pct}%</span>
             )}
@@ -1968,14 +1966,30 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, onR
             <div style={{width:`${pct}%`,height:"100%",background:accent,borderRadius:3,transition:"width 0.3s"}}/>
           </div>
         )}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
-          {FASCE.map(f=>(
-            <div key={f.key} style={{display:"flex",justifyContent:"space-between",
-              padding:"5px 8px",background:T.s2,borderRadius:6}}>
-              <span style={{fontSize:10,color:T.sub}}>{f.label}</span>
-              <span style={{fontSize:12,fontWeight:800,color:T.text}}>{f.count}</span>
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+            padding:"8px 10px",background:"#f59e0b22",borderRadius:8,border:"1px solid #f59e0b44"}}>
+            <span style={{fontSize:13,fontWeight:800,color:"#f59e0b"}}>1° TURNO (06:00-11:44)</span>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:12,fontWeight:700,color:"#f59e0b",background:"#f59e0b22",
+                borderRadius:6,padding:"2px 7px"}}>{pct1}%</span>
+              <span style={{fontSize:16,fontWeight:900,color:T.text}}>{data.primo||0}</span>
             </div>
-          ))}
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+            padding:"8px 10px",background:"#f9731622",borderRadius:8,border:"1px solid #f9731644"}}>
+            <span style={{fontSize:13,fontWeight:800,color:"#f97316"}}>2° TURNO (12:00-23:59)</span>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:12,fontWeight:700,color:"#f97316",background:"#f9731622",
+                borderRadius:6,padding:"2px 7px"}}>{pct2}%</span>
+              <span style={{fontSize:16,fontWeight:900,color:T.text}}>{data.secondo||0}</span>
+            </div>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+            padding:"8px 10px",background:T.s2,borderRadius:8}}>
+            <span style={{fontSize:13,fontWeight:700,color:T.sub}}>H24 / Tutto il giorno</span>
+            <span style={{fontSize:16,fontWeight:900,color:T.text}}>{data.h24||0}</span>
+          </div>
         </div>
       </div>
 
@@ -2079,8 +2093,12 @@ function OrePerTurnoView({T, data}){
     <div style={{background:T.surface,borderRadius:10,padding:12}}>
       <div style={{fontSize:11,color:T.sub,marginBottom:8}}>Stima ore lavorate nel periodo</div>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-        <span style={{fontSize:12,color:T.sub}}>Turni 6h15m</span>
-        <span style={{fontWeight:800,color:T.text}}>{(data.mattina+data.pomeriggio+data.terzo+data.notte)*6.25}h</span>
+        <span style={{fontSize:12,color:T.sub}}>1° Turno</span>
+        <span style={{fontWeight:800,color:T.text}}>{(data.primo||0)*6.25}h</span>
+      </div>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+        <span style={{fontSize:12,color:T.sub}}>2° Turno</span>
+        <span style={{fontWeight:800,color:T.text}}>{(data.secondo||0)*6.25}h</span>
       </div>
       <div style={{display:"flex",justifyContent:"space-between"}}>
         <span style={{fontSize:12,color:T.sub}}>Totale stimato</span>
