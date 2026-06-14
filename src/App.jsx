@@ -1972,8 +1972,13 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, onR
         <div key={mid} style={{display:"flex",alignItems:"center",gap:8,
           padding:"5px 0",borderBottom:`1px solid ${T.border}`}}>
           <div style={{width:8,height:8,borderRadius:"50%",background:c,flexShrink:0}}/>
-          <span style={{flex:1,fontSize:12,color:T.text}}>{m.titolo}</span>
-          <span style={{fontSize:13,fontWeight:800,color:T.text}}>{cnt}</span>
+          <div style={{flex:1}}>
+  <span style={{fontSize:12,fontWeight:700,color:T.text}}>{m.titolo}</span>
+  <span style={{fontSize:10,color:T.sub,marginLeft:6}}>
+    {m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${m.fine?` - ${m.fine}`:""}`:""} 
+  </span>
+</div>
+<span style={{fontSize:13,fontWeight:800,color:T.text}}>{cnt}</span>
         </div>
       );
     })}
