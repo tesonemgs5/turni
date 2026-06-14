@@ -981,7 +981,7 @@ export default function App({ session }){
           <button onClick={()=>{
             if(modelliTab==="turni"){
               setEditModello(null);
-              setModelForm({titolo:"",tempo:"personalizzato",inizio:"",fine:"",coloreCustom:null,posizione:""});
+              setModelForm({titolo:"",tempo:"6h15",inizio:"",fine:"",coloreCustom:null,posizione:""});
               setShowModelForm(true);
             } else {
               setEditRotazione(null);
@@ -2225,7 +2225,7 @@ function ModelForm({T, form, setForm, accent, dark, onSave}){
   return (
     <div style={{padding:"16px 14px 40px"}}>
       <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:16}}>
-        <input value={form.titolo} onChange={e=>setForm(f=>({...f,titolo:e.target.value}))}
+        <input value={form.titolo} onChange={e=>setForm(f=>({...f,titolo:e.target.value.toUpperCase()}))}
           placeholder="TITOLO"
           style={{width:"100%",padding:"14px 16px",background:"transparent",border:"none",
             outline:"none",color:T.text,fontSize:16,fontWeight:600,boxSizing:"border-box"}}/>
@@ -2284,13 +2284,7 @@ function ModelForm({T, form, setForm, accent, dark, onSave}){
           </div>
         )}
       </div>
-      <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>POSIZIONE</div>
-      <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:24}}>
-        <input value={form.posizione||""} onChange={e=>setForm(f=>({...f,posizione:e.target.value.toUpperCase()}))}
-          placeholder="LUOGO DI LAVORO (OPZIONALE)"
-          style={{width:"100%",padding:"14px 16px",background:"transparent",border:"none",
-            outline:"none",color:T.text,fontSize:15,boxSizing:"border-box"}}/>
-      </div>
+      
       <button onClick={onSave}
         style={{width:"100%",background:accent,border:"none",borderRadius:14,
           color:"#fff",padding:"14px 0",cursor:"pointer",fontWeight:800,fontSize:15}}>
