@@ -205,12 +205,13 @@ export default function App({ session }){
         setStore({ calendars, events, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings });
         setCalId(calendars[0]?.id||null);
 
-        if (sUrl) setTimeout(() => { saveToSheets(events, calendars, sUrl, sSec, (modelliDb||[]).map(m=>({
+        const modelliPerSheets = (modelliDb||[]).map(m=>({
   id:m.id, titolo:m.titolo, tempo:m.tempo,
   inizio:m.inizio||"", fine:m.fine||"",
   colore:m.colore, coloreCustom:m.colore_custom||null,
   posizione:m.posizione||"", sortOrder:m.sort_order||0,
-}))); }, 500);
+}));
+if (sUrl) setTimeout(() => { saveToSheets(events, calendars, sUrl, sSec, modelliPerSheets); }, 500);
       } catch(e){ console.log("Errore startup:", e); }
       setLoading(false);
     })();
