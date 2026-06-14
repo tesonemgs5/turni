@@ -139,6 +139,7 @@ export default function App({ session }){
   const [conteggioConfigs, setConteggioConfigs] = useState({});
 
   const userId = session?.user?.id;
+const isInitialized = useRef(false);
 
   useEffect(()=>{
     if(!userId) return;
@@ -205,13 +206,7 @@ export default function App({ session }){
         setStore({ calendars, events, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings });
         setCalId(calendars[0]?.id||null);
 
-        const modelliPerSheets = (modelliDb||[]).map(m=>({
-  id:m.id, titolo:m.titolo, tempo:m.tempo,
-  inizio:m.inizio||"", fine:m.fine||"",
-  colore:m.colore, coloreCustom:m.colore_custom||null,
-  posizione:m.posizione||"", sortOrder:m.sort_order||0,
-}));
-if (sUrl) setTimeout(() => { saveToSheets(events, calendars, sUrl, sSec, modelliPerSheets); }, 500);
+        isInitialized.current = true;
       } catch(e){ console.log("Errore startup:", e); }
       setLoading(false);
     })();
@@ -424,6 +419,7 @@ if (sUrl) setTimeout(() => { saveToSheets(events, calendars, sUrl, sSec, modelli
 
   async function saveToSheets(events, calendars, customUrl=sheetsUrl, customSecret=sheetsSecret, modelliToSave=modelli){
     if(!customUrl) return "⚠️ Sheets non configurato";
+if(!isInitialized.current) return;
     try {
       await fetch(customUrl, {
         method:"POST", mode:"no-cors",
