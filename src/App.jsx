@@ -1105,53 +1105,47 @@ if(!isInitialized.current) return;
                     onMoveUp={()=>moveH24(m.id,"up")}
                     onMoveDown={()=>moveH24(m.id,"down")}
                     onTouchStart={()=>{touchSrcId.current=m.id;}}
-                    async function moveH24(id, dir){
-    const sorted=[...modelli].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
-    const idx=sorted.findIndex(m=>m.id===id);
-    if(idx===-1) return;
-    const swapIdx=dir==="up"?idx-1:idx+1;
-    if(swapIdx<0||swapIdx>=sorted.length) return;
-    const reordered=[...sorted];
-    const [moved]=reordered.splice(idx,1);
-    reordered.splice(swapIdx,0,moved);
-    const withNewOrder=reordered.map((m,i)=>({...m,sortOrder:i*10}));
-    for(const m of withNewOrder){
-      await supabase.from("modelli").update({sort_order:m.sortOrder}).eq("id",m.id).eq("user_id",userId);
-    }
-    setModelli(withNewOrder);
-  }touchTargetId.current);
+                    onTouchMove={(e)=>{
+                      e.preventDefault();
+                      const t=e.touches[0];
+                      const el=document.elementFromPoint(t.clientX,t.clientY);
+                      const card=el?.closest("[data-modello-id]");
+                      if(card) touchTargetId.current=card.getAttribute("data-modello-id");
+                    }}
+                    onTouchEnd={async()=>{
+                      if(!touchSrcId.current||!touchTargetId.current||touchSrcId.current===touchTargetId.current){touchSrcId.current=null;touchTargetId.current=null;return;}
+                      const sorted=[...modelli].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
+                      const srcIdx=sorted.findIndex(x=>x.id===touchSrcId.current);
+                      const dstIdx=sorted.findIndex(x=>x.id===touchTargetId.current);
                       if(srcIdx===-1||dstIdx===-1){touchSrcId.current=null;touchTargetId.current=null;return;}
                       const reordered=[...sorted];
                       const [moved]=reordered.splice(srcIdx,1);
                       reordered.splice(dstIdx,0,moved);
                       const withNewOrder=reordered.map((x,i)=>({...x,sortOrder:i*10}));
-                      const withTime=modelli.filter(x=>x.tempo!=="h24"&&x.inizio);
-                      setModelli([...withTime,...withNewOrder]);
-                      for(let i=0;i<withNewOrder.length;i++){
-                        await supabase.from("modelli").update({sort_order:withNewOrder[i].sortOrder}).eq("id",withNewOrder[i].id).eq("user_id",userId);
+                      setModelli(withNewOrder);
+                      for(const x of withNewOrder){
+                        await supabase.from("modelli").update({sort_order:x.sortOrder}).eq("id",x.id).eq("user_id",userId);
                       }
                       touchSrcId.current=null;touchTargetId.current=null;
-                    }:null}
-                    onDragStart={m.tempo==="h24"||!m.inizio?()=>{dragSrcId.current=m.id;}:null}
-                    onDragOver={m.tempo==="h24"||!m.inizio?(e)=>{e.preventDefault();}:null}
-                    onDrop={m.tempo==="h24"||!m.inizio?async()=>{
+                    }}
+                    onDragStart={()=>{dragSrcId.current=m.id;}}
+                    onDragOver={(e)=>{e.preventDefault();}}
+                    onDrop={async()=>{
                       if(!dragSrcId.current||dragSrcId.current===m.id) return;
-                      const noTime=modelli.filter(x=>x.tempo==="h24"||!x.inizio);
-                      const sorted=[...noTime].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
+                      const sorted=[...modelli].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
                       const srcIdx=sorted.findIndex(x=>x.id===dragSrcId.current);
                       const dstIdx=sorted.findIndex(x=>x.id===m.id);
                       if(srcIdx===-1||dstIdx===-1) return;
                       const reordered=[...sorted];
                       const [moved]=reordered.splice(srcIdx,1);
                       reordered.splice(dstIdx,0,moved);
-const withNewOrder = reordered.map((x,i)=>({...x,sortOrder:i*10}));
-const withTime = modelli.filter(x=>x.tempo!=="h24"&&x.inizio);
-setModelli([...withTime,...withNewOrder]);
-for(let i=0;i<withNewOrder.length;i++){
-  await supabase.from("modelli").update({sort_order:withNewOrder[i].sortOrder}).eq("id",withNewOrder[i].id).eq("user_id",userId);
-}
-dragSrcId.current=null;
-                    }:null}/>
+                      const withNewOrder=reordered.map((x,i)=>({...x,sortOrder:i*10}));
+                      setModelli(withNewOrder);
+                      for(const x of withNewOrder){
+                        await supabase.from("modelli").update({sort_order:x.sortOrder}).eq("id",x.id).eq("user_id",userId);
+                      }
+                      dragSrcId.current=null;
+                    }}/>
                 </div>
               ))}
             </div>
