@@ -610,7 +610,7 @@ if(!isInitialized.current) return;
     const newB={...b,sortOrder:sortA};
     await supabase.from("modelli").update({sort_order:newA.sortOrder}).eq("id",newA.id).eq("user_id",userId);
     await supabase.from("modelli").update({sort_order:newB.sortOrder}).eq("id",newB.id).eq("user_id",userId);
-    setModelli(prev=>prev.map(m=>m.id===newA.id?{...m,sortOrder:newA.sortOrder}:m.id===newB.id?{...m,sortOrder:newB.sortOrder}:m).slice());
+    setModelli(prev=>[...prev.map(m=>m.id===newA.id?{...m,sortOrder:newA.sortOrder}:m.id===newB.id?{...m,sortOrder:newB.sortOrder}:m)]);
   }
 
   async function saveModello(data){
