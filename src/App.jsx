@@ -1104,20 +1104,22 @@ if(!isInitialized.current) return;
                     onDelete={()=>deleteModello(m.id)}
                     onMoveUp={()=>moveH24(m.id,"up")}
                     onMoveDown={()=>moveH24(m.id,"down")}
-                    onTouchStart={m.tempo==="h24"||!m.inizio?()=>{touchSrcId.current=m.id;}:null}
-                    onTouchMove={m.tempo==="h24"||!m.inizio?(e)=>{
-                      e.preventDefault();
-                      const t=e.touches[0];
-                      const el=document.elementFromPoint(t.clientX,t.clientY);
-                      const card=el?.closest("[data-modello-id]");
-                      if(card) touchTargetId.current=card.getAttribute("data-modello-id");
-                    }:null}
-                    onTouchEnd={m.tempo==="h24"||!m.inizio?async()=>{
-                      if(!touchSrcId.current||!touchTargetId.current||touchSrcId.current===touchTargetId.current){touchSrcId.current=null;touchTargetId.current=null;return;}
-                      const noTime=modelli.filter(x=>x.tempo==="h24"||!x.inizio);
-                      const sorted=[...noTime].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
-                      const srcIdx=sorted.findIndex(x=>x.id===touchSrcId.current);
-                      const dstIdx=sorted.findIndex(x=>x.id===touchTargetId.current);
+                    onTouchStart={()=>{touchSrcId.current=m.id;}}
+                    async function moveH24(id, dir){
+    const sorted=[...modelli].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
+    const idx=sorted.findIndex(m=>m.id===id);
+    if(idx===-1) return;
+    const swapIdx=dir==="up"?idx-1:idx+1;
+    if(swapIdx<0||swapIdx>=sorted.length) return;
+    const reordered=[...sorted];
+    const [moved]=reordered.splice(idx,1);
+    reordered.splice(swapIdx,0,moved);
+    const withNewOrder=reordered.map((m,i)=>({...m,sortOrder:i*10}));
+    for(const m of withNewOrder){
+      await supabase.from("modelli").update({sort_order:m.sortOrder}).eq("id",m.id).eq("user_id",userId);
+    }
+    setModelli(withNewOrder);
+  }touchTargetId.current);
                       if(srcIdx===-1||dstIdx===-1){touchSrcId.current=null;touchTargetId.current=null;return;}
                       const reordered=[...sorted];
                       const [moved]=reordered.splice(srcIdx,1);
