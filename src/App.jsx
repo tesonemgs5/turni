@@ -229,13 +229,7 @@ const isInitialized = useRef(false);
     })();
   },[userId]);
 
-  useEffect(()=>{
-    function handleVisibilityChange(){
-      if(document.visibilityState==="visible") window.location.reload();
-    }
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return ()=>document.removeEventListener("visibilitychange", handleVisibilityChange);
-  },[]);
+
 
   const sysDark = window.matchMedia?.("(prefers-color-scheme:dark)").matches??false;
   const dark = store.theme==="auto"?sysDark:store.theme==="dark";
