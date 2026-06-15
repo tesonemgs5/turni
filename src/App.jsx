@@ -582,18 +582,7 @@ if(!isInitialized.current) return;
 
   // ── MODELLI CRUD ─────────────────────────────────────────────
   function sortedModelli(){
-    const withTime=modelli.filter(m=>m.tempo!=="h24"&&m.inizio);
-    const noTime=modelli.filter(m=>m.tempo==="h24"||!m.inizio);
-    withTime.sort((a,b)=>{
-      const toMins=t=>{if(!t)return 9999;const[h,m]=t.split(":").map(Number);return h*60+m;};
-      const diffInizio=toMins(a.inizio)-toMins(b.inizio);
-      if(diffInizio!==0) return diffInizio;
-      const fineA=a.tempo==="6h15"?calcFine6h15(a.inizio):a.fine||"";
-      const fineB=b.tempo==="6h15"?calcFine6h15(b.inizio):b.fine||"";
-      return toMins(fineA)-toMins(fineB);
-    });
-    const noTimeSorted=[...noTime].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
-    return [...withTime,...noTimeSorted];
+    return [...modelli].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
   }
 
   async function moveH24(id, dir){
@@ -630,12 +619,15 @@ if(!isInitialized.current) return;
       });
     } else {
       const {data:res}=await supabase.from("modelli").insert(payload).select().maybeSingle();
-      if(res) setModelli(prev=>{
-  const toMins=t=>{if(!t)return 9999;const[h,m]=t.split(":").map(Number);return h*60+m;};
-  const updated=[...prev,{...data,id:res.id,colore:coloreEff}].sort((a,b)=>toMins(a.inizio)-toMins(b.inizio));
-  if(sheetsUrl) saveToSheets(store.events, store.calendars, sheetsUrl, sheetsSecret, updated);
-  return updated;
-});
+      if(res){
+        const newSortOrder=modelli.length*10;
+        await supabase.from("modelli").update({sort_order:newSortOrder}).eq("id",res.id).eq("user_id",userId);
+        setModelli(prev=>{
+          const updated=[...prev,{...data,id:res.id,colore:coloreEff,sortOrder:newSortOrder}];
+          if(sheetsUrl) saveToSheets(store.events, store.calendars, sheetsUrl, sheetsSecret, updated);
+          return updated;
+        });
+      }
     }
   }
 
