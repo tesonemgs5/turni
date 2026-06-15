@@ -582,7 +582,25 @@ if(!isInitialized.current) return;
 
   // ── MODELLI CRUD ─────────────────────────────────────────────
   function sortedModelli(){
-    return [...modelli].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
+    if(modelliSort==="manuale"){
+      return [...modelli].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
+    }
+    const toMins=t=>{
+      if(!t) return 9999;
+      const[h,m]=t.split(":").map(Number);
+      return h*60+m;
+    };
+    const INTESTAZIONI=["MATTINA","POMERIGGIO","3° TURNO","NOTTE"];
+    return [...modelli].sort((a,b)=>{
+      const minsA=a.tempo==="h24"?9999:toMins(a.inizio);
+      const minsB=b.tempo==="h24"?9999:toMins(b.inizio);
+      if(minsA!==minsB) return minsA-minsB;
+      const aInt=INTESTAZIONI.includes(a.titolo);
+      const bInt=INTESTAZIONI.includes(b.titolo);
+      if(aInt&&!bInt) return -1;
+      if(!aInt&&bInt) return 1;
+      return 0;
+    });
   }
 
   async function moveH24(id, dir){
