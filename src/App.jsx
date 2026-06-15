@@ -128,7 +128,7 @@ export default function App({ session }){
   const [editRotazione, setEditRotazione] = useState(null);
   const [rotForm, setRotForm] = useState({ tipo:"personalizzata", titolo:"", dataInizio:"", nSettimane:52, modellaLavoroId:null, modelloNLId:null, modelloRSId:null });
   const [showRotDetail, setShowRotDetail] = useState(null);
-  const [showModelloPicker, setShowModelloPicker] = useState(false);
+  const dragSrcId = useRef(null);
 
   const [reportInterval, setReportInterval] = useState("mese");
   const [reportDateFrom, setReportDateFrom] = useState("");
@@ -1109,7 +1109,29 @@ if(!isInitialized.current) return;
                     onEdit={()=>{ setEditModello(m); setModelForm(m); setShowModelForm(true); }}
                     onDelete={()=>deleteModello(m.id)}
                     onMoveUp={m.tempo==="h24"||!m.inizio?()=>moveH24(m.id,"up"):null}
-                    onMoveDown={m.tempo==="h24"||!m.inizio?()=>moveH24(m.id,"down"):null}/>
+                    onMoveDown={m.tempo==="h24"||!m.inizio?()=>moveH24(m.id,"down"):null}
+                    onDragStart={m.tempo==="h24"||!m.inizio?()=>{dragSrcId.current=m.id;}:null}
+                    onDragOver={m.tempo==="h24"||!m.inizio?(e)=>{e.preventDefault();}:null}
+                    onDrop={m.tempo==="h24"||!m.inizio?async()=>{
+                      if(!dragSrcId.current||dragSrcId.current===m.id) return;
+                      const noTime=modelli.filter(x=>x.tempo==="h24"||!x.inizio);
+                      const sorted=[...noTime].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
+                      const srcIdx=sorted.findIndex(x=>x.id===dragSrcId.current);
+                      const dstIdx=sorted.findIndex(x=>x.id===m.id);
+                      if(srcIdx===-1||dstIdx===-1) return;
+                      const reordered=[...sorted];
+                      const [moved]=reordered.splice(srcIdx,1);
+                      reordered.splice(dstIdx,0,moved);
+                      for(let i=0;i<reordered.length;i++){
+                        await supabase.from("modelli").update({sort_order:i*10}).eq("id",reordered[i].id).eq("user_id",userId);
+                      }
+                      setModelli(prev=>{
+                        const withTime=prev.filter(x=>x.tempo!=="h24"&&x.inizio);
+                        const updated=reordered.map((x,i)=>({...x,sortOrder:i*10}));
+                        return [...withTime,...updated];
+                      });
+                      dragSrcId.current=null;
+                    }:null}/>
                 </div>
               ))}
             </div>
@@ -2280,14 +2302,20 @@ function Sec({label,children,T}){
   );
 }
 
-function ModelloCard({m, T, accent, onEdit, onDelete, onMoveUp, onMoveDown}){
+function ModelloCard({m, T, accent, onEdit, onDelete, onMoveUp, onMoveDown, onDragStart, onDragOver, onDrop}){
   const colore=m.coloreCustom||(m.tempo==="h24"?"#64748b":getColorByTime(m.inizio));
   const durata=m.tempo==="h24"?"Tutto il giorno"
     :m.tempo==="6h15"&&m.inizio?`${m.inizio} - ${calcFine6h15(m.inizio)} • 6h 15m`
     :m.inizio&&m.fine?`${m.inizio} - ${m.fine} • ${calcDurata(m.inizio,m.fine)}`
     :m.inizio?m.inizio:"";
   return (
-    <div style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}} onClick={onEdit}>
+    <div
+      draggable={!!(onDragStart)}
+      onDragStart={onDragStart}
+      onDragOver={e=>{e.preventDefault();if(onDragOver)onDragOver(e);}}
+      onDrop={e=>{e.preventDefault();if(onDrop)onDrop(e);}}
+      style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:onDragStart?"grab":"pointer"}}
+      onClick={onEdit}>
       <div style={{width:36,height:36,borderRadius:10,background:colore+"33",
         border:`2px solid ${colore}`,display:"flex",alignItems:"center",justifyContent:"center",
         flexShrink:0,marginRight:12}}>
