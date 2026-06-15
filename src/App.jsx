@@ -206,6 +206,20 @@ const isInitialized = useRef(false);
         setStore({ calendars, events, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings });
         setCalId(calendars[0]?.id||null);
 
+        // Inizializza sortOrder per modelli H24 che hanno tutti 0
+        const h24senza = (modelliDb||[]).filter(m=>(m.tempo==="h24"||!m.inizio)&&(m.sort_order||0)===0);
+        if(h24senza.length>1){
+          for(let i=0;i<h24senza.length;i++){
+            await supabase.from("modelli").update({sort_order:i*10}).eq("id",h24senza[i].id).eq("user_id",userId);
+          }
+          const {data:modelliDb2}=await supabase.from("modelli").select("*").eq("user_id",userId).order("sort_order");
+          setModelli((modelliDb2||[]).map(m=>({
+            id:m.id,titolo:m.titolo,tempo:m.tempo,
+            inizio:m.inizio||"",fine:m.fine||"",
+            colore:m.colore,coloreCustom:m.colore_custom||null,
+            posizione:m.posizione||"",sortOrder:m.sort_order||0,
+          })));
+        }
         isInitialized.current = true;
       } catch(e){ console.log("Errore startup:", e); }
       setLoading(false);
