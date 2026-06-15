@@ -594,7 +594,7 @@ if(!isInitialized.current) return;
     const getGruppoMins=m=>{
       if(m.titolo==="MATTINA")    return 6*60;      // 06:00
       if(m.titolo==="POMERIGGIO") return 12*60;     // 12:00
-      if(m.titolo==="3° TURNO")   return 17*60+30;  // 17:30
+      if(m.titolo==="3° TURNO")   return 16*60+30;  // 16:30
       if(m.titolo==="NOTTE")      return 23*60;     // 23:00
       return null;
     };
