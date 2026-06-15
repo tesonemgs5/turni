@@ -128,6 +128,7 @@ export default function App({ session }){
   const [editRotazione, setEditRotazione] = useState(null);
   const [rotForm, setRotForm] = useState({ tipo:"personalizzata", titolo:"", dataInizio:"", nSettimane:52, modellaLavoroId:null, modelloNLId:null, modelloRSId:null });
   const [showRotDetail, setShowRotDetail] = useState(null);
+  const [showModelloPicker, setShowModelloPicker] = useState(false);
   const dragSrcId = useRef(null);
 
   const [reportInterval, setReportInterval] = useState("mese");
