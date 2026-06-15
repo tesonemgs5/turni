@@ -586,7 +586,7 @@ if(!isInitialized.current) return;
   }
 
   async function moveH24(id, dir){
-    const noTime=modelli.filter(m=>m.tempo==="h24"||!m.inizio);
+    const noTime=modelli;
     const sorted=[...noTime].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
     const idx=sorted.findIndex(m=>m.id===id);
     if(idx===-1) return;
@@ -1101,8 +1101,8 @@ if(!isInitialized.current) return;
                   <ModelloCard m={m} T={T} accent={accent}
                     onEdit={()=>{ setEditModello(m); setModelForm(m); setShowModelForm(true); }}
                     onDelete={()=>deleteModello(m.id)}
-                    onMoveUp={m.tempo==="h24"||!m.inizio?()=>moveH24(m.id,"up"):null}
-                    onMoveDown={m.tempo==="h24"||!m.inizio?()=>moveH24(m.id,"down"):null}
+                    onMoveUp={()=>moveH24(m.id,"up")}
+                    onMoveDown={()=>moveH24(m.id,"down")}
                     onTouchStart={m.tempo==="h24"||!m.inizio?()=>{touchSrcId.current=m.id;}:null}
                     onTouchMove={m.tempo==="h24"||!m.inizio?(e)=>{
                       e.preventDefault();
