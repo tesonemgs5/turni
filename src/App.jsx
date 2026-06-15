@@ -1123,15 +1123,13 @@ if(!isInitialized.current) return;
                       const reordered=[...sorted];
                       const [moved]=reordered.splice(srcIdx,1);
                       reordered.splice(dstIdx,0,moved);
-                      for(let i=0;i<reordered.length;i++){
-                        await supabase.from("modelli").update({sort_order:i*10}).eq("id",reordered[i].id).eq("user_id",userId);
-                      }
-                      setModelli(prev=>{
-                        const withTime=prev.filter(x=>x.tempo!=="h24"&&x.inizio);
-                        const updated=reordered.map((x,i)=>({...x,sortOrder:i*10}));
-                        return [...withTime,...updated];
-                      });
-                      dragSrcId.current=null;
+const withNewOrder = reordered.map((x,i)=>({...x,sortOrder:i*10}));
+const withTime = modelli.filter(x=>x.tempo!=="h24"&&x.inizio);
+setModelli([...withTime,...withNewOrder]);
+for(let i=0;i<withNewOrder.length;i++){
+  await supabase.from("modelli").update({sort_order:withNewOrder[i].sortOrder}).eq("id",withNewOrder[i].id).eq("user_id",userId);
+}
+dragSrcId.current=null;
                     }:null}/>
                 </div>
               ))}
