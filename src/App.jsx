@@ -586,18 +586,19 @@ if(!isInitialized.current) return;
   }
 
   async function moveH24(id, dir){
-    const noTime=modelli;
-    const sorted=[...noTime].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
+    const sorted=[...modelli].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
     const idx=sorted.findIndex(m=>m.id===id);
     if(idx===-1) return;
     const swapIdx=dir==="up"?idx-1:idx+1;
     if(swapIdx<0||swapIdx>=sorted.length) return;
-    const a=sorted[idx], b=sorted[swapIdx];
-    const newSortA=swapIdx*10;
-    const newSortB=idx*10;
-    await supabase.from("modelli").update({sort_order:newSortA}).eq("id",a.id).eq("user_id",userId);
-    await supabase.from("modelli").update({sort_order:newSortB}).eq("id",b.id).eq("user_id",userId);
-    setModelli(prev=>[...prev.map(m=>m.id===a.id?{...m,sortOrder:newSortA}:m.id===b.id?{...m,sortOrder:newSortB}:m)]);
+    const reordered=[...sorted];
+    const [moved]=reordered.splice(idx,1);
+    reordered.splice(swapIdx,0,moved);
+    const withNewOrder=reordered.map((m,i)=>({...m,sortOrder:i*10}));
+    for(const m of withNewOrder){
+      await supabase.from("modelli").update({sort_order:m.sortOrder}).eq("id",m.id).eq("user_id",userId);
+    }
+    setModelli(withNewOrder);
   }
 
   async function saveModello(data){
