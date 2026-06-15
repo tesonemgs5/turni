@@ -586,15 +586,30 @@ if(!isInitialized.current) return;
       return [...modelli].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
     }
     const toMins=t=>{
-      if(!t) return 9999;
+      if(!t) return -1;
       const[h,m]=t.split(":").map(Number);
       return h*60+m;
     };
+    // Assegna a ogni modello H24 intestazione il suo orario di gruppo
+    const getGruppoMins=m=>{
+      if(m.titolo==="MATTINA")    return 6*60;      // 06:00
+      if(m.titolo==="POMERIGGIO") return 12*60;     // 12:00
+      if(m.titolo==="3° TURNO")   return 17*60+30;  // 17:30
+      if(m.titolo==="NOTTE")      return 23*60;     // 23:00
+      return null;
+    };
+    const getSortMins=m=>{
+      if(m.tempo!=="h24"&&m.inizio) return toMins(m.inizio);
+      const g=getGruppoMins(m);
+      if(g!==null) return g;
+      return 99999; // H24 senza gruppo → in fondo
+    };
     const INTESTAZIONI=["MATTINA","POMERIGGIO","3° TURNO","NOTTE"];
     return [...modelli].sort((a,b)=>{
-      const minsA=a.tempo==="h24"?9999:toMins(a.inizio);
-      const minsB=b.tempo==="h24"?9999:toMins(b.inizio);
+      const minsA=getSortMins(a);
+      const minsB=getSortMins(b);
       if(minsA!==minsB) return minsA-minsB;
+      // stesso orario: intestazione viene prima
       const aInt=INTESTAZIONI.includes(a.titolo);
       const bInt=INTESTAZIONI.includes(b.titolo);
       if(aInt&&!bInt) return -1;
