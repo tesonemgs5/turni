@@ -12,6 +12,25 @@ const PALETTE = [
 ];
 
 function uid(){ return Math.random().toString(36).slice(2)+Date.now().toString(36); }
+
+// ── LOCALSTORAGE CACHE ────────────────────────────────────────
+function saveToLocalStorage(events, calendars, modelli){
+  try {
+    localStorage.setItem('cache_events', JSON.stringify(events));
+    localStorage.setItem('cache_calendars', JSON.stringify(calendars));
+    localStorage.setItem('cache_modelli', JSON.stringify(modelli));
+    localStorage.setItem('cache_timestamp', new Date().toISOString());
+  } catch(e){ console.warn('localStorage error:', e); }
+}
+function loadFromLocalStorage(){
+  try {
+    const events = JSON.parse(localStorage.getItem('cache_events')||'{}');
+    const calendars = JSON.parse(localStorage.getItem('cache_calendars')||'[]');
+    const modelli = JSON.parse(localStorage.getItem('cache_modelli')||'[]');
+    const timestamp = localStorage.getItem('cache_timestamp')||null;
+    return { events, calendars, modelli, timestamp };
+  } catch(e){ return null; }
+}
 function daysInMonth(y,m){ return new Date(y,m+1,0).getDate(); }
 function firstDay(y,m){ const d=new Date(y,m,1).getDay(); return d===0?6:d-1; }
 function dkey(y,m,d){ return `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`; }
@@ -111,6 +130,8 @@ export default function App({ session }){
   const [sheetsSecret, setSheetsSecret] = useState("");
   const [stats, setStats] = useState(null);
   const [showDbModal, setShowDbModal] = useState(false);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [syncMode, setSyncMode] = useState(()=>localStorage.getItem('syncMode')||'on');
   const [dbRawData, setDbRawData] = useState(null);
   const [dbCalsCount, setDbCalsCount] = useState(0);
   const [dbEvtsCount, setDbEvtsCount] = useState(0);
@@ -148,6 +169,14 @@ const isInitialized = useRef(false);
     if(!userId) return;
     (async()=>{
       try {
+        // Mostra subito i dati da localStorage
+        const cached = loadFromLocalStorage();
+        if(cached && cached.calendars.length > 0){
+          setStore(s=>({...s, calendars:cached.calendars, events:cached.events}));
+          setModelli(cached.modelli||[]);
+          setCalId(cached.calendars[0]?.id||null);
+          setLoading(false);
+        }
         const { data: cals } = await supabase.from("calendars").select("*").eq("user_id", userId).order("created_at");
         const { data: evts } = await supabase.from("events").select("*").eq("user_id", userId);
         const { data: settings } = await supabase.from("user_settings").select("*").eq("user_id", userId).maybeSingle();
@@ -230,6 +259,14 @@ const isInitialized = useRef(false);
   },[userId]);
 
 
+
+  useEffect(()=>{
+    function goOnline(){ setIsOnline(true); }
+    function goOffline(){ setIsOnline(false); }
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return ()=>{ window.removeEventListener('online', goOnline); window.removeEventListener('offline', goOffline); };
+  },[]);
 
   const sysDark = window.matchMedia?.("(prefers-color-scheme:dark)").matches??false;
   const dark = store.theme==="auto"?sysDark:store.theme==="dark";
@@ -361,7 +398,8 @@ const isInitialized = useRef(false);
       if(!ns.events[dayKey]) ns.events[dayKey]={};
       if(!ns.events[dayKey][calId]) ns.events[dayKey][calId]=[];
       ns.events[dayKey][calId].push(evt);
-      saveToSheets(ns.events, ns.calendars);
+      saveToLocalStorage(ns.events, ns.calendars, modelli);
+      if(syncMode==='on') saveToSheets(ns.events, ns.calendars);
       return ns;
     });
     setForm(null); setDayKey(null);
@@ -855,7 +893,19 @@ if(!isInitialized.current) return;
         </select>
         {bgSyncing&&<span style={{color:"rgba(255,255,255,0.7)",fontSize:11}}>🔄</span>}
         <button onClick={()=>month===11?(setYear(y=>y+1),setMonth(0)):setMonth(m=>m+1)} style={NB}>›</button>
-        <div style={{width:1,height:14,background:"rgba(255,255,255,0.3)",flexShrink:0,marginLeft:2}}/>
+        <div style={{flex:1}}/>
+        <button onClick={()=>{
+          const next = syncMode==='on'?'off':'on';
+          setSyncMode(next);
+          localStorage.setItem('syncMode', next);
+        }} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.4)",
+          borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:10,fontWeight:800,color:"#fff",flexShrink:0}}>
+          {syncMode==='on'?(isOnline?'🟢 SYNC':'🔴 OFFLINE'):'⏸️ SYNC OFF'}
+        </button>
+      </div>
+      <div style={{background:accent,display:"flex",alignItems:"center",
+        gap:5,padding:"4px 8px",overflowX:"auto",scrollbarWidth:"none",flexShrink:0,
+        borderTop:"1px solid rgba(255,255,255,0.2)"}}>
         {store.calendars.length===0
           ? <span style={{color:"rgba(255,255,255,0.6)",fontSize:10,fontStyle:"italic"}}>→ Impostazioni</span>
           : store.calendars.map(c=>(
