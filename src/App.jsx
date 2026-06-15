@@ -604,13 +604,11 @@ if(!isInitialized.current) return;
     const swapIdx=dir==="up"?idx-1:idx+1;
     if(swapIdx<0||swapIdx>=sorted.length) return;
     const a=sorted[idx], b=sorted[swapIdx];
-    const sortA=a.sortOrder??idx;
-    const sortB=b.sortOrder??swapIdx;
-    const newA={...a,sortOrder:sortB};
-    const newB={...b,sortOrder:sortA};
-    await supabase.from("modelli").update({sort_order:newA.sortOrder}).eq("id",newA.id).eq("user_id",userId);
-    await supabase.from("modelli").update({sort_order:newB.sortOrder}).eq("id",newB.id).eq("user_id",userId);
-    setModelli(prev=>[...prev.map(m=>m.id===newA.id?{...m,sortOrder:newA.sortOrder}:m.id===newB.id?{...m,sortOrder:newB.sortOrder}:m)]);
+    const newSortA=swapIdx*10;
+    const newSortB=idx*10;
+    await supabase.from("modelli").update({sort_order:newSortA}).eq("id",a.id).eq("user_id",userId);
+    await supabase.from("modelli").update({sort_order:newSortB}).eq("id",b.id).eq("user_id",userId);
+    setModelli(prev=>[...prev.map(m=>m.id===a.id?{...m,sortOrder:newSortA}:m.id===b.id?{...m,sortOrder:newSortB}:m)]);
   }
 
   async function saveModello(data){
