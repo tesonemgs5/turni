@@ -130,6 +130,8 @@ export default function App({ session }){
   const [showRotDetail, setShowRotDetail] = useState(null);
   const [showModelloPicker, setShowModelloPicker] = useState(false);
   const dragSrcId = useRef(null);
+  const touchSrcId = useRef(null);
+  const touchTargetId = useRef(null);
 
   const [reportInterval, setReportInterval] = useState("mese");
   const [reportDateFrom, setReportDateFrom] = useState("");
@@ -1111,6 +1113,32 @@ if(!isInitialized.current) return;
                     onDelete={()=>deleteModello(m.id)}
                     onMoveUp={m.tempo==="h24"||!m.inizio?()=>moveH24(m.id,"up"):null}
                     onMoveDown={m.tempo==="h24"||!m.inizio?()=>moveH24(m.id,"down"):null}
+                    onTouchStart={m.tempo==="h24"||!m.inizio?()=>{touchSrcId.current=m.id;}:null}
+                    onTouchMove={m.tempo==="h24"||!m.inizio?(e)=>{
+                      e.preventDefault();
+                      const t=e.touches[0];
+                      const el=document.elementFromPoint(t.clientX,t.clientY);
+                      const card=el?.closest("[data-modello-id]");
+                      if(card) touchTargetId.current=card.getAttribute("data-modello-id");
+                    }:null}
+                    onTouchEnd={m.tempo==="h24"||!m.inizio?async()=>{
+                      if(!touchSrcId.current||!touchTargetId.current||touchSrcId.current===touchTargetId.current){touchSrcId.current=null;touchTargetId.current=null;return;}
+                      const noTime=modelli.filter(x=>x.tempo==="h24"||!x.inizio);
+                      const sorted=[...noTime].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
+                      const srcIdx=sorted.findIndex(x=>x.id===touchSrcId.current);
+                      const dstIdx=sorted.findIndex(x=>x.id===touchTargetId.current);
+                      if(srcIdx===-1||dstIdx===-1){touchSrcId.current=null;touchTargetId.current=null;return;}
+                      const reordered=[...sorted];
+                      const [moved]=reordered.splice(srcIdx,1);
+                      reordered.splice(dstIdx,0,moved);
+                      const withNewOrder=reordered.map((x,i)=>({...x,sortOrder:i*10}));
+                      const withTime=modelli.filter(x=>x.tempo!=="h24"&&x.inizio);
+                      setModelli([...withTime,...withNewOrder]);
+                      for(let i=0;i<withNewOrder.length;i++){
+                        await supabase.from("modelli").update({sort_order:withNewOrder[i].sortOrder}).eq("id",withNewOrder[i].id).eq("user_id",userId);
+                      }
+                      touchSrcId.current=null;touchTargetId.current=null;
+                    }:null}
                     onDragStart={m.tempo==="h24"||!m.inizio?()=>{dragSrcId.current=m.id;}:null}
                     onDragOver={m.tempo==="h24"||!m.inizio?(e)=>{e.preventDefault();}:null}
                     onDrop={m.tempo==="h24"||!m.inizio?async()=>{
@@ -2301,7 +2329,7 @@ function Sec({label,children,T}){
   );
 }
 
-function ModelloCard({m, T, accent, onEdit, onDelete, onMoveUp, onMoveDown, onDragStart, onDragOver, onDrop}){
+function ModelloCard({m, T, accent, onEdit, onDelete, onMoveUp, onMoveDown, onDragStart, onDragOver, onDrop, onTouchStart, onTouchMove, onTouchEnd}){
   const colore=m.coloreCustom||(m.tempo==="h24"?"#64748b":getColorByTime(m.inizio));
   const durata=m.tempo==="h24"?"Tutto il giorno"
     :m.tempo==="6h15"&&m.inizio?`${m.inizio} - ${calcFine6h15(m.inizio)} • 6h 15m`
@@ -2313,7 +2341,11 @@ function ModelloCard({m, T, accent, onEdit, onDelete, onMoveUp, onMoveDown, onDr
       onDragStart={onDragStart}
       onDragOver={e=>{e.preventDefault();if(onDragOver)onDragOver(e);}}
       onDrop={e=>{e.preventDefault();if(onDrop)onDrop(e);}}
-      style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:onDragStart?"grab":"pointer"}}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      data-modello-id={m.id}
+      style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:onDragStart?"grab":"pointer",touchAction:onTouchStart?"none":"auto"}}
       onClick={onEdit}>
       <div style={{width:36,height:36,borderRadius:10,background:colore+"33",
         border:`2px solid ${colore}`,display:"flex",alignItems:"center",justifyContent:"center",
