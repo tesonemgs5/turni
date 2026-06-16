@@ -1188,7 +1188,7 @@ if(!isInitialized.current) return;
               <div style={{fontSize:22,fontWeight:900,fontFamily:"Georgia,serif",color:T.text}}>Modelli</div>
               {/* Badge nome calendario con colore e possibilità di cambio colore */}
               {calId!==null&&calAttivo&&(()=>{
-                const [showCalPal, setShowCalPal] = React.useState(false);
+                const [showCalPal, setShowCalPal] = useState(false);
                 return (
                   <div style={{position:"relative"}}>
                     <div onClick={()=>setShowCalPal(s=>!s)}
@@ -2235,8 +2235,8 @@ if(!isInitialized.current) return;
 // ── SMART TIME INPUT ──────────────────────────────────────────
 // Sovrascrive HH quando si inizia a digitare, avanza auto a MM
 function SmartTimeInput({ value, onChange, style }) {
-  const [phase, setPhase] = React.useState("hh"); // "hh" | "mm"
-  const inputRef = React.useRef(null);
+  const [phase, setPhase] = useState("hh"); // "hh" | "mm"
+  const inputRef = useRef(null);
 
   function handleKeyDown(e) {
     const digit = e.key;
