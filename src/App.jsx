@@ -1271,7 +1271,7 @@ if(!isInitialized.current) return;
             </div>
           ):(
             <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
-              {sortedModelli().map((m,i,arr)=>(
+              {modelliVisibili.map((m,i,arr)=>(
                 <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                   <ModelloCard m={m} T={T} accent={accent}
                     onEdit={()=>{ if(!showMoveMode){ setEditModello(m); setModelForm(m); setShowModelForm(true); } }}
