@@ -139,6 +139,9 @@ export default function App({ session }){
 
   const [modelliTab, setModelliTab] = useState("turni");
   const [modelli, setModelli] = useState([]);
+  // modelli per-calendario: { [calendarId]: [array modelli] }
+  // I modelli caricati da DB vengono smistati per calendar_id
+  // Se calendar_id è null (legacy) vanno al calendario principale
   const [modelliSort, setModelliSort] = useState("orario");
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [showModelForm, setShowModelForm] = useState(false);
@@ -213,6 +216,7 @@ const isInitialized = useRef(false);
           inizio:m.inizio||"", fine:m.fine||"",
           colore:m.colore, coloreCustom:m.colore_custom||null,
           posizione:m.posizione||"", sortOrder:m.sort_order||0,
+          calendarId:m.calendar_id||null,
         })));
 
         const { data: rotazioniDb } = await supabase.from("rotazioni").select("*").eq("user_id", userId).order("created_at");
@@ -651,12 +655,27 @@ if(!isInitialized.current) return;
     });
   }
 
+  // Restituisce la fascia oraria di un modello per il blocco dello spostamento
+  function getFasciaModello(m){
+    if(m.tempo==="h24") return "h24";
+    if(!m.inizio) return "h24";
+    const [h]=m.inizio.split(":").map(Number);
+    if(h>=6&&h<12) return "mattina";
+    if(h>=12&&h<16||(h===16&&parseInt((m.inizio.split(":")[1]||"0"))<30)) return "pomeriggio";
+    if(h>=16&&h<23) return "terzo";
+    return "notte";
+  }
+
   async function moveH24(id, dir){
     const sorted=[...modelli].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
     const idx=sorted.findIndex(m=>m.id===id);
     if(idx===-1) return;
     const swapIdx=dir==="up"?idx-1:idx+1;
     if(swapIdx<0||swapIdx>=sorted.length) return;
+    // ── Blocco: non può sforare in una fascia oraria diversa ──
+    const fasciaCorrente = getFasciaModello(sorted[idx]);
+    const fasciaTarget = getFasciaModello(sorted[swapIdx]);
+    if(fasciaCorrente!==fasciaTarget) return; // bloccato
     const reordered=[...sorted];
     const [moved]=reordered.splice(idx,1);
     reordered.splice(swapIdx,0,moved);
@@ -670,17 +689,20 @@ if(!isInitialized.current) return;
   async function saveModello(data){
     if(!userId) return;
     const coloreEff=data.coloreCustom||(data.tempo==="h24"?"#64748b":getColorByTime(data.inizio));
+    const mainCalId2 = store.calendars.find(c=>c.isMain)?.id||null;
+    const targetCalId = data.calendarId||calId||mainCalId2;
     const payload={
       user_id:userId, titolo:(data.titolo||"").toUpperCase(), tempo:data.tempo,
       inizio:data.inizio||null, fine:data.fine||null,
       colore:coloreEff, colore_custom:data.coloreCustom||null,
       posizione:(data.posizione||"").toUpperCase()||null,
       sort_order:data.sortOrder||modelli.length,
+      calendar_id: targetCalId,
     };
     if(data.id){
       await supabase.from("modelli").update(payload).eq("id",data.id).eq("user_id",userId);
       setModelli(prev=>{
-        const updated=prev.map(m=>m.id===data.id?{...m,...data,colore:coloreEff}:m);
+        const updated=prev.map(m=>m.id===data.id?{...m,...data,colore:coloreEff,calendarId:targetCalId}:m);
         if(sheetsUrl) saveToSheets(store.events, store.calendars, sheetsUrl, sheetsSecret, updated);
         return updated;
       });
@@ -690,7 +712,7 @@ if(!isInitialized.current) return;
         const newSortOrder=modelli.length*10;
         await supabase.from("modelli").update({sort_order:newSortOrder}).eq("id",res.id).eq("user_id",userId);
         setModelli(prev=>{
-          const updated=[...prev,{...data,id:res.id,colore:coloreEff,sortOrder:newSortOrder}];
+          const updated=[...prev,{...data,id:res.id,colore:coloreEff,sortOrder:newSortOrder,calendarId:targetCalId}];
           if(sheetsUrl) saveToSheets(store.events, store.calendars, sheetsUrl, sheetsSecret, updated);
           return updated;
         });
@@ -895,6 +917,13 @@ if(!isInitialized.current) return;
         {bgSyncing&&<span style={{color:"rgba(255,255,255,0.7)",fontSize:11}}>🔄</span>}
         <button onClick={()=>month===11?(setYear(y=>y+1),setMonth(0)):setMonth(m=>m+1)} style={NB}>›</button>
         <div style={{flex:1}}/>
+        {/* TUTTI accanto a mese e anno */}
+        <button onClick={()=>setCalId(null)}
+          style={{background:calId===null?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.1)",
+            border:`1.5px solid ${calId===null?"rgba(255,255,255,0.85)":"transparent"}`,
+            borderRadius:20,padding:"2px 10px",cursor:"pointer",flexShrink:0}}>
+          <span style={{color:"#fff",fontSize:11,fontWeight:800}}>TUTTI</span>
+        </button>
         <button onClick={()=>{
           const next = syncMode==='on'?'off':'on';
           setSyncMode(next);
@@ -907,13 +936,6 @@ if(!isInitialized.current) return;
       <div style={{background:accent,display:"flex",alignItems:"center",
         gap:5,padding:"4px 8px",overflowX:"auto",scrollbarWidth:"none",flexShrink:0,
         borderTop:"1px solid rgba(255,255,255,0.2)"}}>
-        <button onClick={()=>setCalId(null)}
-          style={{display:"flex",alignItems:"center",gap:3,flexShrink:0,cursor:"pointer",
-            background:calId===null?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.1)",
-            border:`1.5px solid ${calId===null?"rgba(255,255,255,0.85)":"transparent"}`,
-            borderRadius:20,padding:"2px 10px"}}>
-          <span style={{color:"#fff",fontSize:12,fontWeight:700}}>TUTTI</span>
-        </button>
         {store.calendars.length===0
           ? <span style={{color:"rgba(255,255,255,0.6)",fontSize:10,fontStyle:"italic"}}>→ Impostazioni</span>
           : store.calendars.map(c=>(
@@ -1137,41 +1159,105 @@ if(!isInitialized.current) return;
   // ── MODELLI VIEW ──────────────────────────────────────────────
   const modelliView = (
     <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 16px 8px"}}>
-        <div style={{fontSize:22,fontWeight:900,fontFamily:"Georgia,serif",color:T.text}}>Modelli</div>
-        <div style={{display:"flex",gap:8,alignItems:"center",position:"relative"}}>
-          <button onClick={()=>setShowSortMenu(s=>!s)}
-            style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
-              padding:"6px 10px",fontSize:18,cursor:"pointer",color:T.sub}}>↑↓</button>
-          <button onClick={()=>{
-            if(modelliTab==="turni"){
-              setEditModello(null);
-              setModelForm({titolo:"",tempo:"6h15",inizio:"",fine:"",coloreCustom:null,posizione:""});
-              setShowModelForm(true);
-            } else {
-              setEditRotazione(null);
-              setRotForm({tipo:"personalizzata",titolo:"",dataInizio:"",nSettimane:52,modellaLavoroId:null,modelloNLId:null,modelloRSId:null});
-              setShowRotForm(true);
-            }
-          }} style={{background:accent,border:"none",borderRadius:8,padding:"6px 16px",
-            fontSize:20,fontWeight:800,cursor:"pointer",color:"#fff"}}>+</button>
-          {showSortMenu&&(
-            <div style={{position:"absolute",top:40,right:0,background:T.surface,
-              border:`1px solid ${T.border}`,borderRadius:12,padding:8,zIndex:200,
-              minWidth:190,boxShadow:"0 8px 24px rgba(0,0,0,0.15)"}}
-              onClick={e=>e.stopPropagation()}>
-              {[["orario","Ordina per orario"],["manuale","Ordine manuale"]].map(([v,l])=>(
-                <div key={v} onClick={()=>{setModelliSort(v);setShowSortMenu(false);}}
-                  style={{padding:"10px 12px",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:600,
-                    background:modelliSort===v?accent+"22":"transparent",
-                    color:modelliSort===v?accent:T.text}}>
-                  {modelliSort===v?"✓  ":"    "}{l}
-                </div>
-              ))}
+      {/* Header modelli: mostra nome + colore del calendario selezionato */}
+      {(()=>{
+        const calAttivo = store.calendars.find(c=>c.id===calId);
+        const nomeCal = calId===null ? "TUTTI" : (calAttivo?.name||"Calendario");
+        const coloreCal = calAttivo?.color||accent;
+        // Calcola colore testo con contrasto su sfondo colorato
+        function hexToRgb(hex){
+          const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
+          return {r,g,b};
+        }
+        function luminance({r,g,b}){
+          const a=[r,g,b].map(v=>{ v/=255; return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4); });
+          return 0.2126*a[0]+0.7152*a[1]+0.0722*a[2];
+        }
+        function contrastColor(hex){
+          try {
+            const rgb=hexToRgb(hex);
+            const lum=luminance(rgb);
+            // bianco su scuro, nero su chiaro
+            return lum < 0.35 ? "#ffffff" : "#0f172a";
+          } catch(e){ return "#ffffff"; }
+        }
+        const testoContrasto = calId===null ? T.text : contrastColor(coloreCal);
+        return (
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px 8px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <div style={{fontSize:22,fontWeight:900,fontFamily:"Georgia,serif",color:T.text}}>Modelli</div>
+              {/* Badge nome calendario con colore e possibilità di cambio colore */}
+              {calId!==null&&calAttivo&&(()=>{
+                const [showCalPal, setShowCalPal] = React.useState(false);
+                return (
+                  <div style={{position:"relative"}}>
+                    <div onClick={()=>setShowCalPal(s=>!s)}
+                      style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",
+                        background:coloreCal,borderRadius:20,padding:"3px 12px 3px 8px"}}>
+                      <div style={{width:10,height:10,borderRadius:"50%",
+                        background:"rgba(255,255,255,0.4)",border:"1.5px solid rgba(255,255,255,0.8)"}}/>
+                      <span style={{fontSize:13,fontWeight:800,color:testoContrasto}}>{nomeCal}</span>
+                      <span style={{fontSize:10,color:testoContrasto,opacity:0.7}}>🎨</span>
+                    </div>
+                    {showCalPal&&(
+                      <div style={{position:"absolute",top:36,left:0,background:T.surface,
+                        border:`1px solid ${T.border}`,borderRadius:12,padding:10,zIndex:500,
+                        boxShadow:"0 8px 32px rgba(0,0,0,0.25)"}}
+                        onClick={e=>e.stopPropagation()}>
+                        <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:6}}>
+                          {["#ef4444","#f97316","#f59e0b","#eab308","#84cc16","#22c55e",
+                            "#10b981","#14b8a6","#06b6d4","#3b82f6","#6366f1","#8b5cf6",
+                            "#a855f7","#ec4899","#f43f5e","#64748b","#0f172a","#1e40af"].map(p=>(
+                            <div key={p} onClick={()=>{
+                              const newCals=JSON.parse(JSON.stringify(store.calendars));
+                              const idx=newCals.findIndex(c=>c.id===calId);
+                              if(idx>-1){ newCals[idx].color=p; setStore(s=>({...s,calendars:newCals})); updateCalendar(calId,{color:p}); }
+                              setShowCalPal(false);
+                            }} style={{width:24,height:24,borderRadius:"50%",background:p,cursor:"pointer",
+                              outline:coloreCal===p?"3px solid #64748b":"none",outlineOffset:2}}/>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
-          )}
-        </div>
-      </div>
+            <div style={{display:"flex",gap:8,alignItems:"center",position:"relative"}}>
+              <button onClick={()=>setShowSortMenu(s=>!s)}
+                style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
+                  padding:"6px 10px",fontSize:18,cursor:"pointer",color:T.sub}}>↑↓</button>
+              <button onClick={()=>{
+                if(modelliTab==="turni"){
+                  setEditModello(null);
+                  setModelForm({titolo:"",tempo:"6h15",inizio:"",fine:"",coloreCustom:null,posizione:"",calendarId:calId});
+                  setShowModelForm(true);
+                } else {
+                  setEditRotazione(null);
+                  setRotForm({tipo:"personalizzata",titolo:"",dataInizio:"",nSettimane:52,modellaLavoroId:null,modelloNLId:null,modelloRSId:null});
+                  setShowRotForm(true);
+                }
+              }} style={{background:accent,border:"none",borderRadius:8,padding:"6px 16px",
+                fontSize:20,fontWeight:800,cursor:"pointer",color:"#fff"}}>+</button>
+              {showSortMenu&&(
+                <div style={{position:"absolute",top:40,right:0,background:T.surface,
+                  border:`1px solid ${T.border}`,borderRadius:12,padding:8,zIndex:200,
+                  minWidth:190,boxShadow:"0 8px 24px rgba(0,0,0,0.15)"}}
+                  onClick={e=>e.stopPropagation()}>
+                  {[["orario","Ordina per orario"],["manuale","Ordine manuale"]].map(([v,l])=>(
+                    <div key={v} onClick={()=>{setModelliSort(v);setShowSortMenu(false);}}
+                      style={{padding:"10px 12px",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:600,
+                        background:modelliSort===v?accent+"22":"transparent",
+                        color:modelliSort===v?accent:T.text}}>
+                      {modelliSort===v?"✓  ":"    "}{l}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       <div style={{display:"flex",margin:"0 12px 12px",background:T.s2,borderRadius:14,padding:4,gap:4}}>
         {[["turni","Turni"],["rotazioni","Rotazioni"]].map(([v,l])=>(
@@ -1183,16 +1269,27 @@ if(!isInitialized.current) return;
               boxShadow:modelliTab===v?"0 2px 8px rgba(0,0,0,0.12)":"none"}}>{l}</button>
         ))}
       </div>
-      {store.calendars.length>0 && calId && !store.calendars.find(c=>c.id===calId)?.isMain && (
-        <div style={{margin:"0 12px 10px",background:"#f59e0b22",border:"1px solid #f59e0b55",
-          borderRadius:10,padding:"8px 12px",fontSize:12,color:"#f59e0b",fontWeight:600}}>
-          ⚠️ Modelli e rotazioni appartengono al calendario turni
+      {/* Info calendario attivo — mostra nome, non avviso generico */}
+      {store.calendars.length>0&&calId&&(
+        <div style={{margin:"0 12px 10px",background:store.calendars.find(c=>c.id===calId)?.color+"22"||"#3b82f622",
+          border:`1px solid ${store.calendars.find(c=>c.id===calId)?.color+"55"||"#3b82f655"}`,
+          borderRadius:10,padding:"6px 12px",fontSize:12,
+          color:store.calendars.find(c=>c.id===calId)?.color||accent,fontWeight:700}}>
+           Modelli di: {store.calendars.find(c=>c.id===calId)?.name||""}
         </div>
       )}
 
       <div style={{flex:1,overflowY:"auto",padding:"0 12px 80px"}}>
-        {modelliTab==="turni"&&(
-          sortedModelli().length===0?(
+        {modelliTab==="turni"&&(()=>{
+          // Filtra modelli per calendario attivo
+          const mainCalId = store.calendars.find(c=>c.isMain)?.id||null;
+          const modelliVisibili = calId===null
+            ? sortedModelli()
+            : sortedModelli().filter(m=>{
+                const mcid = m.calendarId||mainCalId;
+                return mcid===calId;
+              });
+          return modelliVisibili.length===0?(
             <div style={{textAlign:"center",padding:"40px 24px",color:T.sub}}>
               <div style={{fontSize:36,marginBottom:10}}>📋</div>
               <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Nessun modello</div>
@@ -1252,8 +1349,8 @@ if(!isInitialized.current) return;
                 </div>
               ))}
             </div>
-          )
-        )}
+          );
+        })()}
         {modelliTab==="rotazioni"&&(
           <div style={{paddingBottom:80}}>
             {rotazioni.length===0?(
@@ -1328,6 +1425,9 @@ if(!isInitialized.current) return;
               )}
               {rot.tipo==="nlrs"&&(
                 <NLRSView rot={rot} T={T} accent={accent} modelli={modelli}/>
+              )}
+              {rot.tipo==="nlrs_scalante"&&(
+                <NLRSScalanteView rot={rot} T={T} accent={accent} modelli={modelli}/>
               )}
             </div>
           </div>
@@ -1675,11 +1775,18 @@ if(!isInitialized.current) return;
             {form.editId&&(
               <div style={{fontSize:24,color:T.text,fontWeight:900,marginBottom:12,letterSpacing:1}}>{(form.label||"EVENTO").toUpperCase()}</div>
             )}
-            {modelli.length>0&&!form.editId&&(
+            {modelli.length>0&&!form.editId&&(()=>{
+              const mainCalId3 = store.calendars.find(c=>c.isMain)?.id||null;
+              const modelliDelCal = modelli.filter(m=>{
+                const mcid = m.calendarId||mainCalId3;
+                return !calId || mcid===calId;
+              });
+              if(modelliDelCal.length===0) return null;
+              return (
               <>
                 {!form.modelloId&&<div style={{fontSize:10,color:T.sub,marginBottom:6,fontWeight:600}}>MODELLO TURNO</div>}
                 <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
-                  {(form.modelloId?modelli.filter(m=>m.id===form.modelloId):modelli).map(m=>{
+                  {(form.modelloId?modelliDelCal.filter(m=>m.id===form.modelloId):modelliDelCal).map(m=>{
                     const c=m.coloreCustom||getColorByTime(m.inizio);
                     return (
                       <button key={m.id}
@@ -1707,7 +1814,8 @@ if(!isInitialized.current) return;
                   )}
                 </div>
               </>
-            )}
+              );
+            })()}
             {(activeCal?.shifts||[]).length>0&&!form.modelloId&&!form.editId&&(
               <>
                 <div style={{fontSize:10,color:T.sub,marginBottom:6,fontWeight:600}}>TURNO CALENDARIO</div>
@@ -1763,8 +1871,7 @@ if(!isInitialized.current) return;
               <div style={{display:"flex",gap:8,marginBottom:10}}>
                 <div style={{flex:1}}>
                   <div style={{fontSize:9,color:T.sub,marginBottom:3}}>INGRESSO</div>
-                  <input type="text" inputMode="numeric" placeholder="HH:MM" value={form.tIn||""}
-                    onChange={e=>setForm(f=>({...f,tIn:e.target.value,tOut:""}))}
+                  <SmartTimeInput value={form.tIn||""} onChange={v=>setForm(f=>({...f,tIn:v,tOut:""}))}
                     style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                       borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
                   <button type="button" onClick={()=>setForm(f=>({...f,straordinarioTipo:f.straordinarioTipo==="pagamento"?null:"pagamento"}))}
@@ -1793,8 +1900,7 @@ if(!isInitialized.current) return;
                           <div style={{fontSize:8,color:T.sub,fontWeight:700}}>DURATA</div>
                           <div style={{fontSize:12,fontWeight:900,color:"#8b5cf6"}}>{durProt||"—"}</div>
                         </div>
-                        <input type="text" inputMode="numeric" placeholder="HH:MM" value={oraFineP}
-                          onChange={e=>setForm(f=>({...f,protrazioneOraFine:e.target.value}))}
+                        <SmartTimeInput value={oraFineP} onChange={v=>setForm(f=>({...f,protrazioneOraFine:v}))}
                           style={{flex:1,background:T.surface,border:`1px solid ${T.border}`,
                             borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
                       </div>
@@ -1804,8 +1910,7 @@ if(!isInitialized.current) return;
                 {form.dur==="custom"&&(
                   <div style={{flex:1}}>
                     <div style={{fontSize:9,color:T.sub,marginBottom:3}}>USCITA</div>
-                    <input type="text" inputMode="numeric" placeholder="HH:MM" value={form.tOut||""}
-                      onChange={e=>setForm(f=>({...f,tOut:e.target.value}))}
+                    <SmartTimeInput value={form.tOut||""} onChange={v=>setForm(f=>({...f,tOut:v}))}
                       style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                         borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
                   </div>
@@ -1813,8 +1918,7 @@ if(!isInitialized.current) return;
                 {form.dur==="fixed"&&form.tIn&&(
                   <div style={{flex:1}}>
                     <div style={{fontSize:9,color:T.sub,marginBottom:3}}>USCITA (modif.)</div>
-                    <input type="text" inputMode="numeric" placeholder="HH:MM" value={form.tOut||calcFine6h15(form.tIn)}
-                      onChange={e=>setForm(f=>({...f,tOut:e.target.value}))}
+                    <SmartTimeInput value={form.tOut||calcFine6h15(form.tIn)} onChange={v=>setForm(f=>({...f,tOut:v}))}
                       style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                         borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
                     <button type="button" onClick={()=>setForm(f=>({...f,straordinarioTipo:f.straordinarioTipo==="recupero"?null:"recupero"}))}
@@ -1843,8 +1947,7 @@ if(!isInitialized.current) return;
                             <div style={{fontSize:8,color:T.sub,fontWeight:700}}>DURATA</div>
                             <div style={{fontSize:12,fontWeight:900,color:"#64748b"}}>{durProt||"—"}</div>
                           </div>
-                          <input type="text" inputMode="numeric" placeholder="HH:MM" value={oraFineR}
-                            onChange={e=>setForm(f=>({...f,protrazioneOraFine:e.target.value}))}
+                          <SmartTimeInput value={oraFineR} onChange={v=>setForm(f=>({...f,protrazioneOraFine:v}))}
                             style={{flex:1,background:T.surface,border:`1px solid ${T.border}`,
                               borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
                         </div>
@@ -2042,9 +2145,16 @@ if(!isInitialized.current) return;
                 <div style={{fontSize:13}}>Crea il tuo primo modello turno</div>
               </div>
             )}
-            {modelli.length>0&&(
+            {(()=>{
+              const mainCalId4 = store.calendars.find(c=>c.isMain)?.id||null;
+              const modelliPicker = modelli.filter(m=>{
+                const mcid = m.calendarId||mainCalId4;
+                return !calId || mcid===calId;
+              });
+              if(modelliPicker.length===0) return null;
+              return (
               <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:12}}>
-                {modelli.map((m,i,arr)=>{
+                {modelliPicker.map((m,i,arr)=>{
                   const c=m.coloreCustom||getColorByTime(m.inizio);
                   const durata=m.tempo==="h24"?"Tutto il giorno"
                     :m.tempo==="6h15"&&m.inizio?`${m.inizio} - ${calcFine6h15(m.inizio)} • 6h 15m`
@@ -2074,7 +2184,8 @@ if(!isInitialized.current) return;
                   );
                 })}
               </div>
-            )}
+              );
+            })()}
             {(activeCal?.shifts||[]).length>0&&(
               <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:12}}>
                 {activeCal.shifts.map((s,i,arr)=>(
@@ -2118,6 +2229,84 @@ if(!isInitialized.current) return;
         </div>
       )}
     </div>
+  );
+}
+
+// ── SMART TIME INPUT ──────────────────────────────────────────
+// Sovrascrive HH quando si inizia a digitare, avanza auto a MM
+function SmartTimeInput({ value, onChange, style }) {
+  const [phase, setPhase] = React.useState("hh"); // "hh" | "mm"
+  const inputRef = React.useRef(null);
+
+  function handleKeyDown(e) {
+    const digit = e.key;
+    if (!/^\d$/.test(digit)) return;
+    e.preventDefault();
+
+    const curHH = value ? value.split(":")[0] || "00" : "00";
+    const curMM = value ? value.split(":")[1] || "00" : "00";
+
+    if (phase === "hh") {
+      // Prima cifra dell'ora: sovrascrive tutto
+      const newHH = digit.padStart(2, "0");
+      onChange(newHH + ":" + curMM);
+      setPhase("hh2");
+    } else if (phase === "hh2") {
+      // Seconda cifra dell'ora
+      const prevH = parseInt(curHH, 10);
+      // Se la prima cifra era >2, la seconda deve formare ore valide
+      let newHH;
+      if (prevH <= 2) {
+        newHH = String(prevH * 10 + parseInt(digit, 10)).padStart(2, "0");
+        if (parseInt(newHH, 10) > 23) newHH = "23";
+      } else {
+        newHH = ("0" + digit).padStart(2, "0");
+      }
+      onChange(newHH + ":" + curMM);
+      setPhase("mm");
+      // Auto-focus rimane ma ora gestiamo i minuti
+    } else if (phase === "mm") {
+      // Prima cifra minuti: sovrascrive MM
+      const newMM = digit.padStart(2, "0");
+      onChange(curHH + ":" + newMM);
+      setPhase("mm2");
+    } else if (phase === "mm2") {
+      // Seconda cifra minuti
+      const prevM = parseInt(curMM, 10);
+      let newMM;
+      if (prevM <= 5) {
+        newMM = String(prevM * 10 + parseInt(digit, 10)).padStart(2, "0");
+        if (parseInt(newMM, 10) > 59) newMM = "59";
+      } else {
+        newMM = ("0" + digit).padStart(2, "0");
+      }
+      onChange(curHH + ":" + newMM);
+      setPhase("hh"); // Cicla di nuovo
+    }
+  }
+
+  function handleFocus() {
+    setPhase("hh"); // Al focus, riparte dall'ora
+  }
+
+  function handleClick() {
+    // Click sul campo: riparte dalla fase ore
+    setPhase("hh");
+  }
+
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      inputMode="numeric"
+      placeholder="HH:MM"
+      value={value || ""}
+      readOnly
+      onKeyDown={handleKeyDown}
+      onFocus={handleFocus}
+      onClick={handleClick}
+      style={style}
+    />
   );
 }
 
@@ -2456,9 +2645,13 @@ function ModelloCard({m, T, accent, onEdit, onDelete, onMoveUp, onMoveDown, onDr
         <div style={{fontSize:12,color:T.sub,marginTop:1}}>{durata}</div>
       </div>
       {onMoveUp&&<button onClick={e=>{e.stopPropagation();onMoveUp();}}
-        style={{background:"none",border:"none",color:"#94a3b8",cursor:"pointer",fontSize:16,padding:"0 2px"}}>▲</button>}
+        style={{background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:8,color:"#475569",
+          cursor:"pointer",fontSize:20,padding:"6px 10px",minWidth:36,minHeight:36,
+          display:"flex",alignItems:"center",justifyContent:"center",marginRight:2}}>▲</button>}
       {onMoveDown&&<button onClick={e=>{e.stopPropagation();onMoveDown();}}
-        style={{background:"none",border:"none",color:"#94a3b8",cursor:"pointer",fontSize:16,padding:"0 2px"}}>▼</button>}
+        style={{background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:8,color:"#475569",
+          cursor:"pointer",fontSize:20,padding:"6px 10px",minWidth:36,minHeight:36,
+          display:"flex",alignItems:"center",justifyContent:"center",marginRight:4}}>▼</button>}
       <button onClick={e=>{e.stopPropagation();if(window.confirm("Eliminare questo modello?"))onDelete();}}
         style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:18,
           padding:"0 4px",marginRight:4}}>×</button>
@@ -2551,7 +2744,7 @@ const NB={background:"none",border:"none",fontSize:22,cursor:"pointer",
   padding:"0 4px",lineHeight:1,flexShrink:0,color:"rgba(255,255,255,0.8)"};
 
 function RotazioneCard({r, T, accent, modelli, onOpen, onDelete}){
-  const tipoLabel = r.tipo==="domeniche"?"🗓 Domeniche":r.tipo==="nlrs"?"🔄 NL / RS":"📋 Personalizzata";
+  const tipoLabel = r.tipo==="domeniche"?"🗓 Domeniche 1/4":r.tipo==="nlrs"?"🔄 NL / RS classico":r.tipo==="nlrs_scalante"?"📅 RS/NL Scalante":" Personalizzata";
   const modelloLav = modelli.find(m=>m.id===r.modellaLavoroId);
   return (
     <div style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}} onClick={onOpen}>
@@ -2571,10 +2764,15 @@ function RotazioneForm({T, form, setForm, accent, modelli, onSave}){
   return (
     <div style={{padding:"16px 14px 40px"}}>
       <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>TIPO DI ROTAZIONE</div>
-      <div style={{display:"flex",gap:8,marginBottom:16}}>
-        {[["personalizzata","Personalizzata"],["domeniche","Domeniche"],["nlrs","NL / RS"]].map(([v,l])=>(
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:16}}>
+        {[
+          ["personalizzata"," Personalizzata"],
+          ["domeniche","🗓 Domeniche 1/4"],
+          ["nlrs","🔄 NL/RS classico"],
+          ["nlrs_scalante","📅 RS/NL scalante"],
+        ].map(([v,l])=>(
           <button key={v} onClick={()=>setForm(f=>({...f,tipo:v}))}
-            style={{flex:1,padding:"10px 4px",borderRadius:10,border:"none",cursor:"pointer",
+            style={{flex:"1 1 40%",padding:"10px 4px",borderRadius:10,border:"none",cursor:"pointer",
               fontWeight:700,fontSize:11,
               background:form.tipo===v?accent:T.s2,
               color:form.tipo===v?"#fff":T.sub}}>{l}</button>
@@ -2603,10 +2801,14 @@ function RotazioneForm({T, form, setForm, accent, modelli, onSave}){
       {form.tipo==="domeniche"&&(
         <div style={{marginBottom:16}}>
           <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>MODELLI</div>
+          <div style={{background:"#22c55e11",border:"1px solid #22c55e33",borderRadius:10,
+            padding:"10px 12px",marginBottom:10,fontSize:12,color:T.sub}}>
+            🗓 Ciclo 4 domeniche: 1ª = LAVORO (festivo), 2ª 3ª 4ª = Riposo (colore libero sul calendario)
+          </div>
           <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
-            <ModelloSelector label="Domenica lavoro" value={form.modellaLavoroId}
+            <ModelloSelector label="Domenica LAVORO (festivo)" value={form.modellaLavoroId}
               onChange={id=>setForm(f=>({...f,modellaLavoroId:id}))} modelli={modelli} T={T} required/>
-            <ModelloSelector label="Domenica festa (opzionale)" value={form.modelloNLId}
+            <ModelloSelector label="Domenica riposo (opzionale)" value={form.modelloNLId}
               onChange={id=>setForm(f=>({...f,modelloNLId:id}))} modelli={modelli} T={T} last/>
           </div>
         </div>
@@ -2619,6 +2821,23 @@ function RotazioneForm({T, form, setForm, accent, modelli, onSave}){
               onChange={id=>setForm(f=>({...f,modelloNLId:id}))} modelli={modelli} T={T}/>
             <ModelloSelector label="RS (Riposo Settimanale)" value={form.modelloRSId}
               onChange={id=>setForm(f=>({...f,modelloRSId:id}))} modelli={modelli} T={T} last/>
+          </div>
+        </div>
+      )}
+      {form.tipo==="nlrs_scalante"&&(
+        <div style={{marginBottom:16}}>
+          <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>
+            MODELLI RS / NL SCALANTE
+          </div>
+          <div style={{background:"#3b82f611",border:"1px solid #3b82f633",borderRadius:10,
+            padding:"10px 12px",marginBottom:10,fontSize:12,color:T.sub}}>
+            📅 Ciclo: RS venerdì → NL venerdì+7gg → 2 sett. pausa → RS giovedì → NL giovedì+7gg → 2 sett. pausa → RS mercoledì → ... (salta domenica)
+          </div>
+          <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+            <ModelloSelector label="RS (Riposo Settimanale)" value={form.modelloRSId}
+              onChange={id=>setForm(f=>({...f,modelloRSId:id}))} modelli={modelli} T={T}/>
+            <ModelloSelector label="NL (Non Lavoro)" value={form.modelloNLId}
+              onChange={id=>setForm(f=>({...f,modelloNLId:id}))} modelli={modelli} T={T} last/>
           </div>
         </div>
       )}
@@ -2769,6 +2988,117 @@ function GrigliaRotazione({rot, T, accent, modelli, onUpdate}){
   );
 }
 
+function NLRSScalanteView({rot, T, accent, modelli}){
+  const modRS=modelli.find(m=>m.id===rot.modelloRSId);
+  const modNL=modelli.find(m=>m.id===rot.modelloNLId);
+
+  // Giorni della settimana disponibili (no domenica=0), scalanti da venerdì
+  // 5=venerdì, 4=giovedì, 3=mercoledì, 2=martedì, 1=lunedì, 6=sabato (poi ricomincia)
+  const GIORNI_CICLO = [5, 4, 3, 2, 1, 6]; // venerdì→giovedì→mercoledì→martedì→lunedì→sabato
+
+  function getCoppie(){
+    if(!rot.dataInizio) return [];
+    // La data inizio è il primo RS
+    const primoRS = new Date(rot.dataInizio);
+    const coppie = [];
+    let giornoCicloIdx = 0;
+    let dataCorrRS = new Date(primoRS);
+
+    const maxSettimane = rot.nSettimane || 52;
+    const dataFine = new Date(primoRS);
+    dataFine.setDate(dataFine.getDate() + maxSettimane * 7);
+
+    while(dataCorrRS < dataFine){
+      const dataRS = new Date(dataCorrRS);
+      const dataNL = new Date(dataCorrRS);
+      dataNL.setDate(dataNL.getDate() + 7);
+
+      coppie.push({
+        rs: { date: dataRS, key: dkey(dataRS.getFullYear(), dataRS.getMonth(), dataRS.getDate()) },
+        nl: { date: dataNL, key: dkey(dataNL.getFullYear(), dataNL.getMonth(), dataNL.getDate()) },
+        giorno: GIORNI_CICLO[giornoCicloIdx],
+        cicloN: giornoCicloIdx + 1,
+      });
+
+      // Avanza: 2 settimane di pausa + scalo al giorno precedente
+      giornoCicloIdx = (giornoCicloIdx + 1) % GIORNI_CICLO.length;
+      const prossimoDow = GIORNI_CICLO[giornoCicloIdx];
+
+      // Calcola prossimo RS: 3 settimane dopo il corrente RS (2 pausa + 1 per arrivare al nuovo giorno)
+      const base = new Date(dataCorrRS);
+      base.setDate(base.getDate() + 21); // +3 settimane
+      // Trova il prossimoDow più vicino da base
+      let tentativo = new Date(base);
+      let iter = 0;
+      while(tentativo.getDay() !== prossimoDow && iter < 14){
+        tentativo.setDate(tentativo.getDate() - 1);
+        iter++;
+      }
+      dataCorrRS = tentativo;
+    }
+    return coppie;
+  }
+
+  const coppie = getCoppie();
+  const NOMI_GG = ["Dom","Lun","Mar","Mer","Gio","Ven","Sab"];
+
+  return (
+    <div style={{flex:1,overflowY:"auto",padding:12}}>
+      {!rot.dataInizio&&(
+        <div style={{textAlign:"center",padding:"24px",color:T.sub,fontSize:13}}>
+          Imposta la data del primo RS nella configurazione rotazione
+        </div>
+      )}
+      {coppie.length>0&&(
+        <div style={{marginBottom:10,background:T.surface,borderRadius:10,padding:"10px 14px",
+          display:"flex",gap:16,flexWrap:"wrap"}}>
+          <div style={{fontSize:12,color:T.sub}}>
+            <span style={{fontWeight:700,color:"#8b5cf6"}}>RS</span> — {modRS?.titolo||"Non assegnato"}
+          </div>
+          <div style={{fontSize:12,color:T.sub}}>
+            <span style={{fontWeight:700,color:"#3b82f6"}}>NL</span> — {modNL?.titolo||"Non assegnato"}
+          </div>
+          <div style={{fontSize:11,color:T.sub,width:"100%"}}>
+            Ciclo scalante: Ven → Gio → Mer → Mar → Lun → Sab → ...
+          </div>
+        </div>
+      )}
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {coppie.map((cp,i)=>{
+          const cRS="#8b5cf6", cNL="#3b82f6";
+          const nomeGg=NOMI_GG[cp.giorno]||"";
+          return (
+            <div key={i} style={{background:T.surface,border:`1px solid ${T.border}`,
+              borderRadius:12,overflow:"hidden"}}>
+              <div style={{background:`linear-gradient(135deg,${cRS}22,${cNL}22)`,
+                padding:"6px 12px",display:"flex",alignItems:"center",justifyContent:"space-between",
+                borderBottom:`1px solid ${T.border}`}}>
+                <span style={{fontSize:11,fontWeight:800,color:T.sub}}>Ciclo {i+1} — {nomeGg}</span>
+              </div>
+              <div style={{display:"flex",gap:0}}>
+                <div style={{flex:1,padding:"10px 12px",borderRight:`1px solid ${T.border}`}}>
+                  <div style={{fontSize:10,fontWeight:800,color:cRS,marginBottom:3}}>RS</div>
+                  <div style={{fontSize:12,fontWeight:700,color:T.text}}>
+                    {cp.rs.date.toLocaleDateString("it-IT",{weekday:"short",day:"numeric",month:"short"})}
+                  </div>
+                  <div style={{fontSize:11,color:T.sub,marginTop:2}}>{modRS?.titolo||"—"}</div>
+                </div>
+                <div style={{flex:1,padding:"10px 12px"}}>
+                  <div style={{fontSize:10,fontWeight:800,color:cNL,marginBottom:3}}>NL (+7gg)</div>
+                  <div style={{fontSize:12,fontWeight:700,color:T.text}}>
+                    {cp.nl.date.toLocaleDateString("it-IT",{weekday:"short",day:"numeric",month:"short"})}
+                  </div>
+                  <div style={{fontSize:11,color:T.sub,marginTop:2}}>{modNL?.titolo||"—"}</div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function DomenicheView({rot, T, accent, modelli, onUpdate}){
   const griglia=rot.griglia||{};
   const modLav=modelli.find(m=>m.id===rot.modellaLavoroId);
@@ -2777,6 +3107,7 @@ function DomenicheView({rot, T, accent, modelli, onUpdate}){
     if(!rot.dataInizio) return [];
     const inizio=new Date(rot.dataInizio);
     let d=new Date(inizio);
+    // Trova la prima domenica dalla data inizio
     while(d.getDay()!==0) d.setDate(d.getDate()+1);
     const domeniche=[];
     for(let i=0;i<(rot.nSettimane||52);i++){
@@ -2791,25 +3122,40 @@ function DomenicheView({rot, T, accent, modelli, onUpdate}){
     <div style={{flex:1,overflowY:"auto",padding:12}}>
       {!rot.dataInizio&&(
         <div style={{textAlign:"center",padding:"24px",color:T.sub,fontSize:13}}>
-          Imposta la data di inizio nella configurazione rotazione
+          Imposta la data della prima domenica nella configurazione rotazione
+        </div>
+      )}
+      {domeniche.length>0&&(
+        <div style={{marginBottom:10,background:T.surface,borderRadius:10,padding:"10px 14px",fontSize:12,color:T.sub}}>
+          <span style={{fontWeight:700,color:"#22c55e"}}>🔵 FESTIVO</span> = domenica di lavoro (1 su 4)&nbsp;&nbsp;
+          <span style={{fontWeight:700,color:"#64748b"}}>⚪ Riposo</span> = le altre 3 (colore libero)
         </div>
       )}
       <div style={{display:"flex",flexDirection:"column",gap:6}}>
         {domeniche.map((dom,i)=>{
-          const isLavoro=i%4===0;
+          // 1 su 4: indice 0 = lavoro (festivo), 1,2,3 = riposo
+          const isLavoro=(i%4)===0;
           const autoM=isLavoro?modLav:modFesta;
           const ovrM=modelli.find(m=>m.id===griglia[dom.key]);
           const effM=ovrM||autoM;
-          const c=effM?(effM.coloreCustom||getColorByTime(effM.inizio)):(isLavoro?"#3b82f6":"#94a3b8");
+          const c=effM?(effM.coloreCustom||getColorByTime(effM.inizio)):(isLavoro?"#22c55e":"#94a3b8");
           return (
-            <div key={dom.key} style={{background:T.surface,border:`1px solid ${T.border}`,
+            <div key={dom.key} style={{background:T.surface,
+              border:`2px solid ${isLavoro?"#22c55e44":"#94a3b822"}`,
               borderRadius:10,padding:"10px 14px",display:"flex",alignItems:"center",gap:10}}>
-              <div style={{width:12,height:12,borderRadius:"50%",background:c,flexShrink:0}}/>
+              <div style={{width:14,height:14,borderRadius:"50%",background:c,flexShrink:0}}/>
               <div style={{flex:1}}>
-                <div style={{fontSize:12,color:T.sub}}>Dom {dom.date.toLocaleDateString("it-IT")}</div>
-                <div style={{fontSize:13,fontWeight:700,color:T.text}}>
-                  {isLavoro?"🔵 Lavoro":"⚪ Festa"} · {effM?.titolo||(isLavoro?"Nessun modello assegnato":"Riposo")}
+                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{fontSize:11,fontWeight:800,
+                    color:isLavoro?"#22c55e":"#64748b"}}>
+                    {isLavoro?"🔵 FESTIVO (lavoro)":"⚪ Riposo"}
+                  </span>
+                  <span style={{fontSize:10,color:T.sub}}>({i%4===0?"1":"" + (i%4===1?"2":"") + (i%4===2?"3":"") + (i%4===3?"4":"")}ª/{4})</span>
                 </div>
+                <div style={{fontSize:12,color:T.sub,marginTop:1}}>
+                  {dom.date.toLocaleDateString("it-IT",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}
+                </div>
+                {effM&&<div style={{fontSize:11,fontWeight:700,color:c,marginTop:2}}>{effM.titolo}</div>}
               </div>
               {ovrM&&(
                 <button onClick={()=>{const g={...griglia};delete g[dom.key];onUpdate(g);}}
