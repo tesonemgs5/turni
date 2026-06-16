@@ -130,6 +130,7 @@ export default function App({ session }){
   const [sheetsSecret, setSheetsSecret] = useState("");
   const [stats, setStats] = useState(null);
   const [showDbModal, setShowDbModal] = useState(false);
+  const [showModelloEditor, setShowModelloEditor] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [syncMode, setSyncMode] = useState(()=>localStorage.getItem('syncMode')||'on');
   const [dbRawData, setDbRawData] = useState(null);
@@ -906,6 +907,13 @@ if(!isInitialized.current) return;
       <div style={{background:accent,display:"flex",alignItems:"center",
         gap:5,padding:"4px 8px",overflowX:"auto",scrollbarWidth:"none",flexShrink:0,
         borderTop:"1px solid rgba(255,255,255,0.2)"}}>
+        <button onClick={()=>setCalId(null)}
+          style={{display:"flex",alignItems:"center",gap:3,flexShrink:0,cursor:"pointer",
+            background:calId===null?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.1)",
+            border:`1.5px solid ${calId===null?"rgba(255,255,255,0.85)":"transparent"}`,
+            borderRadius:20,padding:"2px 10px"}}>
+          <span style={{color:"#fff",fontSize:12,fontWeight:700}}>TUTTI</span>
+        </button>
         {store.calendars.length===0
           ? <span style={{color:"rgba(255,255,255,0.6)",fontSize:10,fontStyle:"italic"}}>→ Impostazioni</span>
           : store.calendars.map(c=>(
@@ -915,7 +923,7 @@ if(!isInitialized.current) return;
                 border:`1.5px solid ${calId===c.id?"rgba(255,255,255,0.85)":"transparent"}`,
                 borderRadius:20,padding:"2px 8px 2px 5px"}}>
               <div style={{width:8,height:8,borderRadius:"50%",background:c.color,border:"1px solid rgba(255,255,255,0.5)"}}/>
-              <span style={{color:"#fff",fontSize:10,fontWeight:700}}>{c.name}</span>
+              <span style={{color:"#fff",fontSize:12,fontWeight:700}}>{c.name}</span>
               {c.isMain&&<span style={{color:"rgba(255,255,255,0.6)",fontSize:8}}>★</span>}
             </button>
           ))
@@ -952,8 +960,8 @@ if(!isInitialized.current) return;
               <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",gap:"1px",padding:"0 1px 1px"}}>
                 {evts.filter(e=>!(e.label||"").toUpperCase().startsWith("PROTRAZIONE")).slice(0,4).map((e,ei)=>(
                   <div key={e.id+ei} style={{background:e.color,borderRadius:3,padding:"2px 4px",
-                    fontSize:12,fontWeight:800,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",
-                    whiteSpace:"nowrap",height:14,minHeight:14,display:"flex",alignItems:"center",flexShrink:0,
+                    fontSize:14,fontWeight:800,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",
+                    whiteSpace:"nowrap",height:16,minHeight:16,display:"flex",alignItems:"center",flexShrink:0,
                     textShadow:"0 1px 2px rgba(0,0,0,0.35)"}}>
                     {e.label}
                   </div>
@@ -994,7 +1002,19 @@ if(!isInitialized.current) return;
             {r.type==="conteggio_turni"&&(
               <div style={{fontSize:11,color:T.sub}}>
                 {data.totale} turni
-                
+                {(()=>{
+                  const withAuto = Object.values(store.events).flatMap(cm=>Object.values(cm).flat())
+                    .filter(e=>{
+                      const dk2=Object.entries(store.events).find(([,cm])=>Object.values(cm).flat().includes(e))?.[0]||"";
+                      const {from,to}=getReportRange();
+                      return dk2>=from&&dk2<=to;
+                    });
+                  const tot=data.totale;
+                  const conAuto=Object.values(store.events).flatMap(cm=>Object.values(cm).flat()).filter(e=>(e.auto||"").trim()!=="").length;
+                  const conApp=Object.values(store.events).flatMap(cm=>Object.values(cm).flat()).filter(e=>(e.collega||"").trim()!=="").length;
+                  if(tot===0) return null;
+                  return <span style={{marginLeft:6}}>🚗 {Math.round(conAuto/tot*100)}% 📱 {Math.round(conApp/tot*100)}%</span>;
+                })()}
               </div>
             )}
           </div>
@@ -1163,6 +1183,12 @@ if(!isInitialized.current) return;
               boxShadow:modelliTab===v?"0 2px 8px rgba(0,0,0,0.12)":"none"}}>{l}</button>
         ))}
       </div>
+      {store.calendars.length>0 && calId && !store.calendars.find(c=>c.id===calId)?.isMain && (
+        <div style={{margin:"0 12px 10px",background:"#f59e0b22",border:"1px solid #f59e0b55",
+          borderRadius:10,padding:"8px 12px",fontSize:12,color:"#f59e0b",fontWeight:600}}>
+          ⚠️ Modelli e rotazioni appartengono al calendario turni
+        </div>
+      )}
 
       <div style={{flex:1,overflowY:"auto",padding:"0 12px 80px"}}>
         {modelliTab==="turni"&&(
@@ -1737,7 +1763,7 @@ if(!isInitialized.current) return;
               <div style={{display:"flex",gap:8,marginBottom:10}}>
                 <div style={{flex:1}}>
                   <div style={{fontSize:9,color:T.sub,marginBottom:3}}>INGRESSO</div>
-                  <input type="time" value={form.tIn||""}
+                  <input type="text" inputMode="numeric" placeholder="HH:MM" value={form.tIn||""}
                     onChange={e=>setForm(f=>({...f,tIn:e.target.value,tOut:""}))}
                     style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                       borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
@@ -1767,9 +1793,8 @@ if(!isInitialized.current) return;
                           <div style={{fontSize:8,color:T.sub,fontWeight:700}}>DURATA</div>
                           <div style={{fontSize:12,fontWeight:900,color:"#8b5cf6"}}>{durProt||"—"}</div>
                         </div>
-                        <input type="time" value={oraFineP}
+                        <input type="text" inputMode="numeric" placeholder="HH:MM" value={oraFineP}
                           onChange={e=>setForm(f=>({...f,protrazioneOraFine:e.target.value}))}
-                          placeholder="Ora fine"
                           style={{flex:1,background:T.surface,border:`1px solid ${T.border}`,
                             borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
                       </div>
@@ -1779,7 +1804,7 @@ if(!isInitialized.current) return;
                 {form.dur==="custom"&&(
                   <div style={{flex:1}}>
                     <div style={{fontSize:9,color:T.sub,marginBottom:3}}>USCITA</div>
-                    <input type="time" value={form.tOut||""}
+                    <input type="text" inputMode="numeric" placeholder="HH:MM" value={form.tOut||""}
                       onChange={e=>setForm(f=>({...f,tOut:e.target.value}))}
                       style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                         borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
@@ -1788,7 +1813,7 @@ if(!isInitialized.current) return;
                 {form.dur==="fixed"&&form.tIn&&(
                   <div style={{flex:1}}>
                     <div style={{fontSize:9,color:T.sub,marginBottom:3}}>USCITA (modif.)</div>
-                    <input type="time" value={form.tOut||calcFine6h15(form.tIn)}
+                    <input type="text" inputMode="numeric" placeholder="HH:MM" value={form.tOut||calcFine6h15(form.tIn)}
                       onChange={e=>setForm(f=>({...f,tOut:e.target.value}))}
                       style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                         borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
@@ -1818,9 +1843,8 @@ if(!isInitialized.current) return;
                             <div style={{fontSize:8,color:T.sub,fontWeight:700}}>DURATA</div>
                             <div style={{fontSize:12,fontWeight:900,color:"#64748b"}}>{durProt||"—"}</div>
                           </div>
-                          <input type="time" value={oraFineR}
+                          <input type="text" inputMode="numeric" placeholder="HH:MM" value={oraFineR}
                             onChange={e=>setForm(f=>({...f,protrazioneOraFine:e.target.value}))}
-                            placeholder="Ora fine"
                             style={{flex:1,background:T.surface,border:`1px solid ${T.border}`,
                               borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
                         </div>
@@ -2123,6 +2147,16 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, onR
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      {/* Gestione modelli */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+        <div style={{fontSize:11,color:T.sub,fontWeight:700}}>MODELLI</div>
+        <button onClick={()=>setShowModelloEditor&&setShowModelloEditor(v=>!v)}
+          style={{background:"rgba(99,102,241,0.15)",border:"1px solid rgba(99,102,241,0.4)",
+            borderRadius:16,padding:"3px 12px",fontSize:11,color:"#6366f1",cursor:"pointer",fontWeight:700}}>
+          ✏️ Gestisci modelli
+        </button>
+      </div>
+
       {/* Nome report */}
       <div style={{background:T.surface,borderRadius:10,padding:"10px 12px"}}>
         <div style={{fontSize:10,color:T.sub,marginBottom:4}}>NOME REPORT</div>
