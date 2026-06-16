@@ -1187,41 +1187,9 @@ if(!isInitialized.current) return;
             <div style={{display:"flex",alignItems:"center",gap:10}}>
               <div style={{fontSize:22,fontWeight:900,fontFamily:"Georgia,serif",color:T.text}}>Modelli</div>
               {/* Badge nome calendario con colore e possibilità di cambio colore */}
-              {calId!==null&&calAttivo&&(()=>{
-                const [showCalPal, setShowCalPal] = useState(false);
-                return (
-                  <div style={{position:"relative"}}>
-                    <div onClick={()=>setShowCalPal(s=>!s)}
-                      style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",
-                        background:coloreCal,borderRadius:20,padding:"3px 12px 3px 8px"}}>
-                      <div style={{width:10,height:10,borderRadius:"50%",
-                        background:"rgba(255,255,255,0.4)",border:"1.5px solid rgba(255,255,255,0.8)"}}/>
-                      <span style={{fontSize:13,fontWeight:800,color:testoContrasto}}>{nomeCal}</span>
-                      <span style={{fontSize:10,color:testoContrasto,opacity:0.7}}>🎨</span>
-                    </div>
-                    {showCalPal&&(
-                      <div style={{position:"absolute",top:36,left:0,background:T.surface,
-                        border:`1px solid ${T.border}`,borderRadius:12,padding:10,zIndex:500,
-                        boxShadow:"0 8px 32px rgba(0,0,0,0.25)"}}
-                        onClick={e=>e.stopPropagation()}>
-                        <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:6}}>
-                          {["#ef4444","#f97316","#f59e0b","#eab308","#84cc16","#22c55e",
-                            "#10b981","#14b8a6","#06b6d4","#3b82f6","#6366f1","#8b5cf6",
-                            "#a855f7","#ec4899","#f43f5e","#64748b","#0f172a","#1e40af"].map(p=>(
-                            <div key={p} onClick={()=>{
-                              const newCals=JSON.parse(JSON.stringify(store.calendars));
-                              const idx=newCals.findIndex(c=>c.id===calId);
-                              if(idx>-1){ newCals[idx].color=p; setStore(s=>({...s,calendars:newCals})); updateCalendar(calId,{color:p}); }
-                              setShowCalPal(false);
-                            }} style={{width:24,height:24,borderRadius:"50%",background:p,cursor:"pointer",
-                              outline:coloreCal===p?"3px solid #64748b":"none",outlineOffset:2}}/>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
+              <CalBadge calId={calId} calAttivo={calAttivo} coloreCal={coloreCal}
+                testoContrasto={testoContrasto} T={T} store={store} setStore={setStore}
+                updateCalendar={updateCalendar} accent={accent}/>
             </div>
             <div style={{display:"flex",gap:8,alignItems:"center",position:"relative"}}>
               <button onClick={()=>setShowSortMenu(s=>!s)}
@@ -2225,6 +2193,45 @@ if(!isInitialized.current) return;
               color:"#fff",padding:"14px 0",cursor:"pointer",fontWeight:800,fontSize:15}}>
               + Nuovo modello
             </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── CAL BADGE ────────────────────────────────────────────────
+// Badge cliccabile con nome calendario e palette colori
+function CalBadge({ calId, calAttivo, coloreCal, testoContrasto, T, store, setStore, updateCalendar, accent }){
+  const [showCalPal, setShowCalPal] = useState(false);
+  if(!calId||!calAttivo) return null;
+  return (
+    <div style={{position:"relative"}}>
+      <div onClick={()=>setShowCalPal(s=>!s)}
+        style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",
+          background:coloreCal,borderRadius:20,padding:"3px 12px 3px 8px"}}>
+        <div style={{width:10,height:10,borderRadius:"50%",
+          background:"rgba(255,255,255,0.4)",border:"1.5px solid rgba(255,255,255,0.8)"}}/>
+        <span style={{fontSize:13,fontWeight:800,color:testoContrasto}}>{calAttivo.name}</span>
+        <span style={{fontSize:10,color:testoContrasto,opacity:0.7}}>🎨</span>
+      </div>
+      {showCalPal&&(
+        <div style={{position:"absolute",top:36,left:0,background:T.surface,
+          border:`1px solid ${T.border}`,borderRadius:12,padding:10,zIndex:500,
+          boxShadow:"0 8px 32px rgba(0,0,0,0.25)"}}
+          onClick={e=>e.stopPropagation()}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:6}}>
+            {["#ef4444","#f97316","#f59e0b","#eab308","#84cc16","#22c55e",
+              "#10b981","#14b8a6","#06b6d4","#3b82f6","#6366f1","#8b5cf6",
+              "#a855f7","#ec4899","#f43f5e","#64748b","#0f172a","#1e40af"].map(p=>(
+              <div key={p} onClick={()=>{
+                const newCals=JSON.parse(JSON.stringify(store.calendars));
+                const idx=newCals.findIndex(c=>c.id===calId);
+                if(idx>-1){ newCals[idx].color=p; setStore(s=>({...s,calendars:newCals})); updateCalendar(calId,{color:p}); }
+                setShowCalPal(false);
+              }} style={{width:24,height:24,borderRadius:"50%",background:p,cursor:"pointer",
+                outline:coloreCal===p?"3px solid #64748b":"none",outlineOffset:2}}/>
+            ))}
           </div>
         </div>
       )}
