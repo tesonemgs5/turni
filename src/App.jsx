@@ -143,6 +143,7 @@ export default function App({ session }){
   // I modelli caricati da DB vengono smistati per calendar_id
   // Se calendar_id è null (legacy) vanno al calendario principale
   const [modelliSort, setModelliSort] = useState("orario");
+  const [showMoveMode, setShowMoveMode] = useState(false);
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [showModelForm, setShowModelForm] = useState(false);
   const [editModello, setEditModello] = useState(null);
@@ -1024,18 +1025,15 @@ if(!isInitialized.current) return;
             {r.type==="conteggio_turni"&&(
               <div style={{fontSize:11,color:T.sub}}>
                 {data.totale} turni
-                {(()=>{
-                  const withAuto = Object.values(store.events).flatMap(cm=>Object.values(cm).flat())
-                    .filter(e=>{
-                      const dk2=Object.entries(store.events).find(([,cm])=>Object.values(cm).flat().includes(e))?.[0]||"";
-                      const {from,to}=getReportRange();
-                      return dk2>=from&&dk2<=to;
-                    });
-                  const tot=data.totale;
-                  const conAuto=Object.values(store.events).flatMap(cm=>Object.values(cm).flat()).filter(e=>(e.auto||"").trim()!=="").length;
-                  const conApp=Object.values(store.events).flatMap(cm=>Object.values(cm).flat()).filter(e=>(e.collega||"").trim()!=="").length;
-                  if(tot===0) return null;
-                  return <span style={{marginLeft:6}}>🚗 {Math.round(conAuto/tot*100)}% 📱 {Math.round(conApp/tot*100)}%</span>;
+                {data.totale>0&&(()=>{
+                  const pct1=Math.round(((data.primo||0)/data.totale)*100);
+                  const pct2=Math.round(((data.secondo||0)/data.totale)*100);
+                  return (
+                    <span style={{marginLeft:4}}>
+                      {data.primo>0&&<span style={{color:"#f59e0b",marginLeft:4}}>1°T {pct1}%</span>}
+                      {data.secondo>0&&<span style={{color:"#f97316",marginLeft:4}}>2°T {pct2}%</span>}
+                    </span>
+                  );
                 })()}
               </div>
             )}
@@ -1048,7 +1046,8 @@ if(!isInitialized.current) return;
               <ConteggioConfigCard T={T} r={r} cfg={cfg} data={data} totaleTurni={totaleTurni}
                 modelli={modelli} accent={accent}
                 onRename={label=>renameReport(r.id, label)}
-                onUpdateCfg={newCfg=>updateConteggioConfig(r.id, newCfg)}/>
+                onUpdateCfg={newCfg=>updateConteggioConfig(r.id, newCfg)}
+                onGoToModelli={()=>setScreen("modelli")}/>
             )}
             {r.type==="indennita" && (
               <IndennitaConfig T={T} values={indennita} setValues={setIndennita}
@@ -1189,9 +1188,16 @@ if(!isInitialized.current) return;
               {/* Badge nome calendario con colore e possibilità di cambio colore */}
               <CalBadge calId={calId} calAttivo={calAttivo} coloreCal={coloreCal}
                 testoContrasto={testoContrasto} T={T} store={store} setStore={setStore}
-                updateCalendar={updateCalendar} accent={accent}/>
+                updateCalendar={updateCalendar} accent={accent} setCalId={setCalId}/>
             </div>
             <div style={{display:"flex",gap:8,alignItems:"center",position:"relative"}}>
+              <button onClick={()=>setShowMoveMode(s=>!s)}
+                style={{background:showMoveMode?accent:T.s2,
+                  border:`1px solid ${showMoveMode?accent:T.border}`,borderRadius:8,
+                  padding:"6px 10px",fontSize:13,fontWeight:700,cursor:"pointer",
+                  color:showMoveMode?"#fff":T.sub}}>
+                {showMoveMode?"🔒 Blocca":"↕️ Sposta"}
+              </button>
               <button onClick={()=>setShowSortMenu(s=>!s)}
                 style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
                   padding:"6px 10px",fontSize:18,cursor:"pointer",color:T.sub}}>↑↓</button>
@@ -1268,10 +1274,10 @@ if(!isInitialized.current) return;
               {sortedModelli().map((m,i,arr)=>(
                 <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                   <ModelloCard m={m} T={T} accent={accent}
-                    onEdit={()=>{ setEditModello(m); setModelForm(m); setShowModelForm(true); }}
+                    onEdit={()=>{ if(!showMoveMode){ setEditModello(m); setModelForm(m); setShowModelForm(true); } }}
                     onDelete={()=>deleteModello(m.id)}
-                    onMoveUp={()=>moveH24(m.id,"up")}
-                    onMoveDown={()=>moveH24(m.id,"down")}
+                    onMoveUp={showMoveMode?()=>moveH24(m.id,"up"):null}
+                    onMoveDown={showMoveMode?()=>moveH24(m.id,"down"):null}
                     onTouchStart={()=>{touchSrcId.current=m.id;}}
                     onTouchMove={(e)=>{
                       e.preventDefault();
@@ -1322,10 +1328,24 @@ if(!isInitialized.current) return;
         {modelliTab==="rotazioni"&&(
           <div style={{paddingBottom:80}}>
             {rotazioni.length===0?(
-              <div style={{textAlign:"center",padding:"40px 24px",color:T.sub}}>
+              <div style={{textAlign:"center",padding:"32px 24px",color:T.sub}}>
                 <div style={{fontSize:36,marginBottom:10}}>🔄</div>
                 <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Nessuna rotazione</div>
-                <div style={{fontSize:13}}>Premi + per creare una rotazione</div>
+                <div style={{fontSize:12,marginBottom:12}}>Premi + per creare una rotazione</div>
+                <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:12,textAlign:"left"}}>
+                  <div style={{fontSize:11,fontWeight:700,color:T.sub,marginBottom:8}}>TIPI DISPONIBILI</div>
+                  {[
+                    ["🗓 Domeniche 1/4","1 domenica lavoro (festivo) + 3 riposo ogni 4 settimane"],
+                    ["📅 RS/NL Scalante","RS venerdì→NL+7gg, poi giovedì, poi mercoledì... (salta domenica)"],
+                    ["🔄 NL/RS classico","NL e RS a rotazione settimanale scalante"],
+                    ["📋 Personalizzata","Griglia libera giorno per giorno"],
+                  ].map(([t,d])=>(
+                    <div key={t} style={{marginBottom:8}}>
+                      <div style={{fontSize:12,fontWeight:700,color:T.text}}>{t}</div>
+                      <div style={{fontSize:11,color:T.sub}}>{d}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
             ):(
               <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
@@ -1746,8 +1766,9 @@ if(!isInitialized.current) return;
             {modelli.length>0&&!form.editId&&(()=>{
               const mainCalId3 = store.calendars.find(c=>c.isMain)?.id||null;
               const modelliDelCal = modelli.filter(m=>{
+                if(!calId) return true; // TUTTI → tutti i modelli
                 const mcid = m.calendarId||mainCalId3;
-                return !calId || mcid===calId;
+                return mcid===calId;
               });
               if(modelliDelCal.length===0) return null;
               return (
@@ -2202,19 +2223,21 @@ if(!isInitialized.current) return;
 
 // ── CAL BADGE ────────────────────────────────────────────────
 // Badge cliccabile con nome calendario e palette colori
-function CalBadge({ calId, calAttivo, coloreCal, testoContrasto, T, store, setStore, updateCalendar, accent }){
+function CalBadge({ calId, calAttivo, coloreCal, testoContrasto, T, store, setStore, updateCalendar, accent, setCalId }){
   const [showCalPal, setShowCalPal] = useState(false);
+  const [showCalSwitch, setShowCalSwitch] = useState(false);
   if(!calId||!calAttivo) return null;
   return (
-    <div style={{position:"relative"}}>
-      <div onClick={()=>setShowCalPal(s=>!s)}
-        style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",
-          background:coloreCal,borderRadius:20,padding:"3px 12px 3px 8px"}}>
-        <div style={{width:10,height:10,borderRadius:"50%",
-          background:"rgba(255,255,255,0.4)",border:"1.5px solid rgba(255,255,255,0.8)"}}/>
-        <span style={{fontSize:13,fontWeight:800,color:testoContrasto}}>{calAttivo.name}</span>
-        <span style={{fontSize:10,color:testoContrasto,opacity:0.7}}>🎨</span>
-      </div>
+    <div style={{display:"flex",alignItems:"center",gap:4}}>
+      <div style={{position:"relative"}}>
+        <div onClick={()=>{ setShowCalPal(s=>!s); setShowCalSwitch(false); }}
+          style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",
+            background:coloreCal,borderRadius:20,padding:"3px 12px 3px 8px"}}>
+          <div style={{width:10,height:10,borderRadius:"50%",
+            background:"rgba(255,255,255,0.4)",border:"1.5px solid rgba(255,255,255,0.8)"}}/>
+          <span style={{fontSize:13,fontWeight:800,color:testoContrasto}}>{calAttivo.name}</span>
+          <span style={{fontSize:10,color:testoContrasto,opacity:0.7}}>🎨</span>
+        </div>
       {showCalPal&&(
         <div style={{position:"absolute",top:36,left:0,background:T.surface,
           border:`1px solid ${T.border}`,borderRadius:12,padding:10,zIndex:500,
@@ -2235,6 +2258,36 @@ function CalBadge({ calId, calAttivo, coloreCal, testoContrasto, T, store, setSt
           </div>
         </div>
       )}
+    </div>
+    {/* Freccia cambio calendario */}
+    {store&&store.calendars&&store.calendars.length>1&&(
+      <div style={{position:"relative"}}>
+        <button onClick={()=>{ setShowCalSwitch(s=>!s); setShowCalPal(false); }}
+          style={{background:coloreCal,border:"none",borderRadius:"50%",
+            width:24,height:24,cursor:"pointer",display:"flex",alignItems:"center",
+            justifyContent:"center",color:testoContrasto,fontSize:14,fontWeight:900}}>
+          ▾
+        </button>
+        {showCalSwitch&&(
+          <div style={{position:"absolute",top:28,left:0,background:T.surface,
+            border:`1px solid ${T.border}`,borderRadius:12,padding:6,zIndex:500,
+            boxShadow:"0 8px 32px rgba(0,0,0,0.25)",minWidth:140}}
+            onClick={e=>e.stopPropagation()}>
+            {(store.calendars||[]).map(c=>(
+              <div key={c.id} onClick={()=>{ setCalId&&setCalId(c.id); setShowCalSwitch(false); }}
+                style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",
+                  borderRadius:8,cursor:"pointer",
+                  background:c.id===calId?accent+"18":"transparent"}}>
+                <div style={{width:10,height:10,borderRadius:"50%",background:c.color}}/>
+                <span style={{fontSize:13,fontWeight:c.id===calId?700:400,
+                  color:c.id===calId?accent:T.text}}>{c.name}</span>
+                {c.id===calId&&<span style={{color:accent,fontSize:11}}>✓</span>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    )}
     </div>
   );
 }
@@ -2319,7 +2372,7 @@ function SmartTimeInput({ value, onChange, style }) {
 
 // ── REPORT SUB-COMPONENTS ─────────────────────────────────────
 
-function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, onRename, onUpdateCfg}){
+function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, onRename, onUpdateCfg, onGoToModelli}){
   const [editingName, setEditingName] = useState(false);
   const [tmpName, setTmpName] = useState(r.label);
   const pct = totaleTurni>0 ? Math.round((data.totale/totaleTurni)*100) : 0;
@@ -2346,7 +2399,7 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, onR
       {/* Gestione modelli */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
         <div style={{fontSize:11,color:T.sub,fontWeight:700}}>MODELLI</div>
-        <button onClick={()=>setShowModelloEditor&&setShowModelloEditor(v=>!v)}
+        <button onClick={()=>onGoToModelli&&onGoToModelli()}
           style={{background:"rgba(99,102,241,0.15)",border:"1px solid rgba(99,102,241,0.4)",
             borderRadius:16,padding:"3px 12px",fontSize:11,color:"#6366f1",cursor:"pointer",fontWeight:700}}>
           ✏️ Gestisci modelli
@@ -2388,21 +2441,62 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, onR
         </div>
         {showTurniList&&(
   <div style={{background:T.s2,borderRadius:8,padding:"8px 10px",marginBottom:8}}>
+    <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>
+      Clicca per includere/escludere dal conteggio
+    </div>
+    {/* Voce "Tutti" */}
+    <div onClick={()=>onUpdateCfg({...cfg,fasceFiltro:[]})}
+      style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",
+        borderRadius:6,cursor:"pointer",marginBottom:4,
+        background:(cfg.fasceFiltro||[]).length===0?accent+"22":"transparent",
+        border:`1px solid ${(cfg.fasceFiltro||[]).length===0?accent:T.border}`}}>
+      <span style={{fontSize:11,fontWeight:700,
+        color:(cfg.fasceFiltro||[]).length===0?accent:T.text}}>✓ Tutti i turni</span>
+      <span style={{fontSize:12,fontWeight:800,color:T.sub,marginLeft:"auto"}}>{data.totale}</span>
+    </div>
     {Object.entries(data.perModello||{}).map(([mid,cnt])=>{
       const m=modelli.find(x=>x.id===mid);
       if(!m) return null;
       const c=m.coloreCustom||getColorByTime(m.inizio);
+      // Determina fascia del modello per il filtro
+      const getFascia=()=>{
+        if(m.allDay||m.tempo==="h24") return "h24";
+        if(!m.inizio) return null;
+        const [h]=m.inizio.split(":").map(Number);
+        const mins=h*60+(parseInt(m.inizio.split(":")[1]||"0"));
+        if(mins>=360&&mins<705) return "primo";
+        return "secondo";
+      };
+      const fascia=getFascia();
+      const filtroAttivo=(cfg.fasceFiltro||[]).length>0;
+      const selezionato=!filtroAttivo||(fascia&&(cfg.fasceFiltro||[]).includes(fascia));
       return (
-        <div key={mid} style={{display:"flex",alignItems:"center",gap:8,
-          padding:"5px 0",borderBottom:`1px solid ${T.border}`}}>
+        <div key={mid} onClick={()=>{
+          if(!fascia) return;
+          const cur=cfg.fasceFiltro||[];
+          if(cur.length===0){
+            // Passa da "tutti" a "solo questa fascia"
+            onUpdateCfg({...cfg,fasceFiltro:[fascia]});
+          } else if(cur.includes(fascia)){
+            const next=cur.filter(f=>f!==fascia);
+            onUpdateCfg({...cfg,fasceFiltro:next});
+          } else {
+            onUpdateCfg({...cfg,fasceFiltro:[...cur,fascia]});
+          }
+        }} style={{display:"flex",alignItems:"center",gap:8,
+          padding:"6px 8px",borderRadius:6,cursor:"pointer",marginBottom:4,
+          background:selezionato?c+"18":"transparent",
+          border:`1px solid ${selezionato?c+"44":T.border}`}}>
           <div style={{width:8,height:8,borderRadius:"50%",background:c,flexShrink:0}}/>
           <div style={{flex:1}}>
-  <span style={{fontSize:12,fontWeight:700,color:T.text}}>{m.titolo}</span>
-  <span style={{fontSize:10,color:T.sub,marginLeft:6}}>
-    {m.tempo==="h24"?"H24":m.tempo==="6h15"&&m.inizio?`${m.inizio} - ${calcFine6h15(m.inizio)}`:m.inizio&&m.fine?`${m.inizio} - ${m.fine}`:m.inizio||""} 
-  </span>
-</div>
-<span style={{fontSize:13,fontWeight:800,color:T.text}}>{cnt}</span>
+            <span style={{fontSize:12,fontWeight:selezionato?700:400,
+              color:selezionato?T.text:T.sub}}>{m.titolo}</span>
+            <span style={{fontSize:10,color:T.sub,marginLeft:6}}>
+              {m.tempo==="h24"?"H24":m.tempo==="6h15"&&m.inizio?`${m.inizio} - ${calcFine6h15(m.inizio)}`:m.inizio&&m.fine?`${m.inizio} - ${m.fine}`:m.inizio||""}
+            </span>
+          </div>
+          <span style={{fontSize:13,fontWeight:800,color:selezionato?T.text:T.sub}}>{cnt}</span>
+          {selezionato&&<span style={{fontSize:10,color:c}}>✓</span>}
         </div>
       );
     })}
