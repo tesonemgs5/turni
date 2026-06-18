@@ -670,16 +670,58 @@ if(!isInitialized.current) return;
       return 99999; // H24 senza gruppo → in fondo
     };
     const INTESTAZIONI=["MATTINA","POMERIGGIO","3° TURNO","NOTTE"];
+
+    // Ogni intestatario definisce l'inizio del proprio gruppo orario.
+    const GRUPPO_RANGES=[
+      {titolo:"MATTINA",    minStart:6*60,     minEnd:11*60+59},
+      {titolo:"POMERIGGIO", minStart:12*60,    minEnd:16*60+29},
+      {titolo:"3° TURNO",   minStart:16*60+30, minEnd:22*60+59},
+      {titolo:"NOTTE",      minStart:23*60,    minEnd:5*60+59}, // wrap mezzanotte
+    ];
+
+    function isIntestatario(m){
+      return INTESTAZIONI.includes(m.titolo)&&(m.tempo==="h24"||!m.inizio);
+    }
+
+    function getGruppoKey(m){
+      if(isIntestatario(m)) return m.titolo;
+      if(!m.inizio||m.tempo==="h24") return null;
+      const[h,min]=m.inizio.split(":").map(Number);
+      const t=h*60+min;
+      for(const g of GRUPPO_RANGES){
+        if(g.minStart<=g.minEnd){
+          if(t>=g.minStart&&t<=g.minEnd) return g.titolo;
+        } else {
+          if(t>=g.minStart||t<=g.minEnd) return g.titolo;
+        }
+      }
+      return null;
+    }
+
     return [...modelli].sort((a,b)=>{
+      const gA=getGruppoKey(a);
+      const gB=getGruppoKey(b);
+
+      if(gA&&gB&&gA===gB){
+        const aInt=isIntestatario(a);
+        const bInt=isIntestatario(b);
+        if(aInt&&!bInt) return -1;
+        if(!aInt&&bInt) return 1;
+        const minsA=getSortMins(a);
+        const minsB=getSortMins(b);
+        if(minsA!==minsB) return minsA-minsB;
+        return (a.sortOrder||0)-(b.sortOrder||0);
+      }
+
       const minsA=getSortMins(a);
       const minsB=getSortMins(b);
       if(minsA!==minsB) return minsA-minsB;
-      // stesso orario: intestazione viene prima
-      const aInt=INTESTAZIONI.includes(a.titolo);
-      const bInt=INTESTAZIONI.includes(b.titolo);
+
+      const aInt=isIntestatario(a);
+      const bInt=isIntestatario(b);
       if(aInt&&!bInt) return -1;
       if(!aInt&&bInt) return 1;
-      return 0;
+      return (a.sortOrder||0)-(b.sortOrder||0);
     });
   }
 
@@ -1119,26 +1161,40 @@ if(!isInitialized.current) return;
       )}
 
       {/* Pannello aggiungi report */}
-      <div style={{margin:"16px 12px 0"}}>
-        <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:6,paddingLeft:4}}>Aggiungi report</div>
-        <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
-          {REPORT_TEMPLATES.map((tmpl,i,arr)=>(
-            <div key={tmpl.type} style={{display:"flex",alignItems:"center",padding:"12px 14px",
-              borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
-              <button onClick={()=>addReport(tmpl.type)}
-                style={{width:26,height:26,borderRadius:"50%",border:"none",cursor:"pointer",
-                  background:"#22c55e",color:"#fff",fontSize:18,fontWeight:700,
-                  display:"flex",alignItems:"center",justifyContent:"center",marginRight:12,flexShrink:0}}>
-                +
-              </button>
-              <div style={{flex:1}}>
-                <div style={{fontSize:14,fontWeight:700,color:T.text}}>{tmpl.label}</div>
-                <div style={{fontSize:11,color:T.sub}}>{tmpl.desc}</div>
-              </div>
+      {(()=>{
+        const [showAdd, setShowAdd] = (typeof useState !== "undefined" ? [false, ()=>{}] : [false, ()=>{}]);
+        // Usiamo openReportConfig==='__add__' come flag per mostrare il pannello aggiungi
+        const isAddOpen = openReportConfig==='__add__';
+        return (
+          <div style={{margin:"16px 12px 0"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+              marginBottom:6,paddingLeft:4,cursor:"pointer"}}
+              onClick={()=>setOpenReportConfig(isAddOpen?null:'__add__')}>
+              <div style={{fontSize:11,color:T.sub,fontWeight:700}}>Aggiungi report</div>
+              <span style={{color:T.sub,fontSize:12}}>{isAddOpen?"▲":"▼"}</span>
             </div>
-          ))}
-        </div>
-      </div>
+            {isAddOpen&&(
+              <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+                {REPORT_TEMPLATES.map((tmpl,i,arr)=>(
+                  <div key={tmpl.type} style={{display:"flex",alignItems:"center",padding:"12px 14px",
+                    borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
+                    <button onClick={()=>{addReport(tmpl.type);setOpenReportConfig(null);}}
+                      style={{width:26,height:26,borderRadius:"50%",border:"none",cursor:"pointer",
+                        background:"#22c55e",color:"#fff",fontSize:18,fontWeight:700,
+                        display:"flex",alignItems:"center",justifyContent:"center",marginRight:12,flexShrink:0}}>
+                      +
+                    </button>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:14,fontWeight:700,color:T.text}}>{tmpl.label}</div>
+                      <div style={{fontSize:11,color:T.sub}}>{tmpl.desc}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {showIntervalPicker && (
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:400,
@@ -1228,15 +1284,11 @@ if(!isInitialized.current) return;
             </div>
             <div style={{display:"flex",gap:8,alignItems:"center",position:"relative"}}>
               <button onClick={()=>setShowMoveMode(s=>!s)}
+                title={showMoveMode?"Spostamento attivo — clicca per bloccare":"Attiva spostamento"}
                 style={{background:showMoveMode?accent:T.s2,
                   border:`1px solid ${showMoveMode?accent:T.border}`,borderRadius:8,
-                  padding:"6px 10px",fontSize:13,fontWeight:700,cursor:"pointer",
-                  color:showMoveMode?"#fff":T.sub}}>
-                {showMoveMode?"🔒 Blocca":"↕️ Sposta"}
-              </button>
-              <button onClick={()=>setShowSortMenu(s=>!s)}
-                style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
-                  padding:"6px 10px",fontSize:18,cursor:"pointer",color:T.sub}}>↑↓</button>
+                  padding:"6px 10px",fontSize:18,fontWeight:700,cursor:"pointer",
+                  color:showMoveMode?"#fff":T.sub}}>↑↓</button>
               <button onClick={()=>{
                 if(modelliTab==="turni"){
                   setEditModello(null);
@@ -1314,15 +1366,15 @@ if(!isInitialized.current) return;
                     onDelete={()=>deleteModello(m.id)}
                     onMoveUp={showMoveMode?()=>moveH24(m.id,"up"):null}
                     onMoveDown={showMoveMode?()=>moveH24(m.id,"down"):null}
-                    onTouchStart={()=>{touchSrcId.current=m.id;}}
-                    onTouchMove={(e)=>{
+                    onTouchStart={showMoveMode?()=>{touchSrcId.current=m.id;}:null}
+                    onTouchMove={showMoveMode?(e)=>{
                       e.preventDefault();
                       const t=e.touches[0];
                       const el=document.elementFromPoint(t.clientX,t.clientY);
                       const card=el?.closest("[data-modello-id]");
                       if(card) touchTargetId.current=card.getAttribute("data-modello-id");
-                    }}
-                    onTouchEnd={async()=>{
+                    }:null}
+                    onTouchEnd={showMoveMode?async()=>{
                       if(!touchSrcId.current||!touchTargetId.current||touchSrcId.current===touchTargetId.current){touchSrcId.current=null;touchTargetId.current=null;return;}
                       const sorted=[...modelli].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
                       const srcIdx=sorted.findIndex(x=>x.id===touchSrcId.current);
@@ -1337,10 +1389,10 @@ if(!isInitialized.current) return;
                         await supabase.from("modelli").update({sort_order:x.sortOrder}).eq("id",x.id).eq("user_id",userId);
                       }
                       touchSrcId.current=null;touchTargetId.current=null;
-                    }}
-                    onDragStart={()=>{dragSrcId.current=m.id;}}
-                    onDragOver={(e)=>{e.preventDefault();}}
-                    onDrop={async()=>{
+                    }:null}
+                    onDragStart={showMoveMode?()=>{dragSrcId.current=m.id;}:null}
+                    onDragOver={showMoveMode?(e)=>{e.preventDefault();}:null}
+                    onDrop={showMoveMode?async()=>{
                       if(!dragSrcId.current||dragSrcId.current===m.id) return;
                       const sorted=[...modelli].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
                       const srcIdx=sorted.findIndex(x=>x.id===dragSrcId.current);
@@ -1355,7 +1407,7 @@ if(!isInitialized.current) return;
                         await supabase.from("modelli").update({sort_order:x.sortOrder}).eq("id",x.id).eq("user_id",userId);
                       }
                       dragSrcId.current=null;
-                    }}/>
+                    }:null}/>
                 </div>
               ))}
             </div>
@@ -1519,6 +1571,7 @@ if(!isInitialized.current) return;
                 style={{background:"none",border:"none",color:T.sub,cursor:"pointer",fontSize:12}}>
                 {exCal===c.id?"▲":"▼"}</button>
               <button onClick={async()=>{
+                if(!window.confirm(`Eliminare il calendario "${c.name}"? Tutti gli eventi associati verranno persi.`)) return;
                 await deleteCalendar(c.id);
                 const newCals=store.calendars.filter(x=>x.id!==c.id);
                 setStore(s=>({...s,calendars:newCals}));
