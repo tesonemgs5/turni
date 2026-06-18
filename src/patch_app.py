@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-patch_app.py — Patch aggiornato sulla versione corrente di App.jsx
+patch_app.py — Patch minimo sulla versione corrente di App.jsx
 
-PATCH 1: Tasto ricarica accanto a TUTTI nell'header calendario
-PATCH 2: Aggiunge funzione moveReport (frecce su/giù report funzionanti)
+PATCH 1: Aggiunge funzione moveReport dopo renameReport
+PATCH 2: Aggiunge UN SOLO pulsante ricarica accanto a TUTTI
+         (controlla prima se già presente per evitare duplicati)
 
 Uso:
   python patch_app.py            # cerca App.jsx nella cartella corrente
@@ -21,50 +22,19 @@ def patch(src: str) -> str:
     errors = []
 
     # ══════════════════════════════════════════════════════════════
-    # PATCH 1 — Tasto ricarica accanto a TUTTI
+    # PATCH 1 — Aggiunge moveReport
     # ══════════════════════════════════════════════════════════════
-    OLD_TUTTI = '''\
-        <button onClick={()=>setCalId(null)}
-          style={{background:calId===null?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.1)",
-            border:`1.5px solid ${calId===null?"rgba(255,255,255,0.85)":"transparent"}`,
-            borderRadius:20,padding:"2px 10px",cursor:"pointer",flexShrink:0}}>
-          <span style={{color:"#fff",fontSize:11,fontWeight:800}}>TUTTI</span>
-        </button>'''
-
-    NEW_TUTTI = '''\
-        <button onClick={()=>setCalId(null)}
-          style={{background:calId===null?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.1)",
-            border:`1.5px solid ${calId===null?"rgba(255,255,255,0.85)":"transparent"}`,
-            borderRadius:20,padding:"2px 10px",cursor:"pointer",flexShrink:0}}>
-          <span style={{color:"#fff",fontSize:11,fontWeight:800}}>TUTTI</span>
-        </button>
-        <button onClick={()=>syncFromSheets()}
-          title="Ricarica dati"
-          style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.4)",
-            borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:"#fff",flexShrink:0}}>
-          🔄
-        </button>'''
-
-    if OLD_TUTTI not in src:
-        # Forse già applicato
-        if 'syncFromSheets()' in src and 'Ricarica dati' in src:
-            print("  ℹ️  PATCH 1: già applicata, salto.")
-        else:
-            errors.append("PATCH 1: pulsante TUTTI non trovato")
+    if 'function moveReport' in src:
+        print("  ℹ️  PATCH 1: moveReport già presente, salto.")
     else:
-        src = src.replace(OLD_TUTTI, NEW_TUTTI)
-
-    # ══════════════════════════════════════════════════════════════
-    # PATCH 2 — Aggiunge moveReport dopo renameReport
-    # ══════════════════════════════════════════════════════════════
-    OLD_RENAME = '''\
+        OLD_RENAME = '''\
   function renameReport(id, label){
     const newRep = (store.reports||[]).map(r=>r.id===id?{...r,label}:r);
     setStore(s=>({...s, reports:newRep}));
     saveSettings({reports:newRep});
   }'''
 
-    NEW_RENAME = '''\
+        NEW_RENAME = '''\
   function renameReport(id, label){
     const newRep = (store.reports||[]).map(r=>r.id===id?{...r,label}:r);
     setStore(s=>({...s, reports:newRep}));
@@ -83,13 +53,54 @@ def patch(src: str) -> str:
     saveSettings({reports:reps});
   }'''
 
-    if OLD_RENAME not in src:
-        if 'function moveReport' in src:
-            print("  ℹ️  PATCH 2: moveReport già presente, salto.")
+        if OLD_RENAME not in src:
+            errors.append("PATCH 1: funzione renameReport non trovata")
         else:
-            errors.append("PATCH 2: funzione renameReport non trovata")
+            src = src.replace(OLD_RENAME, NEW_RENAME)
+
+    # ══════════════════════════════════════════════════════════════
+    # PATCH 2 — Pulsante ricarica accanto a TUTTI (solo se assente)
+    # ══════════════════════════════════════════════════════════════
+    if 'syncFromSheets()' in src and 'Ricarica dati' in src:
+        # Controlla se ce ne sono due (duplicato)
+        if src.count('Ricarica dati') > 1:
+            # Rimuovi il duplicato tenendo solo il primo
+            first = src.index('Ricarica dati')
+            second = src.index('Ricarica dati', first + 1)
+            # Trova inizio del blocco button duplicato (~80 chars prima)
+            chunk_start = src.rfind('<button', 0, second)
+            chunk_end = src.index('</button>', second) + len('</button>')
+            src = src[:chunk_start] + src[chunk_end:]
+            print("  ℹ️  PATCH 2: rimosso pulsante ricarica duplicato.")
+        else:
+            print("  ℹ️  PATCH 2: pulsante ricarica già presente, salto.")
     else:
-        src = src.replace(OLD_RENAME, NEW_RENAME)
+        OLD_TUTTI = '''\
+        <button onClick={()=>setCalId(null)}
+          style={{background:calId===null?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.1)",
+            border:`1.5px solid ${calId===null?"rgba(255,255,255,0.85)":"transparent"}`,
+            borderRadius:20,padding:"2px 10px",cursor:"pointer",flexShrink:0}}>
+          <span style={{color:"#fff",fontSize:11,fontWeight:800}}>TUTTI</span>
+        </button>'''
+
+        NEW_TUTTI = '''\
+        <button onClick={()=>setCalId(null)}
+          style={{background:calId===null?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.1)",
+            border:`1.5px solid ${calId===null?"rgba(255,255,255,0.85)":"transparent"}`,
+            borderRadius:20,padding:"2px 10px",cursor:"pointer",flexShrink:0}}>
+          <span style={{color:"#fff",fontSize:11,fontWeight:800}}>TUTTI</span>
+        </button>
+        <button onClick={()=>syncFromSheets()}
+          title="Ricarica dati"
+          style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.4)",
+            borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:"#fff",flexShrink:0}}>
+          🔄
+        </button>'''
+
+        if OLD_TUTTI not in src:
+            errors.append("PATCH 2: pulsante TUTTI non trovato")
+        else:
+            src = src.replace(OLD_TUTTI, NEW_TUTTI)
 
     # ══════════════════════════════════════════════════════════════
     if errors:
@@ -126,8 +137,8 @@ def main():
     print()
     print("✅ Patch applicate con successo!")
     print()
-    print("  PATCH 1 ✓ — Tasto 🔄 ricarica accanto a TUTTI")
-    print("  PATCH 2 ✓ — Funzione moveReport aggiunta (frecce ▲▼ funzionanti)")
+    print("  PATCH 1 ✓ — Funzione moveReport aggiunta (frecce ▲▼ funzionanti)")
+    print("  PATCH 2 ✓ — Pulsante 🔄 ricarica (senza duplicati)")
     print()
     print(f"📄 File salvato: {out_path}")
 
