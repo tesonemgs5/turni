@@ -931,6 +931,18 @@ if(!isInitialized.current) return;
     saveSettings({reports:newRep});
   }
 
+  function moveReport(id, dir){
+    const reps = [...(store.reports||[])];
+    const idx = reps.findIndex(r=>r.id===id);
+    if(idx===-1) return;
+    const newIdx = dir==="up" ? idx-1 : idx+1;
+    if(newIdx<0||newIdx>=reps.length) return;
+    const [moved] = reps.splice(idx,1);
+    reps.splice(newIdx,0,moved);
+    setStore(s=>({...s, reports:reps}));
+    saveSettings({reports:reps});
+  }
+
   function getConteggioConfig(reportId){
     return conteggioConfigs[reportId] || { fasceFiltro:[] };
   }
@@ -996,6 +1008,12 @@ if(!isInitialized.current) return;
             border:`1.5px solid ${calId===null?"rgba(255,255,255,0.85)":"transparent"}`,
             borderRadius:20,padding:"2px 10px",cursor:"pointer",flexShrink:0}}>
           <span style={{color:"#fff",fontSize:11,fontWeight:800}}>TUTTI</span>
+        </button>
+        <button onClick={()=>syncFromSheets()}
+          title="Ricarica dati"
+          style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.4)",
+            borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:"#fff",flexShrink:0}}>
+          🔄
         </button>
         <button onClick={()=>loadFromSupabase&&loadFromSupabase()}
           title="Ricarica dati"
