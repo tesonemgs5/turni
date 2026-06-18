@@ -364,6 +364,8 @@ const isInitialized = useRef(false);
   async function deleteCalendar(cId){
     if(!userId) return;
     await supabase.from("calendars").delete().eq("id", cId).eq("user_id", userId);
+    const newCals = store.calendars.filter(c=>c.id!==cId);
+    await saveToSheets(store.events, newCals);
   }
 
   async function saveEvt(){

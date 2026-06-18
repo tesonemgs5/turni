@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """
-patch_app.py — Patch minimo sulla versione corrente di App.jsx
+patch_app.py — Fix: saveToSheets dopo deleteCalendar e deleteModello
 
-PATCH 1: Aggiunge funzione moveReport dopo renameReport
-PATCH 2: Aggiunge UN SOLO pulsante ricarica accanto a TUTTI
-         (controlla prima se già presente per evitare duplicati)
+PATCH 1: deleteCalendar chiama saveToSheets dopo la cancellazione
+PATCH 2: deleteModello chiama saveToSheets dopo la cancellazione
 
 Uso:
   python patch_app.py            # cerca App.jsx nella cartella corrente
@@ -22,85 +21,54 @@ def patch(src: str) -> str:
     errors = []
 
     # ══════════════════════════════════════════════════════════════
-    # PATCH 1 — Aggiunge moveReport
+    # PATCH 1 — deleteCalendar: chiama saveToSheets dopo delete
     # ══════════════════════════════════════════════════════════════
-    if 'function moveReport' in src:
-        print("  ℹ️  PATCH 1: moveReport già presente, salto.")
-    else:
-        OLD_RENAME = '''\
-  function renameReport(id, label){
-    const newRep = (store.reports||[]).map(r=>r.id===id?{...r,label}:r);
-    setStore(s=>({...s, reports:newRep}));
-    saveSettings({reports:newRep});
+    OLD_DEL_CAL = '''\
+  async function deleteCalendar(cId){
+    if(!userId) return;
+    await supabase.from("calendars").delete().eq("id", cId).eq("user_id", userId);
   }'''
 
-        NEW_RENAME = '''\
-  function renameReport(id, label){
-    const newRep = (store.reports||[]).map(r=>r.id===id?{...r,label}:r);
-    setStore(s=>({...s, reports:newRep}));
-    saveSettings({reports:newRep});
-  }
-
-  function moveReport(id, dir){
-    const reps = [...(store.reports||[])];
-    const idx = reps.findIndex(r=>r.id===id);
-    if(idx===-1) return;
-    const newIdx = dir==="up" ? idx-1 : idx+1;
-    if(newIdx<0||newIdx>=reps.length) return;
-    const [moved] = reps.splice(idx,1);
-    reps.splice(newIdx,0,moved);
-    setStore(s=>({...s, reports:reps}));
-    saveSettings({reports:reps});
+    NEW_DEL_CAL = '''\
+  async function deleteCalendar(cId){
+    if(!userId) return;
+    await supabase.from("calendars").delete().eq("id", cId).eq("user_id", userId);
+    const newCals = store.calendars.filter(c=>c.id!==cId);
+    await saveToSheets(store.events, newCals);
   }'''
 
-        if OLD_RENAME not in src:
-            errors.append("PATCH 1: funzione renameReport non trovata")
+    if OLD_DEL_CAL not in src:
+        if 'await saveToSheets(store.events, newCals)' in src:
+            print("  ℹ️  PATCH 1: già applicata, salto.")
         else:
-            src = src.replace(OLD_RENAME, NEW_RENAME)
-
-    # ══════════════════════════════════════════════════════════════
-    # PATCH 2 — Pulsante ricarica accanto a TUTTI (solo se assente)
-    # ══════════════════════════════════════════════════════════════
-    if 'syncFromSheets()' in src and 'Ricarica dati' in src:
-        # Controlla se ce ne sono due (duplicato)
-        if src.count('Ricarica dati') > 1:
-            # Rimuovi il duplicato tenendo solo il primo
-            first = src.index('Ricarica dati')
-            second = src.index('Ricarica dati', first + 1)
-            # Trova inizio del blocco button duplicato (~80 chars prima)
-            chunk_start = src.rfind('<button', 0, second)
-            chunk_end = src.index('</button>', second) + len('</button>')
-            src = src[:chunk_start] + src[chunk_end:]
-            print("  ℹ️  PATCH 2: rimosso pulsante ricarica duplicato.")
-        else:
-            print("  ℹ️  PATCH 2: pulsante ricarica già presente, salto.")
+            errors.append("PATCH 1: funzione deleteCalendar non trovata")
     else:
-        OLD_TUTTI = '''\
-        <button onClick={()=>setCalId(null)}
-          style={{background:calId===null?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.1)",
-            border:`1.5px solid ${calId===null?"rgba(255,255,255,0.85)":"transparent"}`,
-            borderRadius:20,padding:"2px 10px",cursor:"pointer",flexShrink:0}}>
-          <span style={{color:"#fff",fontSize:11,fontWeight:800}}>TUTTI</span>
-        </button>'''
+        src = src.replace(OLD_DEL_CAL, NEW_DEL_CAL)
 
-        NEW_TUTTI = '''\
-        <button onClick={()=>setCalId(null)}
-          style={{background:calId===null?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.1)",
-            border:`1.5px solid ${calId===null?"rgba(255,255,255,0.85)":"transparent"}`,
-            borderRadius:20,padding:"2px 10px",cursor:"pointer",flexShrink:0}}>
-          <span style={{color:"#fff",fontSize:11,fontWeight:800}}>TUTTI</span>
-        </button>
-        <button onClick={()=>syncFromSheets()}
-          title="Ricarica dati"
-          style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.4)",
-            borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:"#fff",flexShrink:0}}>
-          🔄
-        </button>'''
+    # ══════════════════════════════════════════════════════════════
+    # PATCH 2 — deleteModello: cerca la funzione e aggiunge saveToSheets
+    # ══════════════════════════════════════════════════════════════
+    OLD_DEL_MOD = '''\
+  async function deleteModello(id){
+    await supabase.from("modelli").delete().eq("id",id).eq("user_id",userId);
+    setModelli(prev=>prev.filter(m=>m.id!==id));
+  }'''
 
-        if OLD_TUTTI not in src:
-            errors.append("PATCH 2: pulsante TUTTI non trovato")
+    NEW_DEL_MOD = '''\
+  async function deleteModello(id){
+    await supabase.from("modelli").delete().eq("id",id).eq("user_id",userId);
+    const newModelli = modelli.filter(m=>m.id!==id);
+    setModelli(newModelli);
+    await saveToSheets(store.events, store.calendars, sheetsUrl, sheetsSecret, newModelli);
+  }'''
+
+    if OLD_DEL_MOD not in src:
+        if 'newModelli' in src and 'deleteModello' in src:
+            print("  ℹ️  PATCH 2: già applicata, salto.")
         else:
-            src = src.replace(OLD_TUTTI, NEW_TUTTI)
+            errors.append("PATCH 2: funzione deleteModello non trovata — incolla il codice esatto della funzione")
+    else:
+        src = src.replace(OLD_DEL_MOD, NEW_DEL_MOD)
 
     # ══════════════════════════════════════════════════════════════
     if errors:
@@ -128,6 +96,7 @@ def main():
     except PatchError as e:
         print("\n❌ Patch NON applicata — nessun file scritto. Errori trovati:\n")
         print(str(e))
+        print("\n  Cerca 'deleteModello' in App.jsx e incollami il codice esatto.")
         sys.exit(1)
 
     out_path = path.replace("App.jsx", "App_updated.jsx")
@@ -137,8 +106,8 @@ def main():
     print()
     print("✅ Patch applicate con successo!")
     print()
-    print("  PATCH 1 ✓ — Funzione moveReport aggiunta (frecce ▲▼ funzionanti)")
-    print("  PATCH 2 ✓ — Pulsante 🔄 ricarica (senza duplicati)")
+    print("  PATCH 1 ✓ — deleteCalendar aggiorna Sheets dopo cancellazione")
+    print("  PATCH 2 ✓ — deleteModello aggiorna Sheets dopo cancellazione")
     print()
     print(f"📄 File salvato: {out_path}")
 
