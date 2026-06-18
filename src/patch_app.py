@@ -395,6 +395,38 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, onR
         src = src.replace(OLD_CONTEGGIO_FUNC, NEW_CONTEGGIO_FUNC)
 
     # ══════════════════════════════════════════════════════════════
+    # PATCH 9 — Aggiunge funzione moveReport
+    # ══════════════════════════════════════════════════════════════
+    OLD_RENAME = '''  function renameReport(id, label){
+    const newRep = (store.reports||[]).map(r=>r.id===id?{...r,label}:r);
+    setStore(s=>({...s, reports:newRep}));
+    saveSettings({reports:newRep});
+  }'''
+
+    NEW_RENAME = '''  function renameReport(id, label){
+    const newRep = (store.reports||[]).map(r=>r.id===id?{...r,label}:r);
+    setStore(s=>({...s, reports:newRep}));
+    saveSettings({reports:newRep});
+  }
+
+  function moveReport(id, dir){
+    const reps = [...(store.reports||[])];
+    const idx = reps.findIndex(r=>r.id===id);
+    if(idx===-1) return;
+    const newIdx = dir==="up" ? idx-1 : idx+1;
+    if(newIdx<0||newIdx>=reps.length) return;
+    const [moved] = reps.splice(idx,1);
+    reps.splice(newIdx,0,moved);
+    setStore(s=>({...s, reports:reps}));
+    saveSettings({reports:reps});
+  }'''
+
+    if OLD_RENAME not in src:
+        errors.append("PATCH 9: funzione renameReport non trovata")
+    else:
+        src = src.replace(OLD_RENAME, NEW_RENAME)
+
+    # ══════════════════════════════════════════════════════════════
     if errors:
         raise PatchError("\n".join(f"  ❌ {e}" for e in errors))
 
@@ -439,9 +471,12 @@ def main():
     print("  PATCH 6 ✓ — 1°/2° TURNO espandibili")
     print("  PATCH 7 ✓ — Rimosso filtro fascia, aggiunto filtro collega")
     print("  PATCH 8 ✓ — Componente FasceExpand aggiunto")
+    print("  PATCH 9 ✓ — Funzione moveReport aggiunta")
     print()
     print(f"📄 File salvato: {out_path}")
 
 
 if __name__ == "__main__":
     main()
+
+# (sostituisce la funzione main esistente con versione aggiornata — appended patch)
