@@ -1150,9 +1150,9 @@ if(!isInitialized.current) return;
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:2,marginRight:6}} onClick={e=>e.stopPropagation()}>
             <button onClick={e=>{e.stopPropagation();moveReport(r.id,"up");}}
-              style={{background:"none",border:"none",color:T.sub,cursor:"pointer",fontSize:12,padding:"0 4px",lineHeight:1}}>▲</button>
+              style={{background:"none",border:"none",color:T.sub,cursor:"pointer",fontSize:18,padding:"0 4px",lineHeight:1}}>▲</button>
             <button onClick={e=>{e.stopPropagation();moveReport(r.id,"down");}}
-              style={{background:"none",border:"none",color:T.sub,cursor:"pointer",fontSize:12,padding:"0 4px",lineHeight:1}}>▼</button>
+              style={{background:"none",border:"none",color:T.sub,cursor:"pointer",fontSize:18,padding:"0 4px",lineHeight:1}}>▼</button>
           </div>
           <span style={{color:T.sub,fontSize:12}}>›</span>
         </div>
@@ -1614,14 +1614,14 @@ if(!isInitialized.current) return;
                 [newCals[ci-1],newCals[ci]]=[newCals[ci],newCals[ci-1]];
                 setStore(s=>({...s,calendars:newCals}));
                 for(let i=0;i<newCals.length;i++) await updateCalendar(newCals[i].id,{sort_order:i});
-              }} style={{background:"none",border:"none",color:ci===0?T.border:T.sub,cursor:ci===0?"default":"pointer",fontSize:12,padding:"0 2px"}}>↑</button>
+              }} style={{background:"none",border:"none",color:ci===0?T.border:T.sub,cursor:ci===0?"default":"pointer",fontSize:20,padding:"0 4px"}}>↑</button>
               <button onClick={async()=>{
                 if(ci===store.calendars.length-1) return;
                 const newCals=[...store.calendars];
                 [newCals[ci],newCals[ci+1]]=[newCals[ci+1],newCals[ci]];
                 setStore(s=>({...s,calendars:newCals}));
                 for(let i=0;i<newCals.length;i++) await updateCalendar(newCals[i].id,{sort_order:i});
-              }} style={{background:"none",border:"none",color:ci===store.calendars.length-1?T.border:T.sub,cursor:ci===store.calendars.length-1?"default":"pointer",fontSize:12,padding:"0 2px"}}>↓</button>
+              }} style={{background:"none",border:"none",color:ci===store.calendars.length-1?T.border:T.sub,cursor:ci===store.calendars.length-1?"default":"pointer",fontSize:20,padding:"0 4px"}}>↓</button>
               <button onClick={()=>setExCal(exCal===c.id?null:c.id)}
                 style={{background:"none",border:"none",color:T.sub,cursor:"pointer",fontSize:12}}>
                 {exCal===c.id?"▲":"▼"}</button>
