@@ -1011,7 +1011,21 @@ if(!isInitialized.current) return;
             borderRadius:20,padding:"2px 10px",cursor:"pointer",flexShrink:0}}>
           <span style={{color:"#fff",fontSize:11,fontWeight:800}}>TUTTI</span>
         </button>
-        <button onClick={()=>syncFromSheets()}
+        <button onClick={async()=>{
+          const {data:cals}=await supabase.from("calendars").select("*").eq("user_id",userId).order("created_at");
+          const {data:evts}=await supabase.from("events").select("*").eq("user_id",userId);
+          const {data:mods}=await supabase.from("modelli").select("*").eq("user_id",userId).order("sort_order");
+          const calendars=(cals||[]).map(c=>({id:c.id,name:c.name,color:c.color,isMain:c.is_main,shifts:c.shifts||[]}));
+          const events={};
+          (evts||[]).forEach(e=>{
+            if(!events[e.date_key]) events[e.date_key]={};
+            if(!events[e.date_key][e.calendar_id]) events[e.date_key][e.calendar_id]=[];
+            events[e.date_key][e.calendar_id].push({id:e.id,label:e.label,color:e.color,allDay:e.all_day,tIn:e.time_in||"",tOut:e.time_out||"",place:e.place||"",map:e.map_url||"",note:e.note||"",modelloId:e.modello_id||null,collega:e.collega||null,auto:e.auto||""});
+          });
+          setStore(s=>({...s,calendars,events}));
+          setModelli((mods||[]).map(m=>({id:m.id,titolo:m.titolo,tempo:m.tempo,inizio:m.inizio||"",fine:m.fine||"",colore:m.colore,coloreCustom:m.colore_custom||null,posizione:m.posizione||"",sortOrder:m.sort_order||0,calendarId:m.calendar_id||null})));
+          setCalId(calendars[0]?.id||null);
+        }}
           title="Ricarica dati"
           style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.4)",
             borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:"#fff",flexShrink:0}}>
