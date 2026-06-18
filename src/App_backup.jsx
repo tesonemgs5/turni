@@ -997,6 +997,12 @@ if(!isInitialized.current) return;
             borderRadius:20,padding:"2px 10px",cursor:"pointer",flexShrink:0}}>
           <span style={{color:"#fff",fontSize:11,fontWeight:800}}>TUTTI</span>
         </button>
+        <button onClick={()=>loadFromSupabase&&loadFromSupabase()}
+          title="Ricarica dati"
+          style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.4)",
+            borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:"#fff",flexShrink:0}}>
+          🔄
+        </button>
         <button onClick={()=>{
           const next = syncMode==='on'?'off':'on';
           setSyncMode(next);
@@ -1088,7 +1094,7 @@ if(!isInitialized.current) return;
         <div style={{display:"flex",alignItems:"center",padding:"12px 14px",
           borderBottom:`1px solid ${T.border}`,cursor:"pointer"}}
           onClick={()=>setOpenReportConfig(isOpen?null:r.id)}>
-          <button onClick={e=>{e.stopPropagation();removeReport(r.id);}}
+          <button onClick={e=>{e.stopPropagation();if(window.confirm("Eliminare questo report?"))removeReport(r.id);}}
             style={{width:26,height:26,borderRadius:"50%",border:"none",cursor:"pointer",
               background:"#ef4444",color:"#fff",fontSize:16,fontWeight:700,
               display:"flex",alignItems:"center",justifyContent:"center",marginRight:12,flexShrink:0}}>
@@ -1112,6 +1118,12 @@ if(!isInitialized.current) return;
                 })()}
               </div>
             )}
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:2,marginRight:6}} onClick={e=>e.stopPropagation()}>
+            <button onClick={e=>{e.stopPropagation();moveReport(r.id,"up");}}
+              style={{background:"none",border:"none",color:T.sub,cursor:"pointer",fontSize:12,padding:"0 4px",lineHeight:1}}>▲</button>
+            <button onClick={e=>{e.stopPropagation();moveReport(r.id,"down");}}
+              style={{background:"none",border:"none",color:T.sub,cursor:"pointer",fontSize:12,padding:"0 4px",lineHeight:1}}>▼</button>
           </div>
           <span style={{color:T.sub,fontSize:12}}>›</span>
         </div>
@@ -2476,6 +2488,70 @@ function SmartTimeInput({ value, onChange, style }) {
 // ═══════════════════════════════════════════════════════════════
 // SEZIONE 17: REPORT SUBCOMPONENTS
 // ═══════════════════════════════════════════════════════════════
+function FasceExpand({data, pct1, pct2, T, modelli, accent}){
+  const [openFascia, setOpenFascia] = React.useState(null);
+
+  function turniDiFascia(fascia){
+    return Object.entries(data.perModello||{}).filter(([mid])=>{
+      const m=modelli.find(x=>x.id===mid);
+      if(!m) return false;
+      if(m.tempo==="h24") return false;
+      if(!m.inizio) return false;
+      const [h]=m.inizio.split(":").map(Number);
+      const mins=h*60+(parseInt((m.inizio.split(":")||["0","0"])[1]||"0"));
+      if(fascia==="primo") return mins>=360&&mins<705;
+      return mins>=720;
+    });
+  }
+
+  const fasce=[
+    {key:"primo",  label:"1° TURNO (06:00-11:45)", color:"#f59e0b", count:data.primo||0,  pct:pct1},
+    {key:"secondo",label:"2° TURNO (12:00-23:59)", color:"#f97316", count:data.secondo||0, pct:pct2},
+  ];
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+      {fasce.map(f=>(
+        <div key={f.key}>
+          <div onClick={()=>setOpenFascia(openFascia===f.key?null:f.key)}
+            style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+              padding:"8px 10px",background:f.color+"22",borderRadius:openFascia===f.key?"8px 8px 0 0":8,
+              border:`1px solid ${f.color}44`,cursor:"pointer"}}>
+            <span style={{fontSize:13,fontWeight:800,color:f.color}}>
+              {f.label} {openFascia===f.key?"▲":"▼"}
+            </span>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:12,fontWeight:700,color:f.color,background:f.color+"22",
+                borderRadius:6,padding:"2px 7px"}}>{f.pct}%</span>
+              <span style={{fontSize:16,fontWeight:900,color:T.text}}>{f.count}</span>
+            </div>
+          </div>
+          {openFascia===f.key&&(
+            <div style={{background:T.s2,borderRadius:"0 0 8px 8px",border:`1px solid ${f.color}44`,
+              borderTop:"none",padding:"8px 10px"}}>
+              {turniDiFascia(f.key).length===0?(
+                <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"6px 0"}}>Nessun turno</div>
+              ):turniDiFascia(f.key).map(([mid,cnt])=>{
+                const m=modelli.find(x=>x.id===mid);
+                if(!m) return null;
+                const c=m.coloreCustom||f.color;
+                return (
+                  <div key={mid} style={{display:"flex",alignItems:"center",gap:8,
+                    padding:"5px 6px",borderRadius:6,marginBottom:3,background:T.surface}}>
+                    <div style={{width:8,height:8,borderRadius:"50%",background:c,flexShrink:0}}/>
+                    <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>{m.titolo}</span>
+                    <span style={{fontSize:13,fontWeight:800,color:T.text}}>{cnt}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, onRename, onUpdateCfg, onGoToModelli}){
   const [editingName, setEditingName] = useState(false);
   const [tmpName, setTmpName] = useState(r.label);
@@ -2500,16 +2576,6 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, onR
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
-      {/* Gestione modelli */}
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-        <div style={{fontSize:11,color:T.sub,fontWeight:700}}>MODELLI</div>
-        <button onClick={()=>onGoToModelli&&onGoToModelli()}
-          style={{background:"rgba(99,102,241,0.15)",border:"1px solid rgba(99,102,241,0.4)",
-            borderRadius:16,padding:"3px 12px",fontSize:11,color:"#6366f1",cursor:"pointer",fontWeight:700}}>
-          ✏️ Gestisci modelli
-        </button>
-      </div>
-
       {/* Nome report */}
       <div style={{background:T.surface,borderRadius:10,padding:"10px 12px"}}>
         <div style={{fontSize:10,color:T.sub,marginBottom:4}}>NOME REPORT</div>
@@ -2523,9 +2589,10 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, onR
                 padding:"6px 12px",cursor:"pointer",fontWeight:800,fontSize:12}}>✓</button>
           </div>
         ):(
-          <div style={{display:"flex",alignItems:"center",gap:8}} onClick={()=>setEditingName(true)}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
             <span style={{fontSize:14,fontWeight:700,color:T.text,flex:1}}>{r.label}</span>
-            <span style={{fontSize:11,color:accent,cursor:"pointer"}}>✏️ modifica</span>
+            <button onClick={()=>setEditingName(true)}
+              style={{background:"none",border:"none",color:accent,cursor:"pointer",fontSize:16,padding:"0 4px"}}>✏️</button>
           </div>
         )}
       </div>
@@ -2611,57 +2678,25 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, onR
             <div style={{width:`${pct}%`,height:"100%",background:accent,borderRadius:3,transition:"width 0.3s"}}/>
           </div>
         )}
-        <div style={{display:"flex",flexDirection:"column",gap:6}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
-            padding:"8px 10px",background:"#f59e0b22",borderRadius:8,border:"1px solid #f59e0b44"}}>
-            <span style={{fontSize:13,fontWeight:800,color:"#f59e0b"}}>1° TURNO (06:00-11:45)</span>
-            <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <span style={{fontSize:12,fontWeight:700,color:"#f59e0b",background:"#f59e0b22",
-                borderRadius:6,padding:"2px 7px"}}>{pct1}%</span>
-              <span style={{fontSize:16,fontWeight:900,color:T.text}}>{data.primo||0}</span>
-            </div>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
-            padding:"8px 10px",background:"#f9731622",borderRadius:8,border:"1px solid #f9731644"}}>
-            <span style={{fontSize:13,fontWeight:800,color:"#f97316"}}>2° TURNO (12:00-23:59)</span>
-            <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <span style={{fontSize:12,fontWeight:700,color:"#f97316",background:"#f9731622",
-                borderRadius:6,padding:"2px 7px"}}>{pct2}%</span>
-              <span style={{fontSize:16,fontWeight:900,color:T.text}}>{data.secondo||0}</span>
-            </div>
-          </div>
-          
-        </div>
+        {(()=>{
+          const [openFascia, setOpenFascia] = [null, ()=>{}];
+          // Usiamo un ref tramite dataset per gestire l'espansione senza useState annidato
+          return null;
+        })()}
+        <FasceExpand data={data} pct1={pct1} pct2={pct2} T={T} modelli={modelli} accent={accent}/>
       </div>
 
-      {/* Filtro fasce */}
+      {/* Filtro per collega */}
       <div>
-        <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>
-          FILTRA PER FASCIA ORARIA
-          {isFiltered&&<span style={{color:accent,marginLeft:6}}>({(cfg.fasceFiltro||[]).length} selezionate)</span>}
-        </div>
-        <div style={{background:T.surface,borderRadius:10,overflow:"hidden",border:`1px solid ${T.border}`}}>
-          <div onClick={()=>onUpdateCfg({...cfg,fasceFiltro:[]})}
-            style={{display:"flex",alignItems:"center",padding:"10px 14px",
-              borderBottom:`1px solid ${T.border}`,cursor:"pointer",
-              background:!isFiltered?accent+"15":"transparent"}}>
-            {!isFiltered&&<span style={{color:accent,marginRight:8,fontSize:12}}>✓</span>}
-            <span style={{fontSize:13,fontWeight:!isFiltered?700:400,color:!isFiltered?accent:T.text}}>Tutte le fasce</span>
-          </div>
-          {FASCE.map((f,i,arr)=>{
-            const sel=(cfg.fasceFiltro||[]).includes(f.key);
-            return (
-              <div key={f.key} onClick={()=>toggleFascia(f.key)}
-                style={{display:"flex",alignItems:"center",padding:"10px 14px",cursor:"pointer",
-                  borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none",
-                  background:sel?accent+"15":"transparent"}}>
-                {sel&&<span style={{color:accent,marginRight:8,fontSize:12}}>✓</span>}
-                <span style={{flex:1,fontSize:13,fontWeight:sel?700:400,color:sel?accent:T.text}}>{f.label}</span>
-                <span style={{fontSize:12,fontWeight:800,color:T.sub}}>{f.count}</span>
-              </div>
-            );
-          })}
-        </div>
+        <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>FILTRA PER COLLEGA</div>
+        <input
+          type="text"
+          value={cfg.filtraCollega||""}
+          onChange={e=>onUpdateCfg({...cfg,filtraCollega:e.target.value})}
+          placeholder="Nome collega..."
+          style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
+            borderRadius:10,padding:"10px 14px",color:T.text,fontSize:13,
+            outline:"none",boxSizing:"border-box"}}/>
       </div>
 
       {/* Per modello */}
