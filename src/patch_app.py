@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 """
-patch_app.py — Fix pulsante ricarica: usa Supabase invece di Sheets
+patch_app.py — Aggiunge frecce ↑↓ per spostare i calendari nelle impostazioni
 
-PATCH 1: Pulsante 🔄 ricarica da Supabase (non da Sheets)
-
-Uso:
-  python patch_app.py
+Uso: python patch_app.py
 """
 
 import sys, os
@@ -17,40 +14,38 @@ def patch(src):
     errors = []
 
     OLD = '''\
-        <button onClick={()=>syncFromSheets()}
-          title="Ricarica dati"
-          style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.4)",
-            borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:"#fff",flexShrink:0}}>
-          🔄
-        </button>'''
+              <button onClick={()=>setExCal(exCal===c.id?null:c.id)}
+                style={{background:"none",border:"none",color:T.sub,cursor:"pointer",fontSize:12}}>
+                {exCal===c.id?"▲":"▼"}</button>
+              <button onClick={async()=>{
+                if(!window.confirm(`Eliminare il calendario "${c.name}"? Tutti gli eventi associati verranno persi.`)) return;'''
 
     NEW = '''\
-        <button onClick={async()=>{
-          const {data:cals}=await supabase.from("calendars").select("*").eq("user_id",userId).order("created_at");
-          const {data:evts}=await supabase.from("events").select("*").eq("user_id",userId);
-          const {data:mods}=await supabase.from("modelli").select("*").eq("user_id",userId).order("sort_order");
-          const calendars=(cals||[]).map(c=>({id:c.id,name:c.name,color:c.color,isMain:c.is_main,shifts:c.shifts||[]}));
-          const events={};
-          (evts||[]).forEach(e=>{
-            if(!events[e.date_key]) events[e.date_key]={};
-            if(!events[e.date_key][e.calendar_id]) events[e.date_key][e.calendar_id]=[];
-            events[e.date_key][e.calendar_id].push({id:e.id,label:e.label,color:e.color,allDay:e.all_day,tIn:e.time_in||"",tOut:e.time_out||"",place:e.place||"",map:e.map_url||"",note:e.note||"",modelloId:e.modello_id||null,collega:e.collega||null,auto:e.auto||""});
-          });
-          setStore(s=>({...s,calendars,events}));
-          setModelli((mods||[]).map(m=>({id:m.id,titolo:m.titolo,tempo:m.tempo,inizio:m.inizio||"",fine:m.fine||"",colore:m.colore,coloreCustom:m.colore_custom||null,posizione:m.posizione||"",sortOrder:m.sort_order||0,calendarId:m.calendar_id||null})));
-          setCalId(calendars[0]?.id||null);
-        }}
-          title="Ricarica dati"
-          style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.4)",
-            borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:"#fff",flexShrink:0}}>
-          🔄
-        </button>'''
+              <button onClick={async()=>{
+                if(ci===0) return;
+                const newCals=[...store.calendars];
+                [newCals[ci-1],newCals[ci]]=[newCals[ci],newCals[ci-1]];
+                setStore(s=>({...s,calendars:newCals}));
+                for(let i=0;i<newCals.length;i++) await updateCalendar(newCals[i].id,{sort_order:i});
+              }} style={{background:"none",border:"none",color:ci===0?T.border:T.sub,cursor:ci===0?"default":"pointer",fontSize:12,padding:"0 2px"}}>↑</button>
+              <button onClick={async()=>{
+                if(ci===store.calendars.length-1) return;
+                const newCals=[...store.calendars];
+                [newCals[ci],newCals[ci+1]]=[newCals[ci+1],newCals[ci]];
+                setStore(s=>({...s,calendars:newCals}));
+                for(let i=0;i<newCals.length;i++) await updateCalendar(newCals[i].id,{sort_order:i});
+              }} style={{background:"none",border:"none",color:ci===store.calendars.length-1?T.border:T.sub,cursor:ci===store.calendars.length-1?"default":"pointer",fontSize:12,padding:"0 2px"}}>↓</button>
+              <button onClick={()=>setExCal(exCal===c.id?null:c.id)}
+                style={{background:"none",border:"none",color:T.sub,cursor:"pointer",fontSize:12}}>
+                {exCal===c.id?"▲":"▼"}</button>
+              <button onClick={async()=>{
+                if(!window.confirm(`Eliminare il calendario "${c.name}"? Tutti gli eventi associati verranno persi.`)) return;'''
 
     if OLD not in src:
-        if 'supabase.from("calendars").select' in src and 'Ricarica dati' in src:
+        if 'sort_order:i' in src and 'newCals[ci-1]' in src:
             print("  ℹ️  PATCH 1: già applicata, salto.")
         else:
-            errors.append("PATCH 1: pulsante ricarica non trovato")
+            errors.append("PATCH 1: blocco pulsanti calendario non trovato")
     else:
         src = src.replace(OLD, NEW)
 
@@ -78,7 +73,7 @@ def main():
 
     print()
     print("✅ Patch applicata!")
-    print("  PATCH 1 ✓ — Pulsante 🔄 ricarica da Supabase (non da Sheets)")
+    print("  PATCH 1 ✓ — Frecce ↑↓ per spostare calendari nelle impostazioni")
     print(f"📄 File salvato: {out}")
 
 if __name__=="__main__":
