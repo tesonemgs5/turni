@@ -1,5 +1,8 @@
 // ═══════════════════════════════════════════════════════════════
-// SEZIONE 1: IMPORTS + COSTANTI
+
+// #endregion
+
+// #region SEZIONE 1: IMPORTS + COSTANTI
 // ═══════════════════════════════════════════════════════════════
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabase";
@@ -18,7 +21,10 @@ function uid(){ return Math.random().toString(36).slice(2)+Date.now().toString(3
 
 // ── LOCALSTORAGE CACHE ────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
-// SEZIONE 2: LOCALSTORAGE CACHE
+
+// #endregion
+
+// #region SEZIONE 2: LOCALSTORAGE CACHE
 // ═══════════════════════════════════════════════════════════════
 function saveToLocalStorage(events, calendars, modelli){
   try {
@@ -38,7 +44,10 @@ function loadFromLocalStorage(){
   } catch(e){ return null; }
 }
 // ═══════════════════════════════════════════════════════════════
-// SEZIONE 3: UTILITY FUNCTIONS
+
+// #endregion
+
+// #region SEZIONE 3: UTILITY FUNCTIONS
 // ═══════════════════════════════════════════════════════════════
 function daysInMonth(y,m){ return new Date(y,m+1,0).getDate(); }
 function firstDay(y,m){ const d=new Date(y,m,1).getDay(); return d===0?6:d-1; }
@@ -59,7 +68,10 @@ function italianHols(y){
 }
 
 // ═══════════════════════════════════════════════════════════════
-// SEZIONE 4: COLOR & TIME FUNCTIONS
+
+// #endregion
+
+// #region SEZIONE 4: COLOR & TIME FUNCTIONS
 // ═══════════════════════════════════════════════════════════════
 function getColorByTime(tIn){
   if(!tIn) return "#64748b";
@@ -107,7 +119,10 @@ function isFestivo(dateKey){
 
 // ── TIPI DI REPORT DISPONIBILI ───────────────────────────────
 // ═══════════════════════════════════════════════════════════════
-// SEZIONE 5: REPORT TEMPLATES + INIT STATE
+
+// #endregion
+
+// #region SEZIONE 5: REPORT TEMPLATES + INIT STATE
 // ═══════════════════════════════════════════════════════════════
 const REPORT_TEMPLATES = [
   { type:"conteggio_turni", label:"Conteggio turni", desc:"Conta i turni per fascia oraria" },
@@ -122,7 +137,10 @@ const INIT = { calendars:[], events:{}, theme:"auto", extraHols:[], reports:[], 
 export default function App({ session }){
   const today = new Date();
 // ═══════════════════════════════════════════════════════════════
-// SEZIONE 6: USESTATE HOOKS
+
+// #endregion
+
+// #region SEZIONE 6: USESTATE HOOKS
 // ═══════════════════════════════════════════════════════════════
   const [store, setStore] = useState(INIT);
   const [loading, setLoading] = useState(true);
@@ -190,7 +208,10 @@ const isInitialized = useRef(false);
 
   useEffect(()=>{
 // ═══════════════════════════════════════════════════════════════
-// SEZIONE 7: USEEFFECT INIT + LOAD DA SUPABASE
+
+// #endregion
+
+// #region SEZIONE 7: USEEFFECT INIT + LOAD DA SUPABASE
 // ═══════════════════════════════════════════════════════════════
     if(!userId) return;
     (async()=>{
@@ -289,7 +310,10 @@ const isInitialized = useRef(false);
 
   useEffect(()=>{
 // ═══════════════════════════════════════════════════════════════
-// SEZIONE 8: USEEFFECT OVERSCROLL + ONLINE/OFFLINE
+
+// #endregion
+
+// #region SEZIONE 8: USEEFFECT OVERSCROLL + ONLINE/OFFLINE
 // ═══════════════════════════════════════════════════════════════
     function goOnline(){ setIsOnline(true); }
     function goOffline(){ setIsOnline(false); }
@@ -299,7 +323,10 @@ const isInitialized = useRef(false);
   },[]);
 
 // ═══════════════════════════════════════════════════════════════
-// SEZIONE 9: THEME & COLORS (dark mode, T object)
+
+// #endregion
+
+// #region SEZIONE 9: THEME & COLORS
 // ═══════════════════════════════════════════════════════════════
   const sysDark = window.matchMedia?.("(prefers-color-scheme:dark)").matches??false;
   const dark = store.theme==="auto"?sysDark:store.theme==="dark";
@@ -960,7 +987,10 @@ if(!isInitialized.current) return;
 
   // ── CALENDAR GRID ─────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
-// SEZIONE 10: CALENDAR VIEW (calView - grid calendario)
+
+// #endregion
+
+// #region SEZIONE 10: CALENDAR VIEW
 // ═══════════════════════════════════════════════════════════════
   const totalDays = daysInMonth(year,month);
   const fd = firstDay(year,month);
@@ -1107,7 +1137,10 @@ if(!isInitialized.current) return;
 
   // ── REPORT VIEW ───────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
-// SEZIONE 11: REPORT VIEW (reportView - report e statistiche)
+
+// #endregion
+
+// #region SEZIONE 11: REPORT VIEW
 // ═══════════════════════════════════════════════════════════════
   const range = getReportRange();
   const indennitaCalc = computeIndennita();
@@ -1287,7 +1320,10 @@ if(!isInitialized.current) return;
 
   // ── MODELLI VIEW ──────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
-// SEZIONE 12: MODELLI VIEW (modelliView - turni e rotazioni)
+
+// #endregion
+
+// #region SEZIONE 12: MODELLI VIEW
 // ═══════════════════════════════════════════════════════════════
   const modelliView = (
     <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
@@ -1555,7 +1591,10 @@ if(!isInitialized.current) return;
 
   // ── SETTINGS VIEW ─────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
-// SEZIONE 13: SETTINGS VIEW (settingsView - impostazioni account)
+
+// #endregion
+
+// #region SEZIONE 13: SETTINGS VIEW
 // ═══════════════════════════════════════════════════════════════
   const settingsView = (
     <div style={{flex:1,overflowY:"auto",padding:"12px 12px 80px",color:T.text}}>
@@ -1821,7 +1860,10 @@ if(!isInitialized.current) return;
 
   // ── DAY MODAL ─────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
-// SEZIONE 14: DAY MODAL (dayModal - form nuovo evento)
+
+// #endregion
+
+// #region SEZIONE 14: DAY MODAL
 // ═══════════════════════════════════════════════════════════════
   const curEvts = dayKey ? getEvts(dayKey,calId) : [];
   const dayModal = dayKey&&(
@@ -2148,7 +2190,10 @@ if(!isInitialized.current) return;
 
   // ── DB MODAL ──────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
-// SEZIONE 15: DB MODAL + RENDER PRINCIPALE
+
+// #endregion
+
+// #region SEZIONE 15: DB MODAL + RENDER PRINCIPALE
 // ═══════════════════════════════════════════════════════════════
   const dbModal = showDbModal && (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:300,
@@ -2377,7 +2422,10 @@ if(!isInitialized.current) return;
 // ── CAL BADGE ────────────────────────────────────────────────
 // Badge cliccabile con nome calendario e palette colori
 // ═══════════════════════════════════════════════════════════════
-// SEZIONE 16: COMPONENTS (CalBadge, SmartTimeInput, Pal, Sec)
+
+// #endregion
+
+// #region SEZIONE 16: COMPONENTS
 // ═══════════════════════════════════════════════════════════════
 function CalBadge({ calId, calAttivo, coloreCal, testoContrasto, T, store, setStore, updateCalendar, accent, setCalId }){
   const [showCalPal, setShowCalPal] = useState(false);
@@ -2529,7 +2577,10 @@ function SmartTimeInput({ value, onChange, style }) {
 // ── REPORT SUB-COMPONENTS ─────────────────────────────────────
 
 // ═══════════════════════════════════════════════════════════════
-// SEZIONE 17: REPORT SUBCOMPONENTS
+
+// #endregion
+
+// #region SEZIONE 17: REPORT SUBCOMPONENTS
 // ═══════════════════════════════════════════════════════════════
 function FasceExpand({data, pct1, pct2, T, modelli, accent}){
   const [openFascia, setOpenFascia] = React.useState(null);
@@ -2855,7 +2906,10 @@ function GuadagniView({T, indennita, calc}){
 
 // ── SHARED COMPONENTS ─────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
-// SEZIONE 18: MODELLO CARDS & FORMS
+
+// #endregion
+
+// #region SEZIONE 18: MODELLO CARDS & FORMS
 // ═══════════════════════════════════════════════════════════════
 function Pal({T, cur, onPick, up=false}){
   return (
@@ -3030,7 +3084,10 @@ const NB={background:"none",border:"none",fontSize:22,cursor:"pointer",
   padding:"0 4px",lineHeight:1,flexShrink:0,color:"rgba(255,255,255,0.8)"};
 
 // ═══════════════════════════════════════════════════════════════
-// SEZIONE 19: ROTAZIONE COMPONENTS
+
+// #endregion
+
+// #region SEZIONE 19: ROTAZIONE COMPONENTS
 // ═══════════════════════════════════════════════════════════════
 function RotazioneCard({r, T, accent, modelli, onOpen, onDelete}){
   const tipoLabel = r.tipo==="domeniche"?"🗓 Domeniche 1/4":r.tipo==="nlrs"?"🔄 NL / RS classico":r.tipo==="nlrs_scalante"?"📅 RS/NL Scalante":" Personalizzata";
@@ -3525,3 +3582,6 @@ function NLRSView({rot, T, accent, modelli}){
     </div>
   );
 }
+
+
+// #endregion
