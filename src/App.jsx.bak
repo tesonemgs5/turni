@@ -1180,7 +1180,7 @@ if(!isInitialized.current) return;
               </div>
             )}
           </div>
-          <div style={{display:"flex",flexDirection:"row",gap:10,marginRight:10,alignItems:"center"}} onClick={e=>e.stopPropagation()}>
+          <div style={{display:"flex",flexDirection:"column",gap:2,marginRight:6}} onClick={e=>e.stopPropagation()}>
             <button onClick={e=>{e.stopPropagation();moveReport(r.id,"up");}}
               style={{background:"none",border:"none",color:T.sub,cursor:"pointer",fontSize:18,padding:"0 4px",lineHeight:1}}>▲</button>
             <button onClick={e=>{e.stopPropagation();moveReport(r.id,"down");}}
@@ -1646,22 +1646,20 @@ if(!isInitialized.current) return;
                 setStore(s=>({...s,calendars:newCals}));
                 for(const cal of store.calendars) await updateCalendar(cal.id,{is_main:cal.id===c.id});
               }} style={{background:"none",border:"none",cursor:"pointer",fontSize:16,color:c.isMain?"#f59e0b":T.sub}}>★</button>
-              <div style={{display:"flex",alignItems:"center",gap:10}}>
-                <button onClick={async()=>{
-                  if(ci===0) return;
-                  const newCals=[...store.calendars];
-                  [newCals[ci-1],newCals[ci]]=[newCals[ci],newCals[ci-1]];
-                  setStore(s=>({...s,calendars:newCals}));
-                  for(let i=0;i<newCals.length;i++) await updateCalendar(newCals[i].id,{sort_order:i});
-                }} style={{background:"none",border:"none",color:ci===0?T.border:T.sub,cursor:ci===0?"default":"pointer",fontSize:18,padding:"0 4px"}}>▲</button>
-                <button onClick={async()=>{
-                  if(ci===store.calendars.length-1) return;
-                  const newCals=[...store.calendars];
-                  [newCals[ci],newCals[ci+1]]=[newCals[ci+1],newCals[ci]];
-                  setStore(s=>({...s,calendars:newCals}));
-                  for(let i=0;i<newCals.length;i++) await updateCalendar(newCals[i].id,{sort_order:i});
-                }} style={{background:"none",border:"none",color:ci===store.calendars.length-1?T.border:T.sub,cursor:ci===store.calendars.length-1?"default":"pointer",fontSize:18,padding:"0 4px"}}>▼</button>
-              </div>
+              <button onClick={async()=>{
+                if(ci===0) return;
+                const newCals=[...store.calendars];
+                [newCals[ci-1],newCals[ci]]=[newCals[ci],newCals[ci-1]];
+                setStore(s=>({...s,calendars:newCals}));
+                for(let i=0;i<newCals.length;i++) await updateCalendar(newCals[i].id,{sort_order:i});
+              }} style={{background:"none",border:"none",color:ci===0?T.border:T.sub,cursor:ci===0?"default":"pointer",fontSize:20,padding:"0 4px"}}>↑</button>
+              <button onClick={async()=>{
+                if(ci===store.calendars.length-1) return;
+                const newCals=[...store.calendars];
+                [newCals[ci],newCals[ci+1]]=[newCals[ci+1],newCals[ci]];
+                setStore(s=>({...s,calendars:newCals}));
+                for(let i=0;i<newCals.length;i++) await updateCalendar(newCals[i].id,{sort_order:i});
+              }} style={{background:"none",border:"none",color:ci===store.calendars.length-1?T.border:T.sub,cursor:ci===store.calendars.length-1?"default":"pointer",fontSize:20,padding:"0 4px"}}>↓</button>
               <button onClick={()=>setExCal(exCal===c.id?null:c.id)}
                 style={{background:"none",border:"none",color:T.sub,cursor:"pointer",fontSize:12}}>
                 {exCal===c.id?"▲":"▼"}</button>
