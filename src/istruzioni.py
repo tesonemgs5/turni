@@ -140,15 +140,10 @@ def fai_git():
     ok = run_git("git push", "git push")
     if not ok:
         print()
-        print("  ⚠️  git push fallito. Provo con --force...")
-        ok2 = run_git("git push --force", "git push --force")
-        if not ok2:
-            print()
-            print("  ❌ Anche il push --force è fallito.")
-            print("  Controlla la connessione o i permessi del repo.")
-            return False
-        else:
-            print("  ✓ Push --force riuscito.")
+        print("  ❌ git push fallito. NON verrà eseguito --force automatico.")
+        print("  Controlla la connessione o fai 'git pull' prima di riprovare.")
+        print("  Poi esegui manualmente:  git push")
+        return False
     
     return True
 
