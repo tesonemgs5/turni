@@ -13,7 +13,7 @@ const PALETTE = [
   "#a855f7","#ec4899","#f43f5e","#64748b","#0f172a","#ffffff",
   "#fca5a5","#fed7aa","#fef08a","#bbf7d0","#bfdbfe","#ddd6fe",
 ];
-
+// #endregion
 function uid(){ return Math.random().toString(36).slice(2)+Date.now().toString(36); }
 
 // ── LOCALSTORAGE CACHE ────────────────────────────────────────
