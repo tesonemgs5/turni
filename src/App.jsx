@@ -365,7 +365,7 @@ const isInitialized = useRef(false);
     if(!userId) return;
     await supabase.from("calendars").delete().eq("id", cId).eq("user_id", userId);
     const newCals = store.calendars.filter(c=>c.id!==cId);
-    await saveToSheets(store.events, newCals);
+    if(syncMode==='on' && sheetsUrl) await saveToSheets(store.events, newCals);
   }
 
   async function saveEvt(){
@@ -475,7 +475,7 @@ const isInitialized = useRef(false);
           collega: (form.collega||"").toUpperCase(), auto: (form.auto||"").toUpperCase(),
         };
       }
-      saveToSheets(ns.events, ns.calendars);
+      if(syncMode==='on' && sheetsUrl) saveToSheets(ns.events, ns.calendars);
       return ns;
     });
     setForm(null); setDayKey(null);
@@ -487,7 +487,7 @@ const isInitialized = useRef(false);
       const ns=JSON.parse(JSON.stringify(prev));
       if(ns.events?.[dKey]?.[cId])
         ns.events[dKey][cId]=ns.events[dKey][cId].filter(e=>e.id!==evtId);
-      saveToSheets(ns.events, ns.calendars);
+      if(syncMode==='on' && sheetsUrl) saveToSheets(ns.events, ns.calendars);
       return ns;
     });
   }
@@ -1630,7 +1630,7 @@ if(!isInitialized.current) return;
                 await deleteCalendar(c.id);
                 const newCals=store.calendars.filter(x=>x.id!==c.id);
                 setStore(s=>({...s,calendars:newCals}));
-                saveToSheets(store.events,newCals);
+                if(syncMode==='on' && sheetsUrl) saveToSheets(store.events,newCals);
               }} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:18}}>×</button>
             </div>
             {exCal===c.id&&(
@@ -1703,7 +1703,7 @@ if(!isInitialized.current) return;
               const newCals=[...store.calendars,{id:dbCal.id,name:dbCal.name,color:dbCal.color,isMain:dbCal.is_main,shifts:[]}];
               setStore(s=>({...s,calendars:newCals}));
               if(!calId) setCalId(dbCal.id);
-              saveToSheets(store.events,newCals);
+              if(syncMode==='on' && sheetsUrl) saveToSheets(store.events,newCals);
             }
             setNcName("");
           }} style={{background:"#3b82f6",border:"none",borderRadius:8,color:"#fff",padding:"8px 14px",cursor:"pointer",fontWeight:800,fontSize:14}}>+</button>
