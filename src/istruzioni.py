@@ -32,7 +32,7 @@ def separatore():
 def run_git(cmd, descrizione):
     """Esegue un comando git e riporta errori"""
     print(f"\n  ▶ {descrizione}...")
-    result = subprocess.run(cmd, capture_output=True, text=True, shell=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, shell=True, cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     if result.stdout.strip():
         print(f"    {result.stdout.strip()}")
     if result.returncode != 0:
