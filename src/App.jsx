@@ -529,29 +529,28 @@ const isInitialized = useRef(false);
 
   async function saveToSheets(events, calendars, customUrl=sheetsUrl, customSecret=sheetsSecret, modelliToSave=modelli){
     if(!customUrl) return "⚠️ Sheets non configurato";
-if(!isInitialized.current) return;
+    if(!isInitialized.current) return;
     try {
-      await fetch(customUrl, {
-        method:"POST", mode:"no-cors",
-        headers:{"Content-Type":"text/plain"},
+      await fetch("/api/sheets", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
         body: JSON.stringify({ secret: customSecret, action:"save", events, calendars, userId }),
       });
-      await fetch(customUrl, {
-        method:"POST", mode:"no-cors",
-        headers:{"Content-Type":"text/plain"},
+      await fetch("/api/sheets", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
         body: JSON.stringify({ secret: customSecret, action:"save_modelli", modelli: modelliToSave.map(m=>({
-  ...m,
-  fine: (m.tempo==="6h15"||m.tempo==="6h 15m")&&m.inizio ? calcFine6h15(m.inizio) : m.fine||"",
-})) }),
+          ...m,
+          fine: (m.tempo==="6h15"||m.tempo==="6h 15m")&&m.inizio ? calcFine6h15(m.inizio) : m.fine||"",
+        }))}),
       });
       return "✅ Esportato su Sheets";
     } catch(e){ return "❌ Errore connessione Sheets"; }
   }
 
   async function loadFromSheets(customUrl=sheetsUrl, customSecret=sheetsSecret){
-    if(!customUrl) return null;
     try {
-      const res = await fetch(`${customUrl}?secret=${customSecret}&action=load&userId=${userId}`);
+      const res = await fetch(`/api/sheets?secret=${customSecret}&action=load&userId=${userId}`);
       return await res.json() || null;
     } catch(e){ return null; }
   }
