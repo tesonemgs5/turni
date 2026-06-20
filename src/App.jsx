@@ -684,7 +684,9 @@ const isInitialized = useRef(false);
             <input type="file" accept=".json" style={{display:"none"}}
               onChange={e=>handleImportSupabase(e.target.files[0])}/>
           </label>
-        </div>async function handleViewDbData(){
+        </div>
+
+  async function handleViewDbData(){
     setShowDbModal(true); setDbRawData(null);
     try {
       const {data:cals}=await supabase.from("calendars").select("*").eq("user_id",userId).order("created_at");
