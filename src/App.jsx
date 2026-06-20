@@ -1595,6 +1595,278 @@ const isInitialized = useRef(false);
 
 // #endregion
 
+// #region SEZIONE 13: SETTINGS VIEW
+// ═══════════════════════════════════════════════════════════════
+  const settingsView = (
+    <div style={{flex:1,overflowY:"auto",padding:"12px 12px 80px",color:T.text}}>
+      <div style={{fontSize:18,fontWeight:900,fontFamily:"Georgia,serif",marginBottom:14}}>Impostazioni</div>
+      <Sec label="ACCOUNT" T={T}>
+        <div style={{fontSize:12,color:T.sub,marginBottom:10}}>{session?.user?.email}</div>
+        <button onClick={handleLogout}
+          style={{width:"100%",background:"#ef4444",border:"none",borderRadius:10,
+            color:"#fff",padding:"10px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
+          🚪 Logout
+        </button>
+      </Sec>
+      <Sec label="TEMA" T={T}>
+        <div style={{display:"flex",gap:6}}>
+          {[["auto","Auto"],["light","Chiaro"],["dark","Scuro"]].map(([v,l])=>(
+            <button key={v} onClick={()=>{
+              setStore(s=>({...s,theme:v}));
+              saveSettings({theme:v, extra_hols:store.extraHols});
+            }}
+              style={{flex:1,padding:"9px 4px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:11,
+                background:store.theme===v?(v==="light"?"#f8fafc":v==="dark"?"#0f172a":"#6366f1"):T.s2,
+                color:store.theme===v?(v==="light"?"#0f172a":"#fff"):T.sub,
+                border:`2px solid ${store.theme===v?"#6366f1":T.border}`}}>{l}</button>
+          ))}
+        </div>
+      </Sec>
+
+      <SecCollapsible label="CALENDARI" T={T}>
+        {store.calendars.map((c,ci)=>(
+          <div key={c.id} style={{marginBottom:10}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,background:T.s2,borderRadius:10,padding:"8px 10px"}}>
+              <div style={{position:"relative",flexShrink:0}}>
+                <div style={{width:24,height:24,borderRadius:"50%",background:c.color,
+                  border:`2px solid ${T.border}`,cursor:"pointer"}}
+                  onClick={e=>{e.stopPropagation();setPal(pal===c.id?null:c.id);}}/>
+                {pal===c.id&&<Pal T={T} cur={c.color} onPick={p=>{
+                  const newCals=JSON.parse(JSON.stringify(store.calendars));
+                  newCals[ci].color=p;
+                  setStore(s=>({...s,calendars:newCals}));
+                  updateCalendar(c.id,{color:p});
+                  setPal(null);
+                }}/>}
+              </div>
+              <input value={c.name}
+                onChange={e=>{const newCals=JSON.parse(JSON.stringify(store.calendars));newCals[ci].name=e.target.value;setStore(s=>({...s,calendars:newCals}));}}
+                onBlur={e=>updateCalendar(c.id,{name:e.target.value})}
+                style={{flex:1,background:"transparent",border:"none",outline:"none",color:T.text,fontSize:13,fontWeight:700}}/>
+              <button onClick={async()=>{
+                const newCals=store.calendars.map((x,j)=>({...x,isMain:j===ci}));
+                setStore(s=>({...s,calendars:newCals}));
+                for(const cal of store.calendars) await updateCalendar(cal.id,{is_main:cal.id===c.id});
+              }} style={{background:"none",border:"none",cursor:"pointer",fontSize:16,color:c.isMain?"#f59e0b":T.sub}}>★</button>
+              <button onClick={async()=>{
+                if(ci===0) return;
+                const newCals=[...store.calendars];
+                [newCals[ci-1],newCals[ci]]=[newCals[ci],newCals[ci-1]];
+                setStore(s=>({...s,calendars:newCals}));
+                for(let i=0;i<newCals.length;i++) await updateCalendar(newCals[i].id,{sort_order:i});
+              }} style={{background:"none",border:"none",color:ci===0?T.border:T.sub,cursor:ci===0?"default":"pointer",fontSize:20,padding:"0 4px"}}>↑</button>
+              <button onClick={async()=>{
+                if(ci===store.calendars.length-1) return;
+                const newCals=[...store.calendars];
+                [newCals[ci],newCals[ci+1]]=[newCals[ci+1],newCals[ci]];
+                setStore(s=>({...s,calendars:newCals}));
+                for(let i=0;i<newCals.length;i++) await updateCalendar(newCals[i].id,{sort_order:i});
+              }} style={{background:"none",border:"none",color:ci===store.calendars.length-1?T.border:T.sub,cursor:ci===store.calendars.length-1?"default":"pointer",fontSize:20,padding:"0 4px"}}>↓</button>
+              <button onClick={()=>setExCal(exCal===c.id?null:c.id)}
+                style={{background:"none",border:"none",color:T.sub,cursor:"pointer",fontSize:12}}>
+                {exCal===c.id?"▲":"▼"}</button>
+              <button onClick={async()=>{
+                if(!window.confirm(`Eliminare il calendario "${c.name}"? Tutti gli eventi associati verranno persi.`)) return;
+                await deleteCalendar(c.id);
+                const newCals=store.calendars.filter(x=>x.id!==c.id);
+                setStore(s=>({...s,calendars:newCals}));
+                if(syncMode==='on' && sheetsUrl) saveToSheets(store.events,newCals);
+              }} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:18}}>×</button>
+            </div>
+            {exCal===c.id&&(
+              <div style={{background:T.s2,borderRadius:"0 0 10px 10px",padding:"10px",borderTop:`1px solid ${T.border}`}}>
+                <div style={{fontSize:9,color:T.sub,fontWeight:700,marginBottom:8}}>TURNI PREDEFINITI</div>
+                {(c.shifts||[]).map((sh,si)=>(
+                  <div key={sh.id} style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
+                    <div style={{position:"relative",flexShrink:0}}>
+                      <div style={{width:20,height:20,borderRadius:"50%",background:sh.color,cursor:"pointer"}}
+                        onClick={e=>{e.stopPropagation();setPal(pal===sh.id?null:sh.id);}}/>
+                      {pal===sh.id&&<Pal T={T} cur={sh.color} onPick={p=>{
+                        const newCals=JSON.parse(JSON.stringify(store.calendars));
+                        newCals[ci].shifts[si].color=p;
+                        setStore(s=>({...s,calendars:newCals}));
+                        updateCalendar(c.id,{shifts:newCals[ci].shifts});
+                        setPal(null);
+                      }}/>}
+                    </div>
+                    <input value={sh.label}
+                      onChange={e=>{const newCals=JSON.parse(JSON.stringify(store.calendars));newCals[ci].shifts[si].label=e.target.value;setStore(s=>({...s,calendars:newCals}));}}
+                      onBlur={()=>updateCalendar(c.id,{shifts:store.calendars[ci].shifts})}
+                      style={{flex:1,background:"transparent",border:"none",outline:"none",color:T.text,fontSize:12}}/>
+                    <button onClick={()=>{
+                      const newCals=JSON.parse(JSON.stringify(store.calendars));
+                      newCals[ci].shifts=newCals[ci].shifts.filter((_,k)=>k!==si);
+                      setStore(s=>({...s,calendars:newCals}));
+                      updateCalendar(c.id,{shifts:newCals[ci].shifts});
+                    }} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:16}}>×</button>
+                  </div>
+                ))}
+                <div style={{display:"flex",gap:6,alignItems:"center",marginTop:6}}>
+                  <div style={{position:"relative",flexShrink:0}}>
+                    <div style={{width:22,height:22,borderRadius:"50%",background:nsColor,
+                      border:`2px solid ${T.border}`,cursor:"pointer"}}
+                      onClick={e=>{e.stopPropagation();setPal(pal==="ns"?null:"ns");}}/>
+                    {pal==="ns"&&<Pal T={T} cur={nsColor} onPick={p=>{setNsColor(p);setPal(null);}}/>}
+                  </div>
+                  <input value={nsName} onChange={e=>setNsName(e.target.value)} placeholder="Nome turno..."
+                    style={{flex:1,background:T.surface,border:`1px solid ${T.border}`,
+                      borderRadius:8,padding:"7px 10px",color:T.text,fontSize:12,outline:"none"}}/>
+                  <button onClick={()=>{
+                    if(!nsName.trim()) return;
+                    const newCals=JSON.parse(JSON.stringify(store.calendars));
+                    if(!newCals[ci].shifts) newCals[ci].shifts=[];
+                    newCals[ci].shifts.push({id:uid(),label:nsName.trim(),color:nsColor});
+                    setStore(s=>({...s,calendars:newCals}));
+                    updateCalendar(c.id,{shifts:newCals[ci].shifts});
+                    setNsName("");
+                  }} style={{background:"#3b82f6",border:"none",borderRadius:8,color:"#fff",padding:"7px 12px",cursor:"pointer",fontWeight:800,fontSize:14}}>+</button>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+        <div style={{display:"flex",gap:8,alignItems:"center",marginTop:4}}>
+          <div style={{position:"relative",flexShrink:0}}>
+            <div style={{width:24,height:24,borderRadius:"50%",background:ncColor,
+              border:`2px solid ${T.border}`,cursor:"pointer"}}
+              onClick={e=>{e.stopPropagation();setPal(pal==="nc"?null:"nc");}}/>
+            {pal==="nc"&&<Pal T={T} cur={ncColor} onPick={p=>{setNcColor(p);setPal(null);}}/>}
+          </div>
+          <input value={ncName} onChange={e=>setNcName(e.target.value)} placeholder="Nome calendario..."
+            style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
+              borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,outline:"none"}}/>
+          <button onClick={async()=>{
+            if(!ncName.trim()) return;
+            const isFirst=store.calendars.length===0;
+            const dbCal=await addCalendar(ncName.trim(),ncColor,isFirst);
+            if(dbCal){
+              const newCals=[...store.calendars,{id:dbCal.id,name:dbCal.name,color:dbCal.color,isMain:dbCal.is_main,shifts:[]}];
+              setStore(s=>({...s,calendars:newCals}));
+              if(!calId) setCalId(dbCal.id);
+              if(syncMode==='on' && sheetsUrl) saveToSheets(store.events,newCals);
+            }
+            setNcName("");
+          }} style={{background:"#3b82f6",border:"none",borderRadius:8,color:"#fff",padding:"8px 14px",cursor:"pointer",fontWeight:800,fontSize:14}}>+</button>
+        </div>
+      </SecCollapsible>
+
+      <SecCollapsible label="ARCHIVIO GOOGLE SHEETS" T={T}>
+        <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
+          Configura il tuo script Google Sheets per importare ed esportare i dati.
+        </div>
+        <input value={sheetsUrl} onChange={e=>setSheetsUrl(e.target.value)}
+          placeholder="URL Script Google Sheets..."
+          style={{width:"100%",background:T.s2,border:`1px solid ${T.border}`,
+            borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,outline:"none",marginBottom:6,boxSizing:"border-box"}}/>
+        <input value={sheetsSecret} onChange={e=>setSheetsSecret(e.target.value)}
+          placeholder="Secret Google Sheets..." type="password"
+          style={{width:"100%",background:T.s2,border:`1px solid ${T.border}`,
+            borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,outline:"none",marginBottom:8,boxSizing:"border-box"}}/>
+        <button onClick={handleSaveSheetsConfig} disabled={syncing}
+          style={{width:"100%",background:accent,border:"none",borderRadius:10,
+            color:"#fff",padding:"9px 0",cursor:"pointer",fontWeight:800,fontSize:12,marginBottom:8}}>
+          {syncing?"⏳ Salvataggio...":"💾 Salva Configurazione Sheets"}
+        </button>
+        <div style={{display:"flex",gap:8,marginBottom:8}}>
+          <button onClick={handleSave} disabled={syncing||!sheetsUrl}
+            style={{flex:1,background:sheetsUrl?"#16a34a":"#94a3b8",border:"none",borderRadius:10,
+              color:"#fff",padding:"11px 0",cursor:sheetsUrl?"pointer":"not-allowed",fontWeight:800,fontSize:12}}>
+            {syncing?"⏳ ...":"📤 Esporta su Sheets"}
+          </button>
+          <button onClick={handleLoad} disabled={syncing||!sheetsUrl}
+            style={{flex:1,background:sheetsUrl?"#2563eb":"#94a3b8",border:"none",borderRadius:10,
+              color:"#fff",padding:"11px 0",cursor:sheetsUrl?"pointer":"not-allowed",fontWeight:800,fontSize:12}}>
+            {syncing?"⏳ ...":"📥 Importa da Sheets"}
+          </button>
+        </div>
+        {sheetsUrl&&(
+          <a href="https://docs.google.com/spreadsheets/d/106C8GAh0Ka2WS8O8Ezx0nUnDgX0hyS7Crvixy84uDSA/edit"
+            target="_blank" rel="noreferrer"
+            style={{display:"block",textAlign:"center",fontSize:11,color:"#16a34a",fontWeight:700,
+              textDecoration:"none",background:"#dcfce7",borderRadius:8,padding:"8px 0"}}>
+            📊 Apri Google Sheets
+          </a>
+        )}
+        {syncMsg&&<div style={{fontSize:11,color:T.text,padding:"8px 10px",
+          background:T.s2,borderRadius:8,textAlign:"center",marginTop:8}}>{syncMsg}</div>}
+      </SecCollapsible>
+
+      <Sec label="DATABASE CLOUD SUPABASE" T={T}>
+        <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
+          Controlla lo stato dei dati memorizzati nel cloud Supabase.
+        </div>
+        <button onClick={handleViewDbData}
+          style={{width:"100%",background:"#475569",border:"none",borderRadius:10,
+            color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
+          🔍 Visualizza Dati in Supabase
+        </button>
+      </Sec>
+
+      {session?.user?.email==='tesonemgs5@gmail.com'&&(
+        <Sec label="STATISTICHE DI UTILIZZO (ADMIN)" T={T}>
+          {stats?(
+            <div style={{display:"flex",flexDirection:"column",gap:6,background:T.s2,borderRadius:10,padding:12}}>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:12}}>
+                <span style={{color:T.sub}}>Utenti Registrati Totali:</span>
+                <span style={{fontWeight:800,color:T.text}}>{stats.total_users}</span>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:12}}>
+                <span style={{color:T.sub}}>Utenti Attivi (ultimi 7 giorni):</span>
+                <span style={{fontWeight:800,color:"#22c55e"}}>{stats.active_users_7d}</span>
+              </div>
+            </div>
+          ):(
+            <div style={{fontSize:11,color:T.sub,textAlign:"center",padding:6}}>⏳ Caricamento statistiche...</div>
+          )}
+        </Sec>
+      )}
+
+      <Sec label="FESTIVI LOCALI" T={T}>
+        <div style={{fontSize:11,color:T.sub,marginBottom:8}}>
+          Domeniche e festivi nazionali italiani sono già in rosso automaticamente.
+        </div>
+        {(store.extraHols||[]).map((h,i)=>(
+          <div key={i} style={{display:"flex",alignItems:"center",gap:8,
+            background:T.s2,borderRadius:8,padding:"6px 10px",marginBottom:6}}>
+            <span style={{flex:1,fontSize:12,color:T.text}}>🎉 {h.name} — {h.d}/{h.m}</span>
+            <button onClick={()=>{
+              const newH=(store.extraHols||[]).filter((_,j)=>j!==i);
+              setStore(s=>({...s,extraHols:newH}));
+              saveSettings({theme:store.theme,extra_hols:newH});
+            }} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:16}}>×</button>
+          </div>
+        ))}
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          <input value={nhName} onChange={e=>setNhName(e.target.value)} placeholder="Nome..."
+            style={{flex:2,minWidth:100,background:T.s2,border:`1px solid ${T.border}`,
+              borderRadius:8,padding:"7px 10px",color:T.text,fontSize:12,outline:"none"}}/>
+          <input value={nhD} onChange={e=>setNhD(e.target.value)} placeholder="GG" type="number"
+            style={{width:50,background:T.s2,border:`1px solid ${T.border}`,
+              borderRadius:8,padding:"7px 6px",color:T.text,fontSize:12,outline:"none",textAlign:"center"}}/>
+          <input value={nhM} onChange={e=>setNhM(e.target.value)} placeholder="MM" type="number"
+            style={{width:50,background:T.s2,border:`1px solid ${T.border}`,
+              borderRadius:8,padding:"7px 6px",color:T.text,fontSize:12,outline:"none",textAlign:"center"}}/>
+          <button onClick={()=>{
+            if(!nhName.trim()||!nhD||!nhM) return;
+            const newH=[...(store.extraHols||[]),{name:nhName.trim(),d:nhD,m:nhM}];
+            setStore(s=>({...s,extraHols:newH}));
+            saveSettings({theme:store.theme,extra_hols:newH});
+            setNhName(""); setNhD(""); setNhM("");
+          }} style={{background:"#ef4444",border:"none",borderRadius:8,
+            color:"#fff",padding:"7px 12px",cursor:"pointer",fontWeight:800}}>+</button>
+        </div>
+      </Sec>
+    </div>
+  );
+
+  // ── DAY MODAL ─────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+// #endregion
+
+
+
+
 // #region SEZIONE 14: DAY MODAL
 // ═══════════════════════════════════════════════════════════════
   const curEvts = dayKey ? getEvts(dayKey,calId) : [];
