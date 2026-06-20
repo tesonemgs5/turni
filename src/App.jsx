@@ -662,30 +662,6 @@ const isInitialized = useRef(false);
     }
   },[screen, session]);
 
-  <Sec label="DATABASE CLOUD SUPABASE" T={T}>
-        <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
-          Controlla lo stato dei dati memorizzati nel cloud Supabase.
-        </div>
-        <button onClick={handleViewDbData}
-          style={{width:"100%",background:"#475569",border:"none",borderRadius:10,
-            color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12,marginBottom:8}}>
-          🔍 Visualizza Dati in Supabase
-        </button>
-        <div style={{display:"flex",gap:8}}>
-          <button onClick={handleExportSupabase}
-            style={{flex:1,background:"#16a34a",border:"none",borderRadius:10,
-              color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
-            📤 Esporta da Supabase
-          </button>
-          <label style={{flex:1,background:"#2563eb",border:"none",borderRadius:10,
-              color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12,
-              textAlign:"center",display:"block"}}>
-            📥 Importa su Supabase
-            <input type="file" accept=".json" style={{display:"none"}}
-              onChange={e=>handleImportSupabase(e.target.files[0])}/>
-          </label>
-        </div>
-
   async function handleViewDbData(){
     setShowDbModal(true); setDbRawData(null);
     try {
