@@ -662,15 +662,82 @@ const isInitialized = useRef(false);
     }
   },[screen, session]);
 
-  async function handleViewDbData(){
-    setShowDbModal(true); setDbRawData(null);
+  async function handleExportSupabase(){
+    setSyncMsg("⏳ Esportazione in corso...");
     try {
-      const {data:cals}=await supabase.from("calendars").select("*").eq("user_id",userId).order("created_at");
-      const {data:evts}=await supabase.from("events").select("*").eq("user_id",userId).order("date_key",{ascending:false});
-      setDbCalsCount(cals?.length||0);
-      setDbEvtsCount(evts?.length||0);
-      setDbRawData({calendars:cals||[],events:evts||[]});
-    } catch(e){ console.error(e); }
+      const {data:cals} = await supabase.from("calendars").select("*").eq("user_id",userId);
+      const {data:evts} = await supabase.from("events").select("*").eq("user_id",userId);
+      const {data:mods} = await supabase.from("modelli").select("*").eq("user_id",userId);
+      const {data:rots} = await supabase.from("rotazioni").select("*").eq("user_id",userId);
+      const {data:sett} = await supabase.from("user_settings").select("*").eq("user_id",userId).maybeSingle();
+      const backup = {
+        exported_at: new Date().toISOString(),
+        calendars: cals||[], events: evts||[], modelli: mods||[],
+        rotazioni: rots||[], user_settings: sett||null,
+      };
+      const blob = new Blob([JSON.stringify(backup,null,2)], {type:"application/json"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `backup_calendario_${new Date().toISOString().slice(0,10)}.json`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setSyncMsg("✅ Backup scaricato");
+    } catch(e){ console.error(e); setSyncMsg("❌ Errore durante l'esportazione"); }
+  }
+
+  async function handleImportSupabase(file){
+    if(!file) return;
+    setSyncMsg("⏳ Importazione in corso...");
+    try {
+      const text = await file.text();
+      const backup = JSON.parse(text);
+      if(!window.confirm("Questo SOVRASCRIVERÀ tutti i dati attuali con quelli del backup. Continuare?")) {
+        setSyncMsg(""); return;
+      }
+      await supabase.from("events").delete().eq("user_id",userId);
+      await supabase.from("calendars").delete().eq("user_id",userId);
+      await supabase.from("modelli").delete().eq("user_id",userId);
+      await supabase.from("rotazioni").delete().eq("user_id",userId);
+
+      const calIdMap = {};
+      for(const c of (backup.calendars||[])){
+        const {data} = await supabase.from("calendars").insert({
+          user_id:userId, name:c.name, color:c.color, is_main:c.is_main, shifts:c.shifts||[],
+        }).select().maybeSingle();
+        if(data) calIdMap[c.id] = data.id;
+      }
+      const modIdMap = {};
+      for(const m of (backup.modelli||[])){
+        const {data} = await supabase.from("modelli").insert({
+          user_id:userId, titolo:m.titolo, tempo:m.tempo, inizio:m.inizio, fine:m.fine,
+          colore:m.colore, colore_custom:m.colore_custom, posizione:m.posizione,
+          sort_order:m.sort_order, calendar_id: calIdMap[m.calendar_id]||null,
+        }).select().maybeSingle();
+        if(data) modIdMap[m.id] = data.id;
+      }
+      for(const e of (backup.events||[])){
+        await supabase.from("events").insert({
+          user_id:userId, calendar_id: calIdMap[e.calendar_id]||e.calendar_id,
+          date_key:e.date_key, label:e.label, color:e.color, all_day:e.all_day,
+          time_in:e.time_in, time_out:e.time_out, place:e.place, map_url:e.map_url,
+          note:e.note, modello_id: modIdMap[e.modello_id]||null,
+          collega:e.collega, auto:e.auto,
+        });
+      }
+      for(const r of (backup.rotazioni||[])){
+        await supabase.from("rotazioni").insert({
+          user_id:userId, tipo:r.tipo, titolo:r.titolo, data_inizio:r.data_inizio,
+          n_settimane:r.n_settimane,
+          modello_lavoro_id: modIdMap[r.modello_lavoro_id]||null,
+          modello_nl_id: modIdMap[r.modello_nl_id]||null,
+          modello_rs_id: modIdMap[r.modello_rs_id]||null,
+          griglia:r.griglia||{},
+        });
+      }
+      setSyncMsg("✅ Importazione completata — ricarico l'app...");
+      setTimeout(()=>window.location.reload(), 1500);
+    } catch(e){ console.error(e); setSyncMsg("❌ Errore durante l'importazione: "+e.message); }
   }
 
   async function handleLogout(){ await supabase.auth.signOut(); }
@@ -1797,9 +1864,23 @@ const isInitialized = useRef(false);
         </div>
         <button onClick={handleViewDbData}
           style={{width:"100%",background:"#475569",border:"none",borderRadius:10,
-            color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
+            color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12,marginBottom:8}}>
           🔍 Visualizza Dati in Supabase
         </button>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={handleExportSupabase}
+            style={{flex:1,background:"#16a34a",border:"none",borderRadius:10,
+              color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
+            📤 Esporta da Supabase
+          </button>
+          <label style={{flex:1,background:"#2563eb",border:"none",borderRadius:10,
+              color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12,
+              textAlign:"center",display:"block"}}>
+            📥 Importa su Supabase
+            <input type="file" accept=".json" style={{display:"none"}}
+              onChange={e=>handleImportSupabase(e.target.files[0])}/>
+          </label>
+        </div>
       </Sec>
 
       {session?.user?.email==='tesonemgs5@gmail.com'&&(
