@@ -157,6 +157,8 @@ export default function App({ session }){
   const [exCal,   setExCal]   = useState(null);
   const [nhName,  setNhName]  = useState("");
   const [syncMsg,  setSyncMsg]  = useState("");
+  const [backupsList, setBackupsList] = useState([]);
+  const [showBackupsModal, setShowBackupsModal] = useState(false);
   const [syncing,  setSyncing]  = useState(false);
   const [nhD,     setNhD]     = useState("");
   const [nhM,     setNhM]     = useState("");
@@ -673,39 +675,57 @@ const isInitialized = useRef(false);
     } catch(e){ console.error(e); }
   }
 
+  async function buildBackupPayload(){
+    const {data:cals} = await supabase.from("calendars").select("*").eq("user_id",userId);
+    const {data:evts} = await supabase.from("events").select("*").eq("user_id",userId);
+    const {data:mods} = await supabase.from("modelli").select("*").eq("user_id",userId);
+    const {data:rots} = await supabase.from("rotazioni").select("*").eq("user_id",userId);
+    const {data:sett} = await supabase.from("user_settings").select("*").eq("user_id",userId).maybeSingle();
+    return {
+      exported_at: new Date().toISOString(),
+      calendars: cals||[], events: evts||[], modelli: mods||[],
+      rotazioni: rots||[], user_settings: sett||null,
+    };
+  }
+
   async function handleExportSupabase(){
     setSyncMsg("⏳ Esportazione in corso...");
     try {
-      const {data:cals} = await supabase.from("calendars").select("*").eq("user_id",userId);
-      const {data:evts} = await supabase.from("events").select("*").eq("user_id",userId);
-      const {data:mods} = await supabase.from("modelli").select("*").eq("user_id",userId);
-      const {data:rots} = await supabase.from("rotazioni").select("*").eq("user_id",userId);
-      const {data:sett} = await supabase.from("user_settings").select("*").eq("user_id",userId).maybeSingle();
-      const backup = {
-        exported_at: new Date().toISOString(),
-        calendars: cals||[], events: evts||[], modelli: mods||[],
-        rotazioni: rots||[], user_settings: sett||null,
-      };
-      const blob = new Blob([JSON.stringify(backup,null,2)], {type:"application/json"});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `backup_calendario_${new Date().toISOString().slice(0,10)}.json`;
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      setSyncMsg("✅ Backup scaricato");
-    } catch(e){ console.error(e); setSyncMsg("❌ Errore durante l'esportazione"); }
+      const backup = await buildBackupPayload();
+      // Salva lo snapshot nel cloud (tabella "backups" su Supabase)
+      const {error:insErr} = await supabase.from("backups").insert({
+        user_id:userId, data:backup,
+      });
+      if(insErr) throw insErr;
+      setSyncMsg("✅ Backup salvato su Supabase");
+    } catch(e){ console.error(e); setSyncMsg("❌ Errore durante l'esportazione: "+e.message); }
   }
 
-  async function handleImportSupabase(file){
-    if(!file) return;
-    setSyncMsg("⏳ Importazione in corso...");
+  async function handleOpenImportSupabase(){
+    setSyncMsg("⏳ Carico elenco backup...");
     try {
-      const text = await file.text();
-      const backup = JSON.parse(text);
-      if(!window.confirm("Questo SOVRASCRIVERÀ tutti i dati attuali con quelli del backup. Continuare?")) {
-        setSyncMsg(""); return;
-      }
+      const {data, error} = await supabase.from("backups")
+        .select("id, created_at")
+        .eq("user_id", userId)
+        .order("created_at", {ascending:false})
+        .limit(20);
+      if(error) throw error;
+      setBackupsList(data||[]);
+      setShowBackupsModal(true);
+      setSyncMsg("");
+    } catch(e){ console.error(e); setSyncMsg("❌ Errore nel caricare i backup: "+e.message); }
+  }
+
+  async function handleRestoreBackup(backupId){
+    if(!window.confirm("Questo SOVRASCRIVERÀ tutti i dati attuali con quelli del backup selezionato. Continuare?")) return;
+    setSyncMsg("⏳ Importazione in corso...");
+    setShowBackupsModal(false);
+    try {
+      const {data:row, error} = await supabase.from("backups").select("data").eq("id", backupId).eq("user_id", userId).maybeSingle();
+      if(error) throw error;
+      if(!row?.data) throw new Error("Backup non trovato");
+      const backup = row.data;
+
       await supabase.from("events").delete().eq("user_id",userId);
       await supabase.from("calendars").delete().eq("user_id",userId);
       await supabase.from("modelli").delete().eq("user_id",userId);
@@ -1884,15 +1904,43 @@ const isInitialized = useRef(false);
               color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
             📤 Esporta da Supabase
           </button>
-          <label style={{flex:1,background:"#2563eb",border:"none",borderRadius:10,
-              color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12,
-              textAlign:"center",display:"block"}}>
+          <button onClick={handleOpenImportSupabase}
+            style={{flex:1,background:"#2563eb",border:"none",borderRadius:10,
+              color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
             📥 Importa su Supabase
-            <input type="file" accept=".json" style={{display:"none"}}
-              onChange={e=>handleImportSupabase(e.target.files[0])}/>
-          </label>
+          </button>
         </div>
       </Sec>
+
+      {showBackupsModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:500,
+          display:"flex",alignItems:"flex-end"}}
+          onClick={e=>{if(e.target===e.currentTarget)setShowBackupsModal(false);}}>
+          <div style={{background:T.surface,borderRadius:"18px 18px 0 0",width:"100%",
+            maxWidth:480,margin:"0 auto",maxHeight:"80vh",overflowY:"auto",padding:"16px"}}
+            onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+              <div style={{fontSize:16,fontWeight:900,color:T.text}}>Backup disponibili</div>
+              <button onClick={()=>setShowBackupsModal(false)}
+                style={{background:"none",border:"none",color:T.sub,fontSize:22,cursor:"pointer"}}>×</button>
+            </div>
+            {backupsList.length===0?(
+              <div style={{textAlign:"center",padding:"24px",color:T.sub,fontSize:13}}>
+                Nessun backup trovato. Usa "Esporta da Supabase" per crearne uno.
+              </div>
+            ):(
+              backupsList.map(b=>(
+                <button key={b.id} onClick={()=>handleRestoreBackup(b.id)}
+                  style={{display:"block",width:"100%",textAlign:"left",background:T.s2,
+                    border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",
+                    marginBottom:8,cursor:"pointer",color:T.text,fontSize:13,fontWeight:700}}>
+                  📦 {new Date(b.created_at).toLocaleString("it-IT")}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
 
       {session?.user?.email==='tesonemgs5@gmail.com'&&(
         <Sec label="STATISTICHE DI UTILIZZO (ADMIN)" T={T}>
