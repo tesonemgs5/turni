@@ -974,7 +974,7 @@ const isInitialized = useRef(false);
   // Calcola conteggio per un singolo report con le sue condizioni
   function computeConteggioForReport(cfg){
     const {from, to} = getReportRange();
-    const result = { totale:0, mattina:0, pomeriggio:0, notte:0, terzo:0, h24:0 };
+    const result = { totale:0, mattina:0, pomeriggio:0, notte:0, terzo:0, h24:0, app:0, auto:0 };
     const perModello = {};
     const fasceFiltro = cfg?.fasceFiltro || []; // [] = tutte
     for(const [dateKey, calMap] of Object.entries(store.events)){
@@ -998,6 +998,11 @@ const isInitialized = useRef(false);
           result.totale++;
           result[fascia]=(result[fascia]||0)+1;
           if(e.modelloId) perModello[e.modelloId]=(perModello[e.modelloId]||0)+1;
+          // Gruppo indipendente APP/AUTO basato sul titolo del modello collegato
+          const modelloEvt = e.modelloId ? modelli.find(mm=>mm.id===e.modelloId) : null;
+          const titoloEvt = (modelloEvt?.titolo||"").toUpperCase();
+          if(titoloEvt.includes("APP")) result.app=(result.app||0)+1;
+          else if(titoloEvt.includes("AUTO")) result.auto=(result.auto||0)+1;
         }
       }
     }
@@ -2922,6 +2927,23 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, onR
           return null;
         })()}
         <FasceExpand data={data} pct1={pct1} pct2={pct2} T={T} modelli={modelli} accent={accent}/>
+      </div>
+
+      {/* Gruppo indipendente APP/AUTO basato sul titolo del modello */}
+      <div style={{background:T.surface,borderRadius:10,padding:12}}>
+        <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:8}}>APP / AUTO</div>
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {[
+            {key:"app",  label:"APP",  color:"#3b82f6", count:data.app||0},
+            {key:"auto", label:"AUTO", color:"#8b5cf6", count:data.auto||0},
+          ].map(g=>(
+            <div key={g.key} style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+              padding:"8px 10px",background:g.color+"22",borderRadius:8,border:`1px solid ${g.color}44`}}>
+              <span style={{fontSize:13,fontWeight:800,color:g.color}}>{g.label}</span>
+              <span style={{fontSize:16,fontWeight:900,color:T.text}}>{g.count}</span>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Filtro per collega */}
