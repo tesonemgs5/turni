@@ -2727,7 +2727,7 @@ function SmartTimeInput({ value, onChange, style }) {
 // #region SEZIONE 17: REPORT SUBCOMPONENTS
 // ═══════════════════════════════════════════════════════════════
 function FasceExpand({data, pct1, pct2, T, modelli, accent}){
-  const [openFascia, setOpenFascia] = React.useState(null);
+  const [openFascia, setOpenFascia] = useState(null);
 
   function turniDiFascia(fascia){
     return Object.entries(data.perModello||{}).filter(([mid])=>{
