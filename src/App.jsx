@@ -674,7 +674,6 @@ const isInitialized = useRef(false);
   }
 
   async function handleExportSupabase(){
-      </Sec>
     setSyncMsg("⏳ Esportazione in corso...");
     try {
       const {data:cals} = await supabase.from("calendars").select("*").eq("user_id",userId);
