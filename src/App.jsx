@@ -285,7 +285,7 @@ const isInitialized = useRef(false);
         setStore({ calendars, events, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings });
         setStore({ calendars, events, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings });
         setCalId(calendars[0]?.id||null);
-        saveToLocalStorage(events, calendars, []);
+        saveToLocalStorage(events, calendars, modelliDb||[]);
 
         // Inizializza sortOrder per modelli H24 che hanno tutti 0
         const h24senza = (modelliDb||[]).filter(m=>(m.tempo==="h24"||!m.inizio)&&(m.sort_order||0)===0);
@@ -388,6 +388,7 @@ const isInitialized = useRef(false);
   async function updateCalendar(cId, fields){
     if(!userId) return;
     await supabase.from("calendars").update(fields).eq("id", cId).eq("user_id", userId);
+    saveToLocalStorage(store.events, store.calendars, modelli);
   }
   async function deleteCalendar(cId){
     if(!userId) return;
@@ -516,7 +517,8 @@ const isInitialized = useRef(false);
       const ns=JSON.parse(JSON.stringify(prev));
       if(ns.events?.[dKey]?.[cId])
         ns.events[dKey][cId]=ns.events[dKey][cId].filter(e=>e.id!==evtId);
-      if(syncMode==='on' && sheetsUrl) saveToSheets(ns.events, ns.calendars);
+      saveToLocalStorage(ns.events, ns.calendars, modelli);
+      if(sheetsUrl) saveToSheets(ns.events, ns.calendars);
       return ns;
     });
   }
@@ -881,6 +883,7 @@ const isInitialized = useRef(false);
       await supabase.from("modelli").update(payload).eq("id",data.id).eq("user_id",userId);
       setModelli(prev=>{
         const updated=prev.map(m=>m.id===data.id?{...m,...data,colore:coloreEff,calendarId:targetCalId}:m);
+        saveToLocalStorage(store.events, store.calendars, updated);
         if(sheetsUrl) saveToSheets(store.events, store.calendars, sheetsUrl, sheetsSecret, updated);
         return updated;
       });
@@ -891,6 +894,7 @@ const isInitialized = useRef(false);
         await supabase.from("modelli").update({sort_order:newSortOrder}).eq("id",res.id).eq("user_id",userId);
         setModelli(prev=>{
           const updated=[...prev,{...data,id:res.id,colore:coloreEff,sortOrder:newSortOrder,calendarId:targetCalId}];
+          saveToLocalStorage(store.events, store.calendars, updated);
           if(sheetsUrl) saveToSheets(store.events, store.calendars, sheetsUrl, sheetsSecret, updated);
           return updated;
         });
@@ -902,6 +906,7 @@ const isInitialized = useRef(false);
     await supabase.from("modelli").delete().eq("id",id).eq("user_id",userId);
     setModelli(prev=>{
       const updated=prev.filter(m=>m.id!==id);
+      saveToLocalStorage(store.events, store.calendars, updated);
       if(sheetsUrl) saveToSheets(store.events, store.calendars, sheetsUrl, sheetsSecret, updated);
       return updated;
     });
