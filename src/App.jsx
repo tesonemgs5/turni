@@ -42,6 +42,12 @@ function loadFromLocalStorage(){
     return { events, calendars, modelli, timestamp };
   } catch(e){ return null; }
 }
+function clearLocalStorageCache(){
+  localStorage.removeItem('cache_events');
+  localStorage.removeItem('cache_calendars');
+  localStorage.removeItem('cache_modelli');
+  localStorage.removeItem('cache_timestamp');
+}
 // ═══════════════════════════════════════════════════════════════
 
 // #endregion
@@ -1147,6 +1153,7 @@ const isInitialized = useRef(false);
           <span style={{color:"#fff",fontSize:11,fontWeight:800}}>TUTTI</span>
         </button>
         <button onClick={async()=>{
+          clearLocalStorageCache();
           const {data:cals}=await supabase.from("calendars").select("*").eq("user_id",userId).order("created_at");
           const {data:evts}=await supabase.from("events").select("*").eq("user_id",userId);
           const {data:mods}=await supabase.from("modelli").select("*").eq("user_id",userId).order("sort_order");
@@ -1160,6 +1167,7 @@ const isInitialized = useRef(false);
           setStore(s=>({...s,calendars,events}));
           setModelli((mods||[]).map(m=>({id:m.id,titolo:m.titolo,tempo:m.tempo,inizio:m.inizio||"",fine:m.fine||"",colore:m.colore,coloreCustom:m.colore_custom||null,posizione:m.posizione||"",sortOrder:m.sort_order||0,calendarId:m.calendar_id||null})));
           setCalId(calendars[0]?.id||null);
+          alert("✅ Dati ricaricati!");
         }}
           title="Ricarica dati"
           style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.4)",
