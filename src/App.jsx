@@ -3199,7 +3199,7 @@ function ModelloCard({m, T, accent, onEdit, onDelete, onMoveUp, onMoveDown, onDr
       <div style={{flex:1,minWidth:0}}>
         <div style={{fontSize:22,fontWeight:800,color:T.text,overflow:"hidden",
           textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.titolo||"Senza nome"}</div>
-        <div style={{fontSize:22,color:T.sub,marginTop:1}}>{durata}</div>
+        <div style={{fontSize:18,color:T.sub,marginTop:1}}>{durata}</div>
       </div>
       {onMoveUp&&<button onClick={e=>{e.stopPropagation();onMoveUp();}}
         style={{background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:8,color:"#475569",
