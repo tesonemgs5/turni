@@ -176,6 +176,7 @@ export default function App({ session }){
   const [showDbModal, setShowDbModal] = useState(false);
   const [showModelloEditor, setShowModelloEditor] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [banner, setBanner] = useState(null);
   const [syncMode, setSyncMode] = useState(()=>localStorage.getItem('syncMode')||'on');
   const [dbRawData, setDbRawData] = useState(null);
   const [dbCalsCount, setDbCalsCount] = useState(0);
@@ -1167,7 +1168,8 @@ const isInitialized = useRef(false);
           setStore(s=>({...s,calendars,events}));
           setModelli((mods||[]).map(m=>({id:m.id,titolo:m.titolo,tempo:m.tempo,inizio:m.inizio||"",fine:m.fine||"",colore:m.colore,coloreCustom:m.colore_custom||null,posizione:m.posizione||"",sortOrder:m.sort_order||0,calendarId:m.calendar_id||null})));
           setCalId(calendars[0]?.id||null);
-          alert("✅ Dati ricaricati!");
+          setBanner("✅ Dati ricaricati!");
+          setTimeout(()=>setBanner(null),500);
         }}
           title="Ricarica dati"
           style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.4)",
@@ -2496,6 +2498,9 @@ const isInitialized = useRef(false);
           </button>
         ))}
       </div>
+      {banner&&<div style={{position:"fixed",bottom:20,left:"50%",transform:"translateX(-50%)",
+        background:"rgba(0,0,0,0.75)",color:"#fff",padding:"6px 16px",
+        borderRadius:20,fontSize:12,zIndex:9999,pointerEvents:"none"}}>{banner}</div>}
       {dayModal}
       {dbModal}
       {showModelForm&&(
