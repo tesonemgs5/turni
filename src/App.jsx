@@ -2405,7 +2405,7 @@ const isInitialized = useRef(false);
 
 // #region SEZIONE 15: DB MODAL + RENDER PRINCIPALE
 // ═══════════════════════════════════════════════════════════════
-  const dbModal = showDbModal && (
+  const dbModal = showDbModal && 
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:300,
       display:"flex",alignItems:"center",justifyContent:"center",padding:12}}
       onClick={()=>setShowDbModal(false)}>
@@ -3210,9 +3210,9 @@ function ModelloCard({m, T, accent, onEdit, onDelete, onMoveUp, onMoveDown, onDr
         <div style={{width:14,height:14,borderRadius:"50%",background:colore}}/>
       </div>
       <div style={{flex:1,minWidth:0}}>
-        <div style={{fontSize:21,fontWeight:800,color:T.text,overflow:"hidden",
+        <div style={{fontSize:18,fontWeight:800,color:T.text,overflow:"hidden",
           textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.titolo||"Senza nome"}</div>
-        <div style={{fontSize:13,color:T.sub,marginTop:1}}>{durata}</div>
+        <div style={{fontSize:14,color:T.sub,marginTop:1}}>{durata}</div>
       </div>
       {onMoveUp&&<button onClick={e=>{e.stopPropagation();onMoveUp();}}
         style={{background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:8,color:"#475569",
