@@ -159,7 +159,6 @@ export default function App({ session }){
   const [syncMsg,  setSyncMsg]  = useState("");
   const [backupsList, setBackupsList] = useState([]);
   const [showBackupsModal, setShowBackupsModal] = useState(false);
-  const [showLocalDataModal, setShowLocalDataModal] = useState(false);
   const [syncing,  setSyncing]  = useState(false);
   const [nhD,     setNhD]     = useState("");
   const [nhM,     setNhM]     = useState("");
@@ -1904,7 +1903,7 @@ const isInitialized = useRef(false);
             color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12,marginBottom:8}}>
           🔍 Visualizza Dati in Supabase
         </button>
-        <div style={{display:"flex",gap:8,marginBottom:8}}>
+        <div style={{display:"flex",gap:8}}>
           <button onClick={handleExportSupabase}
             style={{flex:1,background:"#16a34a",border:"none",borderRadius:10,
               color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
@@ -1916,57 +1915,7 @@ const isInitialized = useRef(false);
             📥 Importa su Supabase
           </button>
         </div>
-        <button onClick={()=>setShowLocalDataModal(true)}
-          style={{width:"100%",background:"#7c3aed",border:"none",borderRadius:10,
-            color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
-          📱 Visualizza Dati Locali (Telefono)
-        </button>
       </Sec>
-
-      {showLocalDataModal&&(()=>{
-        const cached = loadFromLocalStorage();
-        const nEvents = cached ? Object.values(cached.events||{}).reduce((sum,calMap)=>
-          sum + Object.values(calMap||{}).reduce((s2,arr)=>s2+(arr?.length||0), 0), 0) : 0;
-        const nCalendars = cached?.calendars?.length || 0;
-        const nModelli = cached?.modelli?.length || 0;
-        const ts = cached?.timestamp ? new Date(cached.timestamp).toLocaleString("it-IT") : "Mai";
-        return (
-          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:500,
-            display:"flex",alignItems:"flex-end"}}
-            onClick={e=>{if(e.target===e.currentTarget)setShowLocalDataModal(false);}}>
-            <div style={{background:T.surface,borderRadius:"18px 18px 0 0",width:"100%",
-              maxWidth:480,margin:"0 auto",padding:"16px"}}
-              onClick={e=>e.stopPropagation()}>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-                <div style={{fontSize:16,fontWeight:900,color:T.text}}>Dati salvati su questo dispositivo</div>
-                <button onClick={()=>setShowLocalDataModal(false)}
-                  style={{background:"none",border:"none",color:T.sub,fontSize:22,cursor:"pointer"}}>×</button>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:8,background:T.s2,borderRadius:10,padding:12}}>
-                <div style={{display:"flex",justifyContent:"space-between",fontSize:13}}>
-                  <span style={{color:T.sub}}>Eventi/turni salvati:</span>
-                  <span style={{fontWeight:800,color:T.text}}>{nEvents}</span>
-                </div>
-                <div style={{display:"flex",justifyContent:"space-between",fontSize:13}}>
-                  <span style={{color:T.sub}}>Calendari salvati:</span>
-                  <span style={{fontWeight:800,color:T.text}}>{nCalendars}</span>
-                </div>
-                <div style={{display:"flex",justifyContent:"space-between",fontSize:13}}>
-                  <span style={{color:T.sub}}>Modelli salvati:</span>
-                  <span style={{fontWeight:800,color:T.text}}>{nModelli}</span>
-                </div>
-                <div style={{display:"flex",justifyContent:"space-between",fontSize:13}}>
-                  <span style={{color:T.sub}}>Ultimo salvataggio:</span>
-                  <span style={{fontWeight:800,color:T.text}}>{ts}</span>
-                </div>
-              </div>
-              <div style={{fontSize:11,color:T.sub,marginTop:10,textAlign:"center"}}>
-                Questa è solo una cache locale di sicurezza. I dati reali e definitivi sono su Supabase.
-              </div>
-            </div>
-          </div>
-        );
-      })()}
 
       {showBackupsModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:500,
