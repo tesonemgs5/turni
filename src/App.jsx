@@ -2561,9 +2561,9 @@ const isInitialized = useRef(false);
                           <div style={{width:14,height:14,borderRadius:"50%",background:c}}/>
                         </div>
                         <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:14,fontWeight:800,color:T.text,overflow:"hidden",
+                          <div style={{fontSize:18,fontWeight:800,color:T.text,overflow:"hidden",
                             textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.titolo||"Senza nome"}</div>
-                          <div style={{fontSize:12,color:T.sub,marginTop:1}}>{durata}</div>
+                          <div style={{fontSize:16,color:T.sub,marginTop:1}}>{durata}</div>
                         </div>
                         <span style={{color:T.sub,fontSize:14}}>›</span>
                       </div>

@@ -19,10 +19,6 @@ import subprocess
 # (lascia vuoto "" se non serve rinominare)
 FILE_OUTPUT  = "App_updated.jsx"   # file creato dallo script
 FILE_FINALE  = "App.jsx"           # nome finale che deve avere
-FILE_BACKUP  = "App_backup.jsx"    # backup del file originale
-
-# Messaggio commit git (puoi cambiarlo qui)
-GIT_COMMIT_MSG = "Aggiornamento automatico via script"
 
 # ═══════════════════════════════════════════════════════════════
 
@@ -74,7 +70,20 @@ def esegui_script(nome_script):
     separatore()
     return result.returncode == 0
 
-def chiedi_conferma_finale():
+def chiedi_messaggio_commit():
+    """Chiede all'utente il messaggio di commit da usare"""
+    print()
+    separatore()
+    print(" ✏️  MESSAGGIO COMMIT")
+    separatore()
+    print()
+    while True:
+        msg = input("Scrivi il messaggio di commit: ").strip()
+        if msg:
+            return msg
+        print("  ❌ Il messaggio non può essere vuoto, riprova.")
+
+def chiedi_conferma_finale(commit_msg):
     """Chiede se procedere con rename e git"""
     print()
     separatore()
@@ -84,13 +93,12 @@ def chiedi_conferma_finale():
     print("  Dopo aver premuto S verranno eseguite queste operazioni:")
     print()
     if FILE_OUTPUT and os.path.exists(FILE_OUTPUT):
-        print(f"  1. Rename:  {FILE_FINALE}  →  {FILE_BACKUP}")
-        print(f"  2. Rename:  {FILE_OUTPUT}  →  {FILE_FINALE}")
+        print(f"  1. Rename:  {FILE_OUTPUT}  →  {FILE_FINALE}  (sovrascrive il file attuale, nessun backup locale)")
     else:
         print(f"  (nessun rename — {FILE_OUTPUT} non trovato)")
-    print(f"  3. git add .")
-    print(f"  4. git commit -m \"{GIT_COMMIT_MSG}\"")
-    print(f"  5. git push")
+    print(f"  2. git add .")
+    print(f"  3. git commit -m \"{commit_msg}\"")
+    print(f"  4. git push")
     print()
     
     while True:
@@ -104,27 +112,22 @@ def chiedi_conferma_finale():
             print("  ❌ Scrivi S o N")
 
 def fai_rename():
-    """Rinomina i file"""
+    """Rinomina il file di output nel file finale, senza backup locale
+    (il backup è già garantito da Git/Vercel)."""
     if not FILE_OUTPUT or not os.path.exists(FILE_OUTPUT):
         print(f"  ⚠️  {FILE_OUTPUT} non trovato, skip rename.")
         return True
     
     print("\n📁 RENAME FILE:")
     
-    # Rinomina App.jsx → App_backup.jsx (sovrascrive se esiste)
     if os.path.exists(FILE_FINALE):
-        if os.path.exists(FILE_BACKUP):
-            os.remove(FILE_BACKUP)
-        os.rename(FILE_FINALE, FILE_BACKUP)
-        print(f"  ✓ {FILE_FINALE} → {FILE_BACKUP}")
-    
-    # Rinomina App_updated.jsx → App.jsx
+        os.remove(FILE_FINALE)
     os.rename(FILE_OUTPUT, FILE_FINALE)
     print(f"  ✓ {FILE_OUTPUT} → {FILE_FINALE}")
     
     return True
 
-def fai_git():
+def fai_git(commit_msg):
     """Esegue git add, commit, push con gestione errori"""
     print("\n🔧 GIT:")
     
@@ -132,7 +135,7 @@ def fai_git():
     if not ok:
         print("\n  ⚠️  git add fallito. Continuo comunque...")
     
-    ok = run_git(f'git commit -m "{GIT_COMMIT_MSG}"', f'git commit -m "{GIT_COMMIT_MSG}"')
+    ok = run_git(f'git commit -m "{commit_msg}"', f'git commit -m "{commit_msg}"')
     if not ok:
         print("\n  ⚠️  git commit fallito (forse niente da committare?)")
         return False
@@ -173,19 +176,22 @@ def main():
             print("❌ Operazioni annullate.")
             sys.exit(0)
     
-    # STEP 3: conferma rename + git
+    # STEP 3: chiedi il messaggio di commit
+    commit_msg = chiedi_messaggio_commit()
+    
+    # STEP 4: conferma rename + git
     separatore()
-    print(" STEP 3: Conferma operazioni finali")
+    print(" STEP 4: Conferma operazioni finali")
     separatore()
     
-    if not chiedi_conferma_finale():
+    if not chiedi_conferma_finale(commit_msg):
         sys.exit(0)
     
-    # STEP 4: rename
+    # STEP 5: rename
     fai_rename()
     
-    # STEP 5: git
-    fai_git()
+    # STEP 6: git
+    fai_git(commit_msg)
     
     # FINE
     print()
@@ -196,8 +202,7 @@ def main():
     print(f"  ✓ Script eseguito:  {nome_script}")
     if os.path.exists(FILE_FINALE):
         print(f"  ✓ File aggiornato:  {FILE_FINALE}")
-    if os.path.exists(FILE_BACKUP):
-        print(f"  ✓ Backup:           {FILE_BACKUP}")
+    print(f"  ✓ Commit:           \"{commit_msg}\"")
     print(f"  ✓ Git push:         fatto")
     print()
 
