@@ -833,7 +833,26 @@ const isInitialized = useRef(false);
       return null;
     }
 
+    // Un turno e' "libero" se e' h24/senza orario e NON e' una delle
+    // 4 intestazioni di fascia (MATTINA/POMERIGGIO/3° TURNO/NOTTE).
+    // I turni liberi non vengono raggruppati né spinti in fondo:
+    // restano ordinati solo in base al sortOrder assoluto tra tutti
+    // i modelli, cosi' possono stare ovunque l'utente li sposti.
+    function isLibero(m){
+      return (m.tempo==="h24"||!m.inizio) && !isIntestatario(m);
+    }
+
     return [...modelli].sort((a,b)=>{
+      const aLib=isLibero(a);
+      const bLib=isLibero(b);
+
+      // Due turni liberi tra loro: solo sortOrder assoluto
+      if(aLib&&bLib) return (a.sortOrder||0)-(b.sortOrder||0);
+
+      // Un libero contro uno con orario/intestazione: decide il sortOrder
+      // assoluto rispetto a TUTTI i modelli, non il raggruppamento per fascia.
+      if(aLib!==bLib) return (a.sortOrder||0)-(b.sortOrder||0);
+
       const gA=getGruppoKey(a);
       const gB=getGruppoKey(b);
 
@@ -878,12 +897,16 @@ const isInitialized = useRef(false);
     if(idx===-1) return;
     const swapIdx=dir==="up"?idx-1:idx+1;
     if(swapIdx<0||swapIdx>=sorted.length) return;
-    // ── Blocco fascia: si applica solo tra due turni con orario impostato.
-    // I turni H24/senza orario ("liberi") possono sempre essere spostati.
-    const fasciaCorrente = getFasciaModello(sorted[idx]);
-    const fasciaTarget = getFasciaModello(sorted[swapIdx]);
-    const entrambiConOrario = fasciaCorrente!=="libero" && fasciaTarget!=="libero";
-    if(entrambiConOrario && fasciaCorrente!==fasciaTarget) return; // bloccato
+    // ── Blocco fascia: si applica solo tra due turni con orario impostato
+    // e che NON sono turni "liberi" (h24/senza orario). Un turno libero
+    // può sempre essere scambiato con qualsiasi altro turno della lista.
+    const liberoCorrente = sorted[idx].tempo==="h24"||!sorted[idx].inizio;
+    const liberoTarget = sorted[swapIdx].tempo==="h24"||!sorted[swapIdx].inizio;
+    if(!liberoCorrente && !liberoTarget){
+      const fasciaCorrente = getFasciaModello(sorted[idx]);
+      const fasciaTarget = getFasciaModello(sorted[swapIdx]);
+      if(fasciaCorrente!==fasciaTarget) return; // bloccato
+    }
     const reordered=[...sorted];
     const [moved]=reordered.splice(idx,1);
     reordered.splice(swapIdx,0,moved);
@@ -1469,7 +1492,7 @@ const isInitialized = useRef(false);
         return (
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px 8px"}}>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <div style={{fontSize:22,fontWeight:900,fontFamily:"Georgia,serif",color:T.text}}>Modelli</div>
+              <div style={{fontSize:24,fontWeight:900,fontFamily:"Georgia,serif",color:T.text}}>Modelli</div>
               {/* Badge nome calendario con colore e possibilità di cambio colore */}
               <CalBadge calId={calId} calAttivo={calAttivo} coloreCal={coloreCal}
                 testoContrasto={testoContrasto} T={T} store={store} setStore={setStore}
