@@ -2742,6 +2742,7 @@ function CalBadge({ calId, calAttivo, coloreCal, testoContrasto, T, store, setSt
       </div>
     )}
     </div>
+    </div>
   );
 }
 
