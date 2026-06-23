@@ -886,10 +886,10 @@ const isInitialized = useRef(false);
     const [moved]=reordered.splice(idx,1);
     reordered.splice(swapIdx,0,moved);
     const withNewOrder=reordered.map((m,i)=>({...m,sortOrder:i*10}));
+    setModelli(withNewOrder); // aggiornamento UI immediato
     for(const m of withNewOrder){
-      await supabase.from("modelli").update({sort_order:m.sortOrder}).eq("id",m.id).eq("user_id",userId);
+      supabase.from("modelli").update({sort_order:m.sortOrder}).eq("id",m.id).eq("user_id",userId);
     }
-    setModelli(withNewOrder);
   }
 
   async function saveModello(data){
@@ -1278,10 +1278,10 @@ const isInitialized = useRef(false);
             –
           </button>
           <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:14,fontWeight:700,color:T.text,overflow:"hidden",
+            <div style={{fontSize:22,fontWeight:700,color:T.text,overflow:"hidden",
               textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.label}</div>
             {r.type==="conteggio_turni"&&(
-              <div style={{fontSize:11,color:T.sub}}>
+              <div style={{fontSize:17,color:T.sub}}>
                 {data.totale} turni
                 {data.totale>0&&(()=>{
                   const pct1=Math.round(((data.primo||0)/data.totale)*100);
@@ -1576,9 +1576,9 @@ const isInitialized = useRef(false);
                       const [moved]=reordered.splice(srcIdx,1);
                       reordered.splice(dstIdx,0,moved);
                       const withNewOrder=reordered.map((x,i)=>({...x,sortOrder:i*10}));
-                      setModelli(withNewOrder);
+                      setModelli(withNewOrder); // aggiornamento UI immediato
                       for(const x of withNewOrder){
-                        await supabase.from("modelli").update({sort_order:x.sortOrder}).eq("id",x.id).eq("user_id",userId);
+                        supabase.from("modelli").update({sort_order:x.sortOrder}).eq("id",x.id).eq("user_id",userId);
                       }
                       touchSrcId.current=null;touchTargetId.current=null;
                     }:null}
@@ -1594,9 +1594,9 @@ const isInitialized = useRef(false);
                       const [moved]=reordered.splice(srcIdx,1);
                       reordered.splice(dstIdx,0,moved);
                       const withNewOrder=reordered.map((x,i)=>({...x,sortOrder:i*10}));
-                      setModelli(withNewOrder);
+                      setModelli(withNewOrder); // aggiornamento UI immediato
                       for(const x of withNewOrder){
-                        await supabase.from("modelli").update({sort_order:x.sortOrder}).eq("id",x.id).eq("user_id",userId);
+                        supabase.from("modelli").update({sort_order:x.sortOrder}).eq("id",x.id).eq("user_id",userId);
                       }
                       dragSrcId.current=null;
                     }:null}/>
@@ -1905,7 +1905,7 @@ const isInitialized = useRef(false);
           background:T.s2,borderRadius:8,textAlign:"center",marginTop:8}}>{syncMsg}</div>}
       </SecCollapsible>
 
-      <Sec label="DATABASE CLOUD SUPABASE" T={T}>
+      <SecCollapsible label="DATABASE CLOUD SUPABASE" T={T}>
         <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
           Controlla lo stato dei dati memorizzati nel cloud Supabase.
         </div>
@@ -1931,7 +1931,7 @@ const isInitialized = useRef(false);
             color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
           📱 Visualizza Dati Locali (Telefono)
         </button>
-      </Sec>
+      </SecCollapsible>
 
       {showLocalDataModal&&(()=>{
         const cached = loadFromLocalStorage();
@@ -2547,7 +2547,7 @@ const isInitialized = useRef(false);
             )}
             {(()=>{
               const mainCalId4 = store.calendars.find(c=>c.isMain)?.id||null;
-              const modelliPicker = modelli.filter(m=>{
+              const modelliPicker = sortedModelli().filter(m=>{
                 const mcid = m.calendarId||mainCalId4;
                 return !calId || mcid===calId;
               });
@@ -2574,9 +2574,9 @@ const isInitialized = useRef(false);
                           <div style={{width:14,height:14,borderRadius:"50%",background:c}}/>
                         </div>
                         <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:16,fontWeight:800,color:T.text,overflow:"hidden",
+                          <div style={{fontSize:17,fontWeight:800,color:T.text,overflow:"hidden",
                             textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.titolo||"Senza nome"}</div>
-                          <div style={{fontSize:14,color:T.sub,marginTop:1}}>{durata}</div>
+                          <div style={{fontSize:16,color:T.sub,marginTop:1}}>{durata}</div>
                         </div>
                         <span style={{color:T.sub,fontSize:14}}>›</span>
                       </div>
@@ -3210,9 +3210,9 @@ function ModelloCard({m, T, accent, onEdit, onDelete, onMoveUp, onMoveDown, onDr
         <div style={{width:14,height:14,borderRadius:"50%",background:colore}}/>
       </div>
       <div style={{flex:1,minWidth:0}}>
-        <div style={{fontSize:19,fontWeight:800,color:T.text,overflow:"hidden",
+        <div style={{fontSize:17,fontWeight:800,color:T.text,overflow:"hidden",
           textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.titolo||"Senza nome"}</div>
-        <div style={{fontSize:14,color:T.sub,marginTop:1}}>{durata}</div>
+        <div style={{fontSize:16,color:T.sub,marginTop:1}}>{durata}</div>
       </div>
       {onMoveUp&&<button onClick={e=>{e.stopPropagation();onMoveUp();}}
         style={{background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:8,color:"#475569",
@@ -3325,8 +3325,8 @@ function RotazioneCard({r, T, accent, modelli, onOpen, onDelete}){
   return (
     <div style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}} onClick={onOpen}>
       <div style={{flex:1,minWidth:0}}>
-        <div style={{fontSize:14,fontWeight:800,color:T.text,marginBottom:2}}>{r.titolo||"Senza nome"}</div>
-        <div style={{fontSize:12,color:T.sub}}>{tipoLabel}{r.dataInizio?` · dal ${r.dataInizio}`:""}</div>
+        <div style={{fontSize:17,fontWeight:800,color:T.text,marginBottom:2}}>{r.titolo||"Senza nome"}</div>
+        <div style={{fontSize:16,color:T.sub}}>{tipoLabel}{r.dataInizio?` · dal ${r.dataInizio}`:""}</div>
         {modelloLav&&<div style={{fontSize:11,color:T.sub,marginTop:1}}>Modello: {modelloLav.titolo}</div>}
       </div>
       <button onClick={e=>{e.stopPropagation();if(window.confirm("Eliminare questa rotazione?"))onDelete();}}
