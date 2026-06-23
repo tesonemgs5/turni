@@ -781,23 +781,30 @@ const isInitialized = useRef(false);
   async function handleLogout(){ await supabase.auth.signOut(); }
 
   // ── MODELLI CRUD ─────────────────────────────────────────────
-  function sortedModelli(){
-    if(modelliSort==="manuale"){
-      return [...modelli].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
-    }
-    const toMins=t=>{
-      if(!t) return -1;
-      const[h,m]=t.split(":").map(Number);
-      return h*60+m;
-    };
+function sortedModelli(){
+  if(modelliSort==="manuale"){
+    return [...modelli].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
+  }
+  const toMins=t=>{
+    if(!t) return 99999;
+    const[h,m]=t.split(":").map(Number);
+    return h*60+m;
+  };
+  return [...modelli].sort((a,b)=>{
+    const mA = a.tempo==="h24"||!a.inizio ? 99999 : toMins(a.inizio);
+    const mB = b.tempo==="h24"||!b.inizio ? 99999 : toMins(b.inizio);
+    if(mA!==mB) return mA-mB;
+    return (a.sortOrder||0)-(b.sortOrder||0);
+  });
+}
     // Assegna a ogni modello H24 intestazione il suo orario di gruppo
-    const getGruppoMins=m=>{
-      if(m.titolo==="MATTINA")    return 6*60;      // 06:00
-      if(m.titolo==="POMERIGGIO") return 12*60;     // 12:00
-      if(m.titolo==="3° TURNO")   return 16*60+30;  // 16:30
-      if(m.titolo==="NOTTE")      return 23*60;     // 23:00
-      return null;
-    };
+    function getGruppoMins(m) {
+    if (m.titolo === "MATTINA") return 6 * 60; // 06:00
+    if (m.titolo === "POMERIGGIO") return 12 * 60; // 12:00
+    if (m.titolo === "3° TURNO") return 16 * 60 + 30; // 16:30
+    if (m.titolo === "NOTTE") return 23 * 60; // 23:00
+    return null;
+  }
     const getSortMins=m=>{
       if(m.tempo!=="h24"&&m.inizio) return toMins(m.inizio);
       const g=getGruppoMins(m);
