@@ -863,8 +863,9 @@ const isInitialized = useRef(false);
 
   // Restituisce la fascia oraria di un modello per il blocco dello spostamento
   function getFasciaModello(m){
-    if(m.tempo==="h24") return "h24";
-    if(!m.inizio) return "h24";
+    // Turni H24 o senza orario: nessun vincolo, possono essere spostati ovunque
+    if(m.tempo==="h24") return "libero";
+    if(!m.inizio) return "libero";
     const [h]=m.inizio.split(":").map(Number);
     if(h>=6&&h<12) return "mattina";
     if(h>=12&&h<16||(h===16&&parseInt((m.inizio.split(":")[1]||"0"))<30)) return "pomeriggio";
@@ -878,10 +879,12 @@ const isInitialized = useRef(false);
     if(idx===-1) return;
     const swapIdx=dir==="up"?idx-1:idx+1;
     if(swapIdx<0||swapIdx>=sorted.length) return;
-    // ── Blocco: non può sforare in una fascia oraria diversa ──
+    // ── Blocco fascia: si applica solo tra due turni con orario impostato.
+    // I turni H24/senza orario ("liberi") possono sempre essere spostati.
     const fasciaCorrente = getFasciaModello(sorted[idx]);
     const fasciaTarget = getFasciaModello(sorted[swapIdx]);
-    if(fasciaCorrente!==fasciaTarget) return; // bloccato
+    const entrambiConOrario = fasciaCorrente!=="libero" && fasciaTarget!=="libero";
+    if(entrambiConOrario && fasciaCorrente!==fasciaTarget) return; // bloccato
     const reordered=[...sorted];
     const [moved]=reordered.splice(idx,1);
     reordered.splice(swapIdx,0,moved);
