@@ -2406,7 +2406,7 @@ const isInitialized = useRef(false);
 
 // #region SEZIONE 15: DB MODAL + RENDER PRINCIPALE
 // ═══════════════════════════════════════════════════════════════
-  const dbModal = showDbModal && 
+  const dbModal = showDbModal && (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:300,
       display:"flex",alignItems:"center",justifyContent:"center",padding:12}}
       onClick={()=>setShowDbModal(false)}>
