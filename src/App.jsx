@@ -782,108 +782,86 @@ const isInitialized = useRef(false);
 
   // ── MODELLI CRUD ─────────────────────────────────────────────
 function sortedModelli(){
-  if(modelliSort==="manuale"){
-    return [...modelli].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
-  }
   const toMins=t=>{
     if(!t) return 99999;
     const[h,m]=t.split(":").map(Number);
     return h*60+m;
   };
-  return [...modelli].sort((a,b)=>{
-    const mA = a.tempo==="h24"||!a.inizio ? 99999 : toMins(a.inizio);
-    const mB = b.tempo==="h24"||!b.inizio ? 99999 : toMins(b.inizio);
-    if(mA!==mB) return mA-mB;
-    return (a.sortOrder||0)-(b.sortOrder||0);
-  });
-}
-    // Assegna a ogni modello H24 intestazione il suo orario di gruppo
-    function getGruppoMins(m) {
-    if (m.titolo === "MATTINA") return 6 * 60; // 06:00
-    if (m.titolo === "POMERIGGIO") return 12 * 60; // 12:00
-    if (m.titolo === "3° TURNO") return 16 * 60 + 30; // 16:30
-    if (m.titolo === "NOTTE") return 23 * 60; // 23:00
+
+  const INTESTAZIONI=["MATTINA","POMERIGGIO","3° TURNO","NOTTE"];
+
+  const GRUPPO_RANGES=[
+    {titolo:"MATTINA",    minStart:6*60,     minEnd:11*60+59},
+    {titolo:"POMERIGGIO", minStart:12*60,    minEnd:16*60+29},
+    {titolo:"3° TURNO",   minStart:16*60+30, minEnd:22*60+59},
+    {titolo:"NOTTE",      minStart:23*60,    minEnd:5*60+59},
+  ];
+
+  function getGruppoMins(m){
+    if(m.titolo==="MATTINA") return 6*60;
+    if(m.titolo==="POMERIGGIO") return 12*60;
+    if(m.titolo==="3° TURNO") return 16*60+30;
+    if(m.titolo==="NOTTE") return 23*60;
     return null;
   }
-    const getSortMins=m=>{
-      if(m.tempo!=="h24"&&m.inizio) return toMins(m.inizio);
-      const g=getGruppoMins(m);
-      if(g!==null) return g;
-      return 99999; // H24 senza gruppo → in fondo
-    };
-    const INTESTAZIONI=["MATTINA","POMERIGGIO","3° TURNO","NOTTE"];
 
-    // Ogni intestatario definisce l'inizio del proprio gruppo orario.
-    const GRUPPO_RANGES=[
-      {titolo:"MATTINA",    minStart:6*60,     minEnd:11*60+59},
-      {titolo:"POMERIGGIO", minStart:12*60,    minEnd:16*60+29},
-      {titolo:"3° TURNO",   minStart:16*60+30, minEnd:22*60+59},
-      {titolo:"NOTTE",      minStart:23*60,    minEnd:5*60+59}, // wrap mezzanotte
-    ];
+  function isIntestatario(m){
+    return INTESTAZIONI.includes(m.titolo)&&(m.tempo==="h24"||!m.inizio);
+  }
 
-    function isIntestatario(m){
-      return INTESTAZIONI.includes(m.titolo)&&(m.tempo==="h24"||!m.inizio);
-    }
-
-    function getGruppoKey(m){
-      if(isIntestatario(m)) return m.titolo;
-      if(!m.inizio||m.tempo==="h24") return null;
-      const[h,min]=m.inizio.split(":").map(Number);
-      const t=h*60+min;
-      for(const g of GRUPPO_RANGES){
-        if(g.minStart<=g.minEnd){
-          if(t>=g.minStart&&t<=g.minEnd) return g.titolo;
-        } else {
-          if(t>=g.minStart||t<=g.minEnd) return g.titolo;
-        }
+  function getGruppoKey(m){
+    if(isIntestatario(m)) return m.titolo;
+    if(!m.inizio||m.tempo==="h24") return null;
+    const[h,min]=m.inizio.split(":").map(Number);
+    const t=h*60+min;
+    for(const g of GRUPPO_RANGES){
+      if(g.minStart<=g.minEnd){
+        if(t>=g.minStart&&t<=g.minEnd) return g.titolo;
+      } else {
+        if(t>=g.minStart||t<=g.minEnd) return g.titolo;
       }
-      return null;
     }
+    return null;
+  }
 
-    // Un turno e' "libero" se e' h24/senza orario e NON e' una delle
-    // 4 intestazioni di fascia (MATTINA/POMERIGGIO/3° TURNO/NOTTE).
-    // I turni liberi non vengono raggruppati né spinti in fondo:
-    // restano ordinati solo in base al sortOrder assoluto tra tutti
-    // i modelli, cosi' possono stare ovunque l'utente li sposti.
-    function isLibero(m){
-      return (m.tempo==="h24"||!m.inizio) && !isIntestatario(m);
-    }
+  const getSortMins=m=>{
+    if(m.tempo!=="h24"&&m.inizio) return toMins(m.inizio);
+    const g=getGruppoMins(m);
+    if(g!==null) return g;
+    return 99999;
+  };
 
-    return [...modelli].sort((a,b)=>{
-      const aLib=isLibero(a);
-      const bLib=isLibero(b);
+  function isLibero(m){
+    return (m.tempo==="h24"||!m.inizio)&&!isIntestatario(m);
+  }
 
-      // Due turni liberi tra loro: solo sortOrder assoluto
-      if(aLib&&bLib) return (a.sortOrder||0)-(b.sortOrder||0);
-
-      // Un libero contro uno con orario/intestazione: decide il sortOrder
-      // assoluto rispetto a TUTTI i modelli, non il raggruppamento per fascia.
-      if(aLib!==bLib) return (a.sortOrder||0)-(b.sortOrder||0);
-
-      const gA=getGruppoKey(a);
-      const gB=getGruppoKey(b);
-
-      if(gA&&gB&&gA===gB){
-        const aInt=isIntestatario(a);
-        const bInt=isIntestatario(b);
-        if(aInt&&!bInt) return -1;
-        if(!aInt&&bInt) return 1;
-        const minsA=getSortMins(a);
-        const minsB=getSortMins(b);
-        if(minsA!==minsB) return minsA-minsB;
-        return (a.sortOrder||0)-(b.sortOrder||0);
-      }
-
-      const minsA=getSortMins(a);
-      const minsB=getSortMins(b);
-      if(minsA!==minsB) return minsA-minsB;
-
+  return [...modelli].sort((a,b)=>{
+    const aLib=isLibero(a);
+    const bLib=isLibero(b);
+    if(aLib&&bLib) return (a.sortOrder||0)-(b.sortOrder||0);
+    if(aLib!==bLib) return (a.sortOrder||0)-(b.sortOrder||0);
+    const gA=getGruppoKey(a);
+    const gB=getGruppoKey(b);
+    if(gA&&gB&&gA===gB){
       const aInt=isIntestatario(a);
       const bInt=isIntestatario(b);
       if(aInt&&!bInt) return -1;
       if(!aInt&&bInt) return 1;
+      const minsA=getSortMins(a);
+      const minsB=getSortMins(b);
+      if(minsA!==minsB) return minsA-minsB;
       return (a.sortOrder||0)-(b.sortOrder||0);
-    });
+    }
+    const minsA=getSortMins(a);
+    const minsB=getSortMins(b);
+    if(minsA!==minsB) return minsA-minsB;
+    const aInt=isIntestatario(a);
+    const bInt=isIntestatario(b);
+    if(aInt&&!bInt) return -1;
+    if(!aInt&&bInt) return 1;
+    return (a.sortOrder||0)-(b.sortOrder||0);
+  });
+}
 
   // Restituisce la fascia oraria di un modello per il blocco dello spostamento
   function getFasciaModello(m){
@@ -2690,60 +2668,59 @@ function CalBadge({ calId, calAttivo, coloreCal, testoContrasto, T, store, setSt
           <span style={{fontSize:13,fontWeight:800,color:testoContrasto}}>{calAttivo.name}</span>
           <span style={{fontSize:10,color:testoContrasto,opacity:0.7}}>🎨</span>
         </div>
-      {showCalPal&&(
-        <div style={{position:"absolute",top:36,left:0,background:T.surface,
-          border:`1px solid ${T.border}`,borderRadius:12,padding:10,zIndex:500,
-          boxShadow:"0 8px 32px rgba(0,0,0,0.25)"}}
-          onClick={e=>e.stopPropagation()}>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:6}}>
-            {["#ef4444","#f97316","#f59e0b","#eab308","#84cc16","#22c55e",
-              "#10b981","#14b8a6","#06b6d4","#3b82f6","#6366f1","#8b5cf6",
-              "#a855f7","#ec4899","#f43f5e","#64748b","#0f172a","#1e40af"].map(p=>(
-              <div key={p} onClick={()=>{
-                const newCals=JSON.parse(JSON.stringify(store.calendars));
-                const idx=newCals.findIndex(c=>c.id===calId);
-                if(idx>-1){ newCals[idx].color=p; setStore(s=>({...s,calendars:newCals})); updateCalendar(calId,{color:p}); }
-                setShowCalPal(false);
-              }} style={{width:24,height:24,borderRadius:"50%",background:p,cursor:"pointer",
-                outline:coloreCal===p?"3px solid #64748b":"none",outlineOffset:2}}/>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-    {/* Freccia cambio calendario */}
-    {store&&store.calendars&&store.calendars.length>1&&(
-      <div style={{position:"relative"}}>
-        <button onClick={()=>{ setShowCalSwitch(s=>!s); setShowCalPal(false); }}
-          style={{background:coloreCal,border:"none",borderRadius:"50%",
-            width:24,height:24,cursor:"pointer",display:"flex",alignItems:"center",
-            justifyContent:"center",color:testoContrasto,fontSize:14,fontWeight:900}}>
-          ▾
-        </button>
-        {showCalSwitch&&(
-          <div style={{position:"absolute",top:28,left:0,background:T.surface,
-            border:`1px solid ${T.border}`,borderRadius:12,padding:6,zIndex:500,
-            boxShadow:"0 8px 32px rgba(0,0,0,0.25)",minWidth:140}}
+        {showCalPal&&(
+          <div style={{position:"absolute",top:36,left:0,background:T.surface,
+            border:`1px solid ${T.border}`,borderRadius:12,padding:10,zIndex:500,
+            boxShadow:"0 8px 32px rgba(0,0,0,0.25)"}}
             onClick={e=>e.stopPropagation()}>
-            {(store.calendars||[]).map(c=>(
-              <div key={c.id} onClick={()=>{ setCalId&&setCalId(c.id); setShowCalSwitch(false); }}
-                style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",
-                  borderRadius:8,cursor:"pointer",
-                  background:c.id===calId?accent+"18":"transparent"}}>
-                <div style={{width:10,height:10,borderRadius:"50%",background:c.color}}/>
-                <span style={{fontSize:13,fontWeight:c.id===calId?700:400,
-                  color:c.id===calId?accent:T.text}}>{c.name}</span>
-                {c.id===calId&&<span style={{color:accent,fontSize:11}}>✓</span>}
-              </div>
-            ))}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:6}}>
+              {["#ef4444","#f97316","#f59e0b","#eab308","#84cc16","#22c55e",
+                "#10b981","#14b8a6","#06b6d4","#3b82f6","#6366f1","#8b5cf6",
+                "#a855f7","#ec4899","#f43f5e","#64748b","#0f172a","#1e40af"].map(p=>(
+                <div key={p} onClick={()=>{
+                  const newCals=JSON.parse(JSON.stringify(store.calendars));
+                  const idx=newCals.findIndex(c=>c.id===calId);
+                  if(idx>-1){ newCals[idx].color=p; setStore(s=>({...s,calendars:newCals})); updateCalendar(calId,{color:p}); }
+                  setShowCalPal(false);
+                }} style={{width:24,height:24,borderRadius:"50%",background:p,cursor:"pointer",
+                  outline:coloreCal===p?"3px solid #64748b":"none",outlineOffset:2}}/>
+              ))}
+            </div>
           </div>
         )}
       </div>
-    )}
-    </div>
+      {store&&store.calendars&&store.calendars.length>1&&(
+        <div style={{position:"relative"}}>
+          <button onClick={()=>{ setShowCalSwitch(s=>!s); setShowCalPal(false); }}
+            style={{background:coloreCal,border:"none",borderRadius:"50%",
+              width:24,height:24,cursor:"pointer",display:"flex",alignItems:"center",
+              justifyContent:"center",color:testoContrasto,fontSize:14,fontWeight:900}}>
+            ▾
+          </button>
+          {showCalSwitch&&(
+            <div style={{position:"absolute",top:28,left:0,background:T.surface,
+              border:`1px solid ${T.border}`,borderRadius:12,padding:6,zIndex:500,
+              boxShadow:"0 8px 32px rgba(0,0,0,0.25)",minWidth:140}}
+              onClick={e=>e.stopPropagation()}>
+              {(store.calendars||[]).map(c=>(
+                <div key={c.id} onClick={()=>{ setCalId&&setCalId(c.id); setShowCalSwitch(false); }}
+                  style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",
+                    borderRadius:8,cursor:"pointer",
+                    background:c.id===calId?accent+"18":"transparent"}}>
+                  <div style={{width:10,height:10,borderRadius:"50%",background:c.color}}/>
+                  <span style={{fontSize:13,fontWeight:c.id===calId?700:400,
+                    color:c.id===calId?accent:T.text}}>{c.name}</span>
+                  {c.id===calId&&<span style={{color:accent,fontSize:11}}>✓</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
+
 
 // ── SMART TIME INPUT ──────────────────────────────────────────
 // Sovrascrive HH quando si inizia a digitare, avanza auto a MM
