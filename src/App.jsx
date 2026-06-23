@@ -790,17 +790,13 @@ function sortedModelli(){
   return [...modelli].sort((a,b)=>{
     const aHasTime = a.tempo!=="h24" && !!a.inizio;
     const bHasTime = b.tempo!=="h24" && !!b.inizio;
-    // Con orario prima, senza orario/H24 dopo
-    if(aHasTime && !bHasTime) return -1;
-    if(!aHasTime && bHasTime) return 1;
-    // Entrambi con orario: ordina per orario
+    // Se entrambi hanno orario, ordina per orario cronologico
     if(aHasTime && bHasTime){
       const mA=toMins(a.inizio);
       const mB=toMins(b.inizio);
       if(mA!==mB) return mA-mB;
-      return (a.sortOrder||0)-(b.sortOrder||0);
     }
-    // Entrambi senza orario/H24: ordina per sortOrder
+    // In tutti gli altri casi (liberi vs liberi, libero vs con orario) usa sortOrder
     return (a.sortOrder||0)-(b.sortOrder||0);
   });
 }
