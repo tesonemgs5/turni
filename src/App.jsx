@@ -1199,7 +1199,7 @@ const isInitialized = useRef(false);
           // Reload REALE della pagina (non solo re-fetch dati): forza il
           // browser a richiedere di nuovo tutti i file invece di servirli
           // dalla cache locale del telefono/browser.
-          window.location.reload(true);
+          window.location.href = window.location.href.split('?')[0] + '?v=' + Date.now();
         }}
           title="Svuota cache e ricarica tutto"
           style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.4)",
