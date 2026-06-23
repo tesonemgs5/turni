@@ -787,20 +787,29 @@ function sortedModelli(){
     const[h,m]=t.split(":").map(Number);
     return h*60+m;
   };
-  return [...modelli].sort((a,b)=>{
-    const aHasTime = a.tempo!=="h24" && !!a.inizio;
-    const bHasTime = b.tempo!=="h24" && !!b.inizio;
-    // Con orario sempre prima degli H24/senza orario
-    if(aHasTime && !bHasTime) return -1;
-    if(!aHasTime && bHasTime) return 1;
-    // Entrambi con orario: ordina per orario cronologico
-    if(aHasTime && bHasTime){
-      const mA=toMins(a.inizio);
-      const mB=toMins(b.inizio);
-      if(mA!==mB) return mA-mB;
-      return (a.sortOrder||0)-(b.sortOrder||0);
+  // I 4 modelli intestazione H24 speciali hanno una posizione fissa
+  const INTESTAZIONI={
+    "NOTTE":     -1,   // prima di 00:00
+    "MATTINA":   6*60-1,   // prima di 06:00
+    "POMERIGGIO":12*60-1,  // prima di 12:00
+    "3° TURNO":  16*60-1,  // prima di 16:00
+  };
+  function getSortValue(m){
+    // Modello intestazione H24 speciale
+    if((m.tempo==="h24"||!m.inizio) && INTESTAZIONI.hasOwnProperty(m.titolo)){
+      return INTESTAZIONI[m.titolo];
     }
-    // Entrambi H24/senza orario: sortOrder manuale
+    // Modello con orario
+    if(m.tempo!=="h24" && m.inizio){
+      return toMins(m.inizio);
+    }
+    // H24/senza orario generico → in fondo
+    return 99999;
+  }
+  return [...modelli].sort((a,b)=>{
+    const vA=getSortValue(a);
+    const vB=getSortValue(b);
+    if(vA!==vB) return vA-vB;
     return (a.sortOrder||0)-(b.sortOrder||0);
   });
 }
