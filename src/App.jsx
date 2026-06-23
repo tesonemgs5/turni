@@ -293,7 +293,6 @@ const isInitialized = useRef(false);
         } catch(statErr) { console.warn("Stats error:", statErr); }
 
         setStore({ calendars, events, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings });
-        setStore({ calendars, events, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings });
         setCalId(calendars[0]?.id||null);
         saveToLocalStorage(events, calendars, []);
 
@@ -1354,8 +1353,7 @@ const isInitialized = useRef(false);
 
       {/* Pannello aggiungi report */}
       {(()=>{
-        const [showAdd, setShowAdd] = (typeof useState !== "undefined" ? [false, ()=>{}] : [false, ()=>{}]);
-        // Usiamo openReportConfig==='__add__' come flag per mostrare il pannello aggiungi
+        // openReportConfig==='__add__' funge da flag per mostrare il pannello aggiungi
         const isAddOpen = openReportConfig==='__add__';
         return (
           <div style={{margin:"16px 12px 0"}}>
@@ -2988,11 +2986,6 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, onR
             <div style={{width:`${pct}%`,height:"100%",background:accent,borderRadius:3,transition:"width 0.3s"}}/>
           </div>
         )}
-        {(()=>{
-          const [openFascia, setOpenFascia] = [null, ()=>{}];
-          // Usiamo un ref tramite dataset per gestire l'espansione senza useState annidato
-          return null;
-        })()}
         <FasceExpand data={data} pct1={pct1} pct2={pct2} T={T} modelli={modelli} accent={accent}/>
       </div>
 
