@@ -783,82 +783,24 @@ const isInitialized = useRef(false);
   // ── MODELLI CRUD ─────────────────────────────────────────────
 function sortedModelli(){
   const toMins=t=>{
-    if(!t) return 99999;
+    if(!t) return null;
     const[h,m]=t.split(":").map(Number);
     return h*60+m;
   };
-
-  const INTESTAZIONI=["MATTINA","POMERIGGIO","3° TURNO","NOTTE"];
-
-  const GRUPPO_RANGES=[
-    {titolo:"MATTINA",    minStart:6*60,     minEnd:11*60+59},
-    {titolo:"POMERIGGIO", minStart:12*60,    minEnd:16*60+29},
-    {titolo:"3° TURNO",   minStart:16*60+30, minEnd:22*60+59},
-    {titolo:"NOTTE",      minStart:23*60,    minEnd:5*60+59},
-  ];
-
-  function getGruppoMins(m){
-    if(m.titolo==="MATTINA") return 6*60;
-    if(m.titolo==="POMERIGGIO") return 12*60;
-    if(m.titolo==="3° TURNO") return 16*60+30;
-    if(m.titolo==="NOTTE") return 23*60;
-    return null;
-  }
-
-  function isIntestatario(m){
-    return INTESTAZIONI.includes(m.titolo)&&(m.tempo==="h24"||!m.inizio);
-  }
-
-  function getGruppoKey(m){
-    if(isIntestatario(m)) return m.titolo;
-    if(!m.inizio||m.tempo==="h24") return null;
-    const[h,min]=m.inizio.split(":").map(Number);
-    const t=h*60+min;
-    for(const g of GRUPPO_RANGES){
-      if(g.minStart<=g.minEnd){
-        if(t>=g.minStart&&t<=g.minEnd) return g.titolo;
-      } else {
-        if(t>=g.minStart||t<=g.minEnd) return g.titolo;
-      }
-    }
-    return null;
-  }
-
-  const getSortMins=m=>{
-    if(m.tempo!=="h24"&&m.inizio) return toMins(m.inizio);
-    const g=getGruppoMins(m);
-    if(g!==null) return g;
-    return 99999;
-  };
-
-  function isLibero(m){
-    return (m.tempo==="h24"||!m.inizio)&&!isIntestatario(m);
-  }
-
   return [...modelli].sort((a,b)=>{
-    const aLib=isLibero(a);
-    const bLib=isLibero(b);
-    if(aLib&&bLib) return (a.sortOrder||0)-(b.sortOrder||0);
-    if(aLib!==bLib) return (a.sortOrder||0)-(b.sortOrder||0);
-    const gA=getGruppoKey(a);
-    const gB=getGruppoKey(b);
-    if(gA&&gB&&gA===gB){
-      const aInt=isIntestatario(a);
-      const bInt=isIntestatario(b);
-      if(aInt&&!bInt) return -1;
-      if(!aInt&&bInt) return 1;
-      const minsA=getSortMins(a);
-      const minsB=getSortMins(b);
-      if(minsA!==minsB) return minsA-minsB;
+    const aHasTime = a.tempo!=="h24" && !!a.inizio;
+    const bHasTime = b.tempo!=="h24" && !!b.inizio;
+    // Con orario prima, senza orario/H24 dopo
+    if(aHasTime && !bHasTime) return -1;
+    if(!aHasTime && bHasTime) return 1;
+    // Entrambi con orario: ordina per orario
+    if(aHasTime && bHasTime){
+      const mA=toMins(a.inizio);
+      const mB=toMins(b.inizio);
+      if(mA!==mB) return mA-mB;
       return (a.sortOrder||0)-(b.sortOrder||0);
     }
-    const minsA=getSortMins(a);
-    const minsB=getSortMins(b);
-    if(minsA!==minsB) return minsA-minsB;
-    const aInt=isIntestatario(a);
-    const bInt=isIntestatario(b);
-    if(aInt&&!bInt) return -1;
-    if(!aInt&&bInt) return 1;
+    // Entrambi senza orario/H24: ordina per sortOrder
     return (a.sortOrder||0)-(b.sortOrder||0);
   });
 }
