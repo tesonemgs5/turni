@@ -884,7 +884,6 @@ function sortedModelli(){
       if(!aInt&&bInt) return 1;
       return (a.sortOrder||0)-(b.sortOrder||0);
     });
-  }
 
   // Restituisce la fascia oraria di un modello per il blocco dello spostamento
   function getFasciaModello(m){
