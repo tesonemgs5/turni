@@ -466,11 +466,81 @@ const isInitialized = useRef(false);
       note: data.note||"", modelloId: data.modello_id||null,
       collega: data.collega||null, auto: data.auto||"",
     };
+
+    // ── EVENTO FIGLIO PROTRAZIONE ─────────────────────────────
+    // Se l'utente ha inserito una protrazione (a pagamento o a recupero),
+    // crea un evento figlio separato collegato tramite parentId.
+    let evtFiglio = null;
+    const tipoProtrazione = form.straordinarioTipo; // "pagamento" | "recupero" | null
+    const oraFineProtrazione = form.protrazioneOraFine || "";
+
+    if(tipoProtrazione && oraFineProtrazione && tInFinal){
+      // Calcola minuti di eccedenza rispetto alla fine standard del turno
+      const oraInizioProtrazione = tOutFinal || calcFine6h15(tInFinal);
+      const calcMinsStr = (t1, t2) => {
+        if(!t1||!t2) return 0;
+        const [h1,m1]=t1.split(":").map(Number);
+        const [h2,m2]=t2.split(":").map(Number);
+        let d=(h2*60+m2)-(h1*60+m1);
+        if(d<0) d+=24*60;
+        return d;
+      };
+      const minsEccedenza = calcMinsStr(oraInizioProtrazione, oraFineProtrazione);
+      if(minsEccedenza > 0){
+        const hh = Math.floor(minsEccedenza/60);
+        const mm = minsEccedenza%60;
+        const durLabel = (hh>0?hh+"h":"") + (mm>0?" "+mm+"m":"").trim();
+        const labelFiglio = tipoProtrazione==="pagamento"
+          ? "PROTRAZIONE A PAGAMENTO"
+          : "PROTRAZIONE A RECUPERO";
+        const colorFiglio = tipoProtrazione==="pagamento" ? "#8b5cf6" : "#64748b";
+        const noteFiglio = "+" + durLabel;
+
+        const { data: dbFiglio } = await supabase.from("events").insert({
+          user_id: userId,
+          calendar_id: calId,
+          date_key: dayKey,
+          label: labelFiglio,
+          color: colorFiglio,
+          all_day: false,
+          time_in: oraInizioProtrazione,
+          time_out: oraFineProtrazione,
+          place: "",
+          map_url: "",
+          note: noteFiglio,
+          modello_id: null,
+          collega: null,
+          auto: tipoProtrazione==="pagamento" ? ":PAG" : ":REC",
+          parent_id: data.id,
+        }).select().maybeSingle();
+
+        if(dbFiglio){
+          evtFiglio = {
+            id: dbFiglio.id,
+            color: colorFiglio,
+            label: labelFiglio,
+            allDay: false,
+            tIn: oraInizioProtrazione,
+            tOut: oraFineProtrazione,
+            place: "",
+            map: "",
+            note: noteFiglio,
+            modelloId: null,
+            collega: null,
+            auto: tipoProtrazione==="pagamento" ? ":PAG" : ":REC",
+            parentId: data.id,
+          };
+        }
+      }
+    }
+    // ─────────────────────────────────────────────────────────
+
     setStore(prev=>{
       const ns = JSON.parse(JSON.stringify(prev));
       if(!ns.events[dayKey]) ns.events[dayKey]={};
       if(!ns.events[dayKey][calId]) ns.events[dayKey][calId]=[];
       ns.events[dayKey][calId].push(evt);
+      if(evtFiglio) ns.events[dayKey][calId].push(evtFiglio);
       saveToLocalStorage(ns.events, ns.calendars, modelli);
       if(syncMode==='on') saveToSheets(ns.events, ns.calendars);
       return ns;
