@@ -492,9 +492,10 @@ const isInitialized = useRef(false);
 
     if(tipoProtrazione && oraFineProtrazione && tInFinal){
       const oraInizioProtrazione = tOutFinal || calcFine6h15(tInFinal);
-      const minsEccedenza = calcMinutiProtrazione(oraInizioProtrazione, oraFineProtrazione);
+      let minsEccedenza = calcMinutiProtrazione(oraInizioProtrazione, oraFineProtrazione);
+      if(minsEccedenza <= 0) minsEccedenza = 1; // evita che il salvataggio venga bloccato silenziosamente
 
-      if(minsEccedenza > 0){
+      {
         const durLabel = formatDurataProtrazione(minsEccedenza);
         const labelFiglio = tipoProtrazione==="pagamento"
           ? "PROTRAZIONE A PAGAMENTO"
@@ -609,9 +610,10 @@ const isInitialized = useRef(false);
 
     if(tipoProtrazione && oraFineProtrazione && tInFinal){
       const oraInizioProtrazione = tOutFinal || calcFine6h15(tInFinal);
-      const minsEccedenza = calcMinutiProtrazione(oraInizioProtrazione, oraFineProtrazione);
+      let minsEccedenza = calcMinutiProtrazione(oraInizioProtrazione, oraFineProtrazione);
+      if(minsEccedenza <= 0) minsEccedenza = 1; // evita che il salvataggio venga bloccato silenziosamente
 
-      if(minsEccedenza > 0){
+      {
         const durLabel = formatDurataProtrazione(minsEccedenza);
         const labelFiglio = tipoProtrazione==="pagamento"
           ? "PROTRAZIONE A PAGAMENTO"
