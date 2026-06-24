@@ -520,7 +520,7 @@ const isInitialized = useRef(false);
           collega: null,
           auto: autoFiglio,
           parent_id: data.id,
-        }).select().maybeSingle();
+      }).select().maybeSingle();
 
         if(errFiglio){ console.log("Errore creazione evento figlio protrazione:", errFiglio); }
 
