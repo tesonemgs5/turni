@@ -491,7 +491,8 @@ const isInitialized = useRef(false);
       return (hh>0?hh+"h":"") + (mm>0?(hh>0?" ":"")+mm+"m":"") || "0m";
     }
 
-    if(tipoProtrazione && oraFineProtrazione && tInFinal){
+    console.log("protrazione check", {tipoProtrazione, oraFineProtrazione, tInFinal});
+if(tipoProtrazione && oraFineProtrazione && tInFinal){
       const oraInizioProtrazione = tOutFinal || calcFine6h15(tInFinal);
       let minsEccedenza = calcMinutiProtrazione(oraInizioProtrazione, oraFineProtrazione);
       if(minsEccedenza <= 0) minsEccedenza = 1; // evita che il salvataggio venga bloccato silenziosamente
