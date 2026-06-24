@@ -473,6 +473,7 @@ const isInitialized = useRef(false);
     // L'inizio della protrazione è l'uscita effettiva del turno (tOutFinal);
     // se manca, si usa la fine standard come fallback.
     let evtFiglio = null; // "pagamento" | "recupero" | null
+    const tipoProtrazione = form.straordinarioTipo;
     const oraFineProtrazione = form.protrazioneOraFine || "";
 
     function calcMinutiProtrazione(t1, t2){
