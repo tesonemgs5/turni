@@ -652,8 +652,6 @@ const isInitialized = useRef(false);
             };
           }
         }
-      } else if(figlioEsistente){
-        figlioDaRimuovereId = figlioEsistente.id;
       }
     } else if(figlioEsistente){
       figlioDaRimuovereId = figlioEsistente.id;
