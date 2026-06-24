@@ -250,6 +250,7 @@ const isInitialized = useRef(false);
             map: e.map_url||"", note: e.note||"",
             modelloId: e.modello_id||null, collega: e.collega||null,
             auto: e.auto||"", parentId: e.parent_id||null,
+            protPagFine: e.prot_pag_fine||"", protRecFine: e.prot_rec_fine||"",
           });
         });
 
@@ -457,6 +458,8 @@ const isInitialized = useRef(false);
       modello_id: form.modelloId||null,
       collega: (form.collega||"").toUpperCase(),
       auto: (form.auto||"").toUpperCase(),
+      prot_pag_fine: form.protPagFine||null,
+      prot_rec_fine: form.protRecFine||null,
     }).select().maybeSingle();
     if(error){ console.log(error); return; }
     const evt = {
@@ -465,6 +468,7 @@ const isInitialized = useRef(false);
       place: data.place||"", map: data.map_url||"",
       note: data.note||"", modelloId: data.modello_id||null,
       collega: data.collega||null, auto: data.auto||"",
+      protPagFine: data.prot_pag_fine||"", protRecFine: data.prot_rec_fine||"",
     };
 
     setStore(prev=>{
@@ -513,6 +517,8 @@ const isInitialized = useRef(false);
       modello_id: form.modelloId||null,
       collega: (form.collega||"").toUpperCase(),
       auto: (form.auto||"").toUpperCase(),
+      prot_pag_fine: form.protPagFine||null,
+      prot_rec_fine: form.protRecFine||null,
     }).eq("id", form.editId).eq("user_id", userId);
     if(error){ console.log(error); return; }
 
@@ -526,6 +532,7 @@ const isInitialized = useRef(false);
           place: (form.place||"").toUpperCase(), map: form.map||"",
           note: (form.note||"").toUpperCase(), modelloId: form.modelloId||null,
           collega: (form.collega||"").toUpperCase(), auto: (form.auto||"").toUpperCase(),
+          protPagFine: form.protPagFine||"", protRecFine: form.protRecFine||"",
         };
       }
       if(syncMode==='on' && sheetsUrl) saveToSheets(ns.events, ns.calendars);
@@ -2107,7 +2114,7 @@ function sortedModelli(){
               setForm({ editId:e.id, modelloId:null, shiftId:null, label:e.label,
                 colorOvr:e.color, dur:e.allDay?"allday":(e.tIn&&e.tOut&&e.tOut===calcFine6h15(e.tIn))?"fixed":"custom", tIn:e.tIn||"", tOut:e.tOut||"",
                 place:e.place||"", map:e.map||"", note:e.note||"", collega:e.collega||"", auto:e.auto||"",
-straordinarioTipo:null, protrazioneOraFine:"" });
+                protPagFine:e.protPagFine||"", protRecFine:e.protRecFine||"" });
             }}
             style={{background:e.color,borderRadius:10,padding:"10px 12px",marginBottom:8,cursor:"pointer",
               display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
@@ -2129,7 +2136,7 @@ straordinarioTipo:null, protrazioneOraFine:"" });
                 editId:e.id,modelloId:null,shiftId:null,label:e.label,colorOvr:e.color,
                 dur:e.allDay?"allday":(e.tIn&&e.tOut&&e.tOut===calcFine6h15(e.tIn))?"fixed":"custom",tIn:e.tIn||"",tOut:e.tOut||"",place:e.place||"",
                 map:e.map||"",note:e.note||"",collega:e.collega||"",auto:e.auto||"",
-straordinarioTipo:null,protrazioneOraFine:"",
+                protPagFine:e.protPagFine||"",protRecFine:e.protRecFine||"",
               });}}
               style={{background:"rgba(0,0,0,0.2)",border:"none",borderRadius:6,
                 color:"#fff",width:26,height:26,cursor:"pointer",fontSize:14,marginLeft:4,flexShrink:0}}>✏️</button>
@@ -2256,8 +2263,8 @@ straordinarioTipo:null,protrazioneOraFine:"",
                       if(d<0) d+=24*60;
                       return d>0?Math.floor(d/60)+"h"+(d%60>0?" "+d%60+"m":""):"";
                     }
-                    const durPag = calcDur(form.protrazioneOraFinePag||"");
-                    const durRec = calcDur(form.protrazioneOraFineRec||"");
+                    const durPag = calcDur(form.protPagFine||"");
+                    const durRec = calcDur(form.protRecFine||"");
                     return (
                       <div style={{marginTop:5,display:"flex",flexDirection:"column",gap:5}}>
                         <div>
@@ -2267,7 +2274,7 @@ straordinarioTipo:null,protrazioneOraFine:"",
                             PROTRAZIONE A PAGAMENTO
                           </div>
                           <div style={{display:"flex",alignItems:"center",gap:6}}>
-                            <SmartTimeInput value={form.protrazioneOraFinePag||""} onChange={v=>setForm(f=>({...f,protrazioneOraFinePag:v}))}
+                            <SmartTimeInput value={form.protPagFine||""} onChange={v=>setForm(f=>({...f,protPagFine:v}))}
                               style={{flex:1,background:T.surface,border:`1.5px solid #8b5cf6`,
                                 borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
                             <div style={{background:T.surface,border:"1.5px solid #8b5cf6",borderRadius:8,
@@ -2284,7 +2291,7 @@ straordinarioTipo:null,protrazioneOraFine:"",
                             PROTRAZIONE A RECUPERO
                           </div>
                           <div style={{display:"flex",alignItems:"center",gap:6}}>
-                            <SmartTimeInput value={form.protrazioneOraFineRec||""} onChange={v=>setForm(f=>({...f,protrazioneOraFineRec:v}))}
+                            <SmartTimeInput value={form.protRecFine||""} onChange={v=>setForm(f=>({...f,protRecFine:v}))}
                               style={{flex:1,background:T.surface,border:`1.5px solid #64748b`,
                                 borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
                             <div style={{background:T.surface,border:"1.5px solid #64748b",borderRadius:8,
