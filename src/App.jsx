@@ -699,6 +699,7 @@ if(tipoProtrazione && oraFineProtrazione && tInFinal){
       if(syncMode==='on' && sheetsUrl) saveToSheets(ns.events, ns.calendars);
       return ns;
     });
+    console.log("updateEvt fine", {dayKey, form});
     setForm(null); setDayKey(null);
   }
 
