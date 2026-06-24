@@ -2276,7 +2276,8 @@ function sortedModelli(){
               if(form?.editId===e.id){ setForm(null); return; }
               setForm({ editId:e.id, modelloId:null, shiftId:null, label:e.label,
                 colorOvr:e.color, dur:e.allDay?"allday":(e.tIn&&e.tOut&&e.tOut===calcFine6h15(e.tIn))?"fixed":"custom", tIn:e.tIn||"", tOut:e.tOut||"",
-                place:e.place||"", map:e.map||"", note:e.note||"", collega:e.collega||"", auto:e.auto||"" });
+                place:e.place||"", map:e.map||"", note:e.note||"", collega:e.collega||"", auto:e.auto||"",
+straordinarioTipo:null, protrazioneOraFine:"" });
             }}
             style={{background:e.color,borderRadius:10,padding:"10px 12px",marginBottom:8,cursor:"pointer",
               display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
@@ -2298,6 +2299,7 @@ function sortedModelli(){
                 editId:e.id,modelloId:null,shiftId:null,label:e.label,colorOvr:e.color,
                 dur:e.allDay?"allday":(e.tIn&&e.tOut&&e.tOut===calcFine6h15(e.tIn))?"fixed":"custom",tIn:e.tIn||"",tOut:e.tOut||"",place:e.place||"",
                 map:e.map||"",note:e.note||"",collega:e.collega||"",auto:e.auto||"",
+straordinarioTipo:null,protrazioneOraFine:"",
               });}}
               style={{background:"rgba(0,0,0,0.2)",border:"none",borderRadius:6,
                 color:"#fff",width:26,height:26,cursor:"pointer",fontSize:14,marginLeft:4,flexShrink:0}}>✏️</button>
