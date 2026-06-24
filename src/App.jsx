@@ -472,8 +472,7 @@ const isInitialized = useRef(false);
     // crea un evento figlio separato collegato tramite parentId.
     // L'inizio della protrazione è l'uscita effettiva del turno (tOutFinal);
     // se manca, si usa la fine standard come fallback.
-    let evtFiglio = null;
-    const tipoProtrazione = form.straordinarioTipo; // "pagamento" | "recupero" | null
+    let evtFiglio = null; // "pagamento" | "recupero" | null
     const oraFineProtrazione = form.protrazioneOraFine || "";
 
     function calcMinutiProtrazione(t1, t2){
