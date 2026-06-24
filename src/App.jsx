@@ -561,6 +561,7 @@ if(tipoProtrazione && oraFineProtrazione && tInFinal){
   }
 
   async function updateEvt(){
+    console.log("updateEvt start", {form, dayKey, calId, userId, editId: form?.editId});
     if(!form||!dayKey||!calId||!userId||!form.editId) return;
     const cal = store.calendars.find(c=>c.id===calId);
     if(!cal) return;
