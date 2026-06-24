@@ -407,6 +407,7 @@ const isInitialized = useRef(false);
   }
 
   async function saveEvt(){
+    console.log("saveEvt called", {form, dayKey, calId, userId});
     if(!form||!dayKey||!calId||!userId) return;
     const cal = store.calendars.find(c=>c.id===calId);
     if(!cal) return;
