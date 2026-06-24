@@ -2744,78 +2744,108 @@ function CalBadge({ calId, calAttivo, coloreCal, testoContrasto, T, store, setSt
 
 
 // ── SMART TIME INPUT ──────────────────────────────────────────
-// Sovrascrive HH quando si inizia a digitare, avanza auto a MM
+// Campo orario HH:MM controllato via onChange (funziona anche su
+// tastiera virtuale mobile, a differenza della vecchia versione
+// basata su onKeyDown + readOnly che su telefono non riceveva input).
 function SmartTimeInput({ value, onChange, style }) {
-  const [phase, setPhase] = useState("hh"); // "hh" | "mm"
-  const inputRef = useRef(null);
+  // Buffer di sole cifre (max 4: HHMM), così l'utente può digitare
+  // liberamente e noi formattiamo in tempo reale come "HH:MM".
+  const [digits, setDigits] = useState(() => (value || "").replace(/\D/g, "").slice(0, 4));
 
-  function handleKeyDown(e) {
-    const digit = e.key;
-    if (!/^\d$/.test(digit)) return;
-    e.preventDefault();
+  // Se il valore esterno cambia (es. selezione di un modello turno),
+  // risincronizza il buffer di cifre.
+  useEffect(() => {
+    setDigits((value || "").replace(/\D/g, "").slice(0, 4));
+  }, [value]);
 
-    const curHH = value ? value.split(":")[0] || "00" : "00";
-    const curMM = value ? value.split(":")[1] || "00" : "00";
+  function clampAndEmit(rawDigits) {
+    let d = rawDigits.replace(/\D/g, "").slice(0, 4);
 
-    if (phase === "hh") {
-      // Prima cifra dell'ora: sovrascrive tutto
-      const newHH = digit.padStart(2, "0");
-      onChange(newHH + ":" + curMM);
-      setPhase("hh2");
-    } else if (phase === "hh2") {
-      // Seconda cifra dell'ora
-      const prevH = parseInt(curHH, 10);
-      // Se la prima cifra era >2, la seconda deve formare ore valide
-      let newHH;
-      if (prevH <= 2) {
-        newHH = String(prevH * 10 + parseInt(digit, 10)).padStart(2, "0");
-        if (parseInt(newHH, 10) > 23) newHH = "23";
-      } else {
-        newHH = ("0" + digit).padStart(2, "0");
+    // Validazione progressiva ore/minuti mentre si digita
+    if (d.length >= 1) {
+      const h0 = parseInt(d[0], 10);
+      if (h0 > 2) {
+        // prima cifra ora troppo alta per essere ore valide a due cifre (>2X)
+        // la trattiamo come "0" + cifra (es: digitando 9 → 09)
+        d = "0" + d[0] + d.slice(1, 3);
+        d = d.slice(0, 4);
       }
-      onChange(newHH + ":" + curMM);
-      setPhase("mm");
-      // Auto-focus rimane ma ora gestiamo i minuti
-    } else if (phase === "mm") {
-      // Prima cifra minuti: sovrascrive MM
-      const newMM = digit.padStart(2, "0");
-      onChange(curHH + ":" + newMM);
-      setPhase("mm2");
-    } else if (phase === "mm2") {
-      // Seconda cifra minuti
-      const prevM = parseInt(curMM, 10);
-      let newMM;
-      if (prevM <= 5) {
-        newMM = String(prevM * 10 + parseInt(digit, 10)).padStart(2, "0");
-        if (parseInt(newMM, 10) > 59) newMM = "59";
-      } else {
-        newMM = ("0" + digit).padStart(2, "0");
+    }
+    if (d.length >= 2) {
+      let hh = parseInt(d.slice(0, 2), 10);
+      if (hh > 23) hh = 23;
+      d = String(hh).padStart(2, "0") + d.slice(2);
+    }
+    if (d.length >= 4) {
+      let mm = parseInt(d.slice(2, 4), 10);
+      if (mm > 59) mm = 59;
+      d = d.slice(0, 2) + String(mm).padStart(2, "0");
+    } else if (d.length === 3) {
+      const m0 = parseInt(d[2], 10);
+      if (m0 > 5) {
+        // prima cifra minuti troppo alta (>5X) → tratta come 0X
+        d = d.slice(0, 2) + "0" + d[2];
+        d = d.slice(0, 4);
       }
-      onChange(curHH + ":" + newMM);
-      setPhase("hh"); // Cicla di nuovo
+    }
+
+    setDigits(d);
+
+    if (d.length === 4) {
+      onChange(d.slice(0, 2) + ":" + d.slice(2, 4));
+    } else if (d.length === 0) {
+      onChange("");
+    } else {
+      // Valore parziale: non ancora un orario completo, non sovrascriviamo
+      // il valore "salvato" finché non sono state digitate tutte le 4 cifre,
+      // ma mostriamo comunque il progresso nel campo (vedi displayValue).
     }
   }
 
-  function handleFocus() {
-    setPhase("hh"); // Al focus, riparte dall'ora
+  function handleChange(e) {
+    const typed = e.target.value;
+    // Calcola le sole cifre digitate (gestisce anche cancellazioni)
+    const onlyDigits = typed.replace(/\D/g, "");
+    clampAndEmit(onlyDigits.slice(0, 4));
   }
 
-  function handleClick() {
-    // Click sul campo: riparte dalla fase ore
-    setPhase("hh");
+  function handleKeyDown(e) {
+    // Permette backspace/canc/freccie/tab di funzionare normalmente;
+    // per i tasti numerici lasciamo fare a onChange.
+    if (e.key === "Backspace" || e.key === "Delete") {
+      e.preventDefault();
+      setDigits(d => {
+        const next = d.slice(0, -1);
+        if (next.length === 4) onChange(next.slice(0, 2) + ":" + next.slice(2, 4));
+        else onChange("");
+        return next;
+      });
+    }
+  }
+
+  function handleFocus(e) {
+    // Seleziona tutto al focus per permettere di ridigitare da capo
+    e.target.select();
+  }
+
+  // Valore mostrato nel campo: formatta progressivamente mentre si digita
+  let displayValue = "";
+  if (digits.length > 0) {
+    const hh = digits.slice(0, 2);
+    const mm = digits.slice(2, 4);
+    displayValue = mm ? hh + ":" + mm : (digits.length >= 3 ? hh + ":" + mm : hh);
   }
 
   return (
     <input
-      ref={inputRef}
       type="text"
       inputMode="numeric"
+      pattern="[0-9]*"
       placeholder="HH:MM"
-      value={value || ""}
-      readOnly
+      value={displayValue}
+      onChange={handleChange}
       onKeyDown={handleKeyDown}
       onFocus={handleFocus}
-      onClick={handleClick}
       style={style}
     />
   );
