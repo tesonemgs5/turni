@@ -2246,7 +2246,24 @@ straordinarioTipo:null,protrazioneOraFine:"",
                   <SmartTimeInput value={form.tIn||""} onChange={v=>setForm(f=>({...f,tIn:v,tOut:""}))}
                     style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                       borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
-
+                  <div style={{display:"flex",gap:4,marginTop:5}}>
+                    <button type="button" onClick={()=>setForm(f=>({...f,straordinarioTipo:f.straordinarioTipo==="pagamento"?null:"pagamento"}))}
+                      style={{flex:1,padding:"5px 2px",borderRadius:8,cursor:"pointer",
+                        fontSize:9,fontWeight:800,lineHeight:1.2,textAlign:"center",
+                        background:form.straordinarioTipo==="pagamento"?"#8b5cf6":T.surface,
+                        color:form.straordinarioTipo==="pagamento"?"#fff":T.sub,
+                        border:`1.5px solid ${form.straordinarioTipo==="pagamento"?"#8b5cf6":T.border}`}}>
+                      PROTRAZIONE A PAGAMENTO
+                    </button>
+                    <button type="button" onClick={()=>setForm(f=>({...f,straordinarioTipo:f.straordinarioTipo==="recupero"?null:"recupero"}))}
+                      style={{flex:1,padding:"5px 2px",borderRadius:8,cursor:"pointer",
+                        fontSize:9,fontWeight:800,lineHeight:1.2,textAlign:"center",
+                        background:form.straordinarioTipo==="recupero"?"#64748b":T.surface,
+                        color:form.straordinarioTipo==="recupero"?"#fff":T.sub,
+                        border:`1.5px solid ${form.straordinarioTipo==="recupero"?"#64748b":T.border}`}}>
+                      PROTRAZIONE A RECUPERO
+                    </button>
+                  </div>
                 </div>
                 {form.dur==="custom"&&(
                   <div style={{flex:1}}>
