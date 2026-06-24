@@ -570,7 +570,20 @@ if(tipoProtrazione && oraFineProtrazione && tInFinal){
     let tOutFinal = form.dur==="allday"?"":form.tOut||"";
     if(form.modelloId){
       const mod = modelli.find(m=>m.id===form.modelloId);
-      if(mod){ color = form.colorOvr||(mod.coloreCustom||getColorByTime(mod.inizio)); }
+      if(mod){
+        color = form.colorOvr||(mod.coloreCustom||getColorByTime(mod.inizio));
+        label = (mod.titolo||label).toUpperCase();
+        if(mod.tempo==="h24"){ tInFinal=""; tOutFinal=""; }
+        else if(mod.tempo==="6h15"){
+          tInFinal = form.tIn||mod.inizio||"";
+          tOutFinal = form.tOut||calcFine6h15(tInFinal)||"";
+        } else {
+          tInFinal = form.tIn||mod.inizio||"";
+          tOutFinal = form.tOut||mod.fine||"";
+        }
+      }
+    } else if(form.dur==="fixed" && tInFinal && !form.modelloId){
+      tOutFinal = form.tOut||calcFine6h15(tInFinal);
     }
     const { error } = await supabase.from("events").update({
       label, color, all_day: form.dur==="allday",
