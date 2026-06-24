@@ -1,99 +1,19 @@
-#!/usr/bin/env python3
-"""
-fix_protrazione.py
-Corregge la creazione/gestione dell'evento figlio di Protrazione
-(a pagamento / a recupero) in App.jsx:
+import re
 
-- in saveEvt(): rende il calcolo di ore/minuti/note dell'evento figlio
-  più robusto e leggibile.
-- aggiunge la STESSA logica anche in updateEvt(), che oggi non crea
-  né aggiorna l'evento figlio quando modifichi un evento esistente.
+INPUT  = "App.jsx"
+OUTPUT = "App_updated.jsx"
 
-Legge:  App.jsx
-Scrive: App_updated.jsx
-"""
+with open(INPUT, "r", encoding="utf-8") as f:
+    src = f.read()
 
-import os
-import sys
-
-FILE_INPUT = "App.jsx"
-FILE_OUTPUT = "App_updated.jsx"
-
-OLD_SAVEEVT_BLOCK = '''    // ── EVENTO FIGLIO PROTRAZIONE ─────────────────────────────
-    // Se l'utente ha inserito una protrazione (a pagamento o a recupero),
-    // crea un evento figlio separato collegato tramite parentId.
-    let evtFiglio = null;
-    const tipoProtrazione = form.straordinarioTipo; // "pagamento" | "recupero" | null
-    const oraFineProtrazione = form.protrazioneOraFine || "";
-
-    if(tipoProtrazione && oraFineProtrazione && tInFinal){
-      // Calcola minuti di eccedenza rispetto alla fine standard del turno
-      const oraInizioProtrazione = tOutFinal || calcFine6h15(tInFinal);
-      const calcMinsStr = (t1, t2) => {
-        if(!t1||!t2) return 0;
-        const [h1,m1]=t1.split(":").map(Number);
-        const [h2,m2]=t2.split(":").map(Number);
-        let d=(h2*60+m2)-(h1*60+m1);
-        if(d<0) d+=24*60;
-        return d;
-      };
-      const minsEccedenza = calcMinsStr(oraInizioProtrazione, oraFineProtrazione);
-      if(minsEccedenza > 0){
-        const hh = Math.floor(minsEccedenza/60);
-        const mm = minsEccedenza%60;
-        const durLabel = (hh>0?hh+"h":"") + (mm>0?" "+mm+"m":"").trim();
-        const labelFiglio = tipoProtrazione==="pagamento"
-          ? "PROTRAZIONE A PAGAMENTO"
-          : "PROTRAZIONE A RECUPERO";
-        const colorFiglio = tipoProtrazione==="pagamento" ? "#8b5cf6" : "#64748b";
-        const noteFiglio = "+" + durLabel;
-
-        const { data: dbFiglio } = await supabase.from("events").insert({
-          user_id: userId,
-          calendar_id: calId,
-          date_key: dayKey,
-          label: labelFiglio,
-          color: colorFiglio,
-          all_day: false,
-          time_in: oraInizioProtrazione,
-          time_out: oraFineProtrazione,
-          place: "",
-          map_url: "",
-          note: noteFiglio,
-          modello_id: null,
-          collega: null,
-          auto: tipoProtrazione==="pagamento" ? ":PAG" : ":REC",
-          parent_id: data.id,
-        }).select().maybeSingle();
-
-        if(dbFiglio){
-          evtFiglio = {
-            id: dbFiglio.id,
-            color: colorFiglio,
-            label: labelFiglio,
-            allDay: false,
-            tIn: oraInizioProtrazione,
-            tOut: oraFineProtrazione,
-            place: "",
-            map: "",
-            note: noteFiglio,
-            modelloId: null,
-            collega: null,
-            auto: tipoProtrazione==="pagamento" ? ":PAG" : ":REC",
-            parentId: data.id,
-          };
-        }
-      }
-    }
-    // ─────────────────────────────────────────────────────────'''
-
-NEW_SAVEEVT_BLOCK = '''    // ── EVENTO FIGLIO PROTRAZIONE ─────────────────────────────
+# ── 1. saveEvt: rimuovi tutto dal commento EVENTO FIGLIO fino a setStore ──────
+old_saveEvt_figlio = r"""    // ── EVENTO FIGLIO PROTRAZIONE ─────────────────────────────
     // Se l'utente ha inserito una protrazione (a pagamento o a recupero),
     // crea un evento figlio separato collegato tramite parentId.
     // L'inizio della protrazione è l'uscita effettiva del turno (tOutFinal);
     // se manca, si usa la fine standard come fallback.
-    let evtFiglio = null;
-    const tipoProtrazione = form.straordinarioTipo; // "pagamento" | "recupero" | null
+    let evtFiglio = null; // "pagamento" | "recupero" | null
+    const tipoProtrazione = form.straordinarioTipo;
     const oraFineProtrazione = form.protrazioneOraFine || "";
 
     function calcMinutiProtrazione(t1, t2){
@@ -110,11 +30,13 @@ NEW_SAVEEVT_BLOCK = '''    // ── EVENTO FIGLIO PROTRAZIONE ─────�
       return (hh>0?hh+"h":"") + (mm>0?(hh>0?" ":"")+mm+"m":"") || "0m";
     }
 
-    if(tipoProtrazione && oraFineProtrazione && tInFinal){
+    console.log("protrazione check", {tipoProtrazione, oraFineProtrazione, tInFinal});
+if(tipoProtrazione && oraFineProtrazione && tInFinal){
       const oraInizioProtrazione = tOutFinal || calcFine6h15(tInFinal);
-      const minsEccedenza = calcMinutiProtrazione(oraInizioProtrazione, oraFineProtrazione);
+      let minsEccedenza = calcMinutiProtrazione(oraInizioProtrazione, oraFineProtrazione);
+      if(minsEccedenza <= 0) minsEccedenza = 1; // evita che il salvataggio venga bloccato silenziosamente
 
-      if(minsEccedenza > 0){
+      {
         const durLabel = formatDurataProtrazione(minsEccedenza);
         const labelFiglio = tipoProtrazione==="pagamento"
           ? "PROTRAZIONE A PAGAMENTO"
@@ -139,7 +61,7 @@ NEW_SAVEEVT_BLOCK = '''    // ── EVENTO FIGLIO PROTRAZIONE ─────�
           collega: null,
           auto: autoFiglio,
           parent_id: data.id,
-        }).select().maybeSingle();
+      }).select().maybeSingle();
 
         if(errFiglio){ console.log("Errore creazione evento figlio protrazione:", errFiglio); }
 
@@ -162,74 +84,48 @@ NEW_SAVEEVT_BLOCK = '''    // ── EVENTO FIGLIO PROTRAZIONE ─────�
         }
       }
     }
-    // ─────────────────────────────────────────────────────────'''
+    // ─────────────────────────────────────────────────────────
 
-OLD_UPDATEEVT_FUNC = '''  async function updateEvt(){
-    if(!form||!dayKey||!calId||!userId||!form.editId) return;
-    const cal = store.calendars.find(c=>c.id===calId);
-    if(!cal) return;
-    let color = form.colorOvr || cal.color;
-    let label = (form.label||"Evento").toUpperCase();
-    let tInFinal = form.dur==="allday"?"":form.tIn||"";
-    let tOutFinal = form.dur==="allday"?"":form.tOut||"";
-    if(form.modelloId){
-      const mod = modelli.find(m=>m.id===form.modelloId);
-      if(mod){ color = form.colorOvr||(mod.coloreCustom||getColorByTime(mod.inizio)); }
-    }
-    const { error } = await supabase.from("events").update({
-      label, color, all_day: form.dur==="allday",
-      time_in: tInFinal, time_out: tOutFinal,
-      place: (form.place||"").toUpperCase(),
-      map_url: form.map||"",
-      note: (form.note||"").toUpperCase(),
-      modello_id: form.modelloId||null,
-      collega: (form.collega||"").toUpperCase(),
-      auto: (form.auto||"").toUpperCase(),
-    }).eq("id", form.editId).eq("user_id", userId);
-    if(error){ console.log(error); return; }
     setStore(prev=>{
       const ns = JSON.parse(JSON.stringify(prev));
-      const list = ns.events?.[dayKey]?.[calId];
-      if(list){
-        const idx = list.findIndex(e=>e.id===form.editId);
-        if(idx>-1) list[idx]={...list[idx], label, color,
-          allDay: form.dur==="allday", tIn: tInFinal, tOut: tOutFinal,
-          place: (form.place||"").toUpperCase(), map: form.map||"",
-          note: (form.note||"").toUpperCase(), modelloId: form.modelloId||null,
-          collega: (form.collega||"").toUpperCase(), auto: (form.auto||"").toUpperCase(),
-        };
-      }
-      if(syncMode==='on' && sheetsUrl) saveToSheets(ns.events, ns.calendars);
+      if(!ns.events[dayKey]) ns.events[dayKey]={};
+      if(!ns.events[dayKey][calId]) ns.events[dayKey][calId]=[];
+      ns.events[dayKey][calId].push(evt);
+      if(evtFiglio) ns.events[dayKey][calId].push(evtFiglio);
+      saveToLocalStorage(ns.events, ns.calendars, modelli);
+      if(syncMode==='on') saveToSheets(ns.events, ns.calendars);
       return ns;
     });
     setForm(null); setDayKey(null);
-  }'''
+  }"""
 
-NEW_UPDATEEVT_FUNC = '''  async function updateEvt(){
-    if(!form||!dayKey||!calId||!userId||!form.editId) return;
-    const cal = store.calendars.find(c=>c.id===calId);
-    if(!cal) return;
-    let color = form.colorOvr || cal.color;
-    let label = (form.label||"Evento").toUpperCase();
-    let tInFinal = form.dur==="allday"?"":form.tIn||"";
-    let tOutFinal = form.dur==="allday"?"":form.tOut||"";
-    if(form.modelloId){
-      const mod = modelli.find(m=>m.id===form.modelloId);
-      if(mod){ color = form.colorOvr||(mod.coloreCustom||getColorByTime(mod.inizio)); }
-    }
-    const { error } = await supabase.from("events").update({
-      label, color, all_day: form.dur==="allday",
-      time_in: tInFinal, time_out: tOutFinal,
-      place: (form.place||"").toUpperCase(),
-      map_url: form.map||"",
-      note: (form.note||"").toUpperCase(),
-      modello_id: form.modelloId||null,
-      collega: (form.collega||"").toUpperCase(),
-      auto: (form.auto||"").toUpperCase(),
-    }).eq("id", form.editId).eq("user_id", userId);
-    if(error){ console.log(error); return; }
+new_saveEvt_figlio = """    setStore(prev=>{
+      const ns = JSON.parse(JSON.stringify(prev));
+      if(!ns.events[dayKey]) ns.events[dayKey]={};
+      if(!ns.events[dayKey][calId]) ns.events[dayKey][calId]=[];
+      ns.events[dayKey][calId].push(evt);
+      saveToLocalStorage(ns.events, ns.calendars, modelli);
+      if(syncMode==='on') saveToSheets(ns.events, ns.calendars);
+      return ns;
+    });
+    setForm(null); setDayKey(null);
+  }"""
 
-    // ── EVENTO FIGLIO PROTRAZIONE (anche in modifica) ───────────
+# ── 2. saveEvt: rimuovi console.log saveEvt called ───────────────────────────
+src = src.replace(
+    '    console.log("saveEvt called", {form, dayKey, calId, userId});\n',
+    ''
+)
+
+# ── 3. Applica sostituzione saveEvt figlio ────────────────────────────────────
+if old_saveEvt_figlio in src:
+    src = src.replace(old_saveEvt_figlio, new_saveEvt_figlio)
+    print("✓ saveEvt: logica figlio rimossa")
+else:
+    print("✗ saveEvt: blocco figlio NON trovato — controlla manualmente")
+
+# ── 4. updateEvt: rimuovi tutto il blocco figlio e semplifica ─────────────────
+old_updateEvt_figlio = r"""    // ── EVENTO FIGLIO PROTRAZIONE (anche in modifica) ───────────
     // Se è impostata una protrazione, crea o aggiorna l'evento figlio.
     // Se il figlio esisteva e la protrazione viene rimossa/azzerata,
     // il figlio viene eliminato.
@@ -257,9 +153,10 @@ NEW_UPDATEEVT_FUNC = '''  async function updateEvt(){
 
     if(tipoProtrazione && oraFineProtrazione && tInFinal){
       const oraInizioProtrazione = tOutFinal || calcFine6h15(tInFinal);
-      const minsEccedenza = calcMinutiProtrazione(oraInizioProtrazione, oraFineProtrazione);
+      let minsEccedenza = calcMinutiProtrazione(oraInizioProtrazione, oraFineProtrazione);
+      if(minsEccedenza <= 0) minsEccedenza = 1; // evita che il salvataggio venga bloccato silenziosamente
 
-      if(minsEccedenza > 0){
+      {
         const durLabel = formatDurataProtrazione(minsEccedenza);
         const labelFiglio = tipoProtrazione==="pagamento"
           ? "PROTRAZIONE A PAGAMENTO"
@@ -298,8 +195,6 @@ NEW_UPDATEEVT_FUNC = '''  async function updateEvt(){
             };
           }
         }
-      } else if(figlioEsistente){
-        figlioDaRimuovereId = figlioEsistente.id;
       }
     } else if(figlioEsistente){
       figlioDaRimuovereId = figlioEsistente.id;
@@ -332,50 +227,133 @@ NEW_UPDATEEVT_FUNC = '''  async function updateEvt(){
       if(syncMode==='on' && sheetsUrl) saveToSheets(ns.events, ns.calendars);
       return ns;
     });
+    console.log("updateEvt fine", {dayKey, form});
     setForm(null); setDayKey(null);
-  }'''
+  }"""
 
+new_updateEvt_figlio = """    setStore(prev=>{
+      const ns = JSON.parse(JSON.stringify(prev));
+      const list = ns.events?.[dayKey]?.[calId];
+      if(list){
+        const idx = list.findIndex(e=>e.id===form.editId);
+        if(idx>-1) list[idx]={...list[idx], label, color,
+          allDay: form.dur==="allday", tIn: tInFinal, tOut: tOutFinal,
+          place: (form.place||"").toUpperCase(), map: form.map||"",
+          note: (form.note||"").toUpperCase(), modelloId: form.modelloId||null,
+          collega: (form.collega||"").toUpperCase(), auto: (form.auto||"").toUpperCase(),
+        };
+      }
+      if(syncMode==='on' && sheetsUrl) saveToSheets(ns.events, ns.calendars);
+      return ns;
+    });
+    setForm(null); setDayKey(null);
+  }"""
 
-def main():
-    if not os.path.exists(FILE_INPUT):
-        print(f"❌ Non trovo '{FILE_INPUT}' in questa cartella.")
-        sys.exit(1)
+# ── 5. Rimuovi anche console.log updateEvt start/fine ────────────────────────
+src = src.replace(
+    '    console.log("updateEvt start", {form, dayKey, calId, userId, editId: form?.editId});\n',
+    ''
+)
 
-    with open(FILE_INPUT, "r", encoding="utf-8") as f:
-        content = f.read()
+if old_updateEvt_figlio in src:
+    src = src.replace(old_updateEvt_figlio, new_updateEvt_figlio)
+    print("✓ updateEvt: logica figlio rimossa")
+else:
+    print("✗ updateEvt: blocco figlio NON trovato — controlla manualmente")
 
-    ok1 = OLD_SAVEEVT_BLOCK in content
-    ok2 = OLD_UPDATEEVT_FUNC in content
+# ── 6. Sezione 14: rimuovi i bottoni PROTRAZIONE A PAGAMENTO e RECUPERO ──────
+# Rimuovi il blocco bottone PROTRAZIONE A PAGAMENTO (sotto INGRESSO)
+old_pag_btn = """                  <button type="button" onClick={()=>setForm(f=>({...f,straordinarioTipo:f.straordinarioTipo==="pagamento"?null:"pagamento"}))}
+                    style={{width:"100%",marginTop:5,padding:"5px 2px",borderRadius:8,cursor:"pointer",
+                      fontSize:9,fontWeight:800,lineHeight:1.2,textAlign:"center",
+                      background:form.straordinarioTipo==="pagamento"?"#8b5cf6":T.surface,
+                      color:form.straordinarioTipo==="pagamento"?"#fff":T.sub,
+                      border:`1.5px solid ${form.straordinarioTipo==="pagamento"?"#8b5cf6":T.border}`}}>
+                    PROTRAZIONE A PAGAMENTO
+                  </button>
+                  {form.straordinarioTipo==="pagamento"&&(()=>{
+                    const oraFineP=form.protrazioneOraFine||"";
+                    let durProt="";
+                    if(oraFineP&&form.tIn){
+                      const std=calcFine6h15(form.tIn);
+                      const [h1,m1]=std.split(":").map(Number);
+                      const [h2,m2]=oraFineP.split(":").map(Number);
+                      let d2=(h2*60+m2)-(h1*60+m1);
+                      if(d2<0) d2+=24*60;
+                      if(d2>0) durProt=`${Math.floor(d2/60)}h${d2%60>0?" "+d2%60+"m":""}`;
+                    }
+                    return (
+                      <div style={{display:"flex",alignItems:"center",gap:6,marginTop:5}}>
+                        <div style={{background:T.s2,borderRadius:8,padding:"5px 8px",
+                          minWidth:44,textAlign:"center",flexShrink:0}}>
+                          <div style={{fontSize:8,color:T.sub,fontWeight:700}}>DURATA</div>
+                          <div style={{fontSize:12,fontWeight:900,color:"#8b5cf6"}}>{durProt||"—"}</div>
+                        </div>
+                        <SmartTimeInput value={oraFineP} onChange={v=>setForm(f=>({...f,protrazioneOraFine:v}))}
+                          style={{flex:1,background:T.surface,border:`1px solid ${T.border}`,
+                            borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
+                      </div>
+                    );
+                  })()}"""
 
-    if not ok1 and not ok2:
-        print("❌ Non ho trovato né il blocco di saveEvt() né la funzione updateEvt() nella forma esatta attesa.")
-        print("   Probabilmente il file è già stato modificato rispetto all'originale.")
-        print("   Nessuna modifica effettuata.")
-        sys.exit(1)
+new_pag_btn = ""
 
-    new_content = content
-    if ok1:
-        new_content = new_content.replace(OLD_SAVEEVT_BLOCK, NEW_SAVEEVT_BLOCK)
-        print("✅ Blocco evento figlio in saveEvt() corretto.")
-    else:
-        print("⚠️  Blocco di saveEvt() non trovato in forma esatta: NON modificato (per sicurezza).")
+old_rec_btn = """                    <button type="button" onClick={()=>setForm(f=>({...f,straordinarioTipo:f.straordinarioTipo==="recupero"?null:"recupero"}))}
+                      style={{width:"100%",marginTop:5,padding:"5px 2px",borderRadius:8,cursor:"pointer",
+                        fontSize:9,fontWeight:800,lineHeight:1.2,textAlign:"center",
+                        background:form.straordinarioTipo==="recupero"?"#64748b":T.surface,
+                        color:form.straordinarioTipo==="recupero"?"#fff":T.sub,
+                        border:`1.5px solid ${form.straordinarioTipo==="recupero"?"#64748b":T.border}`}}>
+                      PROTRAZIONE A RECUPERO
+                    </button>
+                    {form.straordinarioTipo==="recupero"&&(()=>{
+                      const oraFineR=form.protrazioneOraFine||"";
+                      let durProt="";
+                      if(oraFineR&&form.tIn){
+                        const std=calcFine6h15(form.tIn);
+                        const [h1,m1]=std.split(":").map(Number);
+                        const [h2,m2]=oraFineR.split(":").map(Number);
+                        let d2=(h2*60+m2)-(h1*60+m1);
+                        if(d2<0) d2+=24*60;
+                        if(d2>0) durProt=`${Math.floor(d2/60)}h${d2%60>0?" "+d2%60+"m":""}`;
+                      }
+                      return (
+                        <div style={{display:"flex",alignItems:"center",gap:6,marginTop:5}}>
+                          <div style={{background:T.s2,borderRadius:8,padding:"5px 8px",
+                            minWidth:44,textAlign:"center",flexShrink:0}}>
+                            <div style={{fontSize:8,color:T.sub,fontWeight:700}}>DURATA</div>
+                            <div style={{fontSize:12,fontWeight:900,color:"#64748b"}}>{durProt||"—"}</div>
+                          </div>
+                          <SmartTimeInput value={oraFineR} onChange={v=>setForm(f=>({...f,protrazioneOraFine:v}))}
+                            style={{flex:1,background:T.surface,border:`1px solid ${T.border}`,
+                              borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
+                        </div>
+                      );
+                    })()}"""
 
-    if ok2:
-        new_content = new_content.replace(OLD_UPDATEEVT_FUNC, NEW_UPDATEEVT_FUNC)
-        print("✅ updateEvt() aggiornata per gestire anche la protrazione (creazione/aggiornamento/rimozione figlio).")
-    else:
-        print("⚠️  Funzione updateEvt() non trovata in forma esatta: NON modificata (per sicurezza).")
+new_rec_btn = ""
 
-    with open(FILE_OUTPUT, "w", encoding="utf-8") as f:
-        f.write(new_content)
+if old_pag_btn in src:
+    src = src.replace(old_pag_btn, new_pag_btn)
+    print("✓ UI: bottone PROTRAZIONE A PAGAMENTO rimosso")
+else:
+    print("✗ UI: bottone PAGAMENTO NON trovato")
 
-    print()
-    print(f"   Letto:   {FILE_INPUT}")
-    print(f"   Scritto: {FILE_OUTPUT}")
-    print()
-    print("   Il launcher (istruzioni.py) rinominerà App_updated.jsx in App.jsx")
-    print("   e farà commit/push se confermi con S.")
+if old_rec_btn in src:
+    src = src.replace(old_rec_btn, new_rec_btn)
+    print("✓ UI: bottone PROTRAZIONE A RECUPERO rimosso")
+else:
+    print("✗ UI: bottone RECUPERO NON trovato")
 
+# ── 7. Rimuovi filtro .filter(e=>!(e.label||"").toUpperCase().startsWith("PROTRAZIONE")) ──
+old_filter = '.filter(e=>!(e.label||"").toUpperCase().startsWith("PROTRAZIONE"))'
+if old_filter in src:
+    src = src.replace(old_filter, '')
+    print("✓ Filtro PROTRAZIONE nella lista eventi rimosso")
+else:
+    print("✗ Filtro PROTRAZIONE NON trovato")
 
-if __name__ == "__main__":
-    main()
+with open(OUTPUT, "w", encoding="utf-8") as f:
+    f.write(src)
+
+print(f"\n✅ Fatto → {OUTPUT}")
