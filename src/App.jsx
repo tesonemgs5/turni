@@ -2264,83 +2264,85 @@ function sortedModelli(){
               ))}
             </div>
             {form.dur!=="allday"&&(
-              <div style={{display:"flex",gap:8,marginBottom:10}}>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:9,color:T.sub,marginBottom:3}}>INGRESSO</div>
-                  <SmartTimeInput value={form.tIn||""} onChange={v=>setForm(f=>({...f,tIn:v,tOut:""}))}
-                    style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
-                      borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
-                  {(()=>{
-                    const tBase = form.tOut||calcFine6h15(form.tIn)||"";
-                    function calcDur(oraFine){
-                      if(!oraFine||!tBase) return "";
-                      const [h1,m1]=tBase.split(":").map(Number);
-                      const [h2,m2]=oraFine.split(":").map(Number);
-                      let d=(h2*60+m2)-(h1*60+m1);
-                      if(d<0) d+=24*60;
-                      return d>0?Math.floor(d/60)+"h"+(d%60>0?" "+d%60+"m":""):"";
-                    }
-                    const durPag = calcDur(form.protPagFine||"");
-                    const durRec = calcDur(form.protRecFine||"");
-                    return (
-                      <div style={{marginTop:5,display:"flex",flexDirection:"column",gap:5}}>
-                        <div>
-                          <div style={{width:"100%",padding:"5px 8px",borderRadius:8,
-                            fontSize:9,fontWeight:800,textAlign:"center",
-                            background:"#8b5cf6",color:"#fff",marginBottom:4}}>
-                            PROTRAZIONE A PAGAMENTO
-                          </div>
-                          <div style={{display:"flex",alignItems:"center",gap:6}}>
-                            <SmartTimeInput value={form.protPagFine||""} onChange={v=>setForm(f=>({...f,protPagFine:v}))}
-                              style={{flex:1,background:T.surface,border:`1.5px solid #8b5cf6`,
-                                borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
-                            <div style={{background:T.surface,border:"1.5px solid #8b5cf6",borderRadius:8,
-                              padding:"4px 8px",minWidth:48,textAlign:"center",flexShrink:0}}>
-                              <div style={{fontSize:8,color:T.sub,fontWeight:700}}>DURATA</div>
-                              <div style={{fontSize:12,fontWeight:900,color:"#8b5cf6"}}>{durPag||"—"}</div>
-                            </div>
-                          </div>
-                        </div>
-                        <div>
-                          <div style={{width:"100%",padding:"5px 8px",borderRadius:8,
-                            fontSize:9,fontWeight:800,textAlign:"center",
-                            background:"#64748b",color:"#fff",marginBottom:4}}>
-                            PROTRAZIONE A RECUPERO
-                          </div>
-                          <div style={{display:"flex",alignItems:"center",gap:6}}>
-                            <SmartTimeInput value={form.protRecFine||""} onChange={v=>setForm(f=>({...f,protRecFine:v}))}
-                              style={{flex:1,background:T.surface,border:`1.5px solid #64748b`,
-                                borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
-                            <div style={{background:T.surface,border:"1.5px solid #64748b",borderRadius:8,
-                              padding:"4px 8px",minWidth:48,textAlign:"center",flexShrink:0}}>
-                              <div style={{fontSize:8,color:T.sub,fontWeight:700}}>DURATA</div>
-                              <div style={{fontSize:12,fontWeight:900,color:"#64748b"}}>{durRec||"—"}</div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-                {form.dur==="custom"&&(
-                  <div style={{flex:1}}>
-                    <div style={{fontSize:9,color:T.sub,marginBottom:3}}>USCITA</div>
-                    <SmartTimeInput value={form.tOut||""} onChange={v=>setForm(f=>({...f,tOut:v}))}
-                      style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
-                        borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
-                  </div>
-                )}
-                {form.dur==="fixed"&&form.tIn&&(
-                  <div style={{flex:1}}>
-                    <div style={{fontSize:9,color:T.sub,marginBottom:3}}>USCITA (modif.)</div>
-                    <SmartTimeInput value={form.tOut||calcFine6h15(form.tIn)} onChange={v=>setForm(f=>({...f,tOut:v}))}
-                      style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
-                        borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
-
-                  </div>
-                )}
+  <div style={{marginBottom:10}}>
+    <div style={{display:"flex",gap:8,marginBottom:8}}>
+      <div style={{flex:1}}>
+        <div style={{fontSize:9,color:T.sub,marginBottom:3}}>INGRESSO</div>
+        <SmartTimeInput value={form.tIn||""} onChange={v=>setForm(f=>({...f,tIn:v,tOut:""}))}
+          style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
+            borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
+      </div>
+      {form.dur==="custom"&&(
+        <div style={{flex:1}}>
+          <div style={{fontSize:9,color:T.sub,marginBottom:3}}>USCITA</div>
+          <SmartTimeInput value={form.tOut||""} onChange={v=>setForm(f=>({...f,tOut:v}))}
+            style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
+              borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
+        </div>
+      )}
+      {form.dur==="fixed"&&form.tIn&&(
+        <div style={{flex:1}}>
+          <div style={{fontSize:9,color:T.sub,marginBottom:3}}>USCITA (modif.)</div>
+          <SmartTimeInput value={form.tOut||calcFine6h15(form.tIn)} onChange={v=>setForm(f=>({...f,tOut:v}))}
+            style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
+              borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
+        </div>
+      )}
+    </div>
+    {(()=>{
+      const tBase = form.tOut||calcFine6h15(form.tIn)||"";
+      function calcDur(oraFine){
+        if(!oraFine||!tBase) return "";
+        const [h1,m1]=tBase.split(":").map(Number);
+        const [h2,m2]=oraFine.split(":").map(Number);
+        let d=(h2*60+m2)-(h1*60+m1);
+        if(d<0) d+=24*60;
+        return d>0?Math.floor(d/60)+"h"+(d%60>0?" "+d%60+"m":""):"";
+      }
+      const durPag = calcDur(form.protPagFine||"");
+      const durRec = calcDur(form.protRecFine||"");
+      return (
+        <div style={{display:"flex",gap:8}}>
+          <div style={{flex:1}}>
+            <div style={{width:"100%",padding:"5px 8px",borderRadius:8,
+              fontSize:9,fontWeight:800,textAlign:"center",
+              background:"#8b5cf6",color:"#fff",marginBottom:4}}>
+              PROTRAZIONE A PAGAMENTO
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <SmartTimeInput value={form.protPagFine||""} onChange={v=>setForm(f=>({...f,protPagFine:v}))}
+                style={{flex:1,background:T.surface,border:`1.5px solid #8b5cf6`,
+                  borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
+              <div style={{background:T.surface,border:"1.5px solid #8b5cf6",borderRadius:8,
+                padding:"4px 8px",minWidth:48,textAlign:"center",flexShrink:0}}>
+                <div style={{fontSize:8,color:T.sub,fontWeight:700}}>DURATA</div>
+                <div style={{fontSize:12,fontWeight:900,color:"#8b5cf6"}}>{durPag||"—"}</div>
               </div>
-            )}
+            </div>
+          </div>
+          <div style={{flex:1}}>
+            <div style={{width:"100%",padding:"5px 8px",borderRadius:8,
+              fontSize:9,fontWeight:800,textAlign:"center",
+              background:"#64748b",color:"#fff",marginBottom:4}}>
+              PROTRAZIONE A RECUPERO
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <SmartTimeInput value={form.protRecFine||""} onChange={v=>setForm(f=>({...f,protRecFine:v}))}
+                style={{flex:1,background:T.surface,border:`1.5px solid #64748b`,
+                  borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
+              <div style={{background:T.surface,border:"1.5px solid #64748b",borderRadius:8,
+                padding:"4px 8px",minWidth:48,textAlign:"center",flexShrink:0}}>
+                <div style={{fontSize:8,color:T.sub,fontWeight:700}}>DURATA</div>
+                <div style={{fontSize:12,fontWeight:900,color:"#64748b"}}>{durRec||"—"}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    })()}
+  </div>
+)}
+                    
             <input value={form.auto||""} onChange={e=>{
                 const raw=e.target.value.toUpperCase();
                 const stripped=raw.replace(/^(CH\s*)+/i,"").trim();
