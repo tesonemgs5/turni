@@ -2329,11 +2329,11 @@ function sortedModelli(){
             <div style={{display:"flex",alignItems:"center",gap:6}}>
               <SmartTimeInput value={form.protRecFine||""} onChange={v=>setForm(f=>({...f,protRecFine:v}))}
                 style={{flex:1,background:T.surface,border:`1.5px solid #64748b`,
-                  borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
+                  borderRadius:8,padding:"5px 6px",color:T.text,fontSize:12,outline:"none"}}/>
               <div style={{background:T.surface,border:"1.5px solid #64748b",borderRadius:8,
-                padding:"4px 8px",minWidth:48,textAlign:"center",flexShrink:0}}>
-                <div style={{fontSize:8,color:T.sub,fontWeight:700}}>DURATA</div>
-                <div style={{fontSize:12,fontWeight:900,color:"#64748b"}}>{durRec||"—"}</div>
+                padding:"3px 5px",minWidth:36,textAlign:"center",flexShrink:0}}>
+                <div style={{fontSize:7,color:T.sub,fontWeight:700}}>DUR</div>
+                <div style={{fontSize:11,fontWeight:900,color:"#64748b"}}>{durRec||"—"}</div>
               </div>
             </div>
           </div>
@@ -2375,7 +2375,7 @@ function sortedModelli(){
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
                 marginBottom:12,boxSizing:"border-box",outline:"none"}}/>
-            <div style={{display:"flex",gap:8}}>
+            <div style={{display:"flex",gap:4}}>
               <button onClick={()=>{setForm(null);setPal(null);}}
                 style={{flex:1,background:T.surface,border:`1px solid ${T.border}`,
                   borderRadius:10,color:T.sub,padding:"11px 0",cursor:"pointer",fontSize:13,fontWeight:700}}>
