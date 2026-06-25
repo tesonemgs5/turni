@@ -1634,6 +1634,11 @@ function sortedModelli(){
                   <div key={r.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                     <RotazioneCard r={r} T={T} accent={accent} modelli={modelli}
                       onOpen={()=>setShowRotDetail(r.id)}
+                      onEdit={()=>{ setEditRotazione(r); setRotForm({
+                        tipo:r.tipo, titolo:r.titolo||"", dataInizio:r.dataInizio||"",
+                        nSettimane:r.nSettimane||52, modellaLavoroId:r.modellaLavoroId||null,
+                        modelloNLId:r.modelloNLId||null, modelloRSId:r.modelloRSId||null,
+                      }); setShowRotForm(true); }}
                       onDelete={()=>deleteRotazione(r.id)}/>
                   </div>
                 ))}
@@ -3442,7 +3447,7 @@ const NB={background:"none",border:"none",fontSize:22,cursor:"pointer",
 
 // #region SEZIONE 19: ROTAZIONE COMPONENTS
 // ═══════════════════════════════════════════════════════════════
-function RotazioneCard({r, T, accent, modelli, onOpen, onDelete}){
+function RotazioneCard({r, T, accent, modelli, onOpen, onEdit, onDelete}){
   const tipoLabel = r.tipo==="domeniche"?"🗓 Domeniche 1/4":r.tipo==="nlrs"?"🔄 NL / RS classico":r.tipo==="nlrs_scalante"?"📅 RS/NL Scalante":" Personalizzata";
   const modelloLav = modelli.find(m=>m.id===r.modellaLavoroId);
   return (
@@ -3452,6 +3457,8 @@ function RotazioneCard({r, T, accent, modelli, onOpen, onDelete}){
         <div style={{fontSize:16,color:T.sub}}>{tipoLabel}{r.dataInizio?` · dal ${r.dataInizio}`:""}</div>
         {modelloLav&&<div style={{fontSize:11,color:T.sub,marginTop:1}}>Modello: {modelloLav.titolo}</div>}
       </div>
+      {onEdit&&<button onClick={e=>{e.stopPropagation();onEdit();}}
+        style={{background:"none",border:"none",color:T.sub,cursor:"pointer",fontSize:16,padding:"0 8px",marginRight:2}}>✏️</button>}
       <button onClick={e=>{e.stopPropagation();if(window.confirm("Eliminare questa rotazione?"))onDelete();}}
         style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:18,padding:"0 4px",marginRight:4}}>×</button>
       <span style={{color:T.sub,fontSize:14}}>›</span>
