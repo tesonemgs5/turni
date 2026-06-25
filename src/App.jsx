@@ -880,7 +880,7 @@ function sortedModelli(){
     const mainCalId2 = store.calendars.find(c=>c.isMain)?.id||null;
     const targetCalId = data.calendarId||calId||mainCalId2;
     const payload={
-      user_id:userId, titolo:(data.titolo||"").toUpperCase(), tempo:data.tempo,
+      user_id:userId, titolo:(data.titolo||"").toUpperCase(), label:(data.label||"").toUpperCase(), tempo:data.tempo,
       inizio:data.inizio||null, fine:data.fine||null,
       colore:coloreEff, colore_custom:data.coloreCustom||null,
       posizione:(data.posizione||"").toUpperCase()||null,
