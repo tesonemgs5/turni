@@ -2647,6 +2647,33 @@ function sortedModelli(){
                 </div>
               </>
             )}
+            {rotazioni.length>0&&(
+              <>
+                <div style={{fontSize:10,color:T.sub,marginBottom:6,fontWeight:600,paddingLeft:2}}>ROTAZIONI — inizia ciclo da questo giorno</div>
+                <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:12}}>
+                  {rotazioni.map((r,i,arr)=>{
+                    const tipoLabel = r.tipo==="domeniche"?"🗓 Domeniche 1/4":r.tipo==="nlrs"?"🔄 NL / RS classico":r.tipo==="nlrs_scalante"?"📅 RS/NL Scalante":"📋 Personalizzata";
+                    return (
+                      <div key={r.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
+                        <div onClick={async()=>{
+                          await saveRotazione({...r, dataInizio: dayKey});
+                          setShowModelloPicker(false);
+                          setDayKey(null);
+                          setShowRotDetail(r.id);
+                        }} style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:15,fontWeight:800,color:T.text,overflow:"hidden",
+                              textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.titolo||"Senza nome"}</div>
+                            <div style={{fontSize:12,color:T.sub,marginTop:1}}>{tipoLabel}</div>
+                          </div>
+                          <span style={{color:T.sub,fontSize:14}}>›</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
             <div onClick={()=>{
               setForm({modelloId:null,shiftId:null,label:"",note:"",dur:"allday",
                 tIn:"",tOut:"",place:"",map:"",colorOvr:null,collega:"",auto:""});
