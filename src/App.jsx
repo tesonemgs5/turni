@@ -419,7 +419,7 @@ const isInitialized = useRef(false);
       const mod = modelli.find(m=>m.id===form.modelloId);
       if(mod){
         color = form.colorOvr||(mod.coloreCustom||getColorByTime(mod.inizio));
-        label = (mod.titolo||label).toUpperCase();
+        label = (mod.label||mod.titolo||label).toUpperCase();
         if(mod.tempo==="h24"){ tInFinal=""; tOutFinal=""; }
         else if(mod.tempo==="6h15"){
           tInFinal = form.tIn||mod.inizio||"";
@@ -495,7 +495,7 @@ const isInitialized = useRef(false);
       const mod = modelli.find(m=>m.id===form.modelloId);
       if(mod){
         color = form.colorOvr||(mod.coloreCustom||getColorByTime(mod.inizio));
-        label = (mod.titolo||label).toUpperCase();
+        label = (mod.label||mod.titolo||label).toUpperCase();
         if(mod.tempo==="h24"){ tInFinal=""; tOutFinal=""; }
         else if(mod.tempo==="6h15"){
           tInFinal = form.tIn||mod.inizio||"";
