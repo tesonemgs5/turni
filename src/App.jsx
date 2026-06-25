@@ -1222,7 +1222,7 @@ function sortedModelli(){
               <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",gap:"1px",padding:"0 1px 1px"}}>
                 {evts.slice(0,4).map((e,ei)=>(
                   <div key={e.id+ei} style={{background:e.color,borderRadius:3,padding:"2px 4px",
-                    fontSize:14,fontWeight:800,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",
+                    fontSize:20,fontWeight:800,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",
                     whiteSpace:"nowrap",height:16,minHeight:16,display:"flex",alignItems:"center",flexShrink:0,
                     textShadow:"0 1px 2px rgba(0,0,0,0.35)"}}>
                     {e.label}
@@ -2119,13 +2119,13 @@ function sortedModelli(){
             style={{background:e.color,borderRadius:10,padding:"10px 12px",marginBottom:8,cursor:"pointer",
               display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
             <div style={{flex:1}}>
-              <div style={{color:"#fff",fontSize:14,fontWeight:800,textShadow:"0 1px 3px rgba(0,0,0,0.3)"}}>{e.label}</div>
+              <div style={{color:"#fff",fontSize:20,fontWeight:800,textShadow:"0 1px 3px rgba(0,0,0,0.3)"}}>{e.label}</div>
               {!e.allDay&&e.tIn&&(
-                <div style={{color:"rgba(255,255,255,0.85)",fontSize:11,marginTop:2}}>
+                <div style={{color:"rgba(255,255,255,0.85)",fontSize:17,marginTop:2}}>
                   🕐 {e.tIn}{e.tOut?` → ${e.tOut}`:""}
                 </div>
               )}
-              {e.collega&&<div style={{color:"rgba(255,255,255,0.8)",fontSize:11,marginTop:3}}>👮 {e.collega}</div>}
+              {e.collega&&<div style={{color:"rgba(255,255,255,0.8)",fontSize:17,marginTop:3}}>👮 {e.collega}</div>}
               {(e.protPagFine||e.protRecFine)&&(()=>{
                 function calcDurProt(tBase, oraFine){
                   if(!oraFine||!tBase) return "";
@@ -2138,20 +2138,16 @@ function sortedModelli(){
                 const tBase = e.tOut||calcFine6h15(e.tIn)||"";
                 return (
                   <div style={{marginTop:4,display:"flex",flexDirection:"column",gap:2}}>
-                    {e.protPagFine&&<div style={{color:"rgba(255,255,255,0.9)",fontSize:10}}>
+                    {e.protPagFine&&<div style={{color:"rgba(255,255,255,0.9)",fontSize:16}}>
                       💜 PAG → {e.protPagFine}{calcDurProt(tBase,e.protPagFine)?" ("+calcDurProt(tBase,e.protPagFine)+")":""}
                     </div>}
-                    {e.protRecFine&&<div style={{color:"rgba(255,255,255,0.9)",fontSize:10}}>
+                    {e.protRecFine&&<div style={{color:"rgba(255,255,255,0.9)",fontSize:16}}>
                       ⚙️ REC → {e.protRecFine}{calcDurProt(tBase,e.protRecFine)?" ("+calcDurProt(tBase,e.protRecFine)+")":""}
                     </div>}
                   </div>
                 );
               })()}
-              {e.place&&(e.map
-                ?<a href={e.map} target="_blank" rel="noreferrer"
-                    style={{color:"#fff",fontSize:11,marginTop:3,display:"block"}}>📍 {e.place}</a>
-                :<div style={{color:"rgba(255,255,255,0.8)",fontSize:11,marginTop:3}}>📍 {e.place}</div>
-              )}
+              
             </div>
             <button onClick={e2=>{e2.stopPropagation();setForm({
                 editId:e.id,modelloId:null,shiftId:null,label:e.label,colorOvr:e.color,
