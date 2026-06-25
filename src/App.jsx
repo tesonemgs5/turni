@@ -2312,11 +2312,11 @@ function sortedModelli(){
             <div style={{display:"flex",alignItems:"center",gap:6}}>
               <SmartTimeInput value={form.protPagFine||""} onChange={v=>setForm(f=>({...f,protPagFine:v}))}
                 style={{flex:1,background:T.surface,border:`1.5px solid #8b5cf6`,
-                  borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
+                  borderRadius:8,padding:"5px 6px",color:T.text,fontSize:12,outline:"none"}}/>
               <div style={{background:T.surface,border:"1.5px solid #8b5cf6",borderRadius:8,
-                padding:"4px 8px",minWidth:48,textAlign:"center",flexShrink:0}}>
-                <div style={{fontSize:8,color:T.sub,fontWeight:700}}>DURATA</div>
-                <div style={{fontSize:12,fontWeight:900,color:"#8b5cf6"}}>{durPag||"—"}</div>
+                padding:"3px 5px",minWidth:36,textAlign:"center",flexShrink:0}}>
+                <div style={{fontSize:7,color:T.sub,fontWeight:700}}>DURATA</div>
+                <div style={{fontSize:11,fontWeight:900,color:"#8b5cf6"}}>{durPag||"—"}</div>
               </div>
             </div>
           </div>
