@@ -265,7 +265,7 @@ const isInitialized = useRef(false);
 
         const { data: modelliDb } = await supabase.from("modelli").select("*").eq("user_id", userId).order("sort_order");
         setModelli((modelliDb||[]).map(m=>({
-          id:m.id, titolo:m.titolo, tempo:m.tempo,
+          id:m.id, titolo:m.titolo, label:m.label||"", tempo:m.tempo,
           inizio:m.inizio||"", fine:m.fine||"",
           colore:m.colore, coloreCustom:m.colore_custom||null,
           posizione:m.posizione||"", sortOrder:m.sort_order||0,
@@ -305,7 +305,7 @@ const isInitialized = useRef(false);
           }
           const {data:modelliDb2}=await supabase.from("modelli").select("*").eq("user_id",userId).order("sort_order");
           setModelli((modelliDb2||[]).map(m=>({
-            id:m.id,titolo:m.titolo,tempo:m.tempo,
+            id:m.id,titolo:m.titolo,label:m.label||"",tempo:m.tempo,
             inizio:m.inizio||"",fine:m.fine||"",
             colore:m.colore,coloreCustom:m.colore_custom||null,
             posizione:m.posizione||"",sortOrder:m.sort_order||0,
