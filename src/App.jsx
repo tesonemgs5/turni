@@ -1222,7 +1222,7 @@ function sortedModelli(){
               <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",gap:"1px",padding:"0 1px 1px"}}>
                 {evts.slice(0,4).map((e,ei)=>(
                   <div key={e.id+ei} style={{background:e.color,borderRadius:3,padding:"2px 4px",
-                    fontSize:20,fontWeight:800,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",
+                    fontSize:14,fontWeight:800,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",
                     whiteSpace:"nowrap",height:16,minHeight:16,display:"flex",alignItems:"center",flexShrink:0,
                     textShadow:"0 1px 2px rgba(0,0,0,0.35)"}}>
                     {e.label}
