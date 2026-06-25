@@ -1220,14 +1220,29 @@ function sortedModelli(){
                 {ds.map(c=><div key={c.id} style={{width:5,height:5,borderRadius:"50%",background:c.color}}/>)}
               </div>
               <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",gap:"1px",padding:"0 1px 1px"}}>
-                {evts.slice(0,4).map((e,ei)=>(
-                  <div key={e.id+ei} style={{background:e.color,borderRadius:3,padding:"2px 4px",
-                    fontSize:14,fontWeight:800,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",
-                    whiteSpace:"nowrap",height:16,minHeight:16,display:"flex",alignItems:"center",flexShrink:0,
-                    textShadow:"0 1px 2px rgba(0,0,0,0.35)"}}>
-                    {e.label}
-                  </div>
-                ))}
+                {evts.slice(0,4).map((e,ei)=>{
+                  const nodes = [];
+                  if(e.protPagFine) nodes.push({label:"PR PAG",color:"#8b5cf6"});
+                  if(e.protRecFine) nodes.push({label:"PR REC",color:"#64748b"});
+                  return (
+                    <React.Fragment key={e.id+ei}>
+                      <div style={{background:e.color,borderRadius:3,padding:"2px 4px",
+                        fontSize:14,fontWeight:800,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",
+                        whiteSpace:"nowrap",height:16,minHeight:16,display:"flex",alignItems:"center",flexShrink:0,
+                        textShadow:"0 1px 2px rgba(0,0,0,0.35)"}}>
+                        {e.label}
+                      </div>
+                      {nodes.map((n,ni)=>(
+                        <div key={ni} style={{background:n.color,borderRadius:3,padding:"2px 4px",
+                          fontSize:14,fontWeight:800,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",
+                          whiteSpace:"nowrap",height:16,minHeight:16,display:"flex",alignItems:"center",flexShrink:0,
+                          textShadow:"0 1px 2px rgba(0,0,0,0.35)"}}>
+                          {n.label}
+                        </div>
+                      ))}
+                    </React.Fragment>
+                  );
+                })}
                 {evts.length>4&&<div style={{fontSize:8,color:T.sub,padding:"0 2px",flexShrink:0}}>+{evts.length-4}</div>}
               </div>
             </div>
