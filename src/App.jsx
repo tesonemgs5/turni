@@ -2201,7 +2201,7 @@ function sortedModelli(){
                     const c=m.coloreCustom||getColorByTime(m.inizio);
                     return (
                       <button key={m.id}
-                        onClick={()=>setForm(f=>({...f,modelloId:m.id,shiftId:null,label:m.titolo,colorOvr:null,
+                        onClick={()=>setForm(f=>({...f,modelloId:m.id,shiftId:null,label:m.label||m.titolo,colorOvr:null,
                           dur:m.tempo==="h24"?"allday":m.tempo==="6h15"?"fixed":"custom",
                           tIn:m.inizio||"",tOut:m.fine||""}))}
                         style={{background:form.modelloId===m.id?c:T.surface,
@@ -3357,9 +3357,15 @@ function ModelForm({T, form, setForm, accent, dark, onSave}){
     "#a855f7","#ec4899","#64748b","#1e40af","#0f172a","#ffffff"];
   return (
     <div style={{padding:"16px 14px 40px"}}>
-      <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:16}}>
+      <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:8}}>
         <input value={form.titolo} onChange={e=>setForm(f=>({...f,titolo:e.target.value.toUpperCase()}))}
-          placeholder="TITOLO"
+          placeholder="TITOLO / CODICE (es. 00-06)"
+          style={{width:"100%",padding:"14px 16px",background:"transparent",border:"none",
+            outline:"none",color:T.text,fontSize:16,fontWeight:600,boxSizing:"border-box"}}/>
+      </div>
+      <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:16}}>
+        <input value={form.label||""} onChange={e=>setForm(f=>({...f,label:e.target.value.toUpperCase()}))}
+          placeholder="NOME DA MOSTRARE NEL CALENDARIO (es. NOTTE)"
           style={{width:"100%",padding:"14px 16px",background:"transparent",border:"none",
             outline:"none",color:T.text,fontSize:16,fontWeight:600,boxSizing:"border-box"}}/>
       </div>
