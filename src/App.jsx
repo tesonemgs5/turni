@@ -3,7 +3,7 @@
 
 // #region SEZIONE 1: IMPORTS + COSTANTI
 // ═══════════════════════════════════════════════════════════════
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Fragment } from "react";
 import { supabase } from "./supabase";
 
 const MONTHS = ["Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno",
@@ -1225,7 +1225,7 @@ function sortedModelli(){
                   if(e.protPagFine) nodes.push({label:"PR PAG",color:"#8b5cf6"});
                   if(e.protRecFine) nodes.push({label:"PR REC",color:"#64748b"});
                   return (
-                    <React.Fragment key={e.id+ei}>
+                    <Fragment key={e.id+ei}>
                       <div style={{background:e.color,borderRadius:3,padding:"2px 4px",
                         fontSize:14,fontWeight:800,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",
                         whiteSpace:"nowrap",height:16,minHeight:16,display:"flex",alignItems:"center",flexShrink:0,
@@ -1240,7 +1240,7 @@ function sortedModelli(){
                           {n.label}
                         </div>
                       ))}
-                    </React.Fragment>
+                    </Fragment>
                   );
                 })}
                 {evts.length>4&&<div style={{fontSize:8,color:T.sub,padding:"0 2px",flexShrink:0}}>+{evts.length-4}</div>}
