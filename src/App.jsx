@@ -967,7 +967,7 @@ function sortedModelli(){
   // Calcola conteggio per un singolo report con le sue condizioni
   function computeConteggioForReport(cfg){
     const {from, to} = getReportRange();
-    const result = { totale:0, mattina:0, pomeriggio:0, notte:0, terzo:0, h24:0, app:0, auto:0 };
+    const result = { totale:0, primo:0, secondo:0, h24:0, app:0, auto:0 };
     const perModello = {};
     const fasceFiltro = cfg?.fasceFiltro || []; // [] = tutte
     for(const [dateKey, calMap] of Object.entries(store.events)){
@@ -2963,7 +2963,7 @@ function FasceExpand({data, pct1, pct2, T, modelli, accent}){
       const [h]=m.inizio.split(":").map(Number);
       const mins=h*60+(parseInt((m.inizio.split(":")||["0","0"])[1]||"0"));
       if(fascia==="primo") return mins>=360&&mins<705;
-      return mins>=720;
+      return mins>=705;
     });
   }
 
@@ -3848,7 +3848,7 @@ function NLRSScalanteView({rot, T, accent, modelli}){
       let tentativo = new Date(base);
       let iter = 0;
       while(tentativo.getDay() !== prossimoDow && iter < 14){
-        tentativo.setDate(tentativo.getDate() - 1);
+        tentativo.setDate(tentativo.getDate() + 1);
         iter++;
       }
       dataCorrRS = tentativo;
@@ -3967,7 +3967,7 @@ function DomenicheView({rot, T, accent, modelli, onUpdate}){
                     color:isLavoro?"#22c55e":"#64748b"}}>
                     {isLavoro?"🔵 FESTIVO (lavoro)":"⚪ Riposo"}
                   </span>
-                  <span style={{fontSize:10,color:T.sub}}>({i%4===0?"1":"" + (i%4===1?"2":"") + (i%4===2?"3":"") + (i%4===3?"4":"")}ª/{4})</span>
+                  <span style={{fontSize:10,color:T.sub}}>({`${i%4+1}ª/4`})</span>
                 </div>
                 <div style={{fontSize:12,color:T.sub,marginTop:1}}>
                   {dom.date.toLocaleDateString("it-IT",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}
