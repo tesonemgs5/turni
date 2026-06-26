@@ -1682,7 +1682,21 @@ function sortedModelli(){
                   {Object.values(rot.griglia||{}).filter(Boolean).length} giorni configurati
                 </div>
               </div>
-              <button onClick={()=>{updateGrigliaRotazione(rot.id,rot.griglia);setShowRotDetail(null);}}
+              <button onClick={()=>{
+                let grigliaFinale = {...(rot.griglia||{})};
+                if(rot.tipo==="domeniche" && rot.dataInizio && rot.modellaLavoroId){
+                  const inizio = new Date(rot.dataInizio);
+                  let d = new Date(inizio);
+                  while(d.getDay()!==0) d.setDate(d.getDate()+1);
+                  for(let i=0;i<(rot.nSettimane||52);i++){
+                    const k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+                    if(i%4===0) grigliaFinale[k]=rot.modellaLavoroId;
+                    d.setDate(d.getDate()+7);
+                  }
+                }
+                updateGrigliaRotazione(rot.id, grigliaFinale);
+                setShowRotDetail(null);
+              }}
                 style={{background:accent,border:"none",borderRadius:8,color:"#fff",
                   padding:"6px 14px",fontSize:13,fontWeight:800,cursor:"pointer"}}>Fatto</button>
             </div>
