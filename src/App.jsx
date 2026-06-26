@@ -2548,80 +2548,107 @@ function sortedModelli(){
       {showRotazionePicker&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:500,
           display:"flex",flexDirection:"column"}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
-            padding:"16px 16px 8px",background:T.surface,borderBottom:`1px solid ${T.border}`}}>
-            <button onClick={()=>setShowRotazionePicker(false)}
-              style={{background:"none",border:"none",color:T.sub,fontSize:22,cursor:"pointer"}}>‹</button>
-            <div style={{fontSize:16,fontWeight:900,color:T.text}}>Scegli rotazione</div>
-            <div style={{width:32}}/>
-          </div>
-          <div style={{flex:1,overflowY:"auto",padding:12,background:T.bg}}>
-            {rotazioni.length===0&&(
-              <div style={{textAlign:"center",padding:"40px 24px",color:T.sub}}>
-                <div style={{fontSize:36,marginBottom:10}}>🔄</div>
-                <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Nessuna rotazione</div>
+          {!showRotDetail?(
+            <>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+                padding:"16px 16px 8px",background:T.surface,borderBottom:`1px solid ${T.border}`}}>
+                <button onClick={()=>setShowRotazionePicker(false)}
+                  style={{background:"none",border:"none",color:T.sub,fontSize:22,cursor:"pointer"}}>‹</button>
+                <div style={{fontSize:16,fontWeight:900,color:T.text}}>Scegli rotazione</div>
+                <div style={{width:32}}/>
               </div>
-            )}
-            <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
-              {rotazioni.map((r,i,arr)=>{
-                // Calcola quale modello spetta a dayKey in base al ciclo della rotazione
-                function getModelloPerGiorno(){
-                  if(!r.dataInizio||!dayKey) return null;
-                  if(r.tipo==="personalizzata") return modelli.find(m=>m.id===r.griglia?.[dayKey])||null;
-                  if(r.tipo==="domeniche"){
+              <div style={{flex:1,overflowY:"auto",padding:12,background:T.bg}}>
+                {rotazioni.length===0&&(
+                  <div style={{textAlign:"center",padding:"40px 24px",color:T.sub}}>
+                    <div style={{fontSize:36,marginBottom:10}}>🔄</div>
+                    <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Nessuna rotazione</div>
+                  </div>
+                )}
+                <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+                  {rotazioni.map((r,i,arr)=>{
+                    const tipoLabel=r.tipo==="domeniche"?"🗓 Domeniche 1/4":r.tipo==="nlrs"?"🔄 NL/RS":r.tipo==="nlrs_scalante"?"📅 RS/NL Scalante":"✏️ Personalizzata";
+                    return (
+                      <div key={r.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
+                        <div onClick={()=>setShowRotDetail(r)}
+                          style={{display:"flex",alignItems:"center",padding:"14px 16px",cursor:"pointer"}}>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:16,fontWeight:800,color:T.text}}>{r.titolo||"Senza nome"}</div>
+                            <div style={{fontSize:13,color:T.sub,marginTop:2}}>{tipoLabel}{r.dataInizio?` · dal ${r.dataInizio}`:""}</div>
+                          </div>
+                          <span style={{color:T.sub,fontSize:14}}>›</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          ):(
+            <>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+                padding:"16px 16px 8px",background:T.surface,borderBottom:`1px solid ${T.border}`}}>
+                <button onClick={()=>setShowRotDetail(null)}
+                  style={{background:"none",border:"none",color:T.sub,fontSize:22,cursor:"pointer"}}>‹</button>
+                <div style={{fontSize:16,fontWeight:900,color:T.text}}>{showRotDetail.titolo||"Rotazione"}</div>
+                <button onClick={()=>{
+                  // Calcola modello per il dayKey dalla rotazione selezionata
+                  const r=showRotDetail;
+                  let modelloScelto=null;
+                  if(r.tipo==="personalizzata"){
+                    modelloScelto=modelli.find(m=>m.id===r.griglia?.[dayKey])||null;
+                  } else if(r.tipo==="domeniche"){
                     const inizio=new Date(r.dataInizio);
                     let prima=new Date(inizio);
                     while(prima.getDay()!==0) prima.setDate(prima.getDate()+1);
                     const target=new Date(dayKey);
                     const diffMs=target-prima;
-                    const diffSettimane=Math.floor(diffMs/(7*24*60*60*1000));
-                    if(diffSettimane<0||target.getDay()!==0) return null;
-                    const isLavoro=(diffSettimane%4)===0;
-                    const modId=isLavoro?r.modellaLavoroId:r.modelloNLId;
-                    return modelli.find(m=>m.id===modId)||null;
+                    const diffSett=Math.floor(diffMs/(7*24*60*60*1000));
+                    if(diffSett>=0&&target.getDay()===0){
+                      const isLav=(diffSett%4)===0;
+                      modelloScelto=modelli.find(m=>m.id===(isLav?r.modellaLavoroId:r.modelloNLId))||null;
+                    }
+                  } else if(r.tipo==="nlrs"||r.tipo==="nlrs_scalante"){
+                    modelloScelto=modelli.find(m=>m.id===(r.modelloNLId||r.modelloRSId))||null;
                   }
-                  if(r.tipo==="nlrs"||r.tipo==="nlrs_scalante"){
-                    const modId=r.modelloNLId||r.modelloRSId;
-                    return modelli.find(m=>m.id===modId)||null;
+                  if(!modelloScelto){
+                    alert("Nessun modello previsto per questo giorno dalla rotazione");
+                    return;
                   }
-                  return null;
-                }
-                const modelloGiorno=getModelloPerGiorno();
-                const c=modelloGiorno?(modelloGiorno.coloreCustom||getColorByTime(modelloGiorno.inizio)):"#64748b";
-                return (
-                  <div key={r.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
-                    <div onClick={()=>{
-                      setShowRotazionePicker(false);
-                      setEditRotazione(r);
-                      setRotForm({
-                        tipo:r.tipo||"personalizzata",
-                        titolo:r.titolo||"",
-                        dataInizio:r.dataInizio||"",
-                        nSettimane:r.nSettimane||52,
-                        modellaLavoroId:r.modellaLavoroId||null,
-                        modelloNLId:r.modelloNLId||null,
-                        modelloRSId:r.modelloRSId||null,
-                      });
-                      setShowRotDetail(r);
-                    }} style={{display:"flex",alignItems:"center",padding:"14px 16px",cursor:"pointer"}}>
-                      <div style={{width:36,height:36,borderRadius:10,background:c+"33",
-                        border:`2px solid ${c}`,display:"flex",alignItems:"center",justifyContent:"center",
-                        flexShrink:0,marginRight:12}}>
-                        <div style={{width:14,height:14,borderRadius:"50%",background:c}}/>
-                      </div>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:16,fontWeight:800,color:T.text}}>{r.titolo||"Senza nome"}</div>
-                        <div style={{fontSize:13,color:T.sub,marginTop:2}}>
-                          {modelloGiorno?`→ ${modelloGiorno.titolo}`:"Nessun modello per questo giorno"}
-                        </div>
-                      </div>
-                      <span style={{color:T.sub,fontSize:14}}>›</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+                  setForm({
+                    modelloId:modelloScelto.id,
+                    rotazioneId:r.id,
+                    shiftId:null,
+                    label:modelloScelto.titolo,
+                    note:"",
+                    dur:modelloScelto.tempo==="h24"?"allday":modelloScelto.tempo==="6h15"?"fixed":"custom",
+                    tIn:modelloScelto.inizio||"",
+                    tOut:modelloScelto.fine||"",
+                    place:"",map:"",colorOvr:null,collega:"",auto:"",
+                    protPagFine:"",protRecFine:"",
+                  });
+                  setShowRotDetail(null);
+                  setShowRotazionePicker(false);
+                }} style={{background:accent,border:"none",borderRadius:8,
+                  color:"#fff",fontSize:13,fontWeight:800,padding:"6px 14px",cursor:"pointer"}}>
+                  Fatto
+                </button>
+              </div>
+              <div style={{flex:1,overflowY:"auto",background:T.bg}}>
+                {showRotDetail.tipo==="domeniche"&&(
+                  <DomenicheView rot={showRotDetail} T={T} accent={accent} modelli={modelli} onUpdate={()=>{}}/>
+                )}
+                {showRotDetail.tipo==="nlrs"&&(
+                  <NLRSView rot={showRotDetail} T={T} accent={accent} modelli={modelli}/>
+                )}
+                {showRotDetail.tipo==="nlrs_scalante"&&(
+                  <NLRSScalanteView rot={showRotDetail} T={T} accent={accent} modelli={modelli}/>
+                )}
+                {showRotDetail.tipo==="personalizzata"&&(
+                  <GrigliaRotazione rot={showRotDetail} T={T} accent={accent} modelli={modelli} onUpdate={()=>{}}/>
+                )}
+              </div>
+            </>
+          )}
         </div>
       )}
       {showModelloPicker&&(
