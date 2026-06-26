@@ -1679,7 +1679,7 @@ function sortedModelli(){
               <div style={{textAlign:"center"}}>
                 <div style={{fontSize:16,fontWeight:900,color:T.text}}>{rot.titolo||"Rotazione"}</div>
                 <div style={{fontSize:12,color:T.sub}}>
-                  {Object.values(rot.griglia||{}).filter(Boolean).length} giorni configurati
+                  {rot.tipo==="domeniche"&&rot.dataInizio?Math.ceil((rot.nSettimane||52)/4):Object.values(rot.griglia||{}).filter(Boolean).length} giorni configurati
                 </div>
               </div>
               <button onClick={()=>{
