@@ -2590,24 +2590,19 @@ function sortedModelli(){
                 const c=modelloGiorno?(modelloGiorno.coloreCustom||getColorByTime(modelloGiorno.inizio)):"#64748b";
                 return (
                   <div key={r.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
-                    <div onClick={async()=>{
-                      if(!modelloGiorno){
-                        alert("Nessun modello previsto dalla rotazione per questo giorno");
-                        return;
-                      }
-                      setForm({
-                        modelloId:modelloGiorno.id,
-                        rotazioneId:r.id,
-                        shiftId:null,
-                        label:modelloGiorno.titolo,
-                        note:"",
-                        dur:modelloGiorno.tempo==="h24"?"allday":modelloGiorno.tempo==="6h15"?"fixed":"custom",
-                        tIn:modelloGiorno.inizio||"",
-                        tOut:modelloGiorno.fine||"",
-                        place:"",map:"",colorOvr:null,collega:"",auto:"",
-                        protPagFine:"",protRecFine:"",
-                      });
+                    <div onClick={()=>{
                       setShowRotazionePicker(false);
+                      setEditRotazione(r);
+                      setRotForm({
+                        tipo:r.tipo||"personalizzata",
+                        titolo:r.titolo||"",
+                        dataInizio:r.dataInizio||"",
+                        nSettimane:r.nSettimane||52,
+                        modellaLavoroId:r.modellaLavoroId||null,
+                        modelloNLId:r.modelloNLId||null,
+                        modelloRSId:r.modelloRSId||null,
+                      });
+                      setShowRotDetail(r);
                     }} style={{display:"flex",alignItems:"center",padding:"14px 16px",cursor:"pointer"}}>
                       <div style={{width:36,height:36,borderRadius:10,background:c+"33",
                         border:`2px solid ${c}`,display:"flex",alignItems:"center",justifyContent:"center",
