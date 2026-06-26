@@ -200,6 +200,7 @@ export default function App({ session }){
   const [rotForm, setRotForm] = useState({ tipo:"personalizzata", titolo:"", dataInizio:"", nSettimane:52, modellaLavoroId:null, modelloNLId:null, modelloRSId:null });
   const [showRotDetail, setShowRotDetail] = useState(null);
   const [showModelloPicker, setShowModelloPicker] = useState(false);
+  const [showRotazionePicker, setShowRotazionePicker] = useState(false);
   const dragSrcId = useRef(null);
   const touchSrcId = useRef(null);
   const touchTargetId = useRef(null);
@@ -248,7 +249,7 @@ const isInitialized = useRef(false);
             id: e.id, label: e.label, color: e.color, allDay: e.all_day,
             tIn: e.time_in||"", tOut: e.time_out||"", place: e.place||"",
             map: e.map_url||"", note: e.note||"",
-            modelloId: e.modello_id||null, collega: e.collega||null,
+            modelloId: e.modello_id||null, rotazioneId: e.rotazione_id||null, collega: e.collega||null,
             auto: e.auto||"", parentId: e.parent_id||null,
             protPagFine: e.prot_pag_fine||"", protRecFine: e.prot_rec_fine||"",
           });
@@ -456,6 +457,7 @@ const isInitialized = useRef(false);
       map_url: form.map||"",
       note: (extraNote||"").toUpperCase(),
       modello_id: form.modelloId||null,
+      rotazione_id: form.rotazioneId||null,
       collega: (form.collega||"").toUpperCase(),
       auto: (form.auto||"").toUpperCase(),
       prot_pag_fine: form.protPagFine||null,
@@ -467,6 +469,7 @@ const isInitialized = useRef(false);
       tIn: data.time_in||"", tOut: data.time_out||"",
       place: data.place||"", map: data.map_url||"",
       note: data.note||"", modelloId: data.modello_id||null,
+      rotazioneId: data.rotazione_id||null,
       collega: data.collega||null, auto: data.auto||"",
       protPagFine: data.prot_pag_fine||"", protRecFine: data.prot_rec_fine||"",
     };
@@ -2097,7 +2100,7 @@ function sortedModelli(){
                     color:"#fff",fontSize:13,fontWeight:800,padding:"7px 14px",cursor:"pointer"}}>
                   + Modello
                 </button>
-                <button onClick={()=>{setScreen("modelli");setModelliTab("rotazioni");setDayKey(null);}}
+                <button onClick={()=>setShowRotazionePicker(true)}
                   style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
                     color:T.text,fontSize:13,fontWeight:800,padding:"7px 14px",cursor:"pointer"}}>
                   🔄 Rotazioni
@@ -2539,6 +2542,90 @@ function sortedModelli(){
                 setShowModelForm(false);
                 setShowModelloPicker(true);
               }}/>
+          </div>
+        </div>
+      )}
+      {showRotazionePicker&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:500,
+          display:"flex",flexDirection:"column"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+            padding:"16px 16px 8px",background:T.surface,borderBottom:`1px solid ${T.border}`}}>
+            <button onClick={()=>setShowRotazionePicker(false)}
+              style={{background:"none",border:"none",color:T.sub,fontSize:22,cursor:"pointer"}}>‹</button>
+            <div style={{fontSize:16,fontWeight:900,color:T.text}}>Scegli rotazione</div>
+            <div style={{width:32}}/>
+          </div>
+          <div style={{flex:1,overflowY:"auto",padding:12,background:T.bg}}>
+            {rotazioni.length===0&&(
+              <div style={{textAlign:"center",padding:"40px 24px",color:T.sub}}>
+                <div style={{fontSize:36,marginBottom:10}}>🔄</div>
+                <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Nessuna rotazione</div>
+              </div>
+            )}
+            <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+              {rotazioni.map((r,i,arr)=>{
+                // Calcola quale modello spetta a dayKey in base al ciclo della rotazione
+                function getModelloPerGiorno(){
+                  if(!r.dataInizio||!dayKey) return null;
+                  if(r.tipo==="personalizzata") return modelli.find(m=>m.id===r.griglia?.[dayKey])||null;
+                  if(r.tipo==="domeniche"){
+                    const inizio=new Date(r.dataInizio);
+                    let prima=new Date(inizio);
+                    while(prima.getDay()!==0) prima.setDate(prima.getDate()+1);
+                    const target=new Date(dayKey);
+                    const diffMs=target-prima;
+                    const diffSettimane=Math.floor(diffMs/(7*24*60*60*1000));
+                    if(diffSettimane<0||target.getDay()!==0) return null;
+                    const isLavoro=(diffSettimane%4)===0;
+                    const modId=isLavoro?r.modellaLavoroId:r.modelloNLId;
+                    return modelli.find(m=>m.id===modId)||null;
+                  }
+                  if(r.tipo==="nlrs"||r.tipo==="nlrs_scalante"){
+                    const modId=r.modelloNLId||r.modelloRSId;
+                    return modelli.find(m=>m.id===modId)||null;
+                  }
+                  return null;
+                }
+                const modelloGiorno=getModelloPerGiorno();
+                const c=modelloGiorno?(modelloGiorno.coloreCustom||getColorByTime(modelloGiorno.inizio)):"#64748b";
+                return (
+                  <div key={r.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
+                    <div onClick={async()=>{
+                      if(!modelloGiorno){
+                        alert("Nessun modello previsto dalla rotazione per questo giorno");
+                        return;
+                      }
+                      setForm({
+                        modelloId:modelloGiorno.id,
+                        rotazioneId:r.id,
+                        shiftId:null,
+                        label:modelloGiorno.titolo,
+                        note:"",
+                        dur:modelloGiorno.tempo==="h24"?"allday":modelloGiorno.tempo==="6h15"?"fixed":"custom",
+                        tIn:modelloGiorno.inizio||"",
+                        tOut:modelloGiorno.fine||"",
+                        place:"",map:"",colorOvr:null,collega:"",auto:"",
+                        protPagFine:"",protRecFine:"",
+                      });
+                      setShowRotazionePicker(false);
+                    }} style={{display:"flex",alignItems:"center",padding:"14px 16px",cursor:"pointer"}}>
+                      <div style={{width:36,height:36,borderRadius:10,background:c+"33",
+                        border:`2px solid ${c}`,display:"flex",alignItems:"center",justifyContent:"center",
+                        flexShrink:0,marginRight:12}}>
+                        <div style={{width:14,height:14,borderRadius:"50%",background:c}}/>
+                      </div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:16,fontWeight:800,color:T.text}}>{r.titolo||"Senza nome"}</div>
+                        <div style={{fontSize:13,color:T.sub,marginTop:2}}>
+                          {modelloGiorno?`→ ${modelloGiorno.titolo}`:"Nessun modello per questo giorno"}
+                        </div>
+                      </div>
+                      <span style={{color:T.sub,fontSize:14}}>›</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}
