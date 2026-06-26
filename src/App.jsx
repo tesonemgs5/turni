@@ -2597,7 +2597,8 @@ function sortedModelli(){
                   if(r.tipo==="personalizzata"){
                     modelloScelto=modelli.find(m=>m.id===r.griglia?.[dayKey])||null;
                   } else if(r.tipo==="domeniche"){
-                    const inizio=new Date(r.dataInizio);
+                    const [di,dm,dd]=r.dataInizio.split("-").map(Number);
+                    const inizio=new Date(di,dm-1,dd);
                     let prima=new Date(inizio);
                     while(prima.getDay()!==0) prima.setDate(prima.getDate()+1);
                     const [ty,tm,td]=dayKey.split("-").map(Number);
