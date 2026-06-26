@@ -2600,7 +2600,8 @@ function sortedModelli(){
                     const inizio=new Date(r.dataInizio);
                     let prima=new Date(inizio);
                     while(prima.getDay()!==0) prima.setDate(prima.getDate()+1);
-                    const target=new Date(dayKey);
+                    const [ty,tm,td]=dayKey.split("-").map(Number);
+                    const target=new Date(ty,tm-1,td);
                     const diffMs=target-prima;
                     const diffSett=Math.floor(diffMs/(7*24*60*60*1000));
                     if(diffSett>=0&&target.getDay()===0){
