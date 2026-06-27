@@ -51,3 +51,10 @@ Non mostrare:
 - la regione/sezione errata o quella corretta a confronto
 
 Presentare direttamente la soluzione finale. Se c'è un errore, è un problema interno: si risolve e si mostra solo il risultato corretto. L'utente valuterà se accettarlo o no.
+
+## 7. Messaggi brevi
+
+non volio messaggi lunghi
+- messaggi cortissimi il minimo indispensabile
+- messaggi brevi e concisi 
+- non voglio perdere tempo a leggere spiegazioni inutili
