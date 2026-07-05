@@ -5,16 +5,11 @@
 // ═══════════════════════════════════════════════════════════════
 import { useState, useEffect, useRef, Fragment } from "react";
 import { supabase } from "./supabase";
+import { PALETTE, FASCE_AUTOMATICHE, COLORE_H24, getColorByTime, getColorLabel } from "./font";
 
 const MONTHS = ["Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno",
                 "Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"];
 const DAYS = ["L","M","M","G","V","S","D"];
-const PALETTE = [
-  "#ef4444","#f97316","#f59e0b","#eab308","#84cc16","#22c55e",
-  "#10b981","#14b8a6","#06b6d4","#3b82f6","#6366f1","#8b5cf6",
-  "#a855f7","#ec4899","#f43f5e","#64748b","#0f172a","#ffffff",
-  "#fca5a5","#fed7aa","#fef08a","#bbf7d0","#bfdbfe","#ddd6fe",
-];
 
 function uid(){ return Math.random().toString(36).slice(2)+Date.now().toString(36); }
 
@@ -78,24 +73,7 @@ function italianHols(y){
 
 // #region SEZIONE 4: COLOR & TIME FUNCTIONS
 // ═══════════════════════════════════════════════════════════════
-function getColorByTime(tIn){
-  if(!tIn) return "#64748b";
-  const [h,m]=tIn.split(":").map(Number);
-  const mins=h*60+m;
-  if(mins>=360&&mins<705) return "#f59e0b";
-  if(mins>=705&&mins<1035) return "#f97316";
-  if(mins>=1035&&mins<1080) return "#8b5cf6";
-  return "#1e40af";
-}
-function getColorLabel(tIn){
-  if(!tIn) return "";
-  const [h,m]=tIn.split(":").map(Number);
-  const mins=h*60+m;
-  if(mins>=360&&mins<705) return "MATTINA";
-  if(mins>=705&&mins<1035) return "POMERIGGIO";
-  if(mins>=1035&&mins<1080) return "3° TURNO";
-  return "NOTTE";
-}
+// getColorByTime / getColorLabel ora arrivano da ./font (SEZIONE 1)
 function calcFine6h15(tIn){
   if(!tIn) return "";
   const [h,m]=tIn.split(":").map(Number);
@@ -194,6 +172,11 @@ export default function App({ session }){
   const [editModello, setEditModello] = useState(null);
   const [modelForm, setModelForm] = useState({ titolo:"", tempo:"personalizzato", inizio:"", fine:"", coloreCustom:null, posizione:"" });
 
+  // ── Colori: popup assegnazione modelli + palette colori extra creati dall'utente
+  const [showColorAssignPicker, setShowColorAssignPicker] = useState(null); // colore hex attualmente aperto nel popup
+  const [showAddColorPicker, setShowAddColorPicker] = useState(false); // popup "+" per aggiungere un colore alla sezione
+  const [coloriExtra, setColoriExtra] = useState([]); // colori aggiunti manualmente alla sezione Colori (oltre a quelli già usati)
+
   const [rotazioni, setRotazioni] = useState([]);
   const [showRotForm, setShowRotForm] = useState(false);
   const [editRotazione, setEditRotazione] = useState(null);
@@ -273,6 +256,9 @@ const isInitialized = useRef(false);
           posizione:m.posizione||"", sortOrder:m.sort_order||0,
           calendarId:m.calendar_id||null,
         })));
+
+        const { data: coloriDb } = await supabase.from("colori").select("*").eq("user_id", userId).order("created_at");
+        setColoriExtra((coloriDb||[]).map(c=>c.hex));
 
         const { data: rotazioniDb } = await supabase.from("rotazioni").select("*").eq("user_id", userId).order("created_at");
         setRotazioni((rotazioniDb||[]).map(r=>({
@@ -919,6 +905,42 @@ function sortedModelli(){
       if(sheetsUrl) saveToSheets(store.events, store.calendars, sheetsUrl, sheetsSecret, updated);
       return updated;
     });
+  }
+
+  // ── COLORI: aggiunta/rimozione dalla sezione + assegnazione esclusiva ai modelli
+  async function addColoreExtra(hex){
+    if(!userId || coloriExtra.includes(hex)) return;
+    const { data, error } = await supabase.from("colori").insert({
+      user_id: userId, hex,
+    }).select().maybeSingle();
+    if(error){ console.log(error); return; }
+    setColoriExtra(prev=>[...prev, hex]);
+  }
+
+  async function removeColoreExtra(hex){
+    if(!userId) return;
+    await supabase.from("colori").delete().eq("user_id", userId).eq("hex", hex);
+    setColoriExtra(prev=>prev.filter(c=>c!==hex));
+    // I modelli che usavano questo colore tornano al colore automatico
+    const daResettare = modelli.filter(m=>m.coloreCustom===hex);
+    for(const m of daResettare){
+      await saveModello({...m, coloreCustom:null});
+    }
+  }
+
+  // Assegna esclusivamente `hex` come coloreCustom ai modelli in `modelIds`.
+  // Qualsiasi altro modello che aveva già `hex` come coloreCustom viene liberato.
+  async function assignColorToModelli(hex, modelIds){
+    const daAssegnare = new Set(modelIds);
+    for(const m of modelli){
+      const dovrebbeAvercelo = daAssegnare.has(m.id);
+      const ceLhaGia = m.coloreCustom===hex;
+      if(dovrebbeAvercelo && !ceLhaGia){
+        await saveModello({...m, coloreCustom:hex});
+      } else if(!dovrebbeAvercelo && ceLhaGia){
+        await saveModello({...m, coloreCustom:null});
+      }
+    }
   }
 
   async function saveRotazione(data){
@@ -1574,6 +1596,7 @@ function sortedModelli(){
                   border:`1px solid ${showMoveMode?accent:T.border}`,borderRadius:8,
                   padding:"6px 10px",fontSize:18,fontWeight:700,cursor:"pointer",
                   color:showMoveMode?"#fff":T.sub}}>↑↓</button>
+              {modelliTab!=="colori"&&(
               <button onClick={()=>{
                 if(modelliTab==="turni"){
                   setEditModello(null);
@@ -1586,6 +1609,7 @@ function sortedModelli(){
                 }
               }} style={{background:accent,border:"none",borderRadius:8,padding:"6px 16px",
                 fontSize:20,fontWeight:800,cursor:"pointer",color:"#fff"}}>+</button>
+              )}
               {showSortMenu&&(
                 <div style={{position:"absolute",top:40,right:0,background:T.surface,
                   border:`1px solid ${T.border}`,borderRadius:12,padding:8,zIndex:200,
@@ -1607,7 +1631,7 @@ function sortedModelli(){
       })()}
 
       <div style={{display:"flex",margin:"0 12px 12px",background:T.s2,borderRadius:14,padding:4,gap:4}}>
-        {[["turni","Turni"],["rotazioni","Rotazioni"]].map(([v,l])=>(
+        {[["turni","Turni"],["rotazioni","Rotazioni"],["colori","Colori"]].map(([v,l])=>(
           <button key={v} onClick={()=>setModelliTab(v)}
             style={{flex:1,padding:"9px 0",borderRadius:10,border:"none",cursor:"pointer",
               fontWeight:700,fontSize:14,
@@ -1738,7 +1762,158 @@ function sortedModelli(){
             )}
           </div>
         )}
+        {modelliTab==="colori"&&(()=>{
+          // Colori "in uso" = tutti i coloreCustom già assegnati a un modello,
+          // anche se non fanno parte della palette base o dei colori extra aggiunti.
+          const coloriUsatiDaModelli = [...new Set(modelli.map(m=>m.coloreCustom).filter(Boolean))];
+          const coloriManuali = [...new Set([...coloriExtra, ...coloriUsatiDaModelli])];
+          function contaModelli(hex){ return modelli.filter(m=>m.coloreCustom===hex).length; }
+          function contaModelliFascia(fascia){
+            return modelli.filter(m=>{
+              if(m.coloreCustom) return false; // se ha un custom, non conta più nella fascia automatica
+              if(fascia.key==="notte") return m.tempo==="h24"?false:(!m.inizio?false:getColorByTime(m.inizio)===fascia.color);
+              return m.tempo!=="h24" && m.inizio && getColorByTime(m.inizio)===fascia.color;
+            }).length;
+          }
+          const contaH24 = modelli.filter(m=>!m.coloreCustom && m.tempo==="h24").length;
+          return (
+            <div style={{paddingBottom:80}}>
+              <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>
+                COLORI AUTOMATICI (per fascia oraria — fissi)
+              </div>
+              <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:16}}>
+                {FASCE_AUTOMATICHE.map((f,i,arr)=>(
+                  <div key={f.key} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
+                    <ColorRow T={T} hex={f.color} label={f.label} sub="Automatico per orario"
+                      count={contaModelliFascia(f)} onClick={()=>setShowColorAssignPicker(f.color)} fixed/>
+                  </div>
+                ))}
+                <div style={{borderTop:`1px solid ${T.border}`}}>
+                  <ColorRow T={T} hex={COLORE_H24} label="H24" sub="Standard turni H24"
+                    count={contaH24} onClick={()=>setShowColorAssignPicker(COLORE_H24)} fixed/>
+                </div>
+              </div>
+
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,paddingLeft:4}}>
+                <div style={{fontSize:11,color:T.sub,fontWeight:700}}>COLORI PERSONALIZZATI</div>
+                <button onClick={()=>setShowAddColorPicker(true)}
+                  style={{background:accent,border:"none",borderRadius:8,padding:"4px 12px",
+                    fontSize:16,fontWeight:800,cursor:"pointer",color:"#fff"}}>+</button>
+              </div>
+              {coloriManuali.length===0?(
+                <div style={{textAlign:"center",padding:"24px",color:T.sub,fontSize:13}}>
+                  Nessun colore personalizzato. Premi + per aggiungerne uno.
+                </div>
+              ):(
+                <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+                  {coloriManuali.map((hex,i,arr)=>(
+                    <div key={hex} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
+                      <ColorRow T={T} hex={hex} label={hex.toUpperCase()} sub="Personalizzato"
+                        count={contaModelli(hex)} onClick={()=>setShowColorAssignPicker(hex)}
+                        onRemove={contaModelli(hex)===0?()=>removeColoreExtra(hex):null}/>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
+
+      {showAddColorPicker&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:600,
+          display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
+          onClick={()=>setShowAddColorPicker(false)}>
+          <div style={{background:T.surface,borderRadius:16,width:"100%",maxWidth:360,padding:20}}
+            onClick={e=>e.stopPropagation()}>
+            <div style={{fontSize:16,fontWeight:900,color:T.text,marginBottom:14}}>Aggiungi colore</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8}}>
+              {PALETTE.map(p=>(
+                <div key={p} onClick={()=>{addColoreExtra(p);setShowAddColorPicker(false);}}
+                  style={{width:32,height:32,borderRadius:"50%",background:p,cursor:"pointer",
+                    border:`2px solid ${T.border}`}}/>
+              ))}
+            </div>
+            <button onClick={()=>setShowAddColorPicker(false)}
+              style={{width:"100%",marginTop:16,background:T.s2,border:`1px solid ${T.border}`,
+                borderRadius:10,color:T.sub,padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:13}}>
+              Annulla
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showColorAssignPicker&&(()=>{
+        const hex = showColorAssignPicker;
+        const isFascia = FASCE_AUTOMATICHE.some(f=>f.color===hex) || hex===COLORE_H24;
+        return (
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:600,
+            display:"flex",flexDirection:"column"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+              padding:"16px 16px 8px",background:T.surface,borderBottom:`1px solid ${T.border}`}}>
+              <button onClick={()=>setShowColorAssignPicker(null)}
+                style={{background:"none",border:"none",color:T.sub,fontSize:22,cursor:"pointer"}}>‹</button>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <div style={{width:18,height:18,borderRadius:"50%",background:hex,border:`1px solid ${T.border}`}}/>
+                <div style={{fontSize:16,fontWeight:900,color:T.text}}>{hex.toUpperCase()}</div>
+              </div>
+              <div style={{width:32}}/>
+            </div>
+            {isFascia&&(
+              <div style={{padding:"10px 16px",fontSize:12,color:T.sub,background:T.s2}}>
+                Questo è un colore automatico. Assegnando manualmente un modello qui, il modello userà
+                sempre questo colore anche se il suo orario cambia.
+              </div>
+            )}
+            <div style={{flex:1,overflowY:"auto",padding:12,background:T.bg}}>
+              {modelli.length===0?(
+                <div style={{textAlign:"center",padding:"40px 24px",color:T.sub}}>
+                  Nessun modello creato ancora.
+                </div>
+              ):(
+                <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+                  {modelli.map((m,i,arr)=>{
+                    const selezionato = m.coloreCustom===hex;
+                    const coloreAttuale = m.coloreCustom||getColorByTime(m.inizio);
+                    return (
+                      <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
+                        <div onClick={()=>{
+                          const nuoviIds = modelli.filter(mm=>mm.coloreCustom===hex).map(mm=>mm.id);
+                          const set = new Set(nuoviIds);
+                          if(selezionato) set.delete(m.id); else set.add(m.id);
+                          assignColorToModelli(hex, [...set]);
+                        }} style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}>
+                          <div style={{width:20,height:20,borderRadius:6,marginRight:12,flexShrink:0,
+                            border:`2px solid ${selezionato?hex:T.border}`,
+                            background:selezionato?hex:"transparent",
+                            display:"flex",alignItems:"center",justifyContent:"center"}}>
+                            {selezionato&&<span style={{color:"#fff",fontSize:13,fontWeight:900}}>✓</span>}
+                          </div>
+                          <div style={{width:10,height:10,borderRadius:"50%",background:coloreAttuale,marginRight:10,flexShrink:0}}/>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:15,fontWeight:700,color:T.text}}>{m.titolo||"Senza nome"}</div>
+                            <div style={{fontSize:11,color:T.sub}}>
+                              {m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${m.fine?` - ${m.fine}`:""}`:""}
+                              {m.coloreCustom&&!selezionato?" · colore personalizzato diverso":""}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <div style={{padding:12,borderTop:`1px solid ${T.border}`,background:T.surface}}>
+              <button onClick={()=>setShowColorAssignPicker(null)}
+                style={{width:"100%",background:accent,border:"none",borderRadius:10,
+                  color:"#fff",padding:"12px 0",cursor:"pointer",fontWeight:800,fontSize:14}}>
+                Fatto
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       {showRotForm&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:300,
@@ -3553,6 +3728,27 @@ function Pal({T, cur, onPick, up=false}){
   );
 }
 
+function ColorRow({T, hex, label, sub, count, onClick, onRemove, fixed=false}){
+  return (
+    <div style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}} onClick={onClick}>
+      <div style={{width:32,height:32,borderRadius:"50%",background:hex,
+        border:`2px solid ${T.border}`,flexShrink:0,marginRight:12}}/>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:14,fontWeight:800,color:T.text}}>{label}</div>
+        <div style={{fontSize:11,color:T.sub}}>{sub}</div>
+      </div>
+      <div style={{fontSize:12,fontWeight:700,color:T.sub,marginRight:8}}>
+        {count} {count===1?"modello":"modelli"}
+      </div>
+      {onRemove&&(
+        <button onClick={e=>{e.stopPropagation();onRemove();}}
+          style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:18,padding:"0 4px",marginRight:2}}>×</button>
+      )}
+      <span style={{color:T.sub,fontSize:14}}>›</span>
+    </div>
+  );
+}
+
 function SecCollapsible({label,children,T}){
   const [open,setOpen]=useState(false);
   return (
@@ -4215,4 +4411,4 @@ function NLRSView({rot, T, accent, modelli}){
 }
 
 
-// #endregion
+// #endregion// modifica
