@@ -2,7 +2,8 @@
 -- SCRIPT DI CONFIGURAZIONE DATABASE SUPABASE - CALENDARIO TURNI
 -- =====================================================================
 -- Esegui questo script nell'area "SQL Editor" di Supabase per creare
--- le tabelle necessarie e abilitare le politiche di sicurezza (RLS).
+-- le tabelle necessarie, abilitare le politiche di sicurezza (RLS)
+-- e configurare gli indici di performance.
 -- =====================================================================
 
 -- 1. Tabella Calendari
@@ -28,7 +29,63 @@ USING (auth.uid() = user_id)
 WITH CHECK (auth.uid() = user_id);
 
 
--- 2. Tabella Eventi
+-- 2. Tabella Modelli Turni
+CREATE TABLE IF NOT EXISTS public.modelli (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    titolo TEXT NOT NULL,
+    label TEXT,
+    tempo TEXT,
+    inizio TEXT,
+    fine TEXT,
+    colore TEXT,
+    colore_custom TEXT,
+    posizione TEXT,
+    sort_order INTEGER DEFAULT 0,
+    calendar_id UUID REFERENCES public.calendars(id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Abilita RLS per la tabella Modelli
+ALTER TABLE public.modelli ENABLE ROW LEVEL SECURITY;
+
+-- Politiche RLS per Modelli (Isolamento utenti)
+CREATE POLICY "Gli utenti possono gestire solo i propri modelli" 
+ON public.modelli 
+FOR ALL 
+TO authenticated 
+USING (auth.uid() = user_id) 
+WITH CHECK (auth.uid() = user_id);
+
+
+-- 3. Tabella Rotazioni
+CREATE TABLE IF NOT EXISTS public.rotazioni (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    tipo TEXT NOT NULL,
+    titolo TEXT,
+    data_inizio TEXT,
+    n_settimane INTEGER DEFAULT 52,
+    modello_lavoro_id UUID REFERENCES public.modelli(id) ON DELETE SET NULL,
+    modello_nl_id UUID REFERENCES public.modelli(id) ON DELETE SET NULL,
+    modello_rs_id UUID REFERENCES public.modelli(id) ON DELETE SET NULL,
+    griglia JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Abilita RLS per la tabella Rotazioni
+ALTER TABLE public.rotazioni ENABLE ROW LEVEL SECURITY;
+
+-- Politiche RLS per Rotazioni (Isolamento utenti)
+CREATE POLICY "Gli utenti possono gestire solo le proprie rotazioni" 
+ON public.rotazioni 
+FOR ALL 
+TO authenticated 
+USING (auth.uid() = user_id) 
+WITH CHECK (auth.uid() = user_id);
+
+
+-- 4. Tabella Eventi
 CREATE TABLE IF NOT EXISTS public.events (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -42,6 +99,12 @@ CREATE TABLE IF NOT EXISTS public.events (
     place TEXT DEFAULT '',
     map_url TEXT DEFAULT '',
     note TEXT DEFAULT '',
+    modello_id UUID REFERENCES public.modelli(id) ON DELETE SET NULL,
+    rotazione_id UUID REFERENCES public.rotazioni(id) ON DELETE SET NULL,
+    collega TEXT DEFAULT '',
+    auto TEXT DEFAULT '',
+    prot_pag_fine TEXT DEFAULT NULL,
+    prot_rec_fine TEXT DEFAULT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
@@ -57,7 +120,7 @@ USING (auth.uid() = user_id)
 WITH CHECK (auth.uid() = user_id);
 
 
--- 3. Tabella Impostazioni Utente
+-- 5. Tabella Impostazioni Utente
 CREATE TABLE IF NOT EXISTS public.user_settings (
     user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     theme TEXT NOT NULL DEFAULT 'auto',
@@ -79,9 +142,7 @@ USING (auth.uid() = user_id)
 WITH CHECK (auth.uid() = user_id);
 
 
--- 4. Tabella Statistiche di Utilizzo (Anonima e conforme al GDPR)
--- Questa tabella memorizza solo l'ID utente (pseudonimizzato) e l'ultimo accesso.
--- Non memorizza indirizzi IP, email, nomi o dati personali.
+-- 6. Tabella Statistiche di Utilizzo (Anonima e conforme al GDPR)
 CREATE TABLE IF NOT EXISTS public.usage_stats (
     user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     last_active TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
@@ -91,7 +152,7 @@ CREATE TABLE IF NOT EXISTS public.usage_stats (
 -- Abilita RLS per la tabella Statistiche
 ALTER TABLE public.usage_stats ENABLE ROW LEVEL SECURITY;
 
--- Politica per permettere a ciascun utente loggato di salvare/aggiornare le proprie statistiche anonime
+-- Politica per permettere a ciascun utente loggato di salvare/aggiornare le proprie statistiche
 CREATE POLICY "Gli utenti possono aggiornare le proprie statistiche" 
 ON public.usage_stats 
 FOR ALL 
@@ -100,25 +161,83 @@ USING (auth.uid() = user_id)
 WITH CHECK (auth.uid() = user_id);
 
 
--- 5. Funzione Sicura per Statistiche Amministratore (GDPR Compliant)
--- Questa funzione viene eseguita con privilegi elevati (SECURITY DEFINER) per poter
--- contare le righe globalmente, ma restituisce SOLO aggregati numerici (conteggi).
--- Non rivela chi sono gli utenti (nessuna email o ID viene esposto all'admin).
+-- 7. Tabella Backups (Snapshot del database dell'utente)
+CREATE TABLE IF NOT EXISTS public.backups (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    data JSONB NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Abilita RLS per la tabella Backups
+ALTER TABLE public.backups ENABLE ROW LEVEL SECURITY;
+
+-- Politica per permettere a ciascun utente loggato di salvare/ripristinare i propri backup
+CREATE POLICY "Gli utenti possono gestire solo i propri backup" 
+ON public.backups 
+FOR ALL 
+TO authenticated 
+USING (auth.uid() = user_id) 
+WITH CHECK (auth.uid() = user_id);
+
+
+-- =====================================================================
+-- INDICI DI PERFORMANCE PER OTTIMIZZARE LE QUERY
+-- =====================================================================
+
+-- Indici per Calendari
+CREATE INDEX IF NOT EXISTS idx_calendars_user_id ON public.calendars(user_id);
+
+-- Indici per Eventi
+CREATE INDEX IF NOT EXISTS idx_events_user_id ON public.events(user_id);
+CREATE INDEX IF NOT EXISTS idx_events_calendar_id ON public.events(calendar_id);
+CREATE INDEX IF NOT EXISTS idx_events_date_key ON public.events(date_key);
+CREATE INDEX IF NOT EXISTS idx_events_user_date ON public.events(user_id, date_key);
+CREATE INDEX IF NOT EXISTS idx_events_modello_id ON public.events(modello_id);
+CREATE INDEX IF NOT EXISTS idx_events_rotazione_id ON public.events(rotazione_id);
+
+-- Indici per Modelli
+CREATE INDEX IF NOT EXISTS idx_modelli_user_id ON public.modelli(user_id);
+CREATE INDEX IF NOT EXISTS idx_modelli_calendar_id ON public.modelli(calendar_id);
+
+-- Indici per Rotazioni
+CREATE INDEX IF NOT EXISTS idx_rotazioni_user_id ON public.rotazioni(user_id);
+
+-- Indici per Backups
+CREATE INDEX IF NOT EXISTS idx_backups_user_id ON public.backups(user_id);
+
+
+-- =====================================================================
+-- FUNZIONI SICURE E AMMINISTRAZIONE
+-- =====================================================================
+
+-- Funzione Sicura per Statistiche Amministratore (GDPR Compliant)
 CREATE OR REPLACE FUNCTION public.get_app_stats()
 RETURNS TABLE (
     total_users BIGINT,
     active_users_7d BIGINT
 ) 
 LANGUAGE plpgsql
-SECURITY DEFINER -- Permette di bypassare la RLS della tabella usage_stats per fare il conteggio aggregato
+SECURITY DEFINER
+AS $$
+DECLARE
+    caller_email TEXT;
+END;
+$$;
+
+-- Rendi la funzione eseguibile solo da utenti amministratori (es: 'tesonemgs5@gmail.com')
+CREATE OR REPLACE FUNCTION public.get_app_stats()
+RETURNS TABLE (
+    total_users BIGINT,
+    active_users_7d BIGINT
+) 
+LANGUAGE plpgsql
+SECURITY DEFINER
 AS $$
 DECLARE
     caller_email TEXT;
 BEGIN
-    -- Recupera l'email dell'utente che sta chiamando la funzione dal JWT di Supabase
     caller_email := auth.jwt() ->> 'email';
-
-    -- CONTROLLO SICUREZZA: Sostituisci 'tesonemgs5@gmail.com' con l'email dell'admin se diversa.
     IF caller_email = 'tesonemgs5@gmail.com' THEN
         RETURN QUERY
         SELECT 
@@ -131,7 +250,6 @@ BEGIN
 END;
 $$;
 
--- Rendi la funzione eseguibile solo da utenti autenticati
 REVOKE EXECUTE ON FUNCTION public.get_app_stats() FROM public;
 REVOKE EXECUTE ON FUNCTION public.get_app_stats() FROM anonymous;
 GRANT EXECUTE ON FUNCTION public.get_app_stats() TO authenticated;
