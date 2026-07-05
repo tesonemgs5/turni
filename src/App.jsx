@@ -196,6 +196,7 @@ export default function App({ session }){
   const [showIntervalPicker, setShowIntervalPicker] = useState(false);
   const [indennita, setIndennita] = useState({ diurno:"", notturno:"", festivo:"", notturno_festivo:"" });
   const [conteggioConfigs, setConteggioConfigs] = useState({});
+  const [showReportModelliPicker, setShowReportModelliPicker] = useState(null); // reportId aperto
 
   const userId = session?.user?.id;
 const isInitialized = useRef(false);
@@ -928,21 +929,6 @@ function sortedModelli(){
     }
   }
 
-  // Assegna esclusivamente `hex` come coloreCustom ai modelli in `modelIds`.
-  // Qualsiasi altro modello che aveva già `hex` come coloreCustom viene liberato.
-  async function assignColorToModelli(hex, modelIds){
-    const daAssegnare = new Set(modelIds);
-    for(const m of modelli){
-      const dovrebbeAvercelo = daAssegnare.has(m.id);
-      const ceLhaGia = m.coloreCustom===hex;
-      if(dovrebbeAvercelo && !ceLhaGia){
-        await saveModello({...m, coloreCustom:hex});
-      } else if(!dovrebbeAvercelo && ceLhaGia){
-        await saveModello({...m, coloreCustom:null});
-      }
-    }
-  }
-
   async function saveRotazione(data){
     if(!userId) return;
     const payload={
@@ -1081,10 +1067,12 @@ function sortedModelli(){
     const result = { totale:0, primo:0, secondo:0, h24:0, app:0, auto:0 };
     const perModello = {};
     const fasceFiltro = cfg?.fasceFiltro || []; // [] = tutte
+    const modelliInclusi = cfg?.modelliInclusi || []; // [] = tutti i modelli
     for(const [dateKey, calMap] of Object.entries(store.events)){
       if(dateKey < from || dateKey > to) continue;
       for(const [, evts] of Object.entries(calMap)){
         for(const e of evts){
+          if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
           if(e.allDay){
             if(fasceFiltro.length===0||fasceFiltro.includes("h24")){
               result.totale++; result.h24++;
@@ -1117,7 +1105,7 @@ function sortedModelli(){
     return computeConteggioForReport({fasceFiltro:[]});
   }
 
-  function computeIndennita(){
+  function computeIndennita(modelliInclusi=[]){
     const {from, to} = getReportRange();
     const totals = { diurno:0, notturno:0, festivo:0, notturno_festivo:0 };
     for(const [dateKey, calMap] of Object.entries(store.events)){
@@ -1125,6 +1113,7 @@ function sortedModelli(){
       const fest = isFestivo(dateKey);
       for(const [, evts] of Object.entries(calMap)){
         for(const e of evts){
+          if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
           if(e.allDay) continue;
           const band = getShiftBand(e.tIn);
           if(fest && band==="notturno") totals.notturno_festivo++;
@@ -1181,7 +1170,7 @@ function sortedModelli(){
   }
 
   function getConteggioConfig(reportId){
-    return conteggioConfigs[reportId] || { fasceFiltro:[] };
+    return conteggioConfigs[reportId] || { fasceFiltro:[], modelliInclusi:[] };
   }
 
   function updateConteggioConfig(reportId, cfg){
@@ -1379,7 +1368,7 @@ function sortedModelli(){
   function renderReportCard(r){
     const isOpen = openReportConfig===r.id;
     const cfg = getConteggioConfig(r.id);
-    const data = r.type==="conteggio_turni" ? computeConteggioForReport(cfg) : computeConteggio();
+    const data = computeConteggioForReport(cfg);
     const pct = totaleTurni>0 ? Math.round((data.totale/totaleTurni)*100) : 0;
 
     return (
@@ -1422,6 +1411,18 @@ function sortedModelli(){
         </div>
         {isOpen && (
           <div style={{background:T.s2,padding:14,borderBottom:`1px solid ${T.border}`}}>
+            <div style={{display:"flex",justifyContent:"flex-end",marginBottom:10}}>
+              <button onClick={()=>setShowReportModelliPicker(r.id)}
+                style={{display:"flex",alignItems:"center",gap:6,background:T.surface,
+                  border:`1px solid ${T.border}`,borderRadius:20,padding:"6px 12px",
+                  fontSize:12,fontWeight:700,color:T.text,cursor:"pointer"}}>
+                📋 Filtra modelli
+                {(cfg.modelliInclusi||[]).length>0&&(
+                  <span style={{background:accent,color:"#fff",borderRadius:10,
+                    padding:"1px 7px",fontSize:11,fontWeight:800}}>{cfg.modelliInclusi.length}</span>
+                )}
+              </button>
+            </div>
             {r.type==="conteggio_turni" && (
               <ConteggioConfigCard T={T} r={r} cfg={cfg} data={data} totaleTurni={totaleTurni}
                 modelli={modelli} accent={accent}
@@ -1431,12 +1432,12 @@ function sortedModelli(){
             )}
             {r.type==="indennita" && (
               <IndennitaConfig T={T} values={indennita} setValues={setIndennita}
-                calc={indennitaCalc} onSave={()=>saveSettings({indennita})}/>
+                calc={computeIndennita(cfg.modelliInclusi||[])} onSave={()=>saveSettings({indennita})}/>
             )}
             {r.type==="ore_turno" && <OrePerTurnoView T={T} data={data}/>}
-            {r.type==="straordinari" && <StraordinariView T={T} data={data} store={store} reportRange={{from:range.from,to:range.to}}/>}
+            {r.type==="straordinari" && <StraordinariView T={T} data={data} store={store} reportRange={{from:range.from,to:range.to}} modelliInclusi={cfg.modelliInclusi||[]}/>}
             {r.type==="guadagni" && (
-              <GuadagniView T={T} indennita={indennita} calc={indennitaCalc}/>
+              <GuadagniView T={T} indennita={indennita} calc={computeIndennita(cfg.modelliInclusi||[])}/>
             )}
           </div>
         )}
@@ -1545,6 +1546,78 @@ function sortedModelli(){
           </div>
         </div>
       )}
+      {showReportModelliPicker&&(()=>{
+        const reportId = showReportModelliPicker;
+        const cfg = getConteggioConfig(reportId);
+        const inclusi = cfg.modelliInclusi||[];
+        return (
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:600,
+            display:"flex",flexDirection:"column"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+              padding:"16px 16px 8px",background:T.surface,borderBottom:`1px solid ${T.border}`}}>
+              <button onClick={()=>setShowReportModelliPicker(null)}
+                style={{background:"none",border:"none",color:T.sub,fontSize:22,cursor:"pointer"}}>‹</button>
+              <div style={{fontSize:16,fontWeight:900,color:T.text}}>Filtra modelli</div>
+              <div style={{width:32}}/>
+            </div>
+            <div style={{padding:"10px 16px",fontSize:12,color:T.sub,background:T.s2}}>
+              Nessuna selezione = tutti i modelli inclusi nel calcolo di questo report.
+            </div>
+            <div style={{flex:1,overflowY:"auto",padding:12,background:T.bg}}>
+              {modelli.length===0?(
+                <div style={{textAlign:"center",padding:"40px 24px",color:T.sub}}>Nessun modello creato ancora.</div>
+              ):(
+                <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+                  <div onClick={()=>updateConteggioConfig(reportId, {...cfg, modelliInclusi:[]})}
+                    style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer",
+                      borderBottom:`1px solid ${T.border}`}}>
+                    <div style={{width:20,height:20,borderRadius:6,marginRight:12,flexShrink:0,
+                      border:`2px solid ${inclusi.length===0?accent:T.border}`,
+                      background:inclusi.length===0?accent:"transparent",
+                      display:"flex",alignItems:"center",justifyContent:"center"}}>
+                      {inclusi.length===0&&<span style={{color:"#fff",fontSize:13,fontWeight:900}}>✓</span>}
+                    </div>
+                    <span style={{fontSize:15,fontWeight:700,color:T.text}}>Tutti i modelli</span>
+                  </div>
+                  {modelli.map((m,i,arr)=>{
+                    const selezionato = inclusi.includes(m.id);
+                    const colore = m.coloreCustom||getColorByTime(m.inizio);
+                    return (
+                      <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
+                        <div onClick={()=>{
+                          const next = selezionato ? inclusi.filter(id=>id!==m.id) : [...inclusi, m.id];
+                          updateConteggioConfig(reportId, {...cfg, modelliInclusi: next});
+                        }} style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}>
+                          <div style={{width:20,height:20,borderRadius:6,marginRight:12,flexShrink:0,
+                            border:`2px solid ${selezionato?colore:T.border}`,
+                            background:selezionato?colore:"transparent",
+                            display:"flex",alignItems:"center",justifyContent:"center"}}>
+                            {selezionato&&<span style={{color:"#fff",fontSize:13,fontWeight:900}}>✓</span>}
+                          </div>
+                          <div style={{width:10,height:10,borderRadius:"50%",background:colore,marginRight:10,flexShrink:0}}/>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:15,fontWeight:700,color:T.text}}>{m.titolo||"Senza nome"}</div>
+                            <div style={{fontSize:11,color:T.sub}}>
+                              {m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${m.fine?` - ${m.fine}`:""}`:""}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <div style={{padding:12,borderTop:`1px solid ${T.border}`,background:T.surface}}>
+              <button onClick={()=>setShowReportModelliPicker(null)}
+                style={{width:"100%",background:accent,border:"none",borderRadius:10,
+                  color:"#fff",padding:"12px 0",cursor:"pointer",fontWeight:800,fontSize:14}}>
+                Fatto
+              </button>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 
@@ -1878,10 +1951,10 @@ function sortedModelli(){
                     return (
                       <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                         <div onClick={()=>{
-                          const nuoviIds = modelli.filter(mm=>mm.coloreCustom===hex).map(mm=>mm.id);
-                          const set = new Set(nuoviIds);
-                          if(selezionato) set.delete(m.id); else set.add(m.id);
-                          assignColorToModelli(hex, [...set]);
+                          // Assegna/rimuove SOLO il modello cliccato: nessun ricalcolo
+                          // dell'intero set (evita stati non aggiornati / click che
+                          // sembravano non fare nulla sui colori automatici).
+                          saveModello({...m, coloreCustom: selezionato ? null : hex});
                         }} style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}>
                           <div style={{width:20,height:20,borderRadius:6,marginRight:12,flexShrink:0,
                             border:`2px solid ${selezionato?hex:T.border}`,
@@ -3592,7 +3665,7 @@ function OrePerTurnoView({T, data}){
   );
 }
 
-function StraordinariView({T, data, store, reportRange}){
+function StraordinariView({T, data, store, reportRange, modelliInclusi=[]}){
   // Calcola protrazioni leggendo il campo `note` di ogni evento
   // App.jsx scrive già:
   //   "Protrazione: +Xh Ym"  per pagamento (straordinarioTipo==="pagamento")
@@ -3610,6 +3683,7 @@ function StraordinariView({T, data, store, reportRange}){
     if(to   && dateKey > to  ) continue;
     for(const [, evts] of Object.entries(calMap)){
       for(const e of evts){
+        if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
         const nota  = (e.note||"").toUpperCase();
         const auto  = (e.auto||"").toUpperCase();
         // Legge minuti dalla nota "PROTRAZIONE: +Xh Ym" o "ANTICIPO: Xh Ym"
@@ -3618,6 +3692,7 @@ function StraordinariView({T, data, store, reportRange}){
         if(matchProt){
           const mins = parseInt(matchProt[1]||0)*60 + parseInt(matchProt[2]||0);
           // Distingue pagamento da recupero tramite campo auto
+
           if(auto.includes(":REC")) minRecupero  += mins;
           else                      minPagamento += mins;
         }
