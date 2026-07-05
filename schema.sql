@@ -244,5 +244,5 @@ END;
 $$;
 
 REVOKE EXECUTE ON FUNCTION public.get_app_stats() FROM public;
-REVOKE EXECUTE ON FUNCTION public.get_app_stats() FROM anonymous;
+REVOKE EXECUTE ON FUNCTION public.get_app_stats() FROM anon;
 GRANT EXECUTE ON FUNCTION public.get_app_stats() TO authenticated;
