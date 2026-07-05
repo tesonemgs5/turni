@@ -199,6 +199,7 @@ export default function App({ session }){
   const [editRotazione, setEditRotazione] = useState(null);
   const [rotForm, setRotForm] = useState({ tipo:"personalizzata", titolo:"", dataInizio:"", nSettimane:52, modellaLavoroId:null, modelloNLId:null, modelloRSId:null });
   const [showRotDetail, setShowRotDetail] = useState(null);
+  const [showApplyRotDialog, setShowApplyRotDialog] = useState(null);
   const [showModelloPicker, setShowModelloPicker] = useState(false);
   const [showRotazionePicker, setShowRotazionePicker] = useState(false);
   const dragSrcId = useRef(null);
@@ -949,6 +950,94 @@ function sortedModelli(){
     setRotazioni(prev=>prev.map(r=>r.id===rotId?{...r,griglia}:r));
   }
 
+  async function applyRotazione(rotId, startDayKey, numRipetizioni) {
+    if(!userId || !calId || !startDayKey || !numRipetizioni) return;
+    const rot = rotazioni.find(r=>r.id===rotId);
+    if(!rot) return;
+    
+    const modLav = modelli.find(m=>m.id===rot.modellaLavoroId);
+    const modRip = modelli.find(m=>m.id===rot.modelloNLId);
+    const totalWeeks = numRipetizioni * 4;
+    
+    const [y0, m0, d0] = startDayKey.split("-").map(Number);
+    const start = new Date(y0, m0-1, d0);
+    
+    const nuoviEventiLocali = {};
+    
+    for(let i=0; i<totalWeeks; i++) {
+      const d = new Date(start);
+      d.setDate(d.getDate() + i * 7);
+      const dateKey = dkey(d.getFullYear(), d.getMonth(), d.getDate());
+      
+      const isLavoro = (i % 4) === 0;
+      const mod = isLavoro ? modLav : modRip;
+      if(!mod) continue;
+      
+      const color = mod.coloreCustom || (mod.tempo==="h24" ? "#64748b" : getColorByTime(mod.inizio));
+      const label = (mod.label || mod.titolo || "").toUpperCase();
+      const allDay = mod.tempo==="h24";
+      const tIn = allDay ? "" : (mod.inizio || "");
+      const tOut = allDay ? "" : (mod.tempo==="6h15" ? calcFine6h15(mod.inizio) : (mod.fine || ""));
+      
+      const { data, error } = await supabase.from("events").insert({
+        user_id: userId,
+        calendar_id: calId,
+        date_key: dateKey,
+        label,
+        color,
+        all_day: allDay,
+        time_in: tIn,
+        time_out: tOut,
+        place: "",
+        map_url: "",
+        note: "",
+        modello_id: mod.id || null,
+        rotazione_id: rot.id,
+        collega: "",
+        auto: "",
+        prot_pag_fine: null,
+        prot_rec_fine: null,
+      }).select().maybeSingle();
+      
+      if(error) {
+        console.error("Errore inserimento evento rotazione:", error);
+        continue;
+      }
+      
+      if(!nuoviEventiLocali[dateKey]) nuoviEventiLocali[dateKey] = {};
+      if(!nuoviEventiLocali[dateKey][calId]) nuoviEventiLocali[dateKey][calId] = [];
+      nuoviEventiLocali[dateKey][calId].push({
+        id: data.id,
+        color,
+        label,
+        allDay: data.all_day,
+        tIn: data.time_in || "",
+        tOut: data.time_out || "",
+        place: "",
+        map: "",
+        note: "",
+        modelloId: data.modello_id || null,
+        rotazioneId: data.rotazione_id || null,
+        collega: "",
+        auto: "",
+      });
+    }
+    
+    setStore(prev => {
+      const ns = JSON.parse(JSON.stringify(prev));
+      for(const [dateKey, calMap] of Object.entries(nuoviEventiLocali)) {
+        if(!ns.events[dateKey]) ns.events[dateKey] = {};
+        for(const [cid, evts] of Object.entries(calMap)) {
+          if(!ns.events[dateKey][cid]) ns.events[dateKey][cid] = [];
+          ns.events[dateKey][cid].push(...evts);
+        }
+      }
+      saveToLocalStorage(ns.events, ns.calendars, modelli);
+      if(syncMode === "on" && sheetsUrl) saveToSheets(ns.events, ns.calendars);
+      return ns;
+    });
+  }
+
   // ── REPORT HELPERS ───────────────────────────────────────────
   function getReportRange(){
     const now = new Date();
@@ -1637,6 +1726,11 @@ function sortedModelli(){
                   <div key={r.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                     <RotazioneCard r={r} T={T} accent={accent} modelli={modelli}
                       onOpen={()=>setShowRotDetail(r.id)}
+                      onEdit={()=>{ setEditRotazione(r); setRotForm({
+                        tipo:r.tipo, titolo:r.titolo||"", dataInizio:r.dataInizio||"",
+                        nSettimane:r.nSettimane||52, modellaLavoroId:r.modellaLavoroId||null,
+                        modelloNLId:r.modelloNLId||null, modelloRSId:r.modelloRSId||null,
+                      }); setShowRotForm(true); }}
                       onDelete={()=>deleteRotazione(r.id)}/>
                   </div>
                 ))}
@@ -1679,7 +1773,9 @@ function sortedModelli(){
               <div style={{textAlign:"center"}}>
                 <div style={{fontSize:16,fontWeight:900,color:T.text}}>{rot.titolo||"Rotazione"}</div>
                 <div style={{fontSize:12,color:T.sub}}>
-                  {rot.tipo==="domeniche"&&rot.dataInizio?Math.ceil((rot.nSettimane||52)/4):Object.values(rot.griglia||{}).filter(Boolean).length} giorni configurati
+                  {rot.tipo==="domeniche" && rot.dataInizio 
+                    ? `${rot.nSettimane || 52} settimane (${Math.ceil((rot.nSettimane || 52)/4)} domeniche di lavoro)` 
+                    : `${Object.values(rot.griglia||{}).filter(Boolean).length} giorni configurati`}
                 </div>
               </div>
               <button onClick={()=>{
@@ -2583,7 +2679,13 @@ function sortedModelli(){
                     const tipoLabel=r.tipo==="domeniche"?"🗓 Domeniche 1/4":r.tipo==="nlrs"?"🔄 NL/RS":r.tipo==="nlrs_scalante"?"📅 RS/NL Scalante":"✏️ Personalizzata";
                     return (
                       <div key={r.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
-                        <div onClick={()=>setShowRotDetail(r)}
+                        <div onClick={()=>{
+                          if(r.tipo==="domeniche"){
+                            setShowApplyRotDialog(r);
+                          } else {
+                            setShowRotDetail(r);
+                          }
+                        }}
                           style={{display:"flex",alignItems:"center",padding:"14px 16px",cursor:"pointer"}}>
                           <div style={{flex:1,minWidth:0}}>
                             <div style={{fontSize:16,fontWeight:800,color:T.text}}>{r.titolo||"Senza nome"}</div>
@@ -2765,6 +2867,48 @@ function sortedModelli(){
               color:"#fff",padding:"14px 0",cursor:"pointer",fontWeight:800,fontSize:15}}>
               + Nuovo modello
             </button>
+          </div>
+        </div>
+      )}
+      {showApplyRotDialog && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:600,
+          display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
+          onClick={()=>setShowApplyRotDialog(null)}>
+          <div style={{background:T.surface,borderRadius:16,width:"100%",maxWidth:360,
+            padding:20,boxShadow:"0 8px 32px rgba(0,0,0,0.3)"}}
+            onClick={e=>e.stopPropagation()}>
+            <div style={{fontSize:16,fontWeight:900,color:T.text,marginBottom:8}}>Applica Rotazione</div>
+            <div style={{fontSize:13,color:T.sub,marginBottom:16}}>
+              Stai applicando la rotazione <strong>{showApplyRotDialog.titolo||"Senza nome"}</strong> a partire da domenica {dayKey}.
+              <br/><br/>
+              Il ciclo è di 4 domeniche. Quante volte vuoi ripeterlo?
+            </div>
+            
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
+              <span style={{fontSize:13,color:T.text,fontWeight:700}}>Ripetizioni:</span>
+              <input type="number" defaultValue={4} min={1} max={52} id="num_ripetizioni_rot"
+                style={{width:70,background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
+                  padding:"6px 8px",color:T.text,fontSize:14,fontWeight:700,outline:"none",textAlign:"center"}}/>
+            </div>
+            
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>setShowApplyRotDialog(null)}
+                style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
+                  color:T.sub,padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
+                Annulla
+              </button>
+              <button onClick={async()=>{
+                const inputVal = parseInt(document.getElementById("num_ripetizioni_rot")?.value) || 4;
+                setShowApplyRotDialog(null);
+                setShowRotazionePicker(false);
+                setDayKey(null);
+                await applyRotazione(showApplyRotDialog.id, dayKey, inputVal);
+              }}
+                style={{flex:2,background:accent,border:"none",borderRadius:10,
+                  color:"#fff",padding:"10px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
+                Conferma
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -3574,7 +3718,7 @@ const NB={background:"none",border:"none",fontSize:22,cursor:"pointer",
 
 // #region SEZIONE 19: ROTAZIONE COMPONENTS
 // ═══════════════════════════════════════════════════════════════
-function RotazioneCard({r, T, accent, modelli, onOpen, onDelete}){
+function RotazioneCard({r, T, accent, modelli, onOpen, onEdit, onDelete}){
   const tipoLabel = r.tipo==="domeniche"?"🗓 Domeniche 1/4":r.tipo==="nlrs"?"🔄 NL / RS classico":r.tipo==="nlrs_scalante"?"📅 RS/NL Scalante":" Personalizzata";
   const modelloLav = modelli.find(m=>m.id===r.modellaLavoroId);
   return (
@@ -3584,6 +3728,8 @@ function RotazioneCard({r, T, accent, modelli, onOpen, onDelete}){
         <div style={{fontSize:16,color:T.sub}}>{tipoLabel}{r.dataInizio?` · dal ${r.dataInizio}`:""}</div>
         {modelloLav&&<div style={{fontSize:11,color:T.sub,marginTop:1}}>Modello: {modelloLav.titolo}</div>}
       </div>
+      {onEdit&&<button onClick={e=>{e.stopPropagation();onEdit();}}
+        style={{background:"none",border:"none",color:T.sub,cursor:"pointer",fontSize:16,padding:"0 8px",marginRight:2}}>✏️</button>}
       <button onClick={e=>{e.stopPropagation();if(window.confirm("Eliminare questa rotazione?"))onDelete();}}
         style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:18,padding:"0 4px",marginRight:4}}>×</button>
       <span style={{color:T.sub,fontSize:14}}>›</span>
