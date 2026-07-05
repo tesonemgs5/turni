@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS public.calendars (
 ALTER TABLE public.calendars ENABLE ROW LEVEL SECURITY;
 
 -- Politiche RLS per Calendari (Isolamento utenti)
+DROP POLICY IF EXISTS "Gli utenti possono gestire solo i propri calendari" ON public.calendars;
 CREATE POLICY "Gli utenti possono gestire solo i propri calendari" 
 ON public.calendars 
 FOR ALL 
@@ -50,6 +51,7 @@ CREATE TABLE IF NOT EXISTS public.modelli (
 ALTER TABLE public.modelli ENABLE ROW LEVEL SECURITY;
 
 -- Politiche RLS per Modelli (Isolamento utenti)
+DROP POLICY IF EXISTS "Gli utenti possono gestire solo i propri modelli" ON public.modelli;
 CREATE POLICY "Gli utenti possono gestire solo i propri modelli" 
 ON public.modelli 
 FOR ALL 
@@ -77,6 +79,7 @@ CREATE TABLE IF NOT EXISTS public.rotazioni (
 ALTER TABLE public.rotazioni ENABLE ROW LEVEL SECURITY;
 
 -- Politiche RLS per Rotazioni (Isolamento utenti)
+DROP POLICY IF EXISTS "Gli utenti possono gestire solo le proprie rotazioni" ON public.rotazioni;
 CREATE POLICY "Gli utenti possono gestire solo le proprie rotazioni" 
 ON public.rotazioni 
 FOR ALL 
@@ -112,6 +115,7 @@ CREATE TABLE IF NOT EXISTS public.events (
 ALTER TABLE public.events ENABLE ROW LEVEL SECURITY;
 
 -- Politiche RLS per Eventi (Isolamento utenti)
+DROP POLICY IF EXISTS "Gli utenti possono gestire solo i propri eventi" ON public.events;
 CREATE POLICY "Gli utenti possono gestire solo i propri eventi" 
 ON public.events 
 FOR ALL 
@@ -134,6 +138,7 @@ CREATE TABLE IF NOT EXISTS public.user_settings (
 ALTER TABLE public.user_settings ENABLE ROW LEVEL SECURITY;
 
 -- Politiche RLS per Impostazioni (Isolamento utenti)
+DROP POLICY IF EXISTS "Gli utenti possono gestire solo le proprie impostazioni" ON public.user_settings;
 CREATE POLICY "Gli utenti possono gestire solo le proprie impostazioni" 
 ON public.user_settings 
 FOR ALL 
@@ -153,6 +158,7 @@ CREATE TABLE IF NOT EXISTS public.usage_stats (
 ALTER TABLE public.usage_stats ENABLE ROW LEVEL SECURITY;
 
 -- Politica per permettere a ciascun utente loggato di salvare/aggiornare le proprie statistiche
+DROP POLICY IF EXISTS "Gli utenti possono aggiornare le proprie statistiche" ON public.usage_stats;
 CREATE POLICY "Gli utenti possono aggiornare le proprie statistiche" 
 ON public.usage_stats 
 FOR ALL 
@@ -173,6 +179,7 @@ CREATE TABLE IF NOT EXISTS public.backups (
 ALTER TABLE public.backups ENABLE ROW LEVEL SECURITY;
 
 -- Politica per permettere a ciascun utente loggato di salvare/ripristinare i propri backup
+DROP POLICY IF EXISTS "Gli utenti possono gestire solo i propri backup" ON public.backups;
 CREATE POLICY "Gli utenti possono gestire solo i propri backup" 
 ON public.backups 
 FOR ALL 
@@ -212,20 +219,6 @@ CREATE INDEX IF NOT EXISTS idx_backups_user_id ON public.backups(user_id);
 -- =====================================================================
 
 -- Funzione Sicura per Statistiche Amministratore (GDPR Compliant)
-CREATE OR REPLACE FUNCTION public.get_app_stats()
-RETURNS TABLE (
-    total_users BIGINT,
-    active_users_7d BIGINT
-) 
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
-DECLARE
-    caller_email TEXT;
-END;
-$$;
-
--- Rendi la funzione eseguibile solo da utenti amministratori (es: 'tesonemgs5@gmail.com')
 CREATE OR REPLACE FUNCTION public.get_app_stats()
 RETURNS TABLE (
     total_users BIGINT,
