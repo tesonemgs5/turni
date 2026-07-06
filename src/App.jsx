@@ -1927,7 +1927,7 @@ function sortedModelli(){
       )}
 
       {showColorAssignPicker&&(()=>{
-        const hex = showColorAssignPicker;
+        const isFascia = fasceAutomatiche.some(f=>f.color===hex) || hex===COLORE_H24;
         return (
           <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:600,
             display:"flex",flexDirection:"column"}}>
