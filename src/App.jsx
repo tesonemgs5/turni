@@ -2027,6 +2027,18 @@ function sortedModelli(){
                     border:`2px solid ${showEditFasciaColor===p?"#000":T.border}`}}/>
               ))}
             </div>
+            <div style={{marginTop:16}}>
+              <div style={{fontSize:12,color:T.sub,fontWeight:700,marginBottom:6}}>Colore personalizzato (HEX)</div>
+              <input type="color" defaultValue={showEditFasciaColor}
+                onChange={async(e)=>{
+                  const old = showEditFasciaColor;
+                  const nuovo = e.target.value;
+                  setShowEditFasciaColor(null);
+                  setShowColorAssignPicker(nuovo);
+                  await replaceColoreEverywhere(old, nuovo);
+                }}
+                style={{width:"100%",height:44,border:`1px solid ${T.border}`,borderRadius:10,cursor:"pointer",background:"none"}}/>
+            </div>
             <button onClick={()=>setShowEditFasciaColor(null)}
               style={{width:"100%",marginTop:16,background:T.s2,border:`1px solid ${T.border}`,
                 borderRadius:10,color:T.sub,padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:13}}>
