@@ -946,7 +946,8 @@ function sortedModelli(){
     // Aggiorna tutti i modelli che usano oldHex come coloreCustom
     const daAggiornare = modelli.filter(m=>m.coloreCustom===oldHex);
     for(const m of daAggiornare){
-      await supabase.from("modelli").update({ colore_custom:newHex, colore:newHex }).eq("id",m.id).eq("user_id",userId);
+      const {error} = await supabase.from("modelli").update({ colore_custom:newHex, colore:newHex }).eq("id",m.id).eq("user_id",userId);
+      if(error) console.error("Errore update modello colore:", error.message, error.details, error.hint);
     }
     setModelli(prev=>prev.map(m=>m.coloreCustom===oldHex?{...m,coloreCustom:newHex,colore:newHex}:m));
     // Aggiorna il registro colori extra
