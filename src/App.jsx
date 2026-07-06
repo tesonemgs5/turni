@@ -1960,7 +1960,7 @@ function sortedModelli(){
                 </div>
               ):(
                 <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
-                  {modelli.map((m,i,arr)=>{
+                  {sortedModelli().map((m,i,arr)=>{
                     const selezionato = m.coloreCustom===hex;
                     const coloreAttuale = m.coloreCustom||colByTime(m.inizio);
                     return (
@@ -2186,6 +2186,10 @@ function sortedModelli(){
                             outline:f.color===p?"2px solid #000":"none",outlineOffset:2}}/>
                       ))}
                     </div>
+                    <input type="color" defaultValue={f.color}
+                      onChange={e=>{ updateFascia(f.key,{color:e.target.value}); }}
+                      style={{width:"100%",height:32,marginTop:8,border:`1px solid ${T.border}`,
+                        borderRadius:8,cursor:"pointer",background:"none"}}/>
                   </div>
                 )}
               </div>
