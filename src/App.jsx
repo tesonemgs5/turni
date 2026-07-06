@@ -1,21 +1,18 @@
 // ═══════════════════════════════════════════════════════════════
-
+// APP.JSX — Mappa delle region: vedi mappa.md per indice completo
+// ═══════════════════════════════════════════════════════════════
 
 // #region SEZIONE 1: IMPORTS + COSTANTI
 // ═══════════════════════════════════════════════════════════════
 import { useState, useEffect, useRef, Fragment } from "react";
 import { supabase } from "./supabase";
-import { PALETTE, FASCE_AUTOMATICHE, COLORE_H24, getColorByTime, getColorLabel } from "./font";
+import { PALETTE, FASCE_AUTOMATICHE_DEFAULT, COLORE_H24, getColorByTime, getColorLabel } from "./font";
 
 const MONTHS = ["Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno",
                 "Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"];
 const DAYS = ["L","M","M","G","V","S","D"];
 
 function uid(){ return Math.random().toString(36).slice(2)+Date.now().toString(36); }
-
-// ── LOCALSTORAGE CACHE ────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-
 // #endregion
 
 // #region SEZIONE 2: LOCALSTORAGE CACHE
@@ -43,11 +40,9 @@ function clearLocalStorageCache(){
   localStorage.removeItem('cache_modelli');
   localStorage.removeItem('cache_timestamp');
 }
-// ═══════════════════════════════════════════════════════════════
-
 // #endregion
 
-// #region SEZIONE 3: UTILITY FUNCTIONS
+// #region SEZIONE 3: UTILITY FUNCTIONS (date/festivi)
 // ═══════════════════════════════════════════════════════════════
 function daysInMonth(y,m){ return new Date(y,m+1,0).getDate(); }
 function firstDay(y,m){ const d=new Date(y,m,1).getDay(); return d===0?6:d-1; }
@@ -66,14 +61,13 @@ function italianHols(y){
     {m:7,d:15},{m:10,d:1},{m:11,d:8},{m:11,d:25},{m:11,d:26},
     {m:e.m,d:e.d},{m:e.m,d:e.d+1}];
 }
-
-// ═══════════════════════════════════════════════════════════════
-
 // #endregion
 
 // #region SEZIONE 4: COLOR & TIME FUNCTIONS
 // ═══════════════════════════════════════════════════════════════
-// getColorByTime / getColorLabel ora arrivano da ./font (SEZIONE 1)
+// getColorByTime / getColorLabel arrivano da ./font (SEZIONE 1).
+// Da qui in poi vengono sempre invocate passando le fasce personalizzate
+// dell'utente (store.fasceAutomatiche), con fallback ai default.
 function calcFine6h15(tIn){
   if(!tIn) return "";
   const [h,m]=tIn.split(":").map(Number);
@@ -99,10 +93,6 @@ function isFestivo(dateKey){
   const d=new Date(dateKey);
   return d.getDay()===0;
 }
-
-// ── TIPI DI REPORT DISPONIBILI ───────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-
 // #endregion
 
 // #region SEZIONE 5: REPORT TEMPLATES + INIT STATE
@@ -115,12 +105,10 @@ const REPORT_TEMPLATES = [
   { type:"guadagni",        label:"Guadagni", desc:"Stima guadagni da indennità" },
 ];
 
-const INIT = { calendars:[], events:{}, theme:"auto", extraHols:[], reports:[], reportSettings:{} };
+const INIT = { calendars:[], events:{}, theme:"auto", extraHols:[], reports:[], reportSettings:{}, fasceAutomatiche: FASCE_AUTOMATICHE_DEFAULT };
 
 export default function App({ session }){
   const today = new Date();
-// ═══════════════════════════════════════════════════════════════
-
 // #endregion
 
 // #region SEZIONE 6: USESTATE HOOKS
@@ -162,9 +150,6 @@ export default function App({ session }){
 
   const [modelliTab, setModelliTab] = useState("turni");
   const [modelli, setModelli] = useState([]);
-  // modelli per-calendario: { [calendarId]: [array modelli] }
-  // I modelli caricati da DB vengono smistati per calendar_id
-  // Se calendar_id è null (legacy) vanno al calendario principale
   const [modelliSort, setModelliSort] = useState("orario");
   const [showMoveMode, setShowMoveMode] = useState(false);
   const [showSortMenu, setShowSortMenu] = useState(false);
@@ -175,7 +160,8 @@ export default function App({ session }){
   // ── Colori: popup assegnazione modelli + palette colori extra creati dall'utente
   const [showColorAssignPicker, setShowColorAssignPicker] = useState(null); // colore hex attualmente aperto nel popup
   const [showAddColorPicker, setShowAddColorPicker] = useState(false); // popup "+" per aggiungere un colore alla sezione
-  const [coloriExtra, setColoriExtra] = useState([]); // colori aggiunti manualmente alla sezione Colori (oltre a quelli già usati)
+  const [coloriExtra, setColoriExtra] = useState([]); // colori aggiunti manualmente o generati da modelli
+  const [showEditFasciaColor, setShowEditFasciaColor] = useState(null); // key della fascia automatica di cui si sta editando il colore
 
   const [rotazioni, setRotazioni] = useState([]);
   const [showRotForm, setShowRotForm] = useState(false);
@@ -199,11 +185,9 @@ export default function App({ session }){
   const [showReportModelliPicker, setShowReportModelliPicker] = useState(null); // reportId aperto
 
   const userId = session?.user?.id;
-const isInitialized = useRef(false);
+  const isInitialized = useRef(false);
 
   useEffect(()=>{
-// ═══════════════════════════════════════════════════════════════
-
 // #endregion
 
 // #region SEZIONE 7: USEEFFECT INIT + LOAD DA SUPABASE
@@ -248,6 +232,7 @@ const isInitialized = useRef(false);
         const savedReportSettings = settings?.report_settings || {};
         const savedIndennita = settings?.indennita || { diurno:"", notturno:"", festivo:"", notturno_festivo:"" };
         const savedConteggioConfigs = settings?.conteggio_configs || {};
+        const savedFasce = settings?.fasce_automatiche || FASCE_AUTOMATICHE_DEFAULT;
 
         const { data: modelliDb } = await supabase.from("modelli").select("*").eq("user_id", userId).order("sort_order");
         setModelli((modelliDb||[]).map(m=>({
@@ -282,9 +267,22 @@ const isInitialized = useRef(false);
           await supabase.from("usage_stats").upsert({ user_id: userId, last_active: new Date().toISOString(), login_count: newCount });
         } catch(statErr) { console.warn("Stats error:", statErr); }
 
-        setStore({ calendars, events, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings });
+        setStore({ calendars, events, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings, fasceAutomatiche: savedFasce });
         setCalId(calendars[0]?.id||null);
         saveToLocalStorage(events, calendars, []);
+
+        // Sincronizza i colori custom già presenti sui modelli con la
+        // tabella "colori", nel caso in cui siano stati creati da versioni
+        // precedenti dell'app che non salvavano il colore lì.
+        try {
+          const coloriUsati = [...new Set((modelliDb||[]).map(m=>m.colore_custom).filter(Boolean))];
+          const coloriGiaSalvati = new Set((coloriDb||[]).map(c=>c.hex));
+          const daSalvare = coloriUsati.filter(hex=>!coloriGiaSalvati.has(hex));
+          for(const hex of daSalvare){
+            const { data:cRes } = await supabase.from("colori").insert({ user_id:userId, hex }).select().maybeSingle();
+            if(cRes) setColoriExtra(prev=>prev.includes(hex)?prev:[...prev, hex]);
+          }
+        } catch(e){ console.warn("Sync colori modelli:", e); }
 
         // Inizializza sortOrder per modelli H24 che hanno tutti 0
         const h24senza = (modelliDb||[]).filter(m=>(m.tempo==="h24"||!m.inizio)&&(m.sort_order||0)===0);
@@ -305,25 +303,17 @@ const isInitialized = useRef(false);
       setLoading(false);
     })();
   },[userId]);
-
-
-
-  useEffect(()=>{
-// ═══════════════════════════════════════════════════════════════
-
 // #endregion
 
 // #region SEZIONE 8: USEEFFECT OVERSCROLL + ONLINE/OFFLINE
 // ═══════════════════════════════════════════════════════════════
+  useEffect(()=>{
     function goOnline(){ setIsOnline(true); }
     function goOffline(){ setIsOnline(false); }
     window.addEventListener('online', goOnline);
     window.addEventListener('offline', goOffline);
     return ()=>{ window.removeEventListener('online', goOnline); window.removeEventListener('offline', goOffline); };
   },[]);
-
-// ═══════════════════════════════════════════════════════════════
-
 // #endregion
 
 // #region SEZIONE 9: THEME & COLORS
@@ -344,6 +334,9 @@ const isInitialized = useRef(false);
   const mainCal   = store.calendars.find(c=>c.isMain)||null;
   const accent    = activeCal?.color||"#3b82f6";
   const hols      = italianHols(year);
+  const fasceAutomatiche = store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT;
+  const colByTime = (tIn)=>getColorByTime(tIn, fasceAutomatiche);
+  const colLabel  = (tIn)=>getColorLabel(tIn, fasceAutomatiche);
 
   function isRed(d,m){
     return hols.some(h=>h.m===m&&h.d===d) ||
@@ -375,7 +368,9 @@ const isInitialized = useRef(false);
       updated_at: new Date().toISOString(),
     });
   }
-
+// #endregion
+// #region SEZIONE 10: CRUD CALENDARI
+// ═══════════════════════════════════════════════════════════════
   async function addCalendar(name, color, isFirst){
     if(!userId) return null;
     const { data, error } = await supabase.from("calendars").insert({
@@ -395,7 +390,10 @@ const isInitialized = useRef(false);
     saveToLocalStorage(store.events, newCals, modelli);
     if(syncMode==='on' && sheetsUrl) await saveToSheets(store.events, newCals);
   }
+// #endregion
 
+// #region SEZIONE 11: CRUD EVENTI
+// ═══════════════════════════════════════════════════════════════
   async function saveEvt(){
     if(!form||!dayKey||!calId||!userId) return;
     const cal = store.calendars.find(c=>c.id===calId);
@@ -407,7 +405,7 @@ const isInitialized = useRef(false);
     if(form.modelloId){
       const mod = modelli.find(m=>m.id===form.modelloId);
       if(mod){
-        color = form.colorOvr||(mod.coloreCustom||getColorByTime(mod.inizio));
+        color = form.colorOvr||(mod.coloreCustom||colByTime(mod.inizio));
         label = (mod.label||mod.titolo||label).toUpperCase();
         if(mod.tempo==="h24"){ tInFinal=""; tOutFinal=""; }
         else if(mod.tempo==="6h15"){
@@ -436,7 +434,7 @@ const isInitialized = useRef(false);
         if(diff<0) extraNote=(extraNote?extraNote+" | ":"")+`Anticipo: ${Math.floor(Math.abs(diff)/60)}h${Math.abs(diff)%60>0?Math.abs(diff)%60+"m":""}`;
       }
     }
-    
+
     const { data, error } = await supabase.from("events").insert({
       user_id: userId, calendar_id: calId, date_key: dayKey,
       label, color, all_day: form.dur==="allday"&&!form.modelloId,
@@ -485,7 +483,7 @@ const isInitialized = useRef(false);
     if(form.modelloId){
       const mod = modelli.find(m=>m.id===form.modelloId);
       if(mod){
-        color = form.colorOvr||(mod.coloreCustom||getColorByTime(mod.inizio));
+        color = form.colorOvr||(mod.coloreCustom||colByTime(mod.inizio));
         label = (mod.label||mod.titolo||label).toUpperCase();
         if(mod.tempo==="h24"){ tInFinal=""; tOutFinal=""; }
         else if(mod.tempo==="6h15"){
@@ -551,7 +549,10 @@ const isInitialized = useRef(false);
     if(mins<0) mins+=24*60;
     return mins;
   }
+// #endregion
 
+// #region SEZIONE 12: SYNC GOOGLE SHEETS + SUPABASE BACKUP
+// ═══════════════════════════════════════════════════════════════
   async function saveToSheets(events, calendars, customUrl=sheetsUrl, customSecret=sheetsSecret, modelliToSave=modelli){
     if(!customUrl) return "⚠️ Sheets non configurato";
     if(!isInitialized.current) return;
@@ -627,7 +628,7 @@ const isInitialized = useRef(false);
           await supabase.from("modelli").delete().eq("user_id",userId);
           const newModelli=[];
           for(const m of dataMod.modelli){
-            const coloreEff=m.tempo==="h24"?"#64748b":getColorByTime(m.inizio);
+            const coloreEff=m.tempo==="h24"?"#64748b":colByTime(m.inizio);
             const {data:res2}=await supabase.from("modelli").insert({
               user_id:userId, titolo:m.titolo.toUpperCase(), tempo:m.tempo,
               inizio:m.inizio||null, fine:m.fine||null,
@@ -712,7 +713,6 @@ const isInitialized = useRef(false);
     setSyncMsg("⏳ Esportazione in corso...");
     try {
       const backup = await buildBackupPayload();
-      // Salva lo snapshot nel cloud (tabella "backups" su Supabase)
       const {error:insErr} = await supabase.from("backups").insert({
         user_id:userId, data:backup,
       });
@@ -792,31 +792,29 @@ const isInitialized = useRef(false);
   }
 
   async function handleLogout(){ await supabase.auth.signOut(); }
+// #endregion
 
-  // ── MODELLI CRUD ─────────────────────────────────────────────
+// #region SEZIONE 13: CRUD MODELLI + COLORI (con fix sync colore custom)
+// ═══════════════════════════════════════════════════════════════
 function sortedModelli(){
   const toMins=t=>{
     if(!t) return null;
     const[h,m]=t.split(":").map(Number);
     return h*60+m;
   };
-  // I 4 modelli intestazione H24 speciali hanno una posizione fissa
   const INTESTAZIONI={
-    "NOTTE":     -1,   // prima di 00:00
-    "MATTINA":   6*60-1,   // prima di 06:00
-    "POMERIGGIO":12*60-1,  // prima di 12:00
-    "3° TURNO":  16*60-1,  // prima di 16:00
+    "NOTTE":     -1,
+    "MATTINA":   6*60-1,
+    "POMERIGGIO":12*60-1,
+    "3° TURNO":  16*60-1,
   };
   function getSortValue(m){
-    // Modello intestazione H24 speciale
     if((m.tempo==="h24"||!m.inizio) && INTESTAZIONI.hasOwnProperty(m.titolo)){
       return INTESTAZIONI[m.titolo];
     }
-    // Modello con orario
     if(m.tempo!=="h24" && m.inizio){
       return toMins(m.inizio);
     }
-    // H24/senza orario generico → in fondo
     return 99999;
   }
   return [...modelli].sort((a,b)=>{
@@ -827,9 +825,7 @@ function sortedModelli(){
   });
 }
 
-  // Restituisce la fascia oraria di un modello per il blocco dello spostamento
   function getFasciaModello(m){
-    // Turni H24 o senza orario: nessun vincolo, possono essere spostati ovunque
     if(m.tempo==="h24") return "libero";
     if(!m.inizio) return "libero";
     const [h]=m.inizio.split(":").map(Number);
@@ -845,29 +841,39 @@ function sortedModelli(){
     if(idx===-1) return;
     const swapIdx=dir==="up"?idx-1:idx+1;
     if(swapIdx<0||swapIdx>=sorted.length) return;
-    // ── Blocco fascia: si applica solo tra due turni con orario impostato
-    // e che NON sono turni "liberi" (h24/senza orario). Un turno libero
-    // può sempre essere scambiato con qualsiasi altro turno della lista.
     const liberoCorrente = sorted[idx].tempo==="h24"||!sorted[idx].inizio;
     const liberoTarget = sorted[swapIdx].tempo==="h24"||!sorted[swapIdx].inizio;
     if(!liberoCorrente && !liberoTarget){
       const fasciaCorrente = getFasciaModello(sorted[idx]);
       const fasciaTarget = getFasciaModello(sorted[swapIdx]);
-      if(fasciaCorrente!==fasciaTarget) return; // bloccato
+      if(fasciaCorrente!==fasciaTarget) return;
     }
     const reordered=[...sorted];
     const [moved]=reordered.splice(idx,1);
     reordered.splice(swapIdx,0,moved);
     const withNewOrder=reordered.map((m,i)=>({...m,sortOrder:i*10}));
-    setModelli(withNewOrder); // aggiornamento UI immediato
+    setModelli(withNewOrder);
     for(const m of withNewOrder){
       supabase.from("modelli").update({sort_order:m.sortOrder}).eq("id",m.id).eq("user_id",userId);
     }
   }
 
+  // ── FIX: quando un modello riceve un coloreCustom, quel colore viene
+  // salvato subito nella tabella "colori" (se non già presente), così
+  // compare istantaneamente nella tab Modelli → Colori senza dover
+  // ricaricare l'app, e può essere associato ad altri modelli da lì.
+  async function ensureColoreRegistrato(hex){
+    if(!userId || !hex) return;
+    if(coloriExtra.includes(hex)) return;
+    try {
+      const { data, error } = await supabase.from("colori").insert({ user_id:userId, hex }).select().maybeSingle();
+      if(!error && data) setColoriExtra(prev=>prev.includes(hex)?prev:[...prev, hex]);
+    } catch(e){ console.warn("ensureColoreRegistrato:", e); }
+  }
+
   async function saveModello(data){
     if(!userId) return;
-    const coloreEff=data.coloreCustom||(data.tempo==="h24"?"#64748b":getColorByTime(data.inizio));
+    const coloreEff=data.coloreCustom||(data.tempo==="h24"?"#64748b":colByTime(data.inizio));
     const mainCalId2 = store.calendars.find(c=>c.isMain)?.id||null;
     const targetCalId = data.calendarId||calId||mainCalId2;
     const payload={
@@ -878,6 +884,7 @@ function sortedModelli(){
       sort_order:data.sortOrder||modelli.length,
       calendar_id: targetCalId,
     };
+    if(data.coloreCustom) await ensureColoreRegistrato(data.coloreCustom);
     if(data.id){
       await supabase.from("modelli").update(payload).eq("id",data.id).eq("user_id",userId);
       setModelli(prev=>{
@@ -922,11 +929,40 @@ function sortedModelli(){
     if(!userId) return;
     await supabase.from("colori").delete().eq("user_id", userId).eq("hex", hex);
     setColoriExtra(prev=>prev.filter(c=>c!==hex));
-    // I modelli che usavano questo colore tornano al colore automatico
     const daResettare = modelli.filter(m=>m.coloreCustom===hex);
     for(const m of daResettare){
       await saveModello({...m, coloreCustom:null});
     }
+  }
+
+  // ── FIX: sostituisce l'hex di un colore ovunque sia usato (modelli +
+  // registro colori), permettendo di editare liberamente anche i colori
+  // delle fasce automatiche (es. #F59E0B "mattina") con la palette
+  // condivisa, invece di lasciarli fissi.
+  async function replaceColoreEverywhere(oldHex, newHex){
+    if(!userId || !newHex || oldHex===newHex) return;
+    // Aggiorna tutti i modelli che usano oldHex come coloreCustom
+    const daAggiornare = modelli.filter(m=>m.coloreCustom===oldHex);
+    for(const m of daAggiornare){
+      await supabase.from("modelli").update({ colore_custom:newHex, colore:newHex }).eq("id",m.id).eq("user_id",userId);
+    }
+    setModelli(prev=>prev.map(m=>m.coloreCustom===oldHex?{...m,coloreCustom:newHex,colore:newHex}:m));
+    // Aggiorna il registro colori extra
+    if(coloriExtra.includes(oldHex)){
+      await supabase.from("colori").delete().eq("user_id",userId).eq("hex",oldHex);
+      await supabase.from("colori").insert({ user_id:userId, hex:newHex });
+      setColoriExtra(prev=>[...prev.filter(c=>c!==oldHex), newHex]);
+    } else {
+      await ensureColoreRegistrato(newHex);
+    }
+    // Se oldHex era il colore di una fascia automatica, aggiorna anche quella
+    const fasciaIdx = (store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT).findIndex(f=>f.color===oldHex);
+    if(fasciaIdx>-1){
+      const nuoveFasce = (store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT).map((f,i)=>i===fasciaIdx?{...f,color:newHex}:f);
+      setStore(s=>({...s, fasceAutomatiche:nuoveFasce}));
+      saveSettings({fasce_automatiche:nuoveFasce});
+    }
+    if(sheetsUrl) saveToSheets(store.events, store.calendars, sheetsUrl, sheetsSecret, modelli);
   }
 
   async function saveRotazione(data){
@@ -962,31 +998,31 @@ function sortedModelli(){
     if(!userId || !calId || !startDayKey || !numRipetizioni) return;
     const rot = rotazioni.find(r=>r.id===rotId);
     if(!rot) return;
-    
+
     const modLav = modelli.find(m=>m.id===rot.modellaLavoroId);
     const modRip = modelli.find(m=>m.id===rot.modelloNLId);
     const totalWeeks = numRipetizioni * 4;
-    
+
     const [y0, m0, d0] = startDayKey.split("-").map(Number);
     const start = new Date(y0, m0-1, d0);
-    
+
     const nuoviEventiLocali = {};
-    
+
     for(let i=0; i<totalWeeks; i++) {
       const d = new Date(start);
       d.setDate(d.getDate() + i * 7);
       const dateKey = dkey(d.getFullYear(), d.getMonth(), d.getDate());
-      
+
       const isLavoro = (i % 4) === 0;
       const mod = isLavoro ? modLav : modRip;
       if(!mod) continue;
-      
-      const color = mod.coloreCustom || (mod.tempo==="h24" ? "#64748b" : getColorByTime(mod.inizio));
+
+      const color = mod.coloreCustom || (mod.tempo==="h24" ? "#64748b" : colByTime(mod.inizio));
       const label = (mod.label || mod.titolo || "").toUpperCase();
       const allDay = mod.tempo==="h24";
       const tIn = allDay ? "" : (mod.inizio || "");
       const tOut = allDay ? "" : (mod.tempo==="6h15" ? calcFine6h15(mod.inizio) : (mod.fine || ""));
-      
+
       const { data, error } = await supabase.from("events").insert({
         user_id: userId,
         calendar_id: calId,
@@ -1006,12 +1042,12 @@ function sortedModelli(){
         prot_pag_fine: null,
         prot_rec_fine: null,
       }).select().maybeSingle();
-      
+
       if(error) {
         console.error("Errore inserimento evento rotazione:", error);
         continue;
       }
-      
+
       if(!nuoviEventiLocali[dateKey]) nuoviEventiLocali[dateKey] = {};
       if(!nuoviEventiLocali[dateKey][calId]) nuoviEventiLocali[dateKey][calId] = [];
       nuoviEventiLocali[dateKey][calId].push({
@@ -1030,7 +1066,7 @@ function sortedModelli(){
         auto: "",
       });
     }
-    
+
     setStore(prev => {
       const ns = JSON.parse(JSON.stringify(prev));
       for(const [dateKey, calMap] of Object.entries(nuoviEventiLocali)) {
@@ -1045,8 +1081,9 @@ function sortedModelli(){
       return ns;
     });
   }
-
-  // ── REPORT HELPERS ───────────────────────────────────────────
+// #endregion
+// #region SEZIONE 14: REPORT HELPERS
+// ═══════════════════════════════════════════════════════════════
   function getReportRange(){
     const now = new Date();
     if(reportInterval==="mese"){
@@ -1061,13 +1098,12 @@ function sortedModelli(){
     return {from:reportDateFrom, to:reportDateTo, label:reportDateFrom+" → "+reportDateTo};
   }
 
-  // Calcola conteggio per un singolo report con le sue condizioni
   function computeConteggioForReport(cfg){
     const {from, to} = getReportRange();
     const result = { totale:0, primo:0, secondo:0, h24:0, app:0, auto:0 };
     const perModello = {};
-    const fasceFiltro = cfg?.fasceFiltro || []; // [] = tutte
-    const modelliInclusi = cfg?.modelliInclusi || []; // [] = tutti i modelli
+    const fasceFiltro = cfg?.fasceFiltro || [];
+    const modelliInclusi = cfg?.modelliInclusi || [];
     for(const [dateKey, calMap] of Object.entries(store.events)){
       if(dateKey < from || dateKey > to) continue;
       for(const [, evts] of Object.entries(calMap)){
@@ -1090,7 +1126,6 @@ function sortedModelli(){
           result.totale++;
           result[fascia]=(result[fascia]||0)+1;
           if(e.modelloId) perModello[e.modelloId]=(perModello[e.modelloId]||0)+1;
-          // Gruppo indipendente APP/AUTO basato sul titolo del modello collegato
           const modelloEvt = e.modelloId ? modelli.find(mm=>mm.id===e.modelloId) : null;
           const titoloEvt = (modelloEvt?.titolo||"").toUpperCase();
           if(titoloEvt.includes("APP")) result.app=(result.app||0)+1;
@@ -1126,10 +1161,8 @@ function sortedModelli(){
     return totals;
   }
 
-  // ── GESTIONE REPORTS ─────────────────────────────────────────
-  // reports = array di { id, type, label, active }
   const activeReports = (store.reports||[]).filter(r=>r.active);
-  const inactiveTypes = REPORT_TEMPLATES; // mostra sempre tutti nel pannello aggiungi
+  const inactiveTypes = REPORT_TEMPLATES;
 
   function addReport(type){
     const tmpl = REPORT_TEMPLATES.find(t=>t.type===type);
@@ -1179,15 +1212,10 @@ function sortedModelli(){
     saveSettings({conteggio_configs: newCfg});
   }
 
-  // Calcola totale globale per percentuali
   const totaleTurni = computeConteggio().totale;
-
-  // ── CALENDAR GRID ─────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-
 // #endregion
 
-// #region SEZIONE 10: CALENDAR VIEW
+// #region SEZIONE 15: CALENDAR VIEW
 // ═══════════════════════════════════════════════════════════════
   const totalDays = daysInMonth(year,month);
   const fd = firstDay(year,month);
@@ -1199,7 +1227,6 @@ function sortedModelli(){
     </div>
   );
 
-  // ── VIEWS ─────────────────────────────────────────────────────
   const selectStyle = {
     background:"rgba(255,255,255,0.15)",
     border:"1px solid rgba(255,255,255,0.4)",
@@ -1231,7 +1258,6 @@ function sortedModelli(){
         {bgSyncing&&<span style={{color:"rgba(255,255,255,0.7)",fontSize:11}}>🔄</span>}
         <button onClick={()=>month===11?(setYear(y=>y+1),setMonth(0)):setMonth(m=>m+1)} style={NB}>›</button>
         <div style={{flex:1}}/>
-        {/* TUTTI accanto a mese e anno */}
         <button onClick={()=>setCalId(null)}
           style={{background:calId===null?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.1)",
             border:`1.5px solid ${calId===null?"rgba(255,255,255,0.85)":"transparent"}`,
@@ -1241,24 +1267,18 @@ function sortedModelli(){
         <button onClick={async()=>{
           setBanner("⏳ Svuotamento cache...");
           clearLocalStorageCache();
-          // Svuota tutte le cache del Service Worker (PWA), se presenti
           try {
             if("caches" in window){
               const cacheNames = await caches.keys();
               await Promise.all(cacheNames.map(name=>caches.delete(name)));
             }
           } catch(e){ console.warn("Errore pulizia cache SW:", e); }
-          // Deregistra eventuali Service Worker registrati, cosi' al prossimo
-          // reload il browser scarica per forza la versione più recente
           try {
             if("serviceWorker" in navigator){
               const regs = await navigator.serviceWorker.getRegistrations();
               await Promise.all(regs.map(r=>r.unregister()));
             }
           } catch(e){ console.warn("Errore unregister Service Worker:", e); }
-          // Reload REALE della pagina (non solo re-fetch dati): forza il
-          // browser a richiedere di nuovo tutti i file invece di servirli
-          // dalla cache locale del telefono/browser.
           window.location.href = window.location.href.split('?')[0] + '?v=' + Date.now();
         }}
           title="Svuota cache e ricarica tutto"
@@ -1266,7 +1286,7 @@ function sortedModelli(){
             borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:"#fff",flexShrink:0}}>
           🔄
         </button>
-        
+
         <button onClick={()=>{
           const next = syncMode==='on'?'off':'on';
           setSyncMode(next);
@@ -1354,13 +1374,8 @@ function sortedModelli(){
       </div>
     </div>
   );
-
-  // ── REPORT VIEW ───────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-
 // #endregion
-
-// #region SEZIONE 11: REPORT VIEW
+// #region SEZIONE 16: REPORT VIEW
 // ═══════════════════════════════════════════════════════════════
   const range = getReportRange();
   const indennitaCalc = computeIndennita();
@@ -1425,7 +1440,7 @@ function sortedModelli(){
             </div>
             {r.type==="conteggio_turni" && (
               <ConteggioConfigCard T={T} r={r} cfg={cfg} data={data} totaleTurni={totaleTurni}
-                modelli={modelli} accent={accent}
+                modelli={modelli} accent={accent} fasceAutomatiche={fasceAutomatiche}
                 onRename={label=>renameReport(r.id, label)}
                 onUpdateCfg={newCfg=>updateConteggioConfig(r.id, newCfg)}
                 onGoToModelli={()=>setScreen("modelli")}/>
@@ -1466,9 +1481,7 @@ function sortedModelli(){
         </div>
       )}
 
-      {/* Pannello aggiungi report */}
       {(()=>{
-        // openReportConfig==='__add__' funge da flag per mostrare il pannello aggiungi
         const isAddOpen = openReportConfig==='__add__';
         return (
           <div style={{margin:"16px 12px 0"}}>
@@ -1581,7 +1594,7 @@ function sortedModelli(){
                   </div>
                   {modelli.map((m,i,arr)=>{
                     const selezionato = inclusi.includes(m.id);
-                    const colore = m.coloreCustom||getColorByTime(m.inizio);
+                    const colore = m.coloreCustom||colByTime(m.inizio);
                     return (
                       <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                         <div onClick={()=>{
@@ -1620,22 +1633,15 @@ function sortedModelli(){
       })()}
     </div>
   );
-
-  // ── MODELLI VIEW ──────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-
 // #endregion
-
-// #region SEZIONE 12: MODELLI VIEW
+// #region SEZIONE 17: MODELLI VIEW
 // ═══════════════════════════════════════════════════════════════
   const modelliView = (
     <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
-      {/* Header modelli: mostra nome + colore del calendario selezionato */}
       {(()=>{
         const calAttivo = store.calendars.find(c=>c.id===calId);
         const nomeCal = calId===null ? "TUTTI" : (calAttivo?.name||"Calendario");
         const coloreCal = calAttivo?.color||accent;
-        // Calcola colore testo con contrasto su sfondo colorato
         function hexToRgb(hex){
           const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
           return {r,g,b};
@@ -1648,7 +1654,6 @@ function sortedModelli(){
           try {
             const rgb=hexToRgb(hex);
             const lum=luminance(rgb);
-            // bianco su scuro, nero su chiaro
             return lum < 0.35 ? "#ffffff" : "#0f172a";
           } catch(e){ return "#ffffff"; }
         }
@@ -1657,7 +1662,6 @@ function sortedModelli(){
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px 8px"}}>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
               <div style={{fontSize:24,fontWeight:900,fontFamily:"Georgia,serif",color:T.text}}>Modelli</div>
-              {/* Badge nome calendario con colore e possibilità di cambio colore */}
               <CalBadge calId={calId} calAttivo={calAttivo} coloreCal={coloreCal}
                 testoContrasto={testoContrasto} T={T} store={store} setStore={setStore}
                 updateCalendar={updateCalendar} accent={accent} setCalId={setCalId}/>
@@ -1713,7 +1717,6 @@ function sortedModelli(){
               boxShadow:modelliTab===v?"0 2px 8px rgba(0,0,0,0.12)":"none"}}>{l}</button>
         ))}
       </div>
-      {/* Info calendario attivo — mostra nome, non avviso generico */}
       {store.calendars.length>0&&calId&&(
         <div style={{margin:"0 12px 10px",background:store.calendars.find(c=>c.id===calId)?.color+"22"||"#3b82f622",
           border:`1px solid ${store.calendars.find(c=>c.id===calId)?.color+"55"||"#3b82f655"}`,
@@ -1725,7 +1728,6 @@ function sortedModelli(){
 
       <div style={{flex:1,overflowY:"auto",padding:"0 12px 80px"}}>
         {modelliTab==="turni"&&(()=>{
-          // Filtra modelli per calendario attivo
           const mainCalId = store.calendars.find(c=>c.isMain)?.id||null;
           const modelliVisibili = calId===null
             ? sortedModelli()
@@ -1743,7 +1745,7 @@ function sortedModelli(){
             <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
               {modelliVisibili.map((m,i,arr)=>(
                 <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
-                  <ModelloCard m={m} T={T} accent={accent}
+                  <ModelloCard m={m} T={T} accent={accent} fasceAutomatiche={fasceAutomatiche}
                     onEdit={()=>{ if(!showMoveMode){ setEditModello(m); setModelForm(m); setShowModelForm(true); } }}
                     onDelete={()=>deleteModello(m.id)}
                     onMoveUp={showMoveMode?()=>moveH24(m.id,"up"):null}
@@ -1766,7 +1768,7 @@ function sortedModelli(){
                       const [moved]=reordered.splice(srcIdx,1);
                       reordered.splice(dstIdx,0,moved);
                       const withNewOrder=reordered.map((x,i)=>({...x,sortOrder:i*10}));
-                      setModelli(withNewOrder); // aggiornamento UI immediato
+                      setModelli(withNewOrder);
                       for(const x of withNewOrder){
                         supabase.from("modelli").update({sort_order:x.sortOrder}).eq("id",x.id).eq("user_id",userId);
                       }
@@ -1784,7 +1786,7 @@ function sortedModelli(){
                       const [moved]=reordered.splice(srcIdx,1);
                       reordered.splice(dstIdx,0,moved);
                       const withNewOrder=reordered.map((x,i)=>({...x,sortOrder:i*10}));
-                      setModelli(withNewOrder); // aggiornamento UI immediato
+                      setModelli(withNewOrder);
                       for(const x of withNewOrder){
                         supabase.from("modelli").update({sort_order:x.sortOrder}).eq("id",x.id).eq("user_id",userId);
                       }
@@ -1836,34 +1838,40 @@ function sortedModelli(){
           </div>
         )}
         {modelliTab==="colori"&&(()=>{
-          // Colori "in uso" = tutti i coloreCustom già assegnati a un modello,
-          // anche se non fanno parte della palette base o dei colori extra aggiunti.
+          // FIX: i colori "in uso" includono SEMPRE tutti i coloreCustom
+          // assegnati a un modello, anche se creati fuori dalla sezione
+          // Colori (es. dal form del modello). Sono editabili liberamente:
+          // cliccando sull'hex si apre la palette condivisa per cambiarlo,
+          // e il cambio si propaga a tutti i modelli che lo usano.
           const coloriUsatiDaModelli = [...new Set(modelli.map(m=>m.coloreCustom).filter(Boolean))];
           const coloriManuali = [...new Set([...coloriExtra, ...coloriUsatiDaModelli])];
           function contaModelli(hex){ return modelli.filter(m=>m.coloreCustom===hex).length; }
           function contaModelliFascia(fascia){
             return modelli.filter(m=>{
-              if(m.coloreCustom) return false; // se ha un custom, non conta più nella fascia automatica
-              if(fascia.key==="notte") return m.tempo==="h24"?false:(!m.inizio?false:getColorByTime(m.inizio)===fascia.color);
-              return m.tempo!=="h24" && m.inizio && getColorByTime(m.inizio)===fascia.color;
+              if(m.coloreCustom) return false;
+              if(fascia.key==="notte") return m.tempo==="h24"?false:(!m.inizio?false:colByTime(m.inizio)===fascia.color);
+              return m.tempo!=="h24" && m.inizio && colByTime(m.inizio)===fascia.color;
             }).length;
           }
           const contaH24 = modelli.filter(m=>!m.coloreCustom && m.tempo==="h24").length;
           return (
             <div style={{paddingBottom:80}}>
               <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>
-                COLORI AUTOMATICI (per fascia oraria — fissi)
+                COLORI AUTOMATICI (per fascia oraria)
+              </div>
+              <div style={{fontSize:11,color:T.sub,marginBottom:8,paddingLeft:4}}>
+                Modifica orari e colori delle fasce da Impostazioni. Tocca un colore per riassegnarlo ai modelli.
               </div>
               <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:16}}>
-                {FASCE_AUTOMATICHE.map((f,i,arr)=>(
+                {fasceAutomatiche.map((f,i,arr)=>(
                   <div key={f.key} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                     <ColorRow T={T} hex={f.color} label={f.label} sub="Automatico per orario"
-                      count={contaModelliFascia(f)} onClick={()=>setShowColorAssignPicker(f.color)} fixed/>
+                      count={contaModelliFascia(f)} onClick={()=>setShowColorAssignPicker(f.color)}/>
                   </div>
                 ))}
                 <div style={{borderTop:`1px solid ${T.border}`}}>
                   <ColorRow T={T} hex={COLORE_H24} label="H24" sub="Standard turni H24"
-                    count={contaH24} onClick={()=>setShowColorAssignPicker(COLORE_H24)} fixed/>
+                    count={contaH24} onClick={()=>setShowColorAssignPicker(COLORE_H24)}/>
                 </div>
               </div>
 
@@ -1875,7 +1883,7 @@ function sortedModelli(){
               </div>
               {coloriManuali.length===0?(
                 <div style={{textAlign:"center",padding:"24px",color:T.sub,fontSize:13}}>
-                  Nessun colore personalizzato. Premi + per aggiungerne uno.
+                  Nessun colore personalizzato. Premi + oppure crea un modello con colore custom.
                 </div>
               ):(
                 <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
@@ -1918,7 +1926,7 @@ function sortedModelli(){
 
       {showColorAssignPicker&&(()=>{
         const hex = showColorAssignPicker;
-        const isFascia = FASCE_AUTOMATICHE.some(f=>f.color===hex) || hex===COLORE_H24;
+        const isFascia = fasceAutomatiche.some(f=>f.color===hex) || hex===COLORE_H24;
         return (
           <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:600,
             display:"flex",flexDirection:"column"}}>
@@ -1926,16 +1934,20 @@ function sortedModelli(){
               padding:"16px 16px 8px",background:T.surface,borderBottom:`1px solid ${T.border}`}}>
               <button onClick={()=>setShowColorAssignPicker(null)}
                 style={{background:"none",border:"none",color:T.sub,fontSize:22,cursor:"pointer"}}>‹</button>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}
+                onClick={()=>setShowEditFasciaColor(hex)}
+                title="Tocca per cambiare questo colore con la palette">
                 <div style={{width:18,height:18,borderRadius:"50%",background:hex,border:`1px solid ${T.border}`}}/>
                 <div style={{fontSize:16,fontWeight:900,color:T.text}}>{hex.toUpperCase()}</div>
+                <span style={{fontSize:12,color:accent}}>🎨</span>
               </div>
               <div style={{width:32}}/>
             </div>
             {isFascia&&(
               <div style={{padding:"10px 16px",fontSize:12,color:T.sub,background:T.s2}}>
-                Questo è un colore automatico. Assegnando manualmente un modello qui, il modello userà
-                sempre questo colore anche se il suo orario cambia.
+                Colore automatico. Assegnando qui un modello, quel modello userà sempre questo
+                colore. Tocca l'hex in alto per cambiare il colore stesso con la palette condivisa
+                (si aggiorna ovunque sia usato).
               </div>
             )}
             <div style={{flex:1,overflowY:"auto",padding:12,background:T.bg}}>
@@ -1947,13 +1959,10 @@ function sortedModelli(){
                 <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
                   {modelli.map((m,i,arr)=>{
                     const selezionato = m.coloreCustom===hex;
-                    const coloreAttuale = m.coloreCustom||getColorByTime(m.inizio);
+                    const coloreAttuale = m.coloreCustom||colByTime(m.inizio);
                     return (
                       <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                         <div onClick={()=>{
-                          // Assegna/rimuove SOLO il modello cliccato: nessun ricalcolo
-                          // dell'intero set (evita stati non aggiornati / click che
-                          // sembravano non fare nulla sui colori automatici).
                           saveModello({...m, coloreCustom: selezionato ? null : hex});
                         }} style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}>
                           <div style={{width:20,height:20,borderRadius:6,marginRight:12,flexShrink:0,
@@ -1988,6 +1997,43 @@ function sortedModelli(){
         );
       })()}
 
+      {/* FIX PRINCIPALE: popup per cambiare l'hex di un colore (custom o di
+          fascia) usando la palette condivisa PALETTE, invece di lasciarlo
+          fisso. Il cambio si propaga a tutti i modelli e al registro colori. */}
+      {showEditFasciaColor&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:700,
+          display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
+          onClick={()=>setShowEditFasciaColor(null)}>
+          <div style={{background:T.surface,borderRadius:16,width:"100%",maxWidth:360,padding:20}}
+            onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+              <div style={{width:28,height:28,borderRadius:"50%",background:showEditFasciaColor,border:`2px solid ${T.border}`}}/>
+              <div style={{fontSize:16,fontWeight:900,color:T.text}}>Cambia colore</div>
+            </div>
+            <div style={{fontSize:12,color:T.sub,marginBottom:14}}>
+              Attuale: {showEditFasciaColor.toUpperCase()}. Scegli il nuovo colore dalla palette.
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8}}>
+              {PALETTE.map(p=>(
+                <div key={p} onClick={async()=>{
+                  const old = showEditFasciaColor;
+                  setShowEditFasciaColor(null);
+                  setShowColorAssignPicker(p);
+                  await replaceColoreEverywhere(old, p);
+                }}
+                  style={{width:32,height:32,borderRadius:"50%",background:p,cursor:"pointer",
+                    border:`2px solid ${showEditFasciaColor===p?"#000":T.border}`}}/>
+              ))}
+            </div>
+            <button onClick={()=>setShowEditFasciaColor(null)}
+              style={{width:"100%",marginTop:16,background:T.s2,border:`1px solid ${T.border}`,
+                borderRadius:10,color:T.sub,padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:13}}>
+              Annulla
+            </button>
+          </div>
+        </div>
+      )}
+
       {showRotForm&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:300,
           display:"flex",alignItems:"flex-end"}}
@@ -2021,8 +2067,8 @@ function sortedModelli(){
               <div style={{textAlign:"center"}}>
                 <div style={{fontSize:16,fontWeight:900,color:T.text}}>{rot.titolo||"Rotazione"}</div>
                 <div style={{fontSize:12,color:T.sub}}>
-                  {rot.tipo==="domeniche" && rot.dataInizio 
-                    ? `${rot.nSettimane || 52} settimane (${Math.ceil((rot.nSettimane || 52)/4)} domeniche di lavoro)` 
+                  {rot.tipo==="domeniche" && rot.dataInizio
+                    ? `${rot.nSettimane || 52} settimane (${Math.ceil((rot.nSettimane || 52)/4)} domeniche di lavoro)`
                     : `${Object.values(rot.griglia||{}).filter(Boolean).length} giorni configurati`}
                 </div>
               </div>
@@ -2046,11 +2092,11 @@ function sortedModelli(){
             </div>
             <div style={{flex:1,overflow:"hidden"}}>
               {rot.tipo==="personalizzata"&&(
-                <GrigliaRotazione rot={rot} T={T} accent={accent} modelli={modelli}
+                <GrigliaRotazione rot={rot} T={T} accent={accent} modelli={modelli} fasceAutomatiche={fasceAutomatiche}
                   onUpdate={griglia=>setRotazioni(prev=>prev.map(r=>r.id===rot.id?{...r,griglia}:r))}/>
               )}
               {rot.tipo==="domeniche"&&(
-                <DomenicheView rot={rot} T={T} accent={accent} modelli={modelli}
+                <DomenicheView rot={rot} T={T} accent={accent} modelli={modelli} fasceAutomatiche={fasceAutomatiche}
                   onUpdate={griglia=>setRotazioni(prev=>prev.map(r=>r.id===rot.id?{...r,griglia}:r))}/>
               )}
               {rot.tipo==="nlrs"&&(
@@ -2065,14 +2111,20 @@ function sortedModelli(){
       })()}
     </div>
   );
-
-  // ── SETTINGS VIEW ─────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-
 // #endregion
-
-// #region SEZIONE 13: SETTINGS VIEW
+// #region SEZIONE 18: SETTINGS VIEW
 // ═══════════════════════════════════════════════════════════════
+  const [editFascia, setEditFascia] = useState(null); // key fascia in editing (nome/orario)
+  const [showFasciaColorPicker, setShowFasciaColorPicker] = useState(null); // key fascia per cambio colore rapido
+
+  function updateFascia(key, updates){
+    const nuove = fasceAutomatiche.map(f=>f.key===key?{...f,...updates}:f);
+    setStore(s=>({...s, fasceAutomatiche:nuove}));
+    saveSettings({fasce_automatiche:nuove});
+  }
+  function timeToMins(t){ if(!t) return 0; const [h,m]=t.split(":").map(Number); return h*60+m; }
+  function minsToTime(m){ m=((m%1440)+1440)%1440; return `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`; }
+
   const settingsView = (
     <div style={{flex:1,overflowY:"auto",padding:"12px 12px 80px",color:T.text}}>
       <div style={{fontSize:18,fontWeight:900,fontFamily:"Georgia,serif",marginBottom:14}}>Impostazioni</div>
@@ -2098,6 +2150,63 @@ function sortedModelli(){
           ))}
         </div>
       </Sec>
+
+      <SecCollapsible label="FASCE ORARIE AUTOMATICHE" T={T}>
+        <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
+          Personalizza nome, orario e colore delle 4 fasce usate per colorare automaticamente i modelli.
+        </div>
+        {fasceAutomatiche.map((f,fi)=>(
+          <div key={f.key} style={{background:T.s2,borderRadius:10,padding:"10px 12px",marginBottom:8}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+              <div style={{position:"relative",flexShrink:0}}>
+                <div onClick={()=>setShowFasciaColorPicker(showFasciaColorPicker===f.key?null:f.key)}
+                  style={{width:26,height:26,borderRadius:"50%",background:f.color,
+                    border:`2px solid ${T.border}`,cursor:"pointer"}}/>
+                {showFasciaColorPicker===f.key&&(
+                  <div style={{position:"absolute",top:32,left:0,background:T.surface,
+                    border:`1px solid ${T.border}`,borderRadius:12,padding:10,zIndex:200,
+                    boxShadow:"0 8px 24px rgba(0,0,0,0.2)",width:200}}
+                    onClick={e=>e.stopPropagation()}>
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:6}}>
+                      {PALETTE.map(p=>(
+                        <div key={p} onClick={()=>{ updateFascia(f.key,{color:p}); setShowFasciaColorPicker(null); }}
+                          style={{width:24,height:24,borderRadius:"50%",background:p,cursor:"pointer",
+                            outline:f.color===p?"2px solid #000":"none",outlineOffset:2}}/>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <input value={f.label} onChange={e=>updateFascia(f.key,{label:e.target.value.toUpperCase()})}
+                style={{flex:1,background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,
+                  padding:"7px 10px",color:T.text,fontSize:13,fontWeight:700,outline:"none"}}/>
+            </div>
+            <div style={{display:"flex",gap:8,alignItems:"center"}}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:9,color:T.sub,marginBottom:3}}>DALLE</div>
+                <input type="time" value={minsToTime(f.from)}
+                  onChange={e=>updateFascia(f.key,{from:timeToMins(e.target.value)})}
+                  style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,
+                    padding:"6px 8px",color:T.text,fontSize:12,outline:"none",boxSizing:"border-box"}}/>
+              </div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:9,color:T.sub,marginBottom:3}}>ALLE</div>
+                <input type="time" value={minsToTime(f.to)}
+                  onChange={e=>updateFascia(f.key,{to:timeToMins(e.target.value)})}
+                  style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,
+                    padding:"6px 8px",color:T.text,fontSize:12,outline:"none",boxSizing:"border-box"}}/>
+              </div>
+            </div>
+          </div>
+        ))}
+        <button onClick={()=>{
+          setStore(s=>({...s, fasceAutomatiche:FASCE_AUTOMATICHE_DEFAULT}));
+          saveSettings({fasce_automatiche:FASCE_AUTOMATICHE_DEFAULT});
+        }} style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,
+          color:T.sub,padding:"9px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
+          ↩ Ripristina fasce predefinite
+        </button>
+      </SecCollapsible>
 
       <SecCollapsible label="CALENDARI" T={T}>
         {store.calendars.map((c,ci)=>(
@@ -2426,16 +2535,8 @@ function sortedModelli(){
       </Sec>
     </div>
   );
-
-  // ── DAY MODAL ─────────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-
 // #endregion
-
-
-
-
-// #region SEZIONE 14: DAY MODAL
+// #region SEZIONE 19: DAY MODAL
 // ═══════════════════════════════════════════════════════════════
   const curEvts = dayKey ? getEvts(dayKey,calId) : [];
   const dayModal = dayKey&&(
@@ -2530,7 +2631,7 @@ function sortedModelli(){
                   </div>
                 );
               })()}
-              
+
             </div>
             <button onClick={e2=>{e2.stopPropagation();setForm({
                 editId:e.id,modelloId:null,shiftId:null,label:e.label,colorOvr:e.color,
@@ -2556,7 +2657,7 @@ function sortedModelli(){
             {modelli.length>0&&!form.editId&&(()=>{
               const mainCalId3 = store.calendars.find(c=>c.isMain)?.id||null;
               const modelliDelCal = modelli.filter(m=>{
-                if(!calId) return true; // TUTTI → tutti i modelli
+                if(!calId) return true;
                 const mcid = m.calendarId||mainCalId3;
                 return mcid===calId;
               });
@@ -2566,7 +2667,7 @@ function sortedModelli(){
                 {!form.modelloId&&<div style={{fontSize:10,color:T.sub,marginBottom:6,fontWeight:600}}>MODELLO TURNO</div>}
                 <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
                   {(form.modelloId?modelliDelCal.filter(m=>m.id===form.modelloId):modelliDelCal).map(m=>{
-                    const c=m.coloreCustom||getColorByTime(m.inizio);
+                    const c=m.coloreCustom||colByTime(m.inizio);
                     return (
                       <button key={m.id}
                         onClick={()=>setForm(f=>({...f,modelloId:m.id,shiftId:null,label:m.label||m.titolo,colorOvr:null,
@@ -2723,7 +2824,7 @@ function sortedModelli(){
     })()}
   </div>
 )}
-                    
+
             <input value={form.auto||""} onChange={e=>{
                 const raw=e.target.value.toUpperCase();
                 const stripped=raw.replace(/^(CH\s*)+/i,"").trim();
@@ -2773,13 +2874,8 @@ function sortedModelli(){
       </div>
     </div>
   );
-
-  // ── DB MODAL ──────────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-
 // #endregion
-
-// #region SEZIONE 15: DB MODAL + RENDER PRINCIPALE
+// #region SEZIONE 20: DB MODAL + RENDER PRINCIPALE
 // ═══════════════════════════════════════════════════════════════
   const dbModal = showDbModal && (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:300,
@@ -2846,7 +2942,6 @@ function sortedModelli(){
     </div>
   );
 
-  // ── MAIN RENDER ───────────────────────────────────────────────
   const NAV_ITEMS = [
     { id:"cal",      icon:"▦",  label:"Calendario" },
     { id:"report",   icon:"📊", label:"Report" },
@@ -2895,6 +2990,7 @@ function sortedModelli(){
               <div style={{width:32}}/>
             </div>
             <ModelForm T={T} form={modelForm} setForm={setModelForm} accent={accent} dark={dark}
+              fasceAutomatiche={fasceAutomatiche}
               onSave={async()=>{
                 await saveModello({...modelForm,id:editModello?.id});
                 setShowModelForm(false);
@@ -2955,7 +3051,6 @@ function sortedModelli(){
                   style={{background:"none",border:"none",color:T.sub,fontSize:22,cursor:"pointer"}}>‹</button>
                 <div style={{fontSize:16,fontWeight:900,color:T.text}}>{showRotDetail.titolo||"Rotazione"}</div>
                 <button onClick={()=>{
-                  // Calcola modello per il dayKey dalla rotazione selezionata
                   const r=showRotDetail;
                   let modelloScelto=null;
                   if(r.tipo==="personalizzata"){
@@ -3001,7 +3096,7 @@ function sortedModelli(){
               </div>
               <div style={{flex:1,overflowY:"auto",background:T.bg}}>
                 {showRotDetail.tipo==="domeniche"&&(
-                  <DomenicheView rot={showRotDetail} T={T} accent={accent} modelli={modelli} onUpdate={()=>{}}/>
+                  <DomenicheView rot={showRotDetail} T={T} accent={accent} modelli={modelli} fasceAutomatiche={fasceAutomatiche} onUpdate={()=>{}}/>
                 )}
                 {showRotDetail.tipo==="nlrs"&&(
                   <NLRSView rot={showRotDetail} T={T} accent={accent} modelli={modelli}/>
@@ -3010,7 +3105,7 @@ function sortedModelli(){
                   <NLRSScalanteView rot={showRotDetail} T={T} accent={accent} modelli={modelli}/>
                 )}
                 {showRotDetail.tipo==="personalizzata"&&(
-                  <GrigliaRotazione rot={showRotDetail} T={T} accent={accent} modelli={modelli} onUpdate={()=>{}}/>
+                  <GrigliaRotazione rot={showRotDetail} T={T} accent={accent} modelli={modelli} fasceAutomatiche={fasceAutomatiche} onUpdate={()=>{}}/>
                 )}
               </div>
             </>
@@ -3045,7 +3140,7 @@ function sortedModelli(){
               return (
               <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:12}}>
                 {modelliPicker.map((m,i,arr)=>{
-                  const c=m.coloreCustom||getColorByTime(m.inizio);
+                  const c=m.coloreCustom||colByTime(m.inizio);
                   const durata=m.tempo==="h24"?"Tutto il giorno"
                     :m.tempo==="6h15"&&m.inizio?`${m.inizio} - ${calcFine6h15(m.inizio)} • 6h 15m`
                     :m.inizio&&m.fine?`${m.inizio} - ${m.fine} • ${calcDurata(m.inizio,m.fine)}`
@@ -3131,14 +3226,14 @@ function sortedModelli(){
               <br/><br/>
               Il ciclo è di 4 domeniche. Quante volte vuoi ripeterlo?
             </div>
-            
+
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
               <span style={{fontSize:13,color:T.text,fontWeight:700}}>Ripetizioni:</span>
               <input type="number" defaultValue={4} min={1} max={52} id="num_ripetizioni_rot"
                 style={{width:70,background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
                   padding:"6px 8px",color:T.text,fontSize:14,fontWeight:700,outline:"none",textAlign:"center"}}/>
             </div>
-            
+
             <div style={{display:"flex",gap:8}}>
               <button onClick={()=>setShowApplyRotDialog(null)}
                 style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
@@ -3163,14 +3258,8 @@ function sortedModelli(){
     </div>
   );
 }
-
-// ── CAL BADGE ────────────────────────────────────────────────
-// Badge cliccabile con nome calendario e palette colori
-// ═══════════════════════════════════════════════════════════════
-
 // #endregion
-
-// #region SEZIONE 16: COMPONENTS
+// #region SEZIONE 21: CAL BADGE
 // ═══════════════════════════════════════════════════════════════
 function CalBadge({ calId, calAttivo, coloreCal, testoContrasto, T, store, setStore, updateCalendar, accent, setCalId }){
   const [showCalPal, setShowCalPal] = useState(false);
@@ -3239,19 +3328,16 @@ function CalBadge({ calId, calAttivo, coloreCal, testoContrasto, T, store, setSt
     </div>
   );
 }
+// #endregion
 
-
-// ── SMART TIME INPUT ──────────────────────────────────────────
+// #region SEZIONE 22: SMART TIME INPUT
+// ═══════════════════════════════════════════════════════════════
 // Campo orario HH:MM controllato via onChange (funziona anche su
 // tastiera virtuale mobile, a differenza della vecchia versione
 // basata su onKeyDown + readOnly che su telefono non riceveva input).
 function SmartTimeInput({ value, onChange, style }) {
-  // Buffer di sole cifre (max 4: HHMM), così l'utente può digitare
-  // liberamente e noi formattiamo in tempo reale come "HH:MM".
   const [digits, setDigits] = useState(() => (value || "").replace(/\D/g, "").slice(0, 4));
 
-  // Se il valore esterno cambia (es. selezione di un modello turno),
-  // risincronizza il buffer di cifre.
   useEffect(() => {
     setDigits((value || "").replace(/\D/g, "").slice(0, 4));
   }, [value]);
@@ -3259,12 +3345,9 @@ function SmartTimeInput({ value, onChange, style }) {
   function clampAndEmit(rawDigits) {
     let d = rawDigits.replace(/\D/g, "").slice(0, 4);
 
-    // Validazione progressiva ore/minuti mentre si digita
     if (d.length >= 1) {
       const h0 = parseInt(d[0], 10);
       if (h0 > 2) {
-        // prima cifra ora troppo alta per essere ore valide a due cifre (>2X)
-        // la trattiamo come "0" + cifra (es: digitando 9 → 09)
         d = "0" + d[0] + d.slice(1, 3);
         d = d.slice(0, 4);
       }
@@ -3281,7 +3364,6 @@ function SmartTimeInput({ value, onChange, style }) {
     } else if (d.length === 3) {
       const m0 = parseInt(d[2], 10);
       if (m0 > 5) {
-        // prima cifra minuti troppo alta (>5X) → tratta come 0X
         d = d.slice(0, 2) + "0" + d[2];
         d = d.slice(0, 4);
       }
@@ -3293,23 +3375,16 @@ function SmartTimeInput({ value, onChange, style }) {
       onChange(d.slice(0, 2) + ":" + d.slice(2, 4));
     } else if (d.length === 0) {
       onChange("");
-    } else {
-      // Valore parziale: non ancora un orario completo, non sovrascriviamo
-      // il valore "salvato" finché non sono state digitate tutte le 4 cifre,
-      // ma mostriamo comunque il progresso nel campo (vedi displayValue).
     }
   }
 
   function handleChange(e) {
     const typed = e.target.value;
-    // Calcola le sole cifre digitate (gestisce anche cancellazioni)
     const onlyDigits = typed.replace(/\D/g, "");
     clampAndEmit(onlyDigits.slice(0, 4));
   }
 
   function handleKeyDown(e) {
-    // Permette backspace/canc/freccie/tab di funzionare normalmente;
-    // per i tasti numerici lasciamo fare a onChange.
     if (e.key === "Backspace" || e.key === "Delete") {
       e.preventDefault();
       setDigits(d => {
@@ -3322,11 +3397,9 @@ function SmartTimeInput({ value, onChange, style }) {
   }
 
   function handleFocus(e) {
-    // Seleziona tutto al focus per permettere di ridigitare da capo
     e.target.select();
   }
 
-  // Valore mostrato nel campo: formatta progressivamente mentre si digita
   let displayValue = "";
   if (digits.length > 0) {
     const hh = digits.slice(0, 2);
@@ -3348,14 +3421,9 @@ function SmartTimeInput({ value, onChange, style }) {
     />
   );
 }
-
-// ── REPORT SUB-COMPONENTS ─────────────────────────────────────
-
-// ═══════════════════════════════════════════════════════════════
-
 // #endregion
 
-// #region SEZIONE 17: REPORT SUBCOMPONENTS
+// #region SEZIONE 23: REPORT SUBCOMPONENTS
 // ═══════════════════════════════════════════════════════════════
 function FasceExpand({data, pct1, pct2, T, modelli, accent}){
   const [openFascia, setOpenFascia] = useState(null);
@@ -3421,31 +3489,17 @@ function FasceExpand({data, pct1, pct2, T, modelli, accent}){
   );
 }
 
-function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, onRename, onUpdateCfg, onGoToModelli}){
+function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, fasceAutomatiche, onRename, onUpdateCfg, onGoToModelli}){
   const [editingName, setEditingName] = useState(false);
   const [tmpName, setTmpName] = useState(r.label);
   const pct = totaleTurni>0 ? Math.round((data.totale/totaleTurni)*100) : 0;
   const [showTurniList, setShowTurniList] = useState(false);
 
-  const FASCE = [
-    {key:"primo",   label:"1° TURNO (06:00-11:45)", count:data.primo||0},
-    {key:"secondo", label:"2° TURNO (12:00-23:59)", count:data.secondo||0},
-    
-  ];
   const pct1 = data.totale>0 ? Math.round(((data.primo||0)/data.totale)*100) : 0;
   const pct2 = data.totale>0 ? Math.round(((data.secondo||0)/data.totale)*100) : 0;
 
-  function toggleFascia(key){
-    const cur = cfg.fasceFiltro||[];
-    const next = cur.includes(key) ? cur.filter(f=>f!==key) : [...cur, key];
-    onUpdateCfg({...cfg, fasceFiltro: next});
-  }
-
-  const isFiltered = (cfg.fasceFiltro||[]).length>0;
-
   return (
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
-      {/* Nome report */}
       <div style={{background:T.surface,borderRadius:10,padding:"10px 12px"}}>
         <div style={{fontSize:10,color:T.sub,marginBottom:4}}>NOME REPORT</div>
         {editingName?(
@@ -3466,7 +3520,6 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, onR
         )}
       </div>
 
-      {/* Statistiche */}
       <div style={{background:T.surface,borderRadius:10,padding:"10px 12px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
           <div onClick={()=>setShowTurniList(s=>!s)}
@@ -3484,7 +3537,6 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, onR
     <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>
       Clicca per includere/escludere dal conteggio
     </div>
-    {/* Voce "Tutti" */}
     <div onClick={()=>onUpdateCfg({...cfg,fasceFiltro:[]})}
       style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",
         borderRadius:6,cursor:"pointer",marginBottom:4,
@@ -3497,8 +3549,7 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, onR
     {Object.entries(data.perModello||{}).map(([mid,cnt])=>{
       const m=modelli.find(x=>x.id===mid);
       if(!m) return null;
-      const c=m.coloreCustom||getColorByTime(m.inizio);
-      // Determina fascia del modello per il filtro
+      const c=m.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
       const getFascia=()=>{
         if(m.allDay||m.tempo==="h24") return "h24";
         if(!m.inizio) return null;
@@ -3515,7 +3566,6 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, onR
           if(!fascia) return;
           const cur=cfg.fasceFiltro||[];
           if(cur.length===0){
-            // Passa da "tutti" a "solo questa fascia"
             onUpdateCfg({...cfg,fasceFiltro:[fascia]});
           } else if(cur.includes(fascia)){
             const next=cur.filter(f=>f!==fascia);
@@ -3550,7 +3600,6 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, onR
         <FasceExpand data={data} pct1={pct1} pct2={pct2} T={T} modelli={modelli} accent={accent}/>
       </div>
 
-      {/* Gruppo indipendente APP/AUTO basato sul titolo del modello */}
       <div style={{background:T.surface,borderRadius:10,padding:12}}>
         <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:8}}>APP / AUTO</div>
         <div style={{display:"flex",flexDirection:"column",gap:6}}>
@@ -3567,7 +3616,6 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, onR
         </div>
       </div>
 
-      {/* Filtro per collega */}
       <div>
         <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>FILTRA PER COLLEGA</div>
         <input
@@ -3580,14 +3628,13 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, onR
             outline:"none",boxSizing:"border-box"}}/>
       </div>
 
-      {/* Per modello */}
       {modelli.length>0&&data.perModello&&Object.keys(data.perModello).length>0&&(
         <div style={{background:T.surface,borderRadius:10,padding:12}}>
           <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:8}}>PER MODELLO</div>
           {Object.entries(data.perModello).map(([mid,cnt])=>{
             const m=modelli.find(x=>x.id===mid);
             if(!m) return null;
-            const c=m.coloreCustom||getColorByTime(m.inizio);
+            const c=m.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
             const mp=data.totale>0?Math.round((cnt/data.totale)*100):0;
             return (
               <div key={mid} style={{display:"flex",alignItems:"center",gap:8,
@@ -3666,13 +3713,6 @@ function OrePerTurnoView({T, data}){
 }
 
 function StraordinariView({T, data, store, reportRange, modelliInclusi=[]}){
-  // Calcola protrazioni leggendo il campo `note` di ogni evento
-  // App.jsx scrive già:
-  //   "Protrazione: +Xh Ym"  per pagamento (straordinarioTipo==="pagamento")
-  //   "Anticipo: Xh Ym"      per recupero  (straordinarioTipo==="recupero")
-  // e salva straordinarioTipo nel campo auto come suffisso ":PAG" o ":REC"
-  // Per ora leggiamo la nota e il campo auto per distinguerli.
-
   const {from, to} = reportRange || {from:"", to:""};
 
   let minPagamento = 0;
@@ -3686,19 +3726,16 @@ function StraordinariView({T, data, store, reportRange, modelliInclusi=[]}){
         if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
         const nota  = (e.note||"").toUpperCase();
         const auto  = (e.auto||"").toUpperCase();
-        // Legge minuti dalla nota "PROTRAZIONE: +Xh Ym" o "ANTICIPO: Xh Ym"
         const matchProt = nota.match(/PROTRAZIONE[^+]*\+?(\d+)H(?:\s*(\d+)M)?/);
         const matchAnti = nota.match(/ANTICIPO[^0-9]*(\d+)H(?:\s*(\d+)M)?/);
         if(matchProt){
           const mins = parseInt(matchProt[1]||0)*60 + parseInt(matchProt[2]||0);
-          // Distingue pagamento da recupero tramite campo auto
-
           if(auto.includes(":REC")) minRecupero  += mins;
           else                      minPagamento += mins;
         }
         if(matchAnti){
           const mins = parseInt(matchAnti[1]||0)*60 + parseInt(matchAnti[2]||0);
-          minRecupero -= mins; // anticipo riduce il saldo recupero
+          minRecupero -= mins;
         }
       }
     }
@@ -3714,7 +3751,6 @@ function StraordinariView({T, data, store, reportRange, modelliInclusi=[]}){
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
-      {/* Protrazione a PAGAMENTO */}
       <div style={{background:T.surface,borderRadius:10,padding:12}}>
         <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8}}>
           PROTRAZIONE A PAGAMENTO
@@ -3732,7 +3768,6 @@ function StraordinariView({T, data, store, reportRange, modelliInclusi=[]}){
         )}
       </div>
 
-      {/* Saldo RECUPERO */}
       <div style={{background:T.surface,borderRadius:10,padding:12}}>
         <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8}}>
           SALDO RECUPERO
@@ -3776,13 +3811,8 @@ function GuadagniView({T, indennita, calc}){
     </div>
   );
 }
-
-// ── SHARED COMPONENTS ─────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-
 // #endregion
-
-// #region SEZIONE 18: MODELLO CARDS & FORMS
+// #region SEZIONE 24: SHARED UI COMPONENTS (Pal, ColorRow, Sec)
 // ═══════════════════════════════════════════════════════════════
 function Pal({T, cur, onPick, up=false}){
   return (
@@ -3803,7 +3833,7 @@ function Pal({T, cur, onPick, up=false}){
   );
 }
 
-function ColorRow({T, hex, label, sub, count, onClick, onRemove, fixed=false}){
+function ColorRow({T, hex, label, sub, count, onClick, onRemove}){
   return (
     <div style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}} onClick={onClick}>
       <div style={{width:32,height:32,borderRadius:"50%",background:hex,
@@ -3849,9 +3879,12 @@ function Sec({label,children,T}){
     </div>
   );
 }
+// #endregion
 
-function ModelloCard({m, T, accent, onEdit, onDelete, onMoveUp, onMoveDown, onDragStart, onDragOver, onDrop, onTouchStart, onTouchMove, onTouchEnd}){
-  const colore=m.coloreCustom||(m.tempo==="h24"?"#64748b":getColorByTime(m.inizio));
+// #region SEZIONE 25: MODELLO CARD & FORM (fix: colore libero via palette condivisa)
+// ═══════════════════════════════════════════════════════════════
+function ModelloCard({m, T, accent, fasceAutomatiche, onEdit, onDelete, onMoveUp, onMoveDown, onDragStart, onDragOver, onDrop, onTouchStart, onTouchMove, onTouchEnd}){
+  const colore=m.coloreCustom||(m.tempo==="h24"?"#64748b":getColorByTime(m.inizio, fasceAutomatiche));
   const durata=m.tempo==="h24"?"Tutto il giorno"
     :m.tempo==="6h15"&&m.inizio?`${m.inizio} - ${calcFine6h15(m.inizio)} • 6h 15m`
     :m.inizio&&m.fine?`${m.inizio} - ${m.fine} • ${calcDurata(m.inizio,m.fine)}`
@@ -3894,14 +3927,18 @@ function ModelloCard({m, T, accent, onEdit, onDelete, onMoveUp, onMoveDown, onDr
   );
 }
 
-function ModelForm({T, form, setForm, accent, dark, onSave}){
-  const autoColore=form.tempo==="h24"?"#64748b":getColorByTime(form.inizio);
+// ── FIX PRINCIPALE (richiesta utente) ───────────────────────────
+// Nel form del modello, il colore NON è più vincolato a una palette
+// ristretta (PALETTE_M fissa). Ora usa direttamente la PALETTE condivisa
+// (la stessa di Impostazioni e della tab Colori), così qualsiasi colore
+// scelto qui è coerente e riconoscibile ovunque nell'app, e comparirà
+// automaticamente nella lista "Colori personalizzati" (vedi
+// ensureColoreRegistrato in saveModello).
+function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, onSave}){
+  const autoColore=form.tempo==="h24"?"#64748b":getColorByTime(form.inizio, fasceAutomatiche);
   const coloreVis=form.coloreCustom||autoColore;
   const fineAuto=form.tempo==="6h15"&&form.inizio?calcFine6h15(form.inizio):null;
   const [showPal,setShowPal]=useState(false);
-  const PALETTE_M=["#ef4444","#f97316","#f59e0b","#eab308","#84cc16","#22c55e",
-    "#10b981","#14b8a6","#06b6d4","#3b82f6","#6366f1","#8b5cf6",
-    "#a855f7","#ec4899","#64748b","#1e40af","#0f172a","#ffffff"];
   return (
     <div style={{padding:"16px 14px 40px"}}>
       <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:8}}>
@@ -3952,17 +3989,21 @@ function ModelForm({T, form, setForm, accent, dark, onSave}){
             onClick={()=>setShowPal(s=>!s)}/>
           <div style={{flex:1}}>
             <div style={{fontSize:13,fontWeight:700,color:T.text}}>
-              {form.coloreCustom?"Personalizzato":`Auto — ${form.tempo==="h24"?"H24":getColorLabel(form.inizio)||"imposta orario"}`}
+              {form.coloreCustom?"Personalizzato":`Auto — ${form.tempo==="h24"?"H24":getColorLabel(form.inizio, fasceAutomatiche)||"imposta orario"}`}
+            </div>
+            <div style={{fontSize:11,color:T.sub,marginTop:2}}>
+              Tocca il cerchio per scegliere un colore qualsiasi dalla palette condivisa.
+              Comparirà anche in Modelli → Colori.
             </div>
           </div>
           {form.coloreCustom&&(
             <button onClick={()=>setForm(f=>({...f,coloreCustom:null}))}
-              style={{background:"none",border:"none",color:T.sub,fontSize:11,cursor:"pointer"}}>↩ auto</button>
+              style={{background:"none",border:"none",color:T.sub,fontSize:11,cursor:"pointer",flexShrink:0}}>↩ auto</button>
           )}
         </div>
         {showPal&&(
           <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8,marginTop:12}}>
-            {PALETTE_M.map(p=>(
+            {PALETTE.map(p=>(
               <div key={p} onClick={()=>{setForm(f=>({...f,coloreCustom:p}));setShowPal(false);}}
                 style={{width:32,height:32,borderRadius:"50%",background:p,cursor:"pointer",
                   outline:coloreVis===p?`3px solid #64748b`:"none",outlineOffset:2}}/>
@@ -3970,7 +4011,7 @@ function ModelForm({T, form, setForm, accent, dark, onSave}){
           </div>
         )}
       </div>
-      
+
       <button onClick={onSave}
         style={{width:"100%",background:accent,border:"none",borderRadius:14,
           color:"#fff",padding:"14px 0",cursor:"pointer",fontWeight:800,fontSize:15}}>
@@ -3982,12 +4023,9 @@ function ModelForm({T, form, setForm, accent, dark, onSave}){
 
 const NB={background:"none",border:"none",fontSize:22,cursor:"pointer",
   padding:"0 4px",lineHeight:1,flexShrink:0,color:"rgba(255,255,255,0.8)"};
-
-// ═══════════════════════════════════════════════════════════════
-
 // #endregion
 
-// #region SEZIONE 19: ROTAZIONE COMPONENTS
+// #region SEZIONE 26: ROTAZIONE COMPONENTS
 // ═══════════════════════════════════════════════════════════════
 function RotazioneCard({r, T, accent, modelli, onOpen, onEdit, onDelete}){
   const tipoLabel = r.tipo==="domeniche"?"🗓 Domeniche 1/4":r.tipo==="nlrs"?"🔄 NL / RS classico":r.tipo==="nlrs_scalante"?"📅 RS/NL Scalante":" Personalizzata";
@@ -4151,7 +4189,7 @@ function ModelloSelector({label, value, onChange, modelli, T, required=false, la
   );
 }
 
-function GrigliaRotazione({rot, T, accent, modelli, onUpdate}){
+function GrigliaRotazione({rot, T, accent, modelli, fasceAutomatiche, onUpdate}){
   const [selModello, setSelModello] = useState(modelli[0]?.id||null);
   const griglia = rot.griglia||{};
   function getDays(){
@@ -4189,7 +4227,7 @@ function GrigliaRotazione({rot, T, accent, modelli, onUpdate}){
               <div key={wi} style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
                 {week.map(day=>{
                   const m=modelli.find(m=>m.id===griglia[day.key]);
-                  const c=m?(m.coloreCustom||getColorByTime(m.inizio)):null;
+                  const c=m?(m.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche)):null;
                   const isDOM=day.dow===0;
                   return (
                     <div key={day.key}
@@ -4216,7 +4254,7 @@ function GrigliaRotazione({rot, T, accent, modelli, onUpdate}){
       <div style={{borderTop:`1px solid ${T.border}`,background:T.surface,
         padding:"8px 8px",overflowX:"auto",display:"flex",gap:8,flexShrink:0}}>
         {modelli.map(m=>{
-          const c=m.coloreCustom||getColorByTime(m.inizio);
+          const c=m.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
           return (
             <button key={m.id} onClick={()=>setSelModello(m.id)}
               style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,
@@ -4240,13 +4278,10 @@ function NLRSScalanteView({rot, T, accent, modelli}){
   const modRS=modelli.find(m=>m.id===rot.modelloRSId);
   const modNL=modelli.find(m=>m.id===rot.modelloNLId);
 
-  // Giorni della settimana disponibili (no domenica=0), scalanti da venerdì
-  // 5=venerdì, 4=giovedì, 3=mercoledì, 2=martedì, 1=lunedì, 6=sabato (poi ricomincia)
-  const GIORNI_CICLO = [5, 4, 3, 2, 1, 6]; // venerdì→giovedì→mercoledì→martedì→lunedì→sabato
+  const GIORNI_CICLO = [5, 4, 3, 2, 1, 6];
 
   function getCoppie(){
     if(!rot.dataInizio) return [];
-    // La data inizio è il primo RS
     const primoRS = new Date(rot.dataInizio);
     const coppie = [];
     let giornoCicloIdx = 0;
@@ -4268,14 +4303,11 @@ function NLRSScalanteView({rot, T, accent, modelli}){
         cicloN: giornoCicloIdx + 1,
       });
 
-      // Avanza: 2 settimane di pausa + scalo al giorno precedente
       giornoCicloIdx = (giornoCicloIdx + 1) % GIORNI_CICLO.length;
       const prossimoDow = GIORNI_CICLO[giornoCicloIdx];
 
-      // Calcola prossimo RS: 3 settimane dopo il corrente RS (2 pausa + 1 per arrivare al nuovo giorno)
       const base = new Date(dataCorrRS);
-      base.setDate(base.getDate() + 21); // +3 settimane
-      // Trova il prossimoDow più vicino da base
+      base.setDate(base.getDate() + 21);
       let tentativo = new Date(base);
       let iter = 0;
       while(tentativo.getDay() !== prossimoDow && iter < 14){
@@ -4347,7 +4379,7 @@ function NLRSScalanteView({rot, T, accent, modelli}){
   );
 }
 
-function DomenicheView({rot, T, accent, modelli, onUpdate}){
+function DomenicheView({rot, T, accent, modelli, fasceAutomatiche, onUpdate}){
   const griglia=rot.griglia||{};
   const modLav=modelli.find(m=>m.id===rot.modellaLavoroId);
   const modFesta=modelli.find(m=>m.id===rot.modelloNLId);
@@ -4355,7 +4387,6 @@ function DomenicheView({rot, T, accent, modelli, onUpdate}){
     if(!rot.dataInizio) return [];
     const inizio=new Date(rot.dataInizio);
     let d=new Date(inizio);
-    // Trova la prima domenica dalla data inizio
     while(d.getDay()!==0) d.setDate(d.getDate()+1);
     const domeniche=[];
     for(let i=0;i<(rot.nSettimane||52);i++){
@@ -4381,12 +4412,11 @@ function DomenicheView({rot, T, accent, modelli, onUpdate}){
       )}
       <div style={{display:"flex",flexDirection:"column",gap:6}}>
         {domeniche.map((dom,i)=>{
-          // 1 su 4: indice 0 = lavoro (festivo), 1,2,3 = riposo
           const isLavoro=(i%4)===0;
           const autoM=isLavoro?modLav:modFesta;
           const ovrM=modelli.find(m=>m.id===griglia[dom.key]);
           const effM=ovrM||autoM;
-          const c=effM?(effM.coloreCustom||getColorByTime(effM.inizio)):(isLavoro?"#22c55e":"#94a3b8");
+          const c=effM?(effM.coloreCustom||getColorByTime(effM.inizio, fasceAutomatiche)):(isLavoro?"#22c55e":"#94a3b8");
           return (
             <div key={dom.key} style={{background:T.surface,
               border:`2px solid ${isLavoro?"#22c55e44":"#94a3b822"}`,
@@ -4484,6 +4514,4 @@ function NLRSView({rot, T, accent, modelli}){
     </div>
   );
 }
-
-
-// #endregion// modifica
+// #endregion
