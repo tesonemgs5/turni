@@ -183,6 +183,8 @@ export default function App({ session }){
   const [indennita, setIndennita] = useState({ diurno:"", notturno:"", festivo:"", notturno_festivo:"" });
   const [conteggioConfigs, setConteggioConfigs] = useState({});
   const [showReportModelliPicker, setShowReportModelliPicker] = useState(null); // reportId aperto
+  const [editFascia, setEditFascia] = useState(null); // key fascia in editing (nome/orario)
+  const [showFasciaColorPicker, setShowFasciaColorPicker] = useState(null); // key fascia per cambio colore rapido
 
   const userId = session?.user?.id;
   const isInitialized = useRef(false);
@@ -2114,9 +2116,6 @@ function sortedModelli(){
 // #endregion
 // #region SEZIONE 18: SETTINGS VIEW
 // ═══════════════════════════════════════════════════════════════
-  const [editFascia, setEditFascia] = useState(null); // key fascia in editing (nome/orario)
-  const [showFasciaColorPicker, setShowFasciaColorPicker] = useState(null); // key fascia per cambio colore rapido
-
   function updateFascia(key, updates){
     const nuove = fasceAutomatiche.map(f=>f.key===key?{...f,...updates}:f);
     setStore(s=>({...s, fasceAutomatiche:nuove}));
