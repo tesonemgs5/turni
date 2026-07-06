@@ -20,7 +20,8 @@ export const FONT_SIZE = {
 };
 
 // ── PALETTE COLORI DISPONIBILI PER ASSEGNAZIONE MANUALE ────────
-// Colori selezionabili nella sezione "Colori" e nel form modello.
+// Colori selezionabili nella sezione "Colori", nel form modello,
+// e ora anche per personalizzare le fasce automatiche.
 export const PALETTE = [
   "#ef4444","#f97316","#f59e0b","#eab308","#84cc16","#22c55e",
   "#10b981","#14b8a6","#06b6d4","#3b82f6","#6366f1","#8b5cf6",
@@ -28,36 +29,51 @@ export const PALETTE = [
   "#fca5a5","#fed7aa","#fef08a","#bbf7d0","#bfdbfe","#ddd6fe",
 ];
 
-// ── COLORI AUTOMATICI PER FASCIA ORARIA ─────────────────────────
-// Questi restano fissi: non sono riassegnabili dalla sezione Colori,
-// sono solo mostrati come riferimento.
-export const FASCE_AUTOMATICHE = [
+// ── COLORI AUTOMATICI PER FASCIA ORARIA (DEFAULT) ───────────────
+// Usati come fallback iniziale. L'utente può personalizzarli da
+// Impostazioni → Fasce orarie automatiche (salvati in user_settings).
+export const FASCE_AUTOMATICHE_DEFAULT = [
   { key:"mattina",     label:"MATTINA",     color:"#f59e0b", from:360,  to:705  }, // 06:00–11:45
   { key:"pomeriggio",  label:"POMERIGGIO",  color:"#f97316", from:705,  to:1035 }, // 11:45–17:15
   { key:"terzo_turno", label:"3° TURNO",    color:"#8b5cf6", from:1035, to:1080 }, // 17:15–18:00
   { key:"notte",       label:"NOTTE",       color:"#1e40af", from:1080, to:360  }, // resto (avvolge la mezzanotte)
 ];
 
+// Retro-compatibilità: se qualcosa importa ancora FASCE_AUTOMATICHE
+// direttamente, punta ai default. App.jsx usa invece le fasce
+// personalizzate salvate su Supabase (store.fasceAutomatiche).
+export const FASCE_AUTOMATICHE = FASCE_AUTOMATICHE_DEFAULT;
+
 // Colore standard per i modelli H24 / senza orario
 export const COLORE_H24 = "#64748b";
 
-// ── FUNZIONI COLORE/ORARIO (automatiche, non modificabili) ─────
-export function getColorByTime(tIn){
-  if(!tIn) return COLORE_H24;
+// ── FUNZIONI COLORE/ORARIO ──────────────────────────────────────
+// Accettano un parametro opzionale `fasce` per usare le fasce
+// personalizzate dall'utente; se omesso usano i default.
+function minsOf(tIn){
   const [h,m]=tIn.split(":").map(Number);
-  const mins=h*60+m;
-  if(mins>=360&&mins<705) return "#f59e0b";
-  if(mins>=705&&mins<1035) return "#f97316";
-  if(mins>=1035&&mins<1080) return "#8b5cf6";
-  return "#1e40af";
+  return h*60+m;
+}
+function inRange(mins, from, to){
+  // Gestisce anche fasce che avvolgono la mezzanotte (from > to)
+  if(from<=to) return mins>=from && mins<to;
+  return mins>=from || mins<to;
 }
 
-export function getColorLabel(tIn){
+export function getColorByTime(tIn, fasce=FASCE_AUTOMATICHE_DEFAULT){
+  if(!tIn) return COLORE_H24;
+  const mins=minsOf(tIn);
+  for(const f of fasce){
+    if(inRange(mins, f.from, f.to)) return f.color;
+  }
+  return fasce[fasce.length-1]?.color||COLORE_H24;
+}
+
+export function getColorLabel(tIn, fasce=FASCE_AUTOMATICHE_DEFAULT){
   if(!tIn) return "";
-  const [h,m]=tIn.split(":").map(Number);
-  const mins=h*60+m;
-  if(mins>=360&&mins<705) return "MATTINA";
-  if(mins>=705&&mins<1035) return "POMERIGGIO";
-  if(mins>=1035&&mins<1080) return "3° TURNO";
-  return "NOTTE";
+  const mins=minsOf(tIn);
+  for(const f of fasce){
+    if(inRange(mins, f.from, f.to)) return f.label;
+  }
+  return fasce[fasce.length-1]?.label||"";
 }
