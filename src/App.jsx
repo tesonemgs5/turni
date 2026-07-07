@@ -97,9 +97,11 @@ function easter(y){
 }
 function italianHols(y){
   const e=easter(y);
+  // Gestione nativa del rollover del mese se Pasqua è a fine mese
+  const pasquettaDate = new Date(y, e.m, e.d + 1);
   return [{m:0,d:1},{m:0,d:6},{m:3,d:25},{m:4,d:1},{m:5,d:2},
     {m:7,d:15},{m:10,d:1},{m:11,d:8},{m:11,d:25},{m:11,d:26},
-    {m:e.m,d:e.d},{m:e.m,d:e.d+1}];
+    {m:e.m,d:e.d},{m:pasquettaDate.getMonth(),d:pasquettaDate.getDate()}];
 }
 // #endregion
 
@@ -307,9 +309,17 @@ export default function App({ session }){
           await supabase.from("usage_stats").upsert({ user_id: userId, last_active: new Date().toISOString(), login_count: newCount });
         } catch(statErr) { console.warn("Stats error:", statErr); }
 
+        const modelliMappati = (modelliDb||[]).map(m=>({
+          id:m.id, titolo:m.titolo, label:m.label||"", tempo:m.tempo,
+          inizio:m.inizio||"", fine:m.fine||"",
+          colore:m.colore, coloreCustom:m.colore_custom||null,
+          posizione:m.posizione||"", sortOrder:m.sort_order||0,
+          calendarId:m.calendar_id||null,
+        }));
+
         setStore({ calendars, events, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings, fasceAutomatiche: savedFasce });
         setCalId(calendars[0]?.id||null);
-        saveToLocalStorage(events, calendars, []);
+        saveToLocalStorage(events, calendars, modelliMappati);
 
         // Sincronizza i colori custom già presenti sui modelli con la
         // tabella "colori", nel caso in cui siano stati creati da versioni
@@ -318,18 +328,30 @@ export default function App({ session }){
           const coloriUsati = [...new Set((modelliDb||[]).map(m=>m.colore_custom).filter(Boolean))];
           const coloriGiaSalvati = new Set((coloriDb||[]).map(c=>c.hex));
           const daSalvare = coloriUsati.filter(hex=>!coloriGiaSalvati.has(hex));
+          const nuoviColoriSalvati = [];
+
           for(const hex of daSalvare){
             const { data:cRes } = await supabase.from("colori").insert({ user_id:userId, hex }).select().maybeSingle();
-            if(cRes) setColoriExtra(prev=>prev.includes(hex)?prev:[...prev, hex]);
+            if(cRes) nuoviColoriSalvati.push(hex);
+          }
+
+          if(nuoviColoriSalvati.length > 0) {
+            setColoriExtra(prev => {
+              const aggiornato = [...prev];
+              nuoviColoriSalvati.forEach(hex => {
+                if(!aggiornato.includes(hex)) aggiornato.push(hex);
+              });
+              return aggiornato;
+            });
           }
         } catch(e){ console.warn("Sync colori modelli:", e); }
 
         // Inizializza sortOrder per modelli H24 che hanno tutti 0
         const h24senza = (modelliDb||[]).filter(m=>(m.tempo==="h24"||!m.inizio)&&(m.sort_order||0)===0);
         if(h24senza.length>1){
-          for(let i=0;i<h24senza.length;i++){
-            await supabase.from("modelli").update({sort_order:i*10}).eq("id",h24senza[i].id).eq("user_id",userId);
-          }
+          await Promise.all(h24senza.map((m, i) =>
+            supabase.from("modelli").update({sort_order:i*10}).eq("id",m.id).eq("user_id",userId)
+          ));
           const {data:modelliDb2}=await supabase.from("modelli").select("*").eq("user_id",userId).order("sort_order");
           setModelli((modelliDb2||[]).map(m=>({
             id:m.id,titolo:m.titolo,label:m.label||"",tempo:m.tempo,
@@ -637,26 +659,37 @@ export default function App({ session }){
         }
       }
       const newEvents={};
+      const rowsToInsert = [];
       for(const cal of newCals){
         const calData=data.data[cal.name]||{};
         for(const [dateKey,sheetEvts] of Object.entries(calData)){
-          if(!newEvents[dateKey]) newEvents[dateKey]={};
-          if(!newEvents[dateKey][cal.id]) newEvents[dateKey][cal.id]=[];
           for(const e of sheetEvts){
-            const {data:dbEvt}=await supabase.from("events").insert({
+            rowsToInsert.push({
               user_id:userId, calendar_id:cal.id, date_key:dateKey,
               label:e.label||"Evento", color:e.color||cal.color,
               all_day:e.allDay??true, time_in:e.tIn||"", time_out:e.tOut||"",
               place:e.place||"", map_url:e.map||"", note:e.note||"",
               modello_id:e.modelloId||null, collega:e.collega||"", auto:e.auto||"",
-            }).select().maybeSingle();
-            if(dbEvt) newEvents[dateKey][cal.id].push({
+            });
+          }
+        }
+      }
+
+      if(rowsToInsert.length > 0) {
+        const { data: insertedEvts, error: insertErr } = await supabase.from("events").insert(rowsToInsert).select();
+        if(!insertErr && insertedEvts) {
+          insertedEvts.forEach(dbEvt => {
+            const dK = dbEvt.date_key;
+            const cI = dbEvt.calendar_id;
+            if(!newEvents[dK]) newEvents[dK]={};
+            if(!newEvents[dK][cI]) newEvents[dK][cI]=[];
+            newEvents[dK][cI].push({
               id:dbEvt.id, color:dbEvt.color, label:dbEvt.label,
               allDay:dbEvt.all_day, tIn:dbEvt.time_in||"", tOut:dbEvt.time_out||"",
               place:dbEvt.place||"", map:dbEvt.map_url||"", note:dbEvt.note||"",
               modelloId:dbEvt.modello_id||null, collega:dbEvt.collega||"", auto:dbEvt.auto||"",
             });
-          }
+          });
         }
       }
       setStore(s=>({...s, calendars:newCals, events:newEvents}));
