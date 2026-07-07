@@ -1,12 +1,52 @@
 // ═══════════════════════════════════════════════════════════════
 // APP.JSX — Mappa delle region: vedi mappa.md per indice completo
+// (font.jsx accorpato qui sotto — SEZIONE 0)
 // ═══════════════════════════════════════════════════════════════
+
+// #region SEZIONE 0: FONT & COLORI (ex font.jsx, accorpato)
+// ═══════════════════════════════════════════════════════════════
+export const FONT_FAMILY_BASE = "system-ui,sans-serif";
+export const FONT_FAMILY_DISPLAY = "Georgia,serif";
+export const FONT_SIZE = { xs:9, sm:10, base:12, md:13, lg:14, xl:16, xxl:18, title:22, hero:24 };
+
+// Palette condivisa: sezione Colori, form modello, fasce automatiche
+export const PALETTE = [
+  "#ef4444","#f97316","#f59e0b","#eab308","#84cc16","#22c55e",
+  "#10b981","#14b8a6","#06b6d4","#3b82f6","#6366f1","#8b5cf6",
+  "#a855f7","#ec4899","#f43f5e","#64748b","#0f172a","#ffffff",
+  "#fca5a5","#fed7aa","#fef08a","#bbf7d0","#bfdbfe","#ddd6fe",
+];
+
+// Colori automatici per fascia oraria (default, sovrascrivibili da Impostazioni)
+export const FASCE_AUTOMATICHE_DEFAULT = [
+  { key:"mattina",     label:"MATTINA",     color:"#f59e0b", from:360,  to:705  },
+  { key:"pomeriggio",  label:"POMERIGGIO",  color:"#f97316", from:705,  to:1035 },
+  { key:"terzo_turno", label:"3° TURNO",    color:"#8b5cf6", from:1035, to:1080 },
+  { key:"notte",       label:"NOTTE",       color:"#1e40af", from:1080, to:360  },
+];
+export const FASCE_AUTOMATICHE = FASCE_AUTOMATICHE_DEFAULT; // retro-compat
+export const COLORE_H24 = "#64748b";
+
+function minsOf(tIn){ const [h,m]=tIn.split(":").map(Number); return h*60+m; }
+function inRange(mins, from, to){ return from<=to ? (mins>=from && mins<to) : (mins>=from || mins<to); }
+export function getColorByTime(tIn, fasce=FASCE_AUTOMATICHE_DEFAULT){
+  if(!tIn) return COLORE_H24;
+  const mins=minsOf(tIn);
+  for(const f of fasce) if(inRange(mins, f.from, f.to)) return f.color;
+  return fasce[fasce.length-1]?.color||COLORE_H24;
+}
+export function getColorLabel(tIn, fasce=FASCE_AUTOMATICHE_DEFAULT){
+  if(!tIn) return "";
+  const mins=minsOf(tIn);
+  for(const f of fasce) if(inRange(mins, f.from, f.to)) return f.label;
+  return fasce[fasce.length-1]?.label||"";
+}
+// #endregion
 
 // #region SEZIONE 1: IMPORTS + COSTANTI
 // ═══════════════════════════════════════════════════════════════
 import { useState, useEffect, useRef, Fragment } from "react";
 import { supabase } from "./supabase";
-import { PALETTE, FASCE_AUTOMATICHE_DEFAULT, COLORE_H24, getColorByTime, getColorLabel } from "./font";
 
 const MONTHS = ["Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno",
                 "Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"];
@@ -65,9 +105,7 @@ function italianHols(y){
 
 // #region SEZIONE 4: COLOR & TIME FUNCTIONS
 // ═══════════════════════════════════════════════════════════════
-// getColorByTime / getColorLabel arrivano da ./font (SEZIONE 1).
-// Da qui in poi vengono sempre invocate passando le fasce personalizzate
-// dell'utente (store.fasceAutomatiche), con fallback ai default.
+// getColorByTime / getColorLabel sono in SEZIONE 0 (ex font.jsx).
 function calcFine6h15(tIn){
   if(!tIn) return "";
   const [h,m]=tIn.split(":").map(Number);
@@ -1841,11 +1879,6 @@ function sortedModelli(){
           </div>
         )}
         {modelliTab==="colori"&&(()=>{
-          // FIX: i colori "in uso" includono SEMPRE tutti i coloreCustom
-          // assegnati a un modello, anche se creati fuori dalla sezione
-          // Colori (es. dal form del modello). Sono editabili liberamente:
-          // cliccando sull'hex si apre la palette condivisa per cambiarlo,
-          // e il cambio si propaga a tutti i modelli che lo usano.
           const coloriUsatiDaModelli = [...new Set(modelli.map(m=>m.coloreCustom).filter(Boolean))];
           const coloriManuali = [...new Set([...coloriExtra, ...coloriUsatiDaModelli])];
           function contaModelli(hex){ return modelli.filter(m=>m.coloreCustom===hex).length; }
@@ -2000,9 +2033,6 @@ function sortedModelli(){
         );
       })()}
 
-      {/* FIX PRINCIPALE: popup per cambiare l'hex di un colore (custom o di
-          fascia) usando la palette condivisa PALETTE, invece di lasciarlo
-          fisso. Il cambio si propaga a tutti i modelli e al registro colori. */}
       {showEditFasciaColor&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:700,
           display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
@@ -3344,9 +3374,6 @@ function CalBadge({ calId, calAttivo, coloreCal, testoContrasto, T, store, setSt
 
 // #region SEZIONE 22: SMART TIME INPUT
 // ═══════════════════════════════════════════════════════════════
-// Campo orario HH:MM controllato via onChange (funziona anche su
-// tastiera virtuale mobile, a differenza della vecchia versione
-// basata su onKeyDown + readOnly che su telefono non riceveva input).
 function SmartTimeInput({ value, onChange, style }) {
   const [digits, setDigits] = useState(() => (value || "").replace(/\D/g, "").slice(0, 4));
 
@@ -4107,13 +4134,6 @@ function ModelloCard({m, T, accent, fasceAutomatiche, onEdit, onDelete, onMoveUp
   );
 }
 
-// ── FIX PRINCIPALE (richiesta utente) ───────────────────────────
-// Nel form del modello, il colore NON è più vincolato a una palette
-// ristretta (PALETTE_M fissa). Ora usa direttamente la PALETTE condivisa
-// (la stessa di Impostazioni e della tab Colori), così qualsiasi colore
-// scelto qui è coerente e riconoscibile ovunque nell'app, e comparirà
-// automaticamente nella lista "Colori personalizzati" (vedi
-// ensureColoreRegistrato in saveModello).
 function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, onSave}){
   const autoColore=form.tempo==="h24"?"#64748b":getColorByTime(form.inizio, fasceAutomatiche);
   const coloreVis=form.coloreCustom||autoColore;
