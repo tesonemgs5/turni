@@ -2030,15 +2030,11 @@ function sortedModelli(){
             </div>
             <div style={{marginTop:16}}>
               <div style={{fontSize:12,color:T.sub,fontWeight:700,marginBottom:6}}>Colore personalizzato (HEX)</div>
-              <input type="color" defaultValue={showEditFasciaColor}
-                onChange={async(e)=>{
+              <HexColorPicker T={T} value={showEditFasciaColor}
+                onChange={async(nuovo)=>{
                   const old = showEditFasciaColor;
-                  const nuovo = e.target.value;
-                  setShowEditFasciaColor(null);
-                  setShowColorAssignPicker(nuovo);
                   await replaceColoreEverywhere(old, nuovo);
-                }}
-                style={{width:"100%",height:44,border:`1px solid ${T.border}`,borderRadius:10,cursor:"pointer",background:"none"}}/>
+                }}/>
             </div>
             <button onClick={()=>setShowEditFasciaColor(null)}
               style={{width:"100%",marginTop:16,background:T.s2,border:`1px solid ${T.border}`,
@@ -2186,10 +2182,10 @@ function sortedModelli(){
                             outline:f.color===p?"2px solid #000":"none",outlineOffset:2}}/>
                       ))}
                     </div>
-                    <input type="color" defaultValue={f.color}
-                      onChange={e=>{ updateFascia(f.key,{color:e.target.value}); }}
-                      style={{width:"100%",height:32,marginTop:8,border:`1px solid ${T.border}`,
-                        borderRadius:8,cursor:"pointer",background:"none"}}/>
+                    <div style={{marginTop:8}}>
+                      <HexColorPicker T={T} value={f.color}
+                        onChange={(nuovo)=>{ updateFascia(f.key,{color:nuovo}); }}/>
+                    </div>
                   </div>
                 )}
               </div>
@@ -3830,6 +3826,174 @@ function GuadagniView({T, indennita, calc}){
 // #endregion
 // #region SEZIONE 24: SHARED UI COMPONENTS (Pal, ColorRow, Sec)
 // ═══════════════════════════════════════════════════════════════
+function hexToRgbObj(hex){
+  const h=hex.replace("#","");
+  return {
+    r: parseInt(h.substring(0,2),16)||0,
+    g: parseInt(h.substring(2,4),16)||0,
+    b: parseInt(h.substring(4,6),16)||0,
+  };
+}
+function rgbToHex(r,g,b){
+  const clamp=v=>Math.max(0,Math.min(255,Math.round(v||0)));
+  return "#"+[clamp(r),clamp(g),clamp(b)].map(v=>v.toString(16).padStart(2,"0")).join("");
+}
+function hsvToRgb(h,s,v){
+  h=h/360; s=s/100; v=v/100;
+  let r,g,b;
+  const i=Math.floor(h*6);
+  const f=h*6-i, p=v*(1-s), q=v*(1-f*s), t=v*(1-(1-f)*s);
+  switch(i%6){
+    case 0: r=v;g=t;b=p; break;
+    case 1: r=q;g=v;b=p; break;
+    case 2: r=p;g=v;b=t; break;
+    case 3: r=p;g=q;b=v; break;
+    case 4: r=t;g=p;b=v; break;
+    default:r=v;g=p;b=q;
+  }
+  return {r:r*255,g:g*255,b:b*255};
+}
+function rgbToHsv(r,g,b){
+  r/=255; g/=255; b/=255;
+  const max=Math.max(r,g,b), min=Math.min(r,g,b);
+  const d=max-min;
+  let h=0;
+  if(d!==0){
+    if(max===r) h=((g-b)/d)%6;
+    else if(max===g) h=(b-r)/d+2;
+    else h=(r-g)/d+4;
+    h*=60; if(h<0) h+=360;
+  }
+  const s=max===0?0:d/max;
+  return {h, s:s*100, v:max*100};
+}
+
+function HexColorPicker({T, value, onChange}){
+  const rgb0=hexToRgbObj(value||"#3b82f6");
+  const hsv0=rgbToHsv(rgb0.r,rgb0.g,rgb0.b);
+  const [hue, setHue] = useState(hsv0.h);
+  const [sv, setSv] = useState({s:hsv0.s, v:hsv0.v});
+  const [hexInput, setHexInput] = useState((value||"#3b82f6").toUpperCase());
+  const svRef = useRef(null);
+  const dragging = useRef(false);
+
+  useEffect(()=>{
+    const rgb=hexToRgbObj(value||"#3b82f6");
+    const hsv=rgbToHsv(rgb.r,rgb.g,rgb.b);
+    setHue(hsv.h); setSv({s:hsv.s, v:hsv.v});
+    setHexInput((value||"#3b82f6").toUpperCase());
+  }, [value]);
+
+  function emit(newHue, newS, newV){
+    const rgb=hsvToRgb(newHue,newS,newV);
+    const hex=rgbToHex(rgb.r,rgb.g,rgb.b);
+    setHexInput(hex.toUpperCase());
+    onChange(hex);
+  }
+
+  function handleSvPointer(e){
+    const rect=svRef.current.getBoundingClientRect();
+    const clientX = e.touches?e.touches[0].clientX:e.clientX;
+    const clientY = e.touches?e.touches[0].clientY:e.clientY;
+    let x=(clientX-rect.left)/rect.width;
+    let y=(clientY-rect.top)/rect.height;
+    x=Math.max(0,Math.min(1,x));
+    y=Math.max(0,Math.min(1,y));
+    const newS=x*100, newV=(1-y)*100;
+    setSv({s:newS, v:newV});
+    emit(hue, newS, newV);
+  }
+
+  const rgbNow = hsvToRgb(hue, sv.s, sv.v);
+  const hueColor = rgbToHex(...Object.values(hsvToRgb(hue,100,100)));
+
+  function updateRgbField(field, val){
+    const n = Math.max(0, Math.min(255, parseInt(val)||0));
+    const cur = hsvToRgb(hue, sv.s, sv.v);
+    const newRgb = {r:cur.r, g:cur.g, b:cur.b, [field]:n};
+    const hsv = rgbToHsv(newRgb.r, newRgb.g, newRgb.b);
+    setHue(hsv.h); setSv({s:hsv.s, v:hsv.v});
+    const hex = rgbToHex(newRgb.r, newRgb.g, newRgb.b);
+    setHexInput(hex.toUpperCase());
+    onChange(hex);
+  }
+
+  function commitHexInput(val){
+    let h = val.trim();
+    if(!h.startsWith("#")) h = "#"+h;
+    if(/^#[0-9A-Fa-f]{6}$/.test(h)){
+      const rgb = hexToRgbObj(h);
+      const hsv = rgbToHsv(rgb.r, rgb.g, rgb.b);
+      setHue(hsv.h); setSv({s:hsv.s, v:hsv.v});
+      onChange(h);
+    }
+    setHexInput(h.toUpperCase());
+  }
+
+  return (
+    <div>
+      <div ref={svRef}
+        onMouseDown={e=>{dragging.current=true; handleSvPointer(e);}}
+        onMouseMove={e=>{if(dragging.current) handleSvPointer(e);}}
+        onMouseUp={()=>{dragging.current=false;}}
+        onMouseLeave={()=>{dragging.current=false;}}
+        onTouchStart={e=>{dragging.current=true; handleSvPointer(e);}}
+        onTouchMove={e=>{e.preventDefault(); handleSvPointer(e);}}
+        onTouchEnd={()=>{dragging.current=false;}}
+        style={{
+          position:"relative", width:"100%", height:140, borderRadius:10,
+          background:`linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, ${hueColor})`,
+          cursor:"crosshair", touchAction:"none", marginBottom:12,
+        }}>
+        <div style={{
+          position:"absolute",
+          left:`${sv.s}%`, top:`${100-sv.v}%`,
+          width:16, height:16, borderRadius:"50%",
+          border:"2px solid #fff", boxShadow:"0 0 0 1px rgba(0,0,0,0.4)",
+          transform:"translate(-50%,-50%)", pointerEvents:"none",
+          background:rgbToHex(rgbNow.r,rgbNow.g,rgbNow.b),
+        }}/>
+      </div>
+
+      <input type="range" min="0" max="360" value={hue}
+        onChange={e=>{ const h=Number(e.target.value); setHue(h); emit(h, sv.s, sv.v); }}
+        style={{
+          width:"100%", height:14, marginBottom:14, borderRadius:7, appearance:"none",
+          background:"linear-gradient(to right, #f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)",
+          cursor:"pointer",
+        }}/>
+
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+        <div style={{width:36,height:36,borderRadius:8,flexShrink:0,
+          background:rgbToHex(rgbNow.r,rgbNow.g,rgbNow.b),
+          border:`2px solid ${T.border}`}}/>
+        <input value={hexInput}
+          onChange={e=>setHexInput(e.target.value.toUpperCase())}
+          onBlur={e=>commitHexInput(e.target.value)}
+          onKeyDown={e=>{ if(e.key==="Enter") commitHexInput(e.target.value); }}
+          placeholder="#RRGGBB"
+          style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
+            padding:"8px 10px",color:T.text,fontSize:14,fontWeight:700,
+            outline:"none",boxSizing:"border-box",fontFamily:"monospace"}}/>
+      </div>
+
+      <div style={{display:"flex",gap:8}}>
+        {[["r","R"],["g","G"],["b","B"]].map(([field,label])=>(
+          <div key={field} style={{flex:1}}>
+            <div style={{fontSize:9,color:T.sub,fontWeight:700,marginBottom:3,textAlign:"center"}}>{label}</div>
+            <input type="number" min="0" max="255"
+              value={Math.round(rgbNow[field])}
+              onChange={e=>updateRgbField(field, e.target.value)}
+              style={{width:"100%",background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
+                padding:"6px 4px",color:T.text,fontSize:13,textAlign:"center",
+                outline:"none",boxSizing:"border-box"}}/>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Pal({T, cur, onPick, up=false}){
   return (
     <div style={{position:"absolute",zIndex:500,
