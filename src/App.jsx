@@ -154,6 +154,7 @@ const INIT = { calendars:[], events:{}, theme:"auto", extraHols:[], reports:[], 
 
 export default function App({ session }){
   const today = new Date();
+  // ← AGGANCIO: qui aggiungo un <style> globale con @keyframes calFadeIn, iniettato una sola volta nel render finale
 // #endregion
 
 
@@ -1428,8 +1429,9 @@ function sortedModelli(){
             padding:"3px 0",color:i===6?"#ef4444":T.sub}}>{d}</div>
         ))}
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",
-        gridAutoRows:"minmax(54px,1fr)",flex:1,overflow:"hidden",gap:"1px 0px",background:T.gap}}>
+      <div key={month+"-"+year} style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",
+        gridAutoRows:"minmax(54px,1fr)",flex:1,overflow:"hidden",gap:"1px 0px",background:T.gap,
+        animation:"calFadeIn 0.22s ease"}}>
         {cells.map((d,i)=>{
           if(!d) return <div key={i} style={{background:T.bg}}/>;
           const key=dkey(year,month,d);
@@ -3078,6 +3080,7 @@ function sortedModelli(){
     <div style={{display:"flex",flexDirection:"column",height:"100vh",background:T.bg,
       fontFamily:"system-ui,sans-serif",maxWidth:480,margin:"0 auto",overflow:"hidden"}}
       onClick={()=>pal&&setPal(null)}>
+      <style>{`@keyframes calFadeIn { from { opacity:0; transform:translateX(8px); } to { opacity:1; transform:translateX(0); } }`}</style>
       <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>
         {screen==="cal"      && calView}
         {screen==="report"   && reportView}
