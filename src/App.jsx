@@ -1479,7 +1479,7 @@ function sortedModelli(){
       })()}
       <div key={month+"-"+year} style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",
         gridAutoRows:"minmax(54px,1fr)",gap:"1px 0px",background:T.gap,
-        position:prevGrid?"absolute":"relative",inset:prevGrid?0:"auto",height:prevGrid?"100%":"auto",
+        position:prevGrid?"absolute":"relative",inset:0,height:"100%",
         animation:prevGrid?`calSlideIn${prevGrid.dir==="next"?"Left":"Right"} 0.5s ease forwards`:"none"}}>
         {cells.map((d,i)=>{
           if(!d) return <div key={i} style={{background:T.bg}}/>;
