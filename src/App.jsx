@@ -223,6 +223,7 @@ export default function App({ session }){
   const touchTargetId = useRef(null);
   const touchStartX = useRef(null);
   const touchStartY = useRef(null);
+  const [prevGrid, setPrevGrid] = useState(null);
 
   const [reportInterval, setReportInterval] = useState("mese");
   const [reportDateFrom, setReportDateFrom] = useState("");
@@ -1330,8 +1331,16 @@ function sortedModelli(){
     appearance:"none", WebkitAppearance:"none",
   };
 
-  const goPrevMonth = ()=> month===0?(setYear(y=>y-1),setMonth(11)):setMonth(m=>m-1);
-  const goNextMonth = ()=> month===11?(setYear(y=>y+1),setMonth(0)):setMonth(m=>m+1);
+  const goPrevMonth = ()=>{
+    setPrevGrid({year, month, dir:"prev"});
+    setTimeout(()=>setPrevGrid(null), 500);
+    month===0?(setYear(y=>y-1),setMonth(11)):setMonth(m=>m-1);
+  };
+  const goNextMonth = ()=>{
+    setPrevGrid({year, month, dir:"next"});
+    setTimeout(()=>setPrevGrid(null), 500);
+    month===11?(setYear(y=>y+1),setMonth(0)):setMonth(m=>m+1);
+  };
 
   const calView = (
     <div
@@ -1345,7 +1354,7 @@ function sortedModelli(){
         }
         touchStartX.current=null; touchStartY.current=null;
       }}
-      style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
+      style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden",position:"relative"}}>
       <div style={{background:accent,display:"flex",alignItems:"center",
         gap:5,padding:"6px 8px",overflowX:"auto",scrollbarWidth:"none",flexShrink:0}}>
         <button onClick={()=>month===0?(setYear(y=>y-1),setMonth(11)):setMonth(m=>m-1)} style={NB}>‹</button>
@@ -1429,9 +1438,49 @@ function sortedModelli(){
             padding:"3px 0",color:i===6?"#ef4444":T.sub}}>{d}</div>
         ))}
       </div>
+      <div style={{position:"relative",flex:1,overflow:"hidden"}}>
+      {prevGrid&&(()=>{
+        const pTotalDays=daysInMonth(prevGrid.year,prevGrid.month);
+        const pFd=firstDay(prevGrid.year,prevGrid.month);
+        const pCells=[...Array(pFd).fill(null), ...Array.from({length:pTotalDays},(_,i)=>i+1)];
+        return (
+          <div key={"prev-"+prevGrid.month+"-"+prevGrid.year}
+            style={{position:"absolute",inset:0,display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",
+              gridAutoRows:"minmax(54px,1fr)",gap:"1px 0px",background:T.gap,
+              animation:`calSlideOut${prevGrid.dir==="next"?"Left":"Right"} 0.5s ease forwards`}}>
+            {pCells.map((d,i)=>{
+              if(!d) return <div key={i} style={{background:T.bg}}/>;
+              const key=dkey(prevGrid.year,prevGrid.month,d);
+              const evts=allEvts(key);
+              const ds=dots(key);
+              const isSun=(i%7)===6;
+              const isH=isRed(d,prevGrid.month);
+              const red=isSun||isH;
+              return (
+                <div key={i} style={{background:red?(dark?"#2d0a0a":"#fff5f5"):T.surface,
+                  display:"flex",flexDirection:"column",overflow:"hidden"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:2,padding:"2px 3px 0",flexShrink:0}}>
+                    <span style={{fontSize:10,fontWeight:500,lineHeight:1,color:red?"#ef4444":T.sub}}>{d}</span>
+                    {ds.map(c=><div key={c.id} style={{width:5,height:5,borderRadius:"50%",background:c.color}}/>)}
+                  </div>
+                  <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",gap:"1px",padding:"0 1px 1px"}}>
+                    {evts.slice(0,4).map((e,ei)=>(
+                      <div key={e.id+ei} style={{background:e.color,borderRadius:3,padding:"2px 4px",
+                        fontSize:14,fontWeight:800,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",
+                        whiteSpace:"nowrap",height:16,minHeight:16,display:"flex",alignItems:"center",flexShrink:0,
+                        textShadow:"0 1px 2px rgba(0,0,0,0.35)"}}>{e.label}</div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
       <div key={month+"-"+year} style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",
-        gridAutoRows:"minmax(54px,1fr)",flex:1,overflow:"hidden",gap:"1px 0px",background:T.gap,
-        animation:"calFadeIn 0.8s ease"}}>
+        gridAutoRows:"minmax(54px,1fr)",gap:"1px 0px",background:T.gap,
+        position:prevGrid?"absolute":"relative",inset:prevGrid?0:"auto",height:prevGrid?"100%":"auto",
+        animation:prevGrid?`calSlideIn${prevGrid.dir==="next"?"Left":"Right"} 0.5s ease forwards`:"none"}}>
         {cells.map((d,i)=>{
           if(!d) return <div key={i} style={{background:T.bg}}/>;
           const key=dkey(year,month,d);
@@ -1480,6 +1529,7 @@ function sortedModelli(){
             </div>
           );
         })}
+      </div>
       </div>
     </div>
   );
@@ -3080,7 +3130,12 @@ function sortedModelli(){
     <div style={{display:"flex",flexDirection:"column",height:"100vh",background:T.bg,
       fontFamily:"system-ui,sans-serif",maxWidth:480,margin:"0 auto",overflow:"hidden"}}
       onClick={()=>pal&&setPal(null)}>
-      <style>{`@keyframes calFadeIn { from { opacity:0; transform:translateX(8px); } to { opacity:1; transform:translateX(0); } }`}</style>
+      <style>{`
+        @keyframes calSlideOutLeft { from { transform:translateX(0); opacity:1; } to { transform:translateX(-100%); opacity:0; } }
+        @keyframes calSlideOutRight { from { transform:translateX(0); opacity:1; } to { transform:translateX(100%); opacity:0; } }
+        @keyframes calSlideInLeft { from { transform:translateX(100%); opacity:0; } to { transform:translateX(0); opacity:1; } }
+        @keyframes calSlideInRight { from { transform:translateX(-100%); opacity:0; } to { transform:translateX(0); opacity:1; } }
+      `}</style>
       <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>
         {screen==="cal"      && calView}
         {screen==="report"   && reportView}
