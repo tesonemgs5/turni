@@ -41,6 +41,16 @@ export function getColorLabel(tIn, fasce=FASCE_AUTOMATICHE_DEFAULT){
   for(const f of fasce) if(inRange(mins, f.from, f.to)) return f.label;
   return fasce[fasce.length-1]?.label||"";
 }
+export function getContrastTextColor(hex){
+  if(!hex) return "#ffffff";
+  try {
+    const h=hex.replace("#","");
+    const r=parseInt(h.substring(0,2),16), g=parseInt(h.substring(2,4),16), b=parseInt(h.substring(4,6),16);
+    const a=[r,g,b].map(v=>{ v/=255; return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4); });
+    const lum=0.2126*a[0]+0.7152*a[1]+0.0722*a[2];
+    return lum < 0.5 ? "#ffffff" : "#0f172a";
+  } catch(e){ return "#ffffff"; }
+}
 // #endregion
 
 
@@ -1501,9 +1511,9 @@ function sortedModelli(){
                   <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",gap:"1px",padding:"0 1px 1px"}}>
                     {evts.slice(0,4).map((e,ei)=>(
                       <div key={e.id+ei} style={{background:e.color,borderRadius:3,padding:"2px 4px",
-                        fontSize:14,fontWeight:800,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",
+                        fontSize:14,fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
                         whiteSpace:"nowrap",height:16,minHeight:16,display:"flex",alignItems:"center",flexShrink:0,
-                        textShadow:"0 1px 2px rgba(0,0,0,0.35)"}}>{e.label}</div>
+                        textShadow:getContrastTextColor(e.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>{e.label}</div>
                     ))}
                   </div>
                 </div>
@@ -1546,16 +1556,16 @@ function sortedModelli(){
                   return (
                     <Fragment key={e.id+ei}>
                       <div style={{background:e.color,borderRadius:3,padding:"2px 4px",
-                        fontSize:14,fontWeight:800,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",
+                        fontSize:14,fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
                         whiteSpace:"nowrap",height:16,minHeight:16,display:"flex",alignItems:"center",flexShrink:0,
-                        textShadow:"0 1px 2px rgba(0,0,0,0.35)"}}>
+                        textShadow:getContrastTextColor(e.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>
                         {e.label}
                       </div>
                       {nodes.map((n,ni)=>(
                         <div key={ni} style={{background:n.color,borderRadius:3,padding:"2px 4px",
-                          fontSize:14,fontWeight:800,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",
+                          fontSize:14,fontWeight:800,color:getContrastTextColor(n.color),overflow:"hidden",textOverflow:"ellipsis",
                           whiteSpace:"nowrap",height:16,minHeight:16,display:"flex",alignItems:"center",flexShrink:0,
-                          textShadow:"0 1px 2px rgba(0,0,0,0.35)"}}>
+                          textShadow:getContrastTextColor(n.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>
                           {n.label}
                         </div>
                       ))}
@@ -2833,12 +2843,13 @@ function sortedModelli(){
                   return d>0?Math.floor(d/60)+"h"+(d%60>0?" "+d%60+"m":""):"";
                 }
                 const tBase = e.tOut||calcFine6h15(e.tIn)||"";
+                const protC=getContrastTextColor(e.color)==="#ffffff"?"rgba(255,255,255,0.9)":"rgba(15,23,42,0.8)";
                 return (
                   <div style={{marginTop:4,display:"flex",flexDirection:"column",gap:2}}>
-                    {e.protPagFine&&<div style={{color:"rgba(255,255,255,0.9)",fontSize:16}}>
+                    {e.protPagFine&&<div style={{color:protC,fontSize:16}}>
                       💜 PAG → {e.protPagFine}{calcDurProt(tBase,e.protPagFine)?" ("+calcDurProt(tBase,e.protPagFine)+")":""}
                     </div>}
-                    {e.protRecFine&&<div style={{color:"rgba(255,255,255,0.9)",fontSize:16}}>
+                    {e.protRecFine&&<div style={{color:protC,fontSize:16}}>
                       ⚙️ REC → {e.protRecFine}{calcDurProt(tBase,e.protRecFine)?" ("+calcDurProt(tBase,e.protRecFine)+")":""}
                     </div>}
                   </div>
