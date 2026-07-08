@@ -43,6 +43,7 @@ export function getColorLabel(tIn, fasce=FASCE_AUTOMATICHE_DEFAULT){
 }
 // #endregion
 
+
 // #region SEZIONE 1: IMPORTS + COSTANTI
 // ═══════════════════════════════════════════════════════════════
 import { useState, useEffect, useRef, Fragment } from "react";
@@ -54,6 +55,7 @@ const DAYS = ["L","M","M","G","V","S","D"];
 
 function uid(){ return Math.random().toString(36).slice(2)+Date.now().toString(36); }
 // #endregion
+
 
 // #region SEZIONE 2: LOCALSTORAGE CACHE
 // ═══════════════════════════════════════════════════════════════
@@ -82,6 +84,7 @@ function clearLocalStorageCache(){
 }
 // #endregion
 
+
 // #region SEZIONE 3: UTILITY FUNCTIONS (date/festivi)
 // ═══════════════════════════════════════════════════════════════
 function daysInMonth(y,m){ return new Date(y,m+1,0).getDate(); }
@@ -104,6 +107,7 @@ function italianHols(y){
     {m:e.m,d:e.d},{m:pasquettaDate.getMonth(),d:pasquettaDate.getDate()}];
 }
 // #endregion
+
 
 // #region SEZIONE 4: COLOR & TIME FUNCTIONS
 // ═══════════════════════════════════════════════════════════════
@@ -135,6 +139,7 @@ function isFestivo(dateKey){
 }
 // #endregion
 
+
 // #region SEZIONE 5: REPORT TEMPLATES + INIT STATE
 // ═══════════════════════════════════════════════════════════════
 const REPORT_TEMPLATES = [
@@ -150,6 +155,7 @@ const INIT = { calendars:[], events:{}, theme:"auto", extraHols:[], reports:[], 
 export default function App({ session }){
   const today = new Date();
 // #endregion
+
 
 // #region SEZIONE 6: USESTATE HOOKS
 // ═══════════════════════════════════════════════════════════════
@@ -214,6 +220,7 @@ export default function App({ session }){
   const dragSrcId = useRef(null);
   const touchSrcId = useRef(null);
   const touchTargetId = useRef(null);
+  // ← AGGANCIO: qui aggiungo touchStartX e touchStartY (useRef) per lo swipe mese
 
   const [reportInterval, setReportInterval] = useState("mese");
   const [reportDateFrom, setReportDateFrom] = useState("");
@@ -231,6 +238,7 @@ export default function App({ session }){
 
   useEffect(()=>{
 // #endregion
+
 
 // #region SEZIONE 7: USEEFFECT INIT + LOAD DA SUPABASE
 // ═══════════════════════════════════════════════════════════════
@@ -367,6 +375,7 @@ export default function App({ session }){
   },[userId]);
 // #endregion
 
+
 // #region SEZIONE 8: USEEFFECT OVERSCROLL + ONLINE/OFFLINE
 // ═══════════════════════════════════════════════════════════════
   useEffect(()=>{
@@ -377,6 +386,7 @@ export default function App({ session }){
     return ()=>{ window.removeEventListener('online', goOnline); window.removeEventListener('offline', goOffline); };
   },[]);
 // #endregion
+
 
 // #region SEZIONE 9: THEME & COLORS
 // ═══════════════════════════════════════════════════════════════
@@ -431,6 +441,8 @@ export default function App({ session }){
     });
   }
 // #endregion
+
+
 // #region SEZIONE 10: CRUD CALENDARI
 // ═══════════════════════════════════════════════════════════════
   async function addCalendar(name, color, isFirst){
@@ -453,6 +465,7 @@ export default function App({ session }){
     if(syncMode==='on' && sheetsUrl) await saveToSheets(store.events, newCals);
   }
 // #endregion
+
 
 // #region SEZIONE 11: CRUD EVENTI
 // ═══════════════════════════════════════════════════════════════
@@ -612,6 +625,7 @@ export default function App({ session }){
     return mins;
   }
 // #endregion
+
 
 // #region SEZIONE 12: SYNC GOOGLE SHEETS + SUPABASE BACKUP
 // ═══════════════════════════════════════════════════════════════
@@ -866,6 +880,7 @@ export default function App({ session }){
 
   async function handleLogout(){ await supabase.auth.signOut(); }
 // #endregion
+
 
 // #region SEZIONE 13: CRUD MODELLI + COLORI (con fix sync colore custom)
 // ═══════════════════════════════════════════════════════════════
@@ -1156,6 +1171,8 @@ function sortedModelli(){
     });
   }
 // #endregion
+
+
 // #region SEZIONE 14: REPORT HELPERS
 // ═══════════════════════════════════════════════════════════════
   function getReportRange(){
@@ -1289,6 +1306,7 @@ function sortedModelli(){
   const totaleTurni = computeConteggio().totale;
 // #endregion
 
+
 // #region SEZIONE 15: CALENDAR VIEW
 // ═══════════════════════════════════════════════════════════════
   const totalDays = daysInMonth(year,month);
@@ -1310,8 +1328,12 @@ function sortedModelli(){
     appearance:"none", WebkitAppearance:"none",
   };
 
+  // ← AGGANCIO: qui aggiungo goPrevMonth e goNextMonth (per riuso in swipe + bottoni)
+
   const calView = (
-    <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
+    <div
+      // ← AGGANCIO: qui aggiungo onTouchStart e onTouchEnd
+      style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
       <div style={{background:accent,display:"flex",alignItems:"center",
         gap:5,padding:"6px 8px",overflowX:"auto",scrollbarWidth:"none",flexShrink:0}}>
         <button onClick={()=>month===0?(setYear(y=>y-1),setMonth(11)):setMonth(m=>m-1)} style={NB}>‹</button>
@@ -1449,6 +1471,8 @@ function sortedModelli(){
     </div>
   );
 // #endregion
+
+
 // #region SEZIONE 16: REPORT VIEW
 // ═══════════════════════════════════════════════════════════════
   const range = getReportRange();
@@ -1708,6 +1732,8 @@ function sortedModelli(){
     </div>
   );
 // #endregion
+
+
 // #region SEZIONE 17: MODELLI VIEW
 // ═══════════════════════════════════════════════════════════════
   const modelliView = (
@@ -2193,6 +2219,8 @@ function sortedModelli(){
     </div>
   );
 // #endregion
+
+
 // #region SEZIONE 18: SETTINGS VIEW
 // ═══════════════════════════════════════════════════════════════
   function updateFascia(key, updates){
@@ -2618,6 +2646,8 @@ function sortedModelli(){
     </div>
   );
 // #endregion
+
+
 // #region SEZIONE 19: DAY MODAL
 // ═══════════════════════════════════════════════════════════════
   const curEvts = dayKey ? getEvts(dayKey,calId) : [];
@@ -2957,6 +2987,8 @@ function sortedModelli(){
     </div>
   );
 // #endregion
+
+
 // #region SEZIONE 20: DB MODAL + RENDER PRINCIPALE
 // ═══════════════════════════════════════════════════════════════
   const dbModal = showDbModal && (
@@ -3341,6 +3373,8 @@ function sortedModelli(){
   );
 }
 // #endregion
+
+
 // #region SEZIONE 21: CAL BADGE
 // ═══════════════════════════════════════════════════════════════
 function CalBadge({ calId, calAttivo, coloreCal, testoContrasto, T, store, setStore, updateCalendar, accent, setCalId }){
@@ -3411,6 +3445,7 @@ function CalBadge({ calId, calAttivo, coloreCal, testoContrasto, T, store, setSt
   );
 }
 // #endregion
+
 
 // #region SEZIONE 22: SMART TIME INPUT
 // ═══════════════════════════════════════════════════════════════
@@ -3501,6 +3536,7 @@ function SmartTimeInput({ value, onChange, style }) {
   );
 }
 // #endregion
+
 
 // #region SEZIONE 23: REPORT SUBCOMPONENTS
 // ═══════════════════════════════════════════════════════════════
@@ -3891,6 +3927,8 @@ function GuadagniView({T, indennita, calc}){
   );
 }
 // #endregion
+
+
 // #region SEZIONE 24: SHARED UI COMPONENTS (Pal, ColorRow, Sec)
 // ═══════════════════════════════════════════════════════════════
 function hexToRgbObj(hex){
@@ -4128,6 +4166,7 @@ function Sec({label,children,T}){
 }
 // #endregion
 
+
 // #region SEZIONE 25: MODELLO CARD & FORM (fix: colore libero via palette condivisa)
 // ═══════════════════════════════════════════════════════════════
 function ModelloCard({m, T, accent, fasceAutomatiche, onEdit, onDelete, onMoveUp, onMoveDown, onDragStart, onDragOver, onDrop, onTouchStart, onTouchMove, onTouchEnd}){
@@ -4264,6 +4303,7 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, onSave}){
 const NB={background:"none",border:"none",fontSize:22,cursor:"pointer",
   padding:"0 4px",lineHeight:1,flexShrink:0,color:"rgba(255,255,255,0.8)"};
 // #endregion
+
 
 // #region SEZIONE 26: ROTAZIONE COMPONENTS
 // ═══════════════════════════════════════════════════════════════
