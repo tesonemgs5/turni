@@ -1431,7 +1431,7 @@ function sortedModelli(){
       </div>
       <div key={month+"-"+year} style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",
         gridAutoRows:"minmax(54px,1fr)",flex:1,overflow:"hidden",gap:"1px 0px",background:T.gap,
-        animation:"calFadeIn 0.45s ease"}}>
+        animation:"calFadeIn 0.8s ease"}}>
         {cells.map((d,i)=>{
           if(!d) return <div key={i} style={{background:T.bg}}/>;
           const key=dkey(year,month,d);
