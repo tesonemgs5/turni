@@ -1333,12 +1333,12 @@ function sortedModelli(){
 
   const goPrevMonth = ()=>{
     setPrevGrid({year, month, dir:"prev"});
-    setTimeout(()=>setPrevGrid(null), 500);
+    setTimeout(()=>setPrevGrid(null), 350);
     month===0?(setYear(y=>y-1),setMonth(11)):setMonth(m=>m-1);
   };
   const goNextMonth = ()=>{
     setPrevGrid({year, month, dir:"next"});
-    setTimeout(()=>setPrevGrid(null), 500);
+    setTimeout(()=>setPrevGrid(null), 350);
     month===11?(setYear(y=>y+1),setMonth(0)):setMonth(m=>m+1);
   };
 
@@ -1447,7 +1447,7 @@ function sortedModelli(){
           <div key={"prev-"+prevGrid.month+"-"+prevGrid.year}
             style={{position:"absolute",inset:0,display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",
               gridAutoRows:"minmax(54px,1fr)",gap:"1px 0px",background:T.gap,
-              animation:`calSlideOut${prevGrid.dir==="next"?"Left":"Right"} 0.5s ease forwards`}}>
+              animation:`calSlideOut${prevGrid.dir==="next"?"Left":"Right"} 0.35s ease forwards`}}>
             {pCells.map((d,i)=>{
               if(!d) return <div key={i} style={{background:T.bg}}/>;
               const key=dkey(prevGrid.year,prevGrid.month,d);
@@ -1480,7 +1480,7 @@ function sortedModelli(){
       <div key={month+"-"+year} style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",
         gridAutoRows:"minmax(54px,1fr)",gap:"1px 0px",background:T.gap,
         position:prevGrid?"absolute":"relative",inset:0,height:"100%",
-        animation:prevGrid?`calSlideIn${prevGrid.dir==="next"?"Left":"Right"} 0.5s ease forwards`:"none"}}>
+        animation:prevGrid?`calSlideIn${prevGrid.dir==="next"?"Left":"Right"} 0.35s ease forwards`:"none"}}>
         {cells.map((d,i)=>{
           if(!d) return <div key={i} style={{background:T.bg}}/>;
           const key=dkey(year,month,d);
