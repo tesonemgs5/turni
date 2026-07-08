@@ -3349,7 +3349,7 @@ function sortedModelli(){
             <div style={{padding:"10px 16px",background:"#0f172a",color:"#fff",fontSize:13,
               display:"flex",alignItems:"center",justifyContent:"space-between"}}>
               <span>Modello attivo: <strong>{modelli.find(m=>m.id===quickModeModello)?.titolo}</strong></span>
-              <button onClick={()=>{setQuickModeModello(null);setShowModelloPicker(false);}}
+              <button onClick={()=>{setShowModelloPicker(false);}}
                 style={{background:"#fff",border:"none",borderRadius:8,padding:"6px 12px",
                   fontWeight:800,fontSize:12,cursor:"pointer"}}>Fine</button>
             </div>
