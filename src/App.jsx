@@ -220,7 +220,8 @@ export default function App({ session }){
   const dragSrcId = useRef(null);
   const touchSrcId = useRef(null);
   const touchTargetId = useRef(null);
-  // ← AGGANCIO: qui aggiungo touchStartX e touchStartY (useRef) per lo swipe mese
+  const touchStartX = useRef(null);
+  const touchStartY = useRef(null);
 
   const [reportInterval, setReportInterval] = useState("mese");
   const [reportDateFrom, setReportDateFrom] = useState("");
@@ -1328,11 +1329,21 @@ function sortedModelli(){
     appearance:"none", WebkitAppearance:"none",
   };
 
-  // ← AGGANCIO: qui aggiungo goPrevMonth e goNextMonth (per riuso in swipe + bottoni)
+  const goPrevMonth = ()=> month===0?(setYear(y=>y-1),setMonth(11)):setMonth(m=>m-1);
+  const goNextMonth = ()=> month===11?(setYear(y=>y+1),setMonth(0)):setMonth(m=>m+1);
 
   const calView = (
     <div
-      // ← AGGANCIO: qui aggiungo onTouchStart e onTouchEnd
+      onTouchStart={(e)=>{ touchStartX.current=e.touches[0].clientX; touchStartY.current=e.touches[0].clientY; }}
+      onTouchEnd={(e)=>{
+        if(touchStartX.current===null) return;
+        const dx = e.changedTouches[0].clientX - touchStartX.current;
+        const dy = e.changedTouches[0].clientY - touchStartY.current;
+        if(Math.abs(dx)>50 && Math.abs(dx)>Math.abs(dy)){
+          if(dx<0) goNextMonth(); else goPrevMonth();
+        }
+        touchStartX.current=null; touchStartY.current=null;
+      }}
       style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
       <div style={{background:accent,display:"flex",alignItems:"center",
         gap:5,padding:"6px 8px",overflowX:"auto",scrollbarWidth:"none",flexShrink:0}}>
