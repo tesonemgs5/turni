@@ -1410,6 +1410,12 @@ function sortedModelli(){
             borderRadius:20,padding:"2px 10px",cursor:"pointer",flexShrink:0}}>
           <span style={{color:"#fff",fontSize:11,fontWeight:800}}>TUTTI</span>
         </button>
+        <button onClick={()=>setShowModelloPicker("quick")}
+          title="Applica un modello a più giorni"
+          style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.4)",
+            borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:"#fff",flexShrink:0}}>
+          ✏️
+        </button>
         <button onClick={async()=>{
           setBanner("⏳ Svuotamento cache...");
           clearLocalStorageCache();
