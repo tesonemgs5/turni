@@ -217,6 +217,7 @@ export default function App({ session }){
   const [showRotDetail, setShowRotDetail] = useState(null);
   const [showApplyRotDialog, setShowApplyRotDialog] = useState(null);
   const [showModelloPicker, setShowModelloPicker] = useState(false);
+  const [quickModeModello, setQuickModeModello] = useState(null);
   const [showRotazionePicker, setShowRotazionePicker] = useState(false);
   const dragSrcId = useRef(null);
   const touchSrcId = useRef(null);
@@ -1312,6 +1313,34 @@ function sortedModelli(){
 
 // #region SEZIONE 15: CALENDAR VIEW
 // ═══════════════════════════════════════════════════════════════
+  async function applyQuickModello(key){
+    if(!quickModeModello||!calId||!userId) return;
+    const mod = modelli.find(m=>m.id===quickModeModello);
+    if(!mod) return;
+    const color = mod.coloreCustom||(mod.tempo==="h24"?"#64748b":colByTime(mod.inizio));
+    const label = (mod.label||mod.titolo||"").toUpperCase();
+    const allDay = mod.tempo==="h24";
+    const tIn = allDay?"":(mod.inizio||"");
+    const tOut = allDay?"":(mod.tempo==="6h15"?calcFine6h15(mod.inizio):(mod.fine||""));
+    const { data, error } = await supabase.from("events").insert({
+      user_id:userId, calendar_id:calId, date_key:key, label, color,
+      all_day:allDay, time_in:tIn, time_out:tOut, place:"", map_url:"", note:"",
+      modello_id:mod.id, collega:"", auto:"",
+    }).select().maybeSingle();
+    if(error){ console.log(error); return; }
+    const evt = { id:data.id, color, label, allDay, tIn, tOut, place:"", map:"", note:"",
+      modelloId:mod.id, collega:"", auto:"" };
+    setStore(prev=>{
+      const ns = JSON.parse(JSON.stringify(prev));
+      if(!ns.events[key]) ns.events[key]={};
+      if(!ns.events[key][calId]) ns.events[key][calId]=[];
+      ns.events[key][calId].push(evt);
+      saveToLocalStorage(ns.events, ns.calendars, modelli);
+      if(syncMode==='on') saveToSheets(ns.events, ns.calendars);
+      return ns;
+    });
+  }
+
   const totalDays = daysInMonth(year,month);
   const fd = firstDay(year,month);
   const cells = [...Array(fd).fill(null), ...Array.from({length:totalDays},(_,i)=>i+1)];
@@ -1491,7 +1520,10 @@ function sortedModelli(){
           const isH=isRed(d,month);
           const red=isSun||isH;
           return (
-            <div key={i} onClick={()=>{ setDayKey(key); setForm(null); setPal(null); }}
+            <div key={i} onClick={()=>{
+                if(quickModeModello){ applyQuickModello(key); return; }
+                setDayKey(key); setForm(null); setPal(null);
+              }}
               style={{background:isT?(dark?"#1a2f50":"#dbeafe"):red?(dark?"#2d0a0a":"#fff5f5"):T.surface,
                 cursor:"pointer",display:"flex",flexDirection:"column",overflow:"hidden",
                 borderTop:"none"}}>
@@ -3300,11 +3332,22 @@ function sortedModelli(){
           display:"flex",flexDirection:"column"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
             padding:"16px 16px 8px",background:T.surface,borderBottom:`1px solid ${T.border}`}}>
-            <button onClick={()=>setShowModelloPicker(false)}
+            <button onClick={()=>{setShowModelloPicker(false);setQuickModeModello(null);}}
               style={{background:"none",border:"none",color:T.sub,fontSize:22,cursor:"pointer"}}>‹</button>
-            <div style={{fontSize:16,fontWeight:900,color:T.text}}>Scegli modello</div>
+            <div style={{fontSize:16,fontWeight:900,color:T.text}}>
+              {showModelloPicker==="quick"?(quickModeModello?"Tocca i giorni da riempire":"Scegli modello da applicare"):"Scegli modello"}
+            </div>
             <div style={{width:32}}/>
           </div>
+          {showModelloPicker==="quick"&&quickModeModello&&(
+            <div style={{padding:"10px 16px",background:"#0f172a",color:"#fff",fontSize:13,
+              display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <span>Modello attivo: <strong>{modelli.find(m=>m.id===quickModeModello)?.titolo}</strong></span>
+              <button onClick={()=>{setQuickModeModello(null);setShowModelloPicker(false);}}
+                style={{background:"#fff",border:"none",borderRadius:8,padding:"6px 12px",
+                  fontWeight:800,fontSize:12,cursor:"pointer"}}>Fine</button>
+            </div>
+          )}
           <div style={{flex:1,overflowY:"auto",padding:12,background:T.bg}}>
             {modelli.length===0&&(
               <div style={{textAlign:"center",padding:"40px 24px",color:T.sub}}>
