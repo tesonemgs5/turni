@@ -1438,7 +1438,7 @@ function sortedModelli(){
             padding:"3px 0",color:i===6?"#ef4444":T.sub}}>{d}</div>
         ))}
       </div>
-      <div style={{position:"relative",flex:1,overflow:"hidden"}}>
+      <div style={{position:"relative",flex:1,overflow:"hidden",minHeight:0}}>
       {prevGrid&&(()=>{
         const pTotalDays=daysInMonth(prevGrid.year,prevGrid.month);
         const pFd=firstDay(prevGrid.year,prevGrid.month);
