@@ -3380,6 +3380,10 @@ function sortedModelli(){
                   return (
                     <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                       <div onClick={()=>{
+                        if(showModelloPicker==="quick"){
+                          setQuickModeModello(m.id);
+                          return;
+                        }
                         setForm({modelloId:m.id,shiftId:null,label:m.titolo,note:"",
                           dur:m.tempo==="h24"?"allday":m.tempo==="6h15"?"fixed":"custom",
                           tIn:m.inizio||"",tOut:m.fine||"",place:"",map:"",colorOvr:null,collega:"",auto:""});
