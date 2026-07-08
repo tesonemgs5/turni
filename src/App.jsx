@@ -3424,24 +3424,28 @@ function sortedModelli(){
                 ))}
               </div>
             )}
-            <div onClick={()=>{
-              setForm({modelloId:null,shiftId:null,label:"",note:"",dur:"allday",
-                tIn:"",tOut:"",place:"",map:"",colorOvr:null,collega:"",auto:""});
-              setShowModelloPicker(false);
-            }} style={{display:"flex",alignItems:"center",justifyContent:"center",padding:"12px 14px",
-              background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,cursor:"pointer",
-              color:T.sub,fontSize:13,fontWeight:700,marginBottom:12}}>
-              Evento libero (senza modello)
-            </div>
-            <button onClick={()=>{
-              setEditModello(null);
-              setModelForm({titolo:"",tempo:"personalizzato",inizio:"",fine:"",coloreCustom:null,posizione:""});
-              setShowModelForm(true);
-              setShowModelloPicker(false);
-            }} style={{width:"100%",background:accent,border:"none",borderRadius:14,
-              color:"#fff",padding:"14px 0",cursor:"pointer",fontWeight:800,fontSize:15}}>
-              + Nuovo modello
-            </button>
+            {showModelloPicker!=="quick"&&(
+              <>
+                <div onClick={()=>{
+                  setForm({modelloId:null,shiftId:null,label:"",note:"",dur:"allday",
+                    tIn:"",tOut:"",place:"",map:"",colorOvr:null,collega:"",auto:""});
+                  setShowModelloPicker(false);
+                }} style={{display:"flex",alignItems:"center",justifyContent:"center",padding:"12px 14px",
+                  background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,cursor:"pointer",
+                  color:T.sub,fontSize:13,fontWeight:700,marginBottom:12}}>
+                  Evento libero (senza modello)
+                </div>
+                <button onClick={()=>{
+                  setEditModello(null);
+                  setModelForm({titolo:"",tempo:"personalizzato",inizio:"",fine:"",coloreCustom:null,posizione:""});
+                  setShowModelForm(true);
+                  setShowModelloPicker(false);
+                }} style={{width:"100%",background:accent,border:"none",borderRadius:14,
+                  color:"#fff",padding:"14px 0",cursor:"pointer",fontWeight:800,fontSize:15}}>
+                  + Nuovo modello
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
