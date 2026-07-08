@@ -1912,17 +1912,20 @@ function sortedModelli(){
           </div>
         )}
         {modelliTab==="colori"&&(()=>{
-          const coloriUsatiDaModelli = [...new Set(modelli.map(m=>m.coloreCustom).filter(Boolean))];
-          const coloriManuali = [...new Set([...coloriExtra, ...coloriUsatiDaModelli])];
+          const fasceColorSet = new Set([...fasceAutomatiche.map(f=>f.color), COLORE_H24]);
+          const coloriUsatiDaModelli = [...new Set(modelli.map(m=>m.coloreCustom).filter(Boolean))]
+            .filter(h=>!fasceColorSet.has(h));
+          const coloriManuali = [...new Set([...coloriExtra, ...coloriUsatiDaModelli])]
+            .filter(h=>!fasceColorSet.has(h));
           function contaModelli(hex){ return modelli.filter(m=>m.coloreCustom===hex).length; }
           function contaModelliFascia(fascia){
             return modelli.filter(m=>{
-              if(m.coloreCustom) return false;
+              if(m.coloreCustom) return m.coloreCustom===fascia.color;
               if(fascia.key==="notte") return m.tempo==="h24"?false:(!m.inizio?false:colByTime(m.inizio)===fascia.color);
               return m.tempo!=="h24" && m.inizio && colByTime(m.inizio)===fascia.color;
             }).length;
           }
-          const contaH24 = modelli.filter(m=>!m.coloreCustom && m.tempo==="h24").length;
+          const contaH24 = modelli.filter(m=>m.coloreCustom ? m.coloreCustom===COLORE_H24 : m.tempo==="h24").length;
           return (
             <div style={{paddingBottom:80}}>
               <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>
@@ -2027,7 +2030,11 @@ function sortedModelli(){
               ):(
                 <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
                   {sortedModelli().map((m,i,arr)=>{
-                    const selezionato = m.coloreCustom===hex;
+                    const matchAuto = !m.coloreCustom && (
+                      (m.tempo==="h24" && hex===COLORE_H24) ||
+                      (m.tempo!=="h24" && m.inizio && colByTime(m.inizio)===hex)
+                    );
+                    const selezionato = m.coloreCustom===hex || matchAuto;
                     const coloreAttuale = m.coloreCustom||colByTime(m.inizio);
                     return (
                       <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
