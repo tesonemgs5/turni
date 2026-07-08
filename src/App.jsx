@@ -1404,17 +1404,17 @@ function sortedModelli(){
         {bgSyncing&&<span style={{color:"rgba(255,255,255,0.7)",fontSize:11}}>🔄</span>}
         <button onClick={()=>month===11?(setYear(y=>y+1),setMonth(0)):setMonth(m=>m+1)} style={NB}>›</button>
         <div style={{flex:1}}/>
-        <button onClick={()=>setCalId(null)}
-          style={{background:calId===null?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.1)",
-            border:`1.5px solid ${calId===null?"rgba(255,255,255,0.85)":"transparent"}`,
-            borderRadius:20,padding:"2px 10px",cursor:"pointer",flexShrink:0}}>
-          <span style={{color:"#fff",fontSize:11,fontWeight:800}}>TUTTI</span>
-        </button>
         <button onClick={()=>setShowModelloPicker("quick")}
           title="Applica un modello a più giorni"
           style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.4)",
             borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:"#fff",flexShrink:0}}>
           ✏️
+        </button>
+        <button onClick={()=>setCalId(null)}
+          style={{background:calId===null?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.1)",
+            border:`1.5px solid ${calId===null?"rgba(255,255,255,0.85)":"transparent"}`,
+            borderRadius:20,padding:"2px 10px",cursor:"pointer",flexShrink:0}}>
+          <span style={{color:"#fff",fontSize:11,fontWeight:800}}>TUTTI</span>
         </button>
         <button onClick={async()=>{
           setBanner("⏳ Svuotamento cache...");
