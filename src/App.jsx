@@ -2268,6 +2268,7 @@ function sortedModelli(){
               <div style={{width:32}}/>
             </div>
             <RotazioneForm T={T} form={rotForm} setForm={setRotForm} accent={accent} modelli={modelli}
+              sortedModelli={sortedModelli}
               onSave={()=>{ saveRotazione({...rotForm,id:editRotazione?.id}); setShowRotForm(false); }}/>
           </div>
         </div>
@@ -4463,7 +4464,7 @@ function RotazioneCard({r, T, accent, modelli, onOpen, onEdit, onDelete}){
   );
 }
 
-function RotazioneForm({T, form, setForm, accent, modelli, onSave}){
+function RotazioneForm({T, form, setForm, accent, modelli, onSave, sortedModelli}){
   return (
     <div style={{padding:"16px 14px 40px"}}>
       <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>TIPO DI ROTAZIONE</div>
@@ -4497,9 +4498,9 @@ function RotazioneForm({T, form, setForm, accent, modelli, onSave}){
           </div>
           <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
             <ModelloSelector label="Domenica LAVORO (festivo)" value={form.modellaLavoroId}
-              onChange={id=>setForm(f=>({...f,modellaLavoroId:id}))} modelli={modelli} T={T} required/>
+              onChange={id=>setForm(f=>({...f,modellaLavoroId:id}))} modelli={modelli} T={T} required sortedModelli={sortedModelli}/>
             <ModelloSelector label="Domenica riposo (opzionale)" value={form.modelloNLId}
-              onChange={id=>setForm(f=>({...f,modelloNLId:id}))} modelli={modelli} T={T} last/>
+              onChange={id=>setForm(f=>({...f,modelloNLId:id}))} modelli={modelli} T={T} last sortedModelli={sortedModelli}/>
           </div>
         </div>
       )}
@@ -4508,9 +4509,9 @@ function RotazioneForm({T, form, setForm, accent, modelli, onSave}){
           <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>MODELLI</div>
           <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
             <ModelloSelector label="NL (Non Lavoro)" value={form.modelloNLId}
-              onChange={id=>setForm(f=>({...f,modelloNLId:id}))} modelli={modelli} T={T}/>
+              onChange={id=>setForm(f=>({...f,modelloNLId:id}))} modelli={modelli} T={T} sortedModelli={sortedModelli}/>
             <ModelloSelector label="RS (Riposo Settimanale)" value={form.modelloRSId}
-              onChange={id=>setForm(f=>({...f,modelloRSId:id}))} modelli={modelli} T={T} last/>
+              onChange={id=>setForm(f=>({...f,modelloRSId:id}))} modelli={modelli} T={T} last sortedModelli={sortedModelli}/>
           </div>
         </div>
       )}
@@ -4525,9 +4526,9 @@ function RotazioneForm({T, form, setForm, accent, modelli, onSave}){
           </div>
           <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
             <ModelloSelector label="RS (Riposo Settimanale)" value={form.modelloRSId}
-              onChange={id=>setForm(f=>({...f,modelloRSId:id}))} modelli={modelli} T={T}/>
+              onChange={id=>setForm(f=>({...f,modelloRSId:id}))} modelli={modelli} T={T} sortedModelli={sortedModelli}/>
             <ModelloSelector label="NL (Non Lavoro)" value={form.modelloNLId}
-              onChange={id=>setForm(f=>({...f,modelloNLId:id}))} modelli={modelli} T={T} last/>
+              onChange={id=>setForm(f=>({...f,modelloNLId:id}))} modelli={modelli} T={T} last sortedModelli={sortedModelli}/>
           </div>
         </div>
       )}
@@ -4540,10 +4541,11 @@ function RotazioneForm({T, form, setForm, accent, modelli, onSave}){
   );
 }
 
-function ModelloSelector({label, value, onChange, modelli, T, required=false, last=false}){
+function ModelloSelector({label, value, onChange, modelli, T, required=false, last=false, sortedModelli}){
   const sel = modelli.find(m=>m.id===value);
   const [open, setOpen] = useState(false);
   const colore = sel?(sel.coloreCustom||getColorByTime(sel.inizio)):"#94a3b8";
+  const listaOrdinata = sortedModelli ? sortedModelli() : modelli;
   return (
     <div style={{borderBottom:last?"none":`1px solid ${T.border}`}}>
       <div style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}
@@ -4570,7 +4572,7 @@ function ModelloSelector({label, value, onChange, modelli, T, required=false, la
               — Nessuno
             </div>
           )}
-          {modelli.map(m=>{
+          {listaOrdinata.map(m=>{
             const c=m.coloreCustom||getColorByTime(m.inizio);
             return (
               <div key={m.id} onClick={()=>{onChange(m.id);setOpen(false);}}
