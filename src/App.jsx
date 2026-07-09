@@ -1102,24 +1102,11 @@ function sortedModelli(){
     const rot = rotazioni.find(r=>r.id===rotId);
     if(!rot) return;
 
-    const modLav = modelli.find(m=>m.id===rot.modellaLavoroId);
-    const modRip = modelli.find(m=>m.id===rot.modelloNLId);
-    const totalWeeks = numRipetizioni * 4;
-
-    const [y0, m0, d0] = startDayKey.split("-").map(Number);
-    const start = new Date(y0, m0-1, d0);
-
     const nuoviEventiLocali = {};
 
-    for(let i=0; i<totalWeeks; i++) {
-      const d = new Date(start);
-      d.setDate(d.getDate() + i * 7);
-      const dateKey = dkey(d.getFullYear(), d.getMonth(), d.getDate());
-
-      const isLavoro = (i % 4) === 0;
-      const mod = isLavoro ? modLav : modRip;
-      if(!mod) continue;
-
+    async function inserisciEvento(mod, dataEv){
+      if(!mod) return;
+      const dateKey = dkey(dataEv.getFullYear(), dataEv.getMonth(), dataEv.getDate());
       const color = mod.coloreCustom || (mod.tempo==="h24" ? "#64748b" : colByTime(mod.inizio));
       const label = (mod.label || mod.titolo || "").toUpperCase();
       const allDay = mod.tempo==="h24";
@@ -1148,7 +1135,7 @@ function sortedModelli(){
 
       if(error) {
         console.error("Errore inserimento evento rotazione:", error);
-        continue;
+        return;
       }
 
       if(!nuoviEventiLocali[dateKey]) nuoviEventiLocali[dateKey] = {};
@@ -1168,6 +1155,53 @@ function sortedModelli(){
         collega: "",
         auto: "",
       });
+    }
+
+    if(rot.tipo === "nlrs_scalante") {
+      // Ordine fisso: parte sempre dal primo modello (RS), poi NL a +7gg
+      const modRS = modelli.find(m=>m.id===rot.modelloRSId);
+      const modNL = modelli.find(m=>m.id===rot.modelloNLId);
+      const GIORNI_CICLO = [5, 4, 3, 2, 1, 6];
+      const [y0, m0, d0] = startDayKey.split("-").map(Number);
+      let dataCorrRS = new Date(y0, m0-1, d0);
+      let giornoCicloIdx = 0;
+      const totalCicli = numRipetizioni * GIORNI_CICLO.length;
+
+      for(let i=0; i<totalCicli; i++) {
+        const dataRS = new Date(dataCorrRS);
+        const dataNL = new Date(dataCorrRS);
+        dataNL.setDate(dataNL.getDate() + 7);
+
+        await inserisciEvento(modRS, dataRS);
+        await inserisciEvento(modNL, dataNL);
+
+        giornoCicloIdx = (giornoCicloIdx + 1) % GIORNI_CICLO.length;
+        const prossimoDow = GIORNI_CICLO[giornoCicloIdx];
+        const base = new Date(dataCorrRS);
+        base.setDate(base.getDate() + 21);
+        let tentativo = new Date(base);
+        let iter = 0;
+        while(tentativo.getDay() !== prossimoDow && iter < 14) {
+          tentativo.setDate(tentativo.getDate() + 1);
+          iter++;
+        }
+        dataCorrRS = tentativo;
+      }
+    } else {
+      const modLav = modelli.find(m=>m.id===rot.modellaLavoroId);
+      const modRip = modelli.find(m=>m.id===rot.modelloNLId);
+      const totalWeeks = numRipetizioni * 4;
+
+      const [y0, m0, d0] = startDayKey.split("-").map(Number);
+      const start = new Date(y0, m0-1, d0);
+
+      for(let i=0; i<totalWeeks; i++) {
+        const d = new Date(start);
+        d.setDate(d.getDate() + i * 7);
+        const isLavoro = (i % 4) === 0;
+        const mod = isLavoro ? modLav : modRip;
+        await inserisciEvento(mod, d);
+      }
     }
 
     setStore(prev => {
@@ -3257,7 +3291,7 @@ function sortedModelli(){
                     return (
                       <div key={r.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                         <div onClick={()=>{
-                          if(r.tipo==="domeniche"){
+                          if(r.tipo==="domeniche"||r.tipo==="nlrs_scalante"){
                             setShowApplyRotDialog(r);
                           } else {
                             setShowRotDetail(r);
@@ -3474,9 +3508,12 @@ function sortedModelli(){
             onClick={e=>e.stopPropagation()}>
             <div style={{fontSize:16,fontWeight:900,color:T.text,marginBottom:8}}>Applica Rotazione</div>
             <div style={{fontSize:13,color:T.sub,marginBottom:16}}>
-              Stai applicando la rotazione <strong>{showApplyRotDialog.titolo||"Senza nome"}</strong> a partire da domenica {dayKey}.
+              Stai applicando la rotazione <strong>{showApplyRotDialog.titolo||"Senza nome"}</strong> a partire dal {dayKey}
+              {showApplyRotDialog.tipo==="nlrs_scalante"?" (primo RS)":" (domenica)"}.
               <br/><br/>
-              Il ciclo è di 4 domeniche. Quante volte vuoi ripeterlo?
+              {showApplyRotDialog.tipo==="nlrs_scalante"
+                ?"Il ciclo scalante è di 6 coppie RS/NL. Quante volte vuoi ripeterlo?"
+                :"Il ciclo è di 4 domeniche. Quante volte vuoi ripeterlo?"}
             </div>
 
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
