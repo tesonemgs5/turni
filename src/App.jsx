@@ -2764,10 +2764,10 @@ function sortedModelli(){
   const curEvts = dayKey ? getEvts(dayKey,calId) : [];
   const dayModal = dayKey&&(
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:200,
-      display:"flex",alignItems:"flex-end"}}
+      display:"flex",alignItems:"center"}}
       onClick={e=>{if(e.target===e.currentTarget){setDayKey(null);setForm(null);setPal(null);}}}>
-      <div style={{background:T.surface,borderRadius:"18px 18px 0 0",width:"100%",
-        maxWidth:480,margin:"0 auto",padding:"16px 14px 32px",maxHeight:"88vh",overflowY:"auto"}}
+      <div style={{background:T.surface,borderRadius:18,width:"100%",
+        maxWidth:480,margin:"auto",padding:"19.2px 16.8px 38.4px",maxHeight:"88vh",overflowY:"auto",fontSize:"1.2em"}}
         onClick={e=>e.stopPropagation()}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
           <div>
