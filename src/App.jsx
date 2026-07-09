@@ -4487,20 +4487,7 @@ function RotazioneForm({T, form, setForm, accent, modelli, onSave}){
           style={{width:"100%",padding:"14px 16px",background:"transparent",border:"none",
             outline:"none",color:T.text,fontSize:16,fontWeight:600,boxSizing:"border-box"}}/>
       </div>
-      <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:16}}>
-        <div style={{display:"flex",alignItems:"center",padding:"14px 16px",borderBottom:`1px solid ${T.border}`}}>
-          <span style={{flex:1,fontSize:15,color:T.text}}>Data inizio ciclo</span>
-          <input type="date" value={form.dataInizio} onChange={e=>setForm(f=>({...f,dataInizio:e.target.value}))}
-            style={{background:"transparent",border:"none",outline:"none",color:T.text,fontSize:14,fontWeight:700}}/>
-        </div>
-        <div style={{display:"flex",alignItems:"center",padding:"14px 16px"}}>
-          <span style={{flex:1,fontSize:15,color:T.text}}>Numero di settimane</span>
-          <input type="number" value={form.nSettimane} min={1} max={260}
-            onChange={e=>setForm(f=>({...f,nSettimane:parseInt(e.target.value)||52}))}
-            style={{width:70,background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
-              padding:"6px 8px",color:T.text,fontSize:14,fontWeight:700,outline:"none",textAlign:"center"}}/>
-        </div>
-      </div>
+      
       {form.tipo==="domeniche"&&(
         <div style={{marginBottom:16}}>
           <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>MODELLI</div>
