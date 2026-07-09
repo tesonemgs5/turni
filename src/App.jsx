@@ -1097,10 +1097,13 @@ function sortedModelli(){
     setRotazioni(prev=>prev.map(r=>r.id===rotId?{...r,griglia}:r));
   }
 
-  async function applyRotazione(rotId, startDayKey, numRipetizioni) {
+  async function applyRotazione(rotId, startDayKey, numRipetizioni, modPartenza="RS") {
     if(!userId || !calId || !startDayKey || !numRipetizioni) return;
     const rot = rotazioni.find(r=>r.id===rotId);
     if(!rot) return;
+
+    await supabase.from("rotazioni").update({dataInizio:startDayKey, nSettimane:numRipetizioni}).eq("id",rotId).eq("user_id",userId);
+    setRotazioni(prev=>prev.map(r=>r.id===rotId?{...r,dataInizio:startDayKey,nSettimane:numRipetizioni}:r));
 
     const nuoviEventiLocali = {};
 
@@ -1158,9 +1161,10 @@ function sortedModelli(){
     }
 
     if(rot.tipo === "nlrs_scalante") {
-      // Ordine fisso: parte sempre dal primo modello (RS), poi NL a +7gg
       const modRS = modelli.find(m=>m.id===rot.modelloRSId);
       const modNL = modelli.find(m=>m.id===rot.modelloNLId);
+      const primoModello = modPartenza==="NL" ? modNL : modRS;
+      const secondoModello = modPartenza==="NL" ? modRS : modNL;
       const GIORNI_CICLO = [5, 4, 3, 2, 1, 6];
       const [y0, m0, d0] = startDayKey.split("-").map(Number);
       let dataCorrRS = new Date(y0, m0-1, d0);
@@ -1172,8 +1176,8 @@ function sortedModelli(){
         const dataNL = new Date(dataCorrRS);
         dataNL.setDate(dataNL.getDate() + 7);
 
-        await inserisciEvento(modRS, dataRS);
-        await inserisciEvento(modNL, dataNL);
+        await inserisciEvento(primoModello, dataRS);
+        await inserisciEvento(secondoModello, dataNL);
 
         giornoCicloIdx = (giornoCicloIdx + 1) % GIORNI_CICLO.length;
         const prossimoDow = GIORNI_CICLO[giornoCicloIdx];
@@ -3516,6 +3520,29 @@ function sortedModelli(){
                 :"Il ciclo è di 4 domeniche. Quante volte vuoi ripeterlo?"}
             </div>
 
+            {showApplyRotDialog.tipo==="nlrs_scalante"&&(
+              <div style={{marginBottom:16}}>
+                <span style={{fontSize:13,color:T.text,fontWeight:700,display:"block",marginBottom:8}}>
+                  Con quale modello inizi?
+                </span>
+                <div style={{display:"flex",gap:8}}>
+                  <button type="button" onClick={()=>document.getElementById("modello_partenza_rot").value="RS"}
+                    id="btn_rs_partenza"
+                    style={{flex:1,background:"#8b5cf622",border:"2px solid #8b5cf6",borderRadius:8,
+                      color:"#8b5cf6",padding:"8px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
+                    RS
+                  </button>
+                  <button type="button" onClick={()=>document.getElementById("modello_partenza_rot").value="NL"}
+                    id="btn_nl_partenza"
+                    style={{flex:1,background:T.s2,border:`2px solid ${T.border}`,borderRadius:8,
+                      color:T.sub,padding:"8px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
+                    NL
+                  </button>
+                </div>
+                <input type="hidden" id="modello_partenza_rot" defaultValue="RS"/>
+              </div>
+            )}
+
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
               <span style={{fontSize:13,color:T.text,fontWeight:700}}>Ripetizioni:</span>
               <input type="number" defaultValue={4} min={1} max={52} id="num_ripetizioni_rot"
@@ -3531,10 +3558,11 @@ function sortedModelli(){
               </button>
               <button onClick={async()=>{
                 const inputVal = parseInt(document.getElementById("num_ripetizioni_rot")?.value) || 4;
+                const modPartenza = document.getElementById("modello_partenza_rot")?.value || "RS";
                 setShowApplyRotDialog(null);
                 setShowRotazionePicker(false);
                 setDayKey(null);
-                await applyRotazione(showApplyRotDialog.id, dayKey, inputVal);
+                await applyRotazione(showApplyRotDialog.id, dayKey, inputVal, modPartenza);
               }}
                 style={{flex:2,background:accent,border:"none",borderRadius:10,
                   color:"#fff",padding:"10px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
