@@ -2771,27 +2771,27 @@ function sortedModelli(){
         onClick={e=>e.stopPropagation()}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
           <div>
-            <div style={{fontSize:16,fontWeight:900,color:T.text}}>{dayKey}</div>
-            <div style={{fontSize:11,color:accent,fontWeight:700}}>{activeCal?.name||"Seleziona un calendario"}</div>
+            <div style={{fontSize:19,fontWeight:900,color:T.text}}>{dayKey.split("-").reverse().join("-")}</div>
+            <div style={{fontSize:13,color:accent,fontWeight:700}}>{activeCal?.name||"Seleziona un calendario"}</div>
           </div>
           <div style={{display:"flex",gap:8}}>
             {!form&&activeCal&&(
               <div style={{display:"flex",gap:6}}>
                 <button onClick={()=>setShowModelloPicker(true)}
                   style={{background:accent,border:"none",borderRadius:8,
-                    color:"#fff",fontSize:13,fontWeight:800,padding:"7px 14px",cursor:"pointer"}}>
+                    color:"#fff",fontSize:16,fontWeight:800,padding:"8px 17px",cursor:"pointer"}}>
                   + Modello
                 </button>
                 <button onClick={()=>setShowRotazionePicker(true)}
                   style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
-                    color:T.text,fontSize:13,fontWeight:800,padding:"7px 14px",cursor:"pointer"}}>
+                    color:T.text,fontSize:16,fontWeight:800,padding:"8px 17px",cursor:"pointer"}}>
                   🔄 Rotazioni
                 </button>
               </div>
             )}
             <button onClick={()=>{setDayKey(null);setForm(null);}}
               style={{background:T.s2,border:"none",borderRadius:8,
-                color:T.sub,width:32,height:32,cursor:"pointer",fontSize:18}}>×</button>
+                color:T.sub,width:38,height:38,cursor:"pointer",fontSize:22}}>×</button>
           </div>
         </div>
         <div style={{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap"}}>
@@ -2802,16 +2802,16 @@ function sortedModelli(){
                 style={{display:"flex",alignItems:"center",gap:4,cursor:"pointer",
                   background:calId===c.id?c.color+"33":T.s2,
                   border:`1.5px solid ${calId===c.id?c.color:T.border}`,
-                  borderRadius:8,padding:"3px 10px"}}>
-                <div style={{width:8,height:8,borderRadius:"50%",background:c.color}}/>
-                <span style={{fontSize:11,color:T.text,fontWeight:600}}>
+                  borderRadius:8,padding:"4px 12px"}}>
+                <div style={{width:10,height:10,borderRadius:"50%",background:c.color}}/>
+                <span style={{fontSize:13,color:T.text,fontWeight:600}}>
                   {c.name}{n>0?` (${n})`:""}</span>
               </button>
             );
           })}
         </div>
         {curEvts.length===0&&!form&&(
-          <div style={{textAlign:"center",color:T.sub,padding:"24px 0",fontSize:13}}>
+          <div style={{textAlign:"center",color:T.sub,padding:"29px 0",fontSize:16}}>
             Nessun evento — premi + Aggiungi
           </div>
         )}
@@ -3084,12 +3084,12 @@ function sortedModelli(){
             <div style={{display:"flex",gap:4}}>
               <button onClick={()=>{setForm(null);setPal(null);}}
                 style={{flex:1,background:T.surface,border:`1px solid ${T.border}`,
-                  borderRadius:10,color:T.sub,padding:"11px 0",cursor:"pointer",fontSize:13,fontWeight:700}}>
+                  borderRadius:10,color:T.sub,padding:"13px 0",cursor:"pointer",fontSize:16,fontWeight:700}}>
                 Annulla
               </button>
               <button onClick={form.editId?updateEvt:saveEvt}
                 style={{flex:2,background:accent,border:"none",borderRadius:10,
-                  color:"#fff",padding:"11px 0",cursor:"pointer",fontSize:13,fontWeight:800}}>
+                  color:"#fff",padding:"13px 0",cursor:"pointer",fontSize:16,fontWeight:800}}>
                 💾 Salva
               </button>
             </div>
