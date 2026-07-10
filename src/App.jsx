@@ -1220,6 +1220,9 @@ function sortedModelli(){
       if(!r.modelloId) continue;
       const mod = modelli.find(m=>m.id===r.modelloId);
       if(!mod) continue;
+      // Non sovrascrivere giorni che hanno già eventi su questo calendario
+      const eventiEsistenti = store.events?.[r.dateKey]?.[calId];
+      if(eventiEsistenti && eventiEsistenti.length>0) continue;
       const [y,m,d] = r.dateKey.split("-").map(Number);
       const dataEv = new Date(y, m-1, d);
       await inserisciEventoGenerico(mod, dataEv, null, nuoviEventiLocali);
@@ -3663,14 +3666,6 @@ function sortedModelli(){
             setShowImportaFotoDialog(false);
           }}/>
       )}
-      {showImportaFotoDialog && (
-        <ImportaFotoDialog T={T} accent={accent} dark={dark} modelli={modelli} year={year} month={month}
-          onClose={()=>setShowImportaFotoDialog(false)}
-          onConfirm={async(righeValide)=>{
-            await importaEventiSingoli(righeValide);
-            setShowImportaFotoDialog(false);
-          }}/>
-      )}
       {showApplyRotDialog && (
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:600,
           display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
@@ -4914,35 +4909,31 @@ function GrigliaRotazione({rot, T, accent, modelli, fasceAutomatiche, onUpdate})
 }
 
 function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onConfirm}){
-  const [step, setStep] = useState("upload"); // upload | ocr | preview
-  const [imgFile, setImgFile] = useState(null);
+  const [step, setStep] = useState("upload"); // upload | ocr
   const [imgPreviewUrl, setImgPreviewUrl] = useState(null);
   const [progresso, setProgresso] = useState(0);
-  const [righe, setRighe] = useState([]); // [{giorno, testoLetto, dateKey, modelloId}]
   const [errore, setErrore] = useState("");
 
-  // Mapping fisso testo-foto -> titolo modello reale.
-  // Solo questi 4 vengono importati per ora; tutto il resto resta ignorato (vuoto).
-  const MAPPING_TURNI = {
-    "primo": "MATTINA",
-    "secondo": "POMERIGGIO",
-    "terzo": "3°TURNO",
-    "notturno": "NOTTE",
-    "notte": "NOTTE",
-  };
+  // Radici testo-foto -> titolo modello reale. Basta trovare la radice (2-3 lettere)
+  // dentro il testo letto dall'OCR, anche con rumore/orari/spazi attorno.
+  const MAPPING_TURNI = [
+    { radice: "prim", titolo: "MATTINA" },
+    { radice: "second", titolo: "POMERIGGIO" },
+    { radice: "terz", titolo: "3°TURNO" },
+    { radice: "nott", titolo: "NOTTE" },
+  ];
 
   const RIGA_REGEX = /(lun|mar|mer|gio|ven|sab|dom)\.?\s*(\d{1,2})[^\wàèéìòù]*([a-zA-Zàèéìòù°'\s]+)/gi;
 
   function trovaModelloPerTesto(testoLetto){
-    const t = (testoLetto||"").toLowerCase().trim();
-    const titoloTarget = MAPPING_TURNI[t];
-    if(!titoloTarget) return null; // non nella mappa -> lasciato vuoto, come richiesto
-    const mod = modelli.find(m=>(m.titolo||"").toUpperCase() === titoloTarget);
+    const t = (testoLetto||"").toLowerCase();
+    const match = MAPPING_TURNI.find(m=>t.includes(m.radice));
+    if(!match) return null; // nessuna radice riconosciuta -> lasciato vuoto
+    const mod = modelli.find(m=>(m.titolo||"").toUpperCase() === match.titolo);
     return mod || null;
   }
 
   async function handleFile(file){
-    setImgFile(file);
     setImgPreviewUrl(URL.createObjectURL(file));
     setErrore("");
     setStep("ocr");
@@ -4956,38 +4947,30 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
       let mtc;
       RIGA_REGEX.lastIndex = 0;
       while((mtc = RIGA_REGEX.exec(testo)) !== null){
-        righeGrezze.push({ giornoAbbr: mtc[1], numGiorno: parseInt(mtc[2],10), testoTurno: mtc[3].trim() });
-      }
-      if(righeGrezze.length===0){
-        setErrore("Non sono riuscito a leggere nessuna riga dalla foto. Puoi aggiungere le righe manualmente qui sotto.");
+        righeGrezze.push({ numGiorno: parseInt(mtc[2],10), testoTurno: mtc[3].trim() });
       }
       const mm = String(month+1).padStart(2,"0");
       const righeElaborate = righeGrezze.map(r=>{
         const mod = trovaModelloPerTesto(r.testoTurno);
         const dd = String(r.numGiorno).padStart(2,"0");
-        const dateKey = `${year}-${mm}-${dd}`;
         return {
-          giorno: r.giornoAbbr,
-          testoLetto: r.testoTurno,
-          dateKey,
+          dateKey: `${year}-${mm}-${dd}`,
           modelloId: mod ? mod.id : null,
         };
-      });
-      setRighe(righeElaborate);
-      setStep("preview");
+      }).filter(r=>r.modelloId);
+
+      if(righeElaborate.length===0){
+        setErrore("Non sono riuscito a riconoscere nessun turno dalla foto. Riprova con un'immagine più nitida.");
+        setStep("upload");
+        return;
+      }
+      await onConfirm(righeElaborate);
     }catch(err){
       console.error("Errore OCR:", err);
       setErrore("Errore durante la lettura della foto. Riprova con un'immagine più nitida.");
-      setStep("preview");
-      setRighe([]);
+      setStep("upload");
     }
   }
-
-  function rimuoviRiga(idx){
-    setRighe(prev=>prev.filter((_,i)=>i!==idx));
-  }
-
-  const righeImportabili = righe.filter(r=>r.dateKey && r.modelloId);
 
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:700,
@@ -5007,12 +4990,20 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
         <div style={{flex:1,overflowY:"auto",padding:16}}>
 
           {step==="upload"&&(
-            <label style={{display:"block",border:`2px dashed ${T.border}`,borderRadius:12,
-              padding:"32px 16px",textAlign:"center",cursor:"pointer",color:T.sub,fontSize:13}}>
-              Tocca per scegliere la foto della tabella
-              <input type="file" accept="image/*" style={{display:"none"}}
-                onChange={e=>{ const f=e.target.files?.[0]; if(f) handleFile(f); }}/>
-            </label>
+            <>
+              {errore&&(
+                <div style={{background:"#ef444422",border:"1px solid #ef4444",borderRadius:8,
+                  padding:"8px 10px",fontSize:12,color:"#ef4444",marginBottom:12}}>
+                  {errore}
+                </div>
+              )}
+              <label style={{display:"block",border:`2px dashed ${T.border}`,borderRadius:12,
+                padding:"32px 16px",textAlign:"center",cursor:"pointer",color:T.sub,fontSize:13}}>
+                Tocca per scegliere la foto della tabella
+                <input type="file" accept="image/*" style={{display:"none"}}
+                  onChange={e=>{ const f=e.target.files?.[0]; if(f) handleFile(f); }}/>
+              </label>
+            </>
           )}
 
           {step==="ocr"&&(
@@ -5024,35 +5015,6 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
               </div>
             </div>
           )}
-
-          {step==="preview"&&(
-            <>
-              {errore&&(
-                <div style={{background:"#ef444422",border:"1px solid #ef4444",borderRadius:8,
-                  padding:"8px 10px",fontSize:12,color:"#ef4444",marginBottom:12}}>
-                  {errore}
-                </div>
-              )}
-              <div style={{fontSize:12,color:T.sub,marginBottom:10}}>
-                {righe.length} righe lette, {righeImportabili.length} riconosciute e pronte per l'import.
-                Le altre (riposi, ferie, ecc.) restano ignorate per ora.
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                {righe.map((r,idx)=>(
-                  <div key={idx} style={{display:"flex",gap:6,alignItems:"center",
-                    background:T.s2,borderRadius:8,padding:"6px 8px",
-                    opacity:r.modelloId?1:0.5}}>
-                    <span style={{width:80,fontSize:11,color:T.sub}}>{r.giorno} {r.dateKey?.slice(8,10)}</span>
-                    <span style={{flex:1,fontSize:11,color:T.text}}>
-                      {r.testoLetto} {r.modelloId ? "→ "+modelli.find(m=>m.id===r.modelloId)?.titolo : "(ignorato)"}
-                    </span>
-                    <button onClick={()=>rimuoviRiga(idx)}
-                      style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:16,padding:"0 4px"}}>×</button>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
         </div>
 
         <div style={{display:"flex",gap:8,padding:16,borderTop:`1px solid ${T.border}`}}>
@@ -5061,15 +5023,6 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
               color:T.sub,padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
             Annulla
           </button>
-          {step==="preview"&&(
-            <button onClick={()=>onConfirm(righeImportabili)}
-              disabled={righeImportabili.length===0}
-              style={{flex:2,background:accent,border:"none",borderRadius:10,
-                color:"#fff",padding:"10px 0",cursor:righeImportabili.length===0?"default":"pointer",
-                fontWeight:800,fontSize:12,opacity:righeImportabili.length===0?0.5:1}}>
-              Conferma import ({righeImportabili.length})
-            </button>
-          )}
         </div>
       </div>
     </div>
