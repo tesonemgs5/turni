@@ -1097,29 +1097,19 @@ function sortedModelli(){
     setRotazioni(prev=>prev.map(r=>r.id===rotId?{...r,griglia}:r));
   }
 
-  async function applyRotazione(rotId, startDayKey, numRipetizioni) {
+  async function applyRotazione(rotId, startDayKey, numRipetizioni, modPartenza="RS") {
     if(!userId || !calId || !startDayKey || !numRipetizioni) return;
     const rot = rotazioni.find(r=>r.id===rotId);
     if(!rot) return;
 
-    const modLav = modelli.find(m=>m.id===rot.modellaLavoroId);
-    const modRip = modelli.find(m=>m.id===rot.modelloNLId);
-    const totalWeeks = numRipetizioni * 4;
-
-    const [y0, m0, d0] = startDayKey.split("-").map(Number);
-    const start = new Date(y0, m0-1, d0);
+    await supabase.from("rotazioni").update({dataInizio:startDayKey, nSettimane:numRipetizioni}).eq("id",rotId).eq("user_id",userId);
+    setRotazioni(prev=>prev.map(r=>r.id===rotId?{...r,dataInizio:startDayKey,nSettimane:numRipetizioni}:r));
 
     const nuoviEventiLocali = {};
 
-    for(let i=0; i<totalWeeks; i++) {
-      const d = new Date(start);
-      d.setDate(d.getDate() + i * 7);
-      const dateKey = dkey(d.getFullYear(), d.getMonth(), d.getDate());
-
-      const isLavoro = (i % 4) === 0;
-      const mod = isLavoro ? modLav : modRip;
-      if(!mod) continue;
-
+    async function inserisciEvento(mod, dataEv){
+      if(!mod) return;
+      const dateKey = dkey(dataEv.getFullYear(), dataEv.getMonth(), dataEv.getDate());
       const color = mod.coloreCustom || (mod.tempo==="h24" ? "#64748b" : colByTime(mod.inizio));
       const label = (mod.label || mod.titolo || "").toUpperCase();
       const allDay = mod.tempo==="h24";
@@ -1148,7 +1138,7 @@ function sortedModelli(){
 
       if(error) {
         console.error("Errore inserimento evento rotazione:", error);
-        continue;
+        return;
       }
 
       if(!nuoviEventiLocali[dateKey]) nuoviEventiLocali[dateKey] = {};
@@ -1168,6 +1158,54 @@ function sortedModelli(){
         collega: "",
         auto: "",
       });
+    }
+
+    if(rot.tipo === "nlrs_scalante") {
+      const modRS = modelli.find(m=>m.id===rot.modelloRSId);
+      const modNL = modelli.find(m=>m.id===rot.modelloNLId);
+      const primoModello = modPartenza==="NL" ? modNL : modRS;
+      const secondoModello = modPartenza==="NL" ? modRS : modNL;
+      const GIORNI_CICLO = [5, 4, 3, 2, 1, 6];
+      const [y0, m0, d0] = startDayKey.split("-").map(Number);
+      let dataCorrRS = new Date(y0, m0-1, d0);
+      let giornoCicloIdx = 0;
+      const totalCicli = numRipetizioni * GIORNI_CICLO.length;
+
+      for(let i=0; i<totalCicli; i++) {
+        const dataRS = new Date(dataCorrRS);
+        const dataNL = new Date(dataCorrRS);
+        dataNL.setDate(dataNL.getDate() + 7);
+
+        await inserisciEvento(primoModello, dataRS);
+        await inserisciEvento(secondoModello, dataNL);
+
+        giornoCicloIdx = (giornoCicloIdx + 1) % GIORNI_CICLO.length;
+        const prossimoDow = GIORNI_CICLO[giornoCicloIdx];
+        const base = new Date(dataCorrRS);
+        base.setDate(base.getDate() + 21);
+        let tentativo = new Date(base);
+        let iter = 0;
+        while(tentativo.getDay() !== prossimoDow && iter < 14) {
+          tentativo.setDate(tentativo.getDate() + 1);
+          iter++;
+        }
+        dataCorrRS = tentativo;
+      }
+    } else {
+      const modLav = modelli.find(m=>m.id===rot.modellaLavoroId);
+      const modRip = modelli.find(m=>m.id===rot.modelloNLId);
+      const totalWeeks = numRipetizioni * 4;
+
+      const [y0, m0, d0] = startDayKey.split("-").map(Number);
+      const start = new Date(y0, m0-1, d0);
+
+      for(let i=0; i<totalWeeks; i++) {
+        const d = new Date(start);
+        d.setDate(d.getDate() + i * 7);
+        const isLavoro = (i % 4) === 0;
+        const mod = isLavoro ? modLav : modRip;
+        await inserisciEvento(mod, d);
+      }
     }
 
     setStore(prev => {
@@ -2268,6 +2306,7 @@ function sortedModelli(){
               <div style={{width:32}}/>
             </div>
             <RotazioneForm T={T} form={rotForm} setForm={setRotForm} accent={accent} modelli={modelli}
+              sortedModelli={sortedModelli}
               onSave={()=>{ saveRotazione({...rotForm,id:editRotazione?.id}); setShowRotForm(false); }}/>
           </div>
         </div>
@@ -3256,7 +3295,7 @@ function sortedModelli(){
                     return (
                       <div key={r.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                         <div onClick={()=>{
-                          if(r.tipo==="domeniche"){
+                          if(r.tipo==="domeniche"||r.tipo==="nlrs_scalante"){
                             setShowApplyRotDialog(r);
                           } else {
                             setShowRotDetail(r);
@@ -3473,10 +3512,36 @@ function sortedModelli(){
             onClick={e=>e.stopPropagation()}>
             <div style={{fontSize:16,fontWeight:900,color:T.text,marginBottom:8}}>Applica Rotazione</div>
             <div style={{fontSize:13,color:T.sub,marginBottom:16}}>
-              Stai applicando la rotazione <strong>{showApplyRotDialog.titolo||"Senza nome"}</strong> a partire da domenica {dayKey}.
+              Stai applicando la rotazione <strong>{showApplyRotDialog.titolo||"Senza nome"}</strong> a partire dal {dayKey}
+              {showApplyRotDialog.tipo==="nlrs_scalante"?" (primo RS)":" (domenica)"}.
               <br/><br/>
-              Il ciclo è di 4 domeniche. Quante volte vuoi ripeterlo?
+              {showApplyRotDialog.tipo==="nlrs_scalante"
+                ?"Il ciclo scalante è di 6 coppie RS/NL. Quante volte vuoi ripeterlo?"
+                :"Il ciclo è di 4 domeniche. Quante volte vuoi ripeterlo?"}
             </div>
+
+            {showApplyRotDialog.tipo==="nlrs_scalante"&&(
+              <div style={{marginBottom:16}}>
+                <span style={{fontSize:13,color:T.text,fontWeight:700,display:"block",marginBottom:8}}>
+                  Con quale modello inizi?
+                </span>
+                <div style={{display:"flex",gap:8}}>
+                  <button type="button" onClick={()=>document.getElementById("modello_partenza_rot").value="RS"}
+                    id="btn_rs_partenza"
+                    style={{flex:1,background:"#8b5cf622",border:"2px solid #8b5cf6",borderRadius:8,
+                      color:"#8b5cf6",padding:"8px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
+                    RS
+                  </button>
+                  <button type="button" onClick={()=>document.getElementById("modello_partenza_rot").value="NL"}
+                    id="btn_nl_partenza"
+                    style={{flex:1,background:T.s2,border:`2px solid ${T.border}`,borderRadius:8,
+                      color:T.sub,padding:"8px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
+                    NL
+                  </button>
+                </div>
+                <input type="hidden" id="modello_partenza_rot" defaultValue="RS"/>
+              </div>
+            )}
 
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
               <span style={{fontSize:13,color:T.text,fontWeight:700}}>Ripetizioni:</span>
@@ -3493,10 +3558,11 @@ function sortedModelli(){
               </button>
               <button onClick={async()=>{
                 const inputVal = parseInt(document.getElementById("num_ripetizioni_rot")?.value) || 4;
+                const modPartenza = document.getElementById("modello_partenza_rot")?.value || "RS";
                 setShowApplyRotDialog(null);
                 setShowRotazionePicker(false);
                 setDayKey(null);
-                await applyRotazione(showApplyRotDialog.id, dayKey, inputVal);
+                await applyRotazione(showApplyRotDialog.id, dayKey, inputVal, modPartenza);
               }}
                 style={{flex:2,background:accent,border:"none",borderRadius:10,
                   color:"#fff",padding:"10px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
@@ -4463,7 +4529,7 @@ function RotazioneCard({r, T, accent, modelli, onOpen, onEdit, onDelete}){
   );
 }
 
-function RotazioneForm({T, form, setForm, accent, modelli, onSave}){
+function RotazioneForm({T, form, setForm, accent, modelli, onSave, sortedModelli}){
   return (
     <div style={{padding:"16px 14px 40px"}}>
       <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>TIPO DI ROTAZIONE</div>
@@ -4497,9 +4563,9 @@ function RotazioneForm({T, form, setForm, accent, modelli, onSave}){
           </div>
           <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
             <ModelloSelector label="Domenica LAVORO (festivo)" value={form.modellaLavoroId}
-              onChange={id=>setForm(f=>({...f,modellaLavoroId:id}))} modelli={modelli} T={T} required/>
+              onChange={id=>setForm(f=>({...f,modellaLavoroId:id}))} modelli={modelli} T={T} required sortedModelli={sortedModelli}/>
             <ModelloSelector label="Domenica riposo (opzionale)" value={form.modelloNLId}
-              onChange={id=>setForm(f=>({...f,modelloNLId:id}))} modelli={modelli} T={T} last/>
+              onChange={id=>setForm(f=>({...f,modelloNLId:id}))} modelli={modelli} T={T} last sortedModelli={sortedModelli}/>
           </div>
         </div>
       )}
@@ -4508,9 +4574,9 @@ function RotazioneForm({T, form, setForm, accent, modelli, onSave}){
           <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>MODELLI</div>
           <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
             <ModelloSelector label="NL (Non Lavoro)" value={form.modelloNLId}
-              onChange={id=>setForm(f=>({...f,modelloNLId:id}))} modelli={modelli} T={T}/>
+              onChange={id=>setForm(f=>({...f,modelloNLId:id}))} modelli={modelli} T={T} sortedModelli={sortedModelli}/>
             <ModelloSelector label="RS (Riposo Settimanale)" value={form.modelloRSId}
-              onChange={id=>setForm(f=>({...f,modelloRSId:id}))} modelli={modelli} T={T} last/>
+              onChange={id=>setForm(f=>({...f,modelloRSId:id}))} modelli={modelli} T={T} last sortedModelli={sortedModelli}/>
           </div>
         </div>
       )}
@@ -4525,9 +4591,9 @@ function RotazioneForm({T, form, setForm, accent, modelli, onSave}){
           </div>
           <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
             <ModelloSelector label="RS (Riposo Settimanale)" value={form.modelloRSId}
-              onChange={id=>setForm(f=>({...f,modelloRSId:id}))} modelli={modelli} T={T}/>
+              onChange={id=>setForm(f=>({...f,modelloRSId:id}))} modelli={modelli} T={T} sortedModelli={sortedModelli}/>
             <ModelloSelector label="NL (Non Lavoro)" value={form.modelloNLId}
-              onChange={id=>setForm(f=>({...f,modelloNLId:id}))} modelli={modelli} T={T} last/>
+              onChange={id=>setForm(f=>({...f,modelloNLId:id}))} modelli={modelli} T={T} last sortedModelli={sortedModelli}/>
           </div>
         </div>
       )}
@@ -4540,10 +4606,11 @@ function RotazioneForm({T, form, setForm, accent, modelli, onSave}){
   );
 }
 
-function ModelloSelector({label, value, onChange, modelli, T, required=false, last=false}){
+function ModelloSelector({label, value, onChange, modelli, T, required=false, last=false, sortedModelli}){
   const sel = modelli.find(m=>m.id===value);
   const [open, setOpen] = useState(false);
   const colore = sel?(sel.coloreCustom||getColorByTime(sel.inizio)):"#94a3b8";
+  const listaOrdinata = sortedModelli ? sortedModelli() : modelli;
   return (
     <div style={{borderBottom:last?"none":`1px solid ${T.border}`}}>
       <div style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}
@@ -4570,7 +4637,7 @@ function ModelloSelector({label, value, onChange, modelli, T, required=false, la
               — Nessuno
             </div>
           )}
-          {modelli.map(m=>{
+          {listaOrdinata.map(m=>{
             const c=m.coloreCustom||getColorByTime(m.inizio);
             return (
               <div key={m.id} onClick={()=>{onChange(m.id);setOpen(false);}}
