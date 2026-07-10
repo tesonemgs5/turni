@@ -4923,7 +4923,11 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
     { radice: "nott", titolo: "NOTTE" },
   ];
 
-  const RIGA_REGEX = /(lun|mar|mer|gio|ven|sab|dom)\.?\s*(\d{1,2})[^\wàèéìòù]*([a-zA-Zàèéìòù°'\s]+)/gi;
+  const GIORNI_ABBR = "lun|mar|mer|gio|ven|sab|dom";
+  // Riconosce l'inizio di una riga tabella: "mer 01", "mer. 01", "01 mer", ecc.
+  const INIZIO_RIGA_REGEX = new RegExp(`^\\s*(?:(${GIORNI_ABBR})\\.?\\s*(\\d{1,2})|(\\d{1,2})\\s*(${GIORNI_ABBR})\\.?)`, "i");
+  // Fallback: cerca ovunque nel testo, usato solo per completare i giorni mancanti
+  const RIGA_REGEX_GLOBALE = new RegExp(`(${GIORNI_ABBR})\\.?\\s*(\\d{1,2})[^\\wàèéìòù]*([a-zA-Zàèéìòù°'\\s]+)`, "gi");
 
   function trovaModelloPerTesto(testoLetto){
     const t = (testoLetto||"").toLowerCase();
@@ -4931,6 +4935,48 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
     if(!match) return null; // nessuna radice riconosciuta -> lasciato vuoto
     const mod = modelli.find(m=>(m.titolo||"").toUpperCase() === match.titolo);
     return mod || null;
+  }
+
+  // Passaggio 1: parsing riga-per-riga (split su \n).
+  // Molto più robusto del regex globale quando ci sono turni uguali consecutivi,
+  // perché ogni riga viene analizzata da sola e non può "fondersi" con la successiva.
+  function parseRigaPerRiga(testo){
+    const risultato = new Map(); // numGiorno -> testoTurno
+    const linee = testo.split(/\r?\n/);
+    for(let i=0;i<linee.length;i++){
+      const linea = linee[i];
+      const mtc = INIZIO_RIGA_REGEX.exec(linea);
+      if(!mtc) continue;
+      const numGiorno = parseInt(mtc[2] || mtc[3], 10);
+      if(!numGiorno || numGiorno<1 || numGiorno>31) continue;
+      // il testo del turno è quello che resta sulla stessa riga dopo il match iniziale
+      let restoRiga = linea.slice(mtc.index + mtc[0].length).trim();
+      // se sulla riga non resta nulla di utile (es. il turno è andato a capo),
+      // guarda anche la riga successiva come possibile continuazione
+      if(restoRiga.length < 2 && linee[i+1]){
+        restoRiga = (restoRiga + " " + linee[i+1]).trim();
+      }
+      if(restoRiga){
+        risultato.set(numGiorno, restoRiga);
+      }
+    }
+    return risultato;
+  }
+
+  // Passaggio 2: regex globale su tutto il testo, usato solo per riempire i buchi
+  // lasciati dal passaggio 1 (es. quando l'OCR non mette a capo correttamente).
+  function parseGlobale(testo){
+    const risultato = new Map();
+    let mtc;
+    RIGA_REGEX_GLOBALE.lastIndex = 0;
+    while((mtc = RIGA_REGEX_GLOBALE.exec(testo)) !== null){
+      const numGiorno = parseInt(mtc[2],10);
+      if(!numGiorno || numGiorno<1 || numGiorno>31) continue;
+      if(!risultato.has(numGiorno)){
+        risultato.set(numGiorno, mtc[3].trim());
+      }
+    }
+    return risultato;
   }
 
   async function handleFile(file){
@@ -4943,21 +4989,22 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
         logger: m => { if(m.status==="recognizing text") setProgresso(Math.round((m.progress||0)*100)); }
       });
       const testo = data.text || "";
-      const righeGrezze = [];
-      let mtc;
-      RIGA_REGEX.lastIndex = 0;
-      while((mtc = RIGA_REGEX.exec(testo)) !== null){
-        righeGrezze.push({ numGiorno: parseInt(mtc[2],10), testoTurno: mtc[3].trim() });
-      }
+
+      // Doppio controllo: combino i due passaggi, il riga-per-riga ha priorità
+      // (è più affidabile sui turni consecutivi uguali), il globale completa i buchi.
+      const daRigaPerRiga = parseRigaPerRiga(testo);
+      const daGlobale = parseGlobale(testo);
+      const numeriGiorno = new Set([...daRigaPerRiga.keys(), ...daGlobale.keys()]);
+
       const mm = String(month+1).padStart(2,"0");
-      const righeElaborate = righeGrezze.map(r=>{
-        const mod = trovaModelloPerTesto(r.testoTurno);
-        const dd = String(r.numGiorno).padStart(2,"0");
-        return {
-          dateKey: `${year}-${mm}-${dd}`,
-          modelloId: mod ? mod.id : null,
-        };
-      }).filter(r=>r.modelloId);
+      const righeElaborate = [];
+      for(const numGiorno of numeriGiorno){
+        const testoTurno = daRigaPerRiga.get(numGiorno) || daGlobale.get(numGiorno);
+        const mod = trovaModelloPerTesto(testoTurno);
+        if(!mod) continue;
+        const dd = String(numGiorno).padStart(2,"0");
+        righeElaborate.push({ dateKey: `${year}-${mm}-${dd}`, modelloId: mod.id });
+      }
 
       if(righeElaborate.length===0){
         setErrore("Non sono riuscito a riconoscere nessun turno dalla foto. Riprova con un'immagine più nitida.");
