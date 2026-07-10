@@ -2067,16 +2067,6 @@ function sortedModelli(){
            Modelli di: {store.calendars.find(c=>c.id===calId)?.name||""}
         </div>
       )}
-      {modelliTab==="turni"&&(
-        <div style={{margin:"0 12px 10px"}}>
-          <button onClick={()=>setShowImportaFotoDialog(true)}
-            style={{width:"100%",background:T.surface,border:`1px dashed ${T.border}`,borderRadius:10,
-              color:T.text,padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:13,
-              display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-            📷 Importa da foto ({NOMI_MESI_IT[month]} {year})
-          </button>
-        </div>
-      )}
 
       <div style={{flex:1,overflowY:"auto",padding:"0 12px 80px"}}>
         {modelliTab==="turni"&&(()=>{
@@ -3499,7 +3489,12 @@ function sortedModelli(){
             <div style={{fontSize:16,fontWeight:900,color:T.text}}>
               {showModelloPicker==="quick"?(quickModeModello?"Tocca i giorni da riempire":"Scegli modello da applicare"):"Scegli modello"}
             </div>
-            <div style={{width:32}}/>
+            {showModelloPicker==="quick"&&!quickModeModello?(
+              <button onClick={()=>setShowImportaFotoDialog(true)}
+                style={{background:"none",border:"none",color:accent,fontSize:20,cursor:"pointer",width:32}}>📷</button>
+            ):(
+              <div style={{width:32}}/>
+            )}
           </div>
           {showModelloPicker==="quick"&&quickModeModello&&(
             <div style={{padding:"10px 16px",background:"#0f172a",color:"#fff",fontSize:13,
