@@ -192,6 +192,9 @@ export default function App({ session }){
   const [year,  setYear]  = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
   const [calId, setCalId] = useState(null);
+  const [editMode, setEditMode] = useState(false); // "M" — ON = modifica singola, OFF = selezione multipla
+  const [selectedCalIds, setSelectedCalIds] = useState([]); // selezione multipla calendari (editMode OFF)
+  const [selectedModelloIds, setSelectedModelloIds] = useState([]); // selezione multipla modelli (editMode OFF)
   const [screen, setScreen] = useState("cal");
   const [dayKey, setDayKey] = useState(null);
   const [form,   setForm]   = useState(null);
@@ -450,8 +453,9 @@ export default function App({ session }){
   function getEvts(key,cid){ return store.events?.[key]?.[cid]||[]; }
   function allEvts(key){
     const res=[];
-    if(mainCal) getEvts(key,mainCal.id).forEach(e=>res.push({...e,_cid:mainCal.id}));
-    store.calendars.filter(c=>!c.isMain).forEach(c=>
+    const soloCal = (!editMode && selectedCalIds.length>0) ? selectedCalIds : null;
+    if(mainCal && (!soloCal||soloCal.includes(mainCal.id))) getEvts(key,mainCal.id).forEach(e=>res.push({...e,_cid:mainCal.id}));
+    store.calendars.filter(c=>!c.isMain && (!soloCal||soloCal.includes(c.id))).forEach(c=>
       getEvts(key,c.id).forEach(e=>res.push({...e,_cid:c.id})));
     return res.sort((a,b)=>{
       if(a.allDay && b.allDay) return 0;
@@ -1571,11 +1575,22 @@ function sortedModelli(){
             borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:"#fff",flexShrink:0}}>
           ✏️
         </button>
-        <button onClick={()=>setCalId(null)}
-          style={{background:calId===null?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.1)",
-            border:`1.5px solid ${calId===null?"rgba(255,255,255,0.85)":"transparent"}`,
+        <button onClick={()=>{
+            setEditMode(em=>{
+              const next=!em;
+              if(next){ // entro in modifica singola: tengo solo il primo selezionato, se c'è
+                const keep = selectedCalIds[0]||calId||null;
+                setCalId(keep);
+                setSelectedCalIds(keep?[keep]:[]);
+              }
+              return next;
+            });
+          }}
+          title={editMode?"Modifica singola attiva — tocca per passare a selezione multipla":"Selezione multipla attiva — tocca per modificare un solo calendario"}
+          style={{background:editMode?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.1)",
+            border:`1.5px solid ${editMode?"rgba(255,255,255,0.85)":"transparent"}`,
             borderRadius:20,padding:"2px 10px",cursor:"pointer",flexShrink:0}}>
-          <span style={{color:"#fff",fontSize:11,fontWeight:800}}>TUTTI</span>
+          <span style={{color:"#fff",fontSize:11,fontWeight:800}}>M</span>
         </button>
         <button onClick={async()=>{
           setBanner("⏳ Svuotamento cache...");
@@ -1614,16 +1629,22 @@ function sortedModelli(){
         borderTop:"1px solid rgba(255,255,255,0.2)"}}>
         {store.calendars.length===0
           ? <span style={{color:"rgba(255,255,255,0.6)",fontSize:10,fontStyle:"italic"}}>→ Impostazioni</span>
-          : store.calendars.map(c=>(
-            <button key={c.id} onClick={()=>setCalId(c.id)}
+          : store.calendars.map(c=>{
+            const attivo = editMode ? calId===c.id : selectedCalIds.includes(c.id);
+            return (
+            <button key={c.id} onClick={()=>{
+                if(editMode){ setCalId(c.id); return; }
+                setSelectedCalIds(prev=> prev.includes(c.id) ? prev.filter(id=>id!==c.id) : [...prev, c.id]);
+              }}
               style={{display:"flex",alignItems:"center",gap:3,flexShrink:0,cursor:"pointer",
-                background:calId===c.id?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.1)",
-                border:`1.5px solid ${calId===c.id?"rgba(255,255,255,0.85)":"transparent"}`,
+                background:attivo?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.1)",
+                border:`1.5px solid ${attivo?"rgba(255,255,255,0.85)":"transparent"}`,
                 borderRadius:20,padding:"2px 8px 2px 5px"}}>
               <div style={{width:8,height:8,borderRadius:"50%",background:c.color,border:"1px solid rgba(255,255,255,0.5)"}}/>
               <span style={{color:"#fff",fontSize:12,fontWeight:700}}>{c.name}</span>
               {c.isMain&&<span style={{color:"rgba(255,255,255,0.6)",fontSize:8}}>★</span>}
             </button>
+            );})
           ))
         }
       </div>
@@ -1688,6 +1709,7 @@ function sortedModelli(){
           const red=isSun||isH;
           return (
             <div key={i} onClick={()=>{
+                if(!editMode && selectedCalIds.length>1){ setDayKey(key); setForm(null); setPal(null); return; } // sola consultazione, niente form
                 if(quickModeModello){ applyQuickModello(key); return; }
                 setDayKey(key); setForm(null); setPal(null);
               }}
@@ -2108,6 +2130,9 @@ function sortedModelli(){
               {modelliVisibili.map((m,i,arr)=>(
                 <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                   <ModelloCard m={m} T={T} accent={accent} fasceAutomatiche={fasceAutomatiche}
+                    selectMode={!editMode}
+                    selected={selectedModelloIds.includes(m.id)}
+                    onToggleSelect={()=>setSelectedModelloIds(prev=>prev.includes(m.id)?prev.filter(id=>id!==m.id):[...prev,m.id])}
                     onEdit={()=>{ if(!showMoveMode){ setEditModello(m); setModelForm(m); setShowModelForm(true); } }}
                     onDelete={()=>deleteModello(m.id)}
                     onMoveUp={showMoveMode?()=>moveH24(m.id,"up"):null}
@@ -2159,6 +2184,29 @@ function sortedModelli(){
             </div>
           );
         })()}
+        {modelliTab==="turni"&&!editMode&&selectedModelloIds.length>0&&(
+          <div style={{position:"sticky",bottom:0,background:T.surface,border:`1px solid ${T.border}`,
+            borderRadius:14,padding:"10px 14px",marginTop:10,display:"flex",alignItems:"center",
+            justifyContent:"space-between",boxShadow:"0 -4px 16px rgba(0,0,0,0.08)"}}>
+            <span style={{fontSize:13,fontWeight:700,color:T.text}}>{selectedModelloIds.length} selezionati</span>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>setSelectedModelloIds([])}
+                style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
+                  color:T.sub,padding:"7px 12px",cursor:"pointer",fontWeight:700,fontSize:12}}>
+                Annulla
+              </button>
+              <button onClick={async()=>{
+                  if(!window.confirm(`Eliminare ${selectedModelloIds.length} modelli selezionati?`)) return;
+                  for(const id of selectedModelloIds) await deleteModello(id);
+                  setSelectedModelloIds([]);
+                }}
+                style={{background:"#ef4444",border:"none",borderRadius:8,
+                  color:"#fff",padding:"7px 14px",cursor:"pointer",fontWeight:800,fontSize:12}}>
+                🗑️ Elimina
+              </button>
+            </div>
+          </div>
+        )}
         {modelliTab==="rotazioni"&&(
           <div style={{paddingBottom:80}}>
             {rotazioni.length===0?(
@@ -2913,7 +2961,8 @@ function sortedModelli(){
 
 // #region SEZIONE 19: DAY MODAL
 // ═══════════════════════════════════════════════════════════════
-  const curEvts = dayKey ? getEvts(dayKey,calId) : [];
+  const soloConsultazione = !editMode && selectedCalIds.length>1;
+  const curEvts = dayKey ? (soloConsultazione ? allEvts(dayKey).filter(e=>selectedCalIds.includes(e._cid)) : getEvts(dayKey,calId)) : [];
   const dayModal = dayKey&&(
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:200,
       display:"flex",alignItems:"center"}}
@@ -2927,7 +2976,7 @@ function sortedModelli(){
             <div style={{fontSize:13,color:accent,fontWeight:700}}>{activeCal?.name||"Seleziona un calendario"}</div>
           </div>
           <div style={{display:"flex",gap:8}}>
-            {!form&&activeCal&&(
+            {!form&&activeCal&&!soloConsultazione&&(
               <div style={{display:"flex",gap:6}}>
                 <button onClick={()=>setShowModelloPicker(true)}
                   style={{background:accent,border:"none",borderRadius:8,
@@ -2969,6 +3018,7 @@ function sortedModelli(){
         )}
         {curEvts.filter(e=>!form||form.editId!==e.id).map(e=>(
           <div key={e.id} onClick={()=>{
+              if(soloConsultazione) return;
               if(form?.editId===e.id){ setForm(null); return; }
               setForm({ editId:e.id, modelloId:null, shiftId:null, label:e.label,
                 colorOvr:e.color, dur:e.allDay?"allday":(e.tIn&&e.tOut&&e.tOut===calcFine6h15(e.tIn))?"fixed":"custom", tIn:e.tIn||"", tOut:e.tOut||"",
@@ -3016,13 +3066,15 @@ function sortedModelli(){
                 protPagFine:e.protPagFine||"",protRecFine:e.protRecFine||"",
               });}}
               style={{background:"rgba(0,0,0,0.2)",border:"none",borderRadius:6,
-                color:"#fff",width:26,height:26,cursor:"pointer",fontSize:14,marginLeft:4,flexShrink:0}}>✏️</button>
+                color:"#fff",width:26,height:26,cursor:"pointer",fontSize:14,marginLeft:4,flexShrink:0,
+                display:soloConsultazione?"none":undefined}}>✏️</button>
             <button onClick={e2=>{e2.stopPropagation();
                 if(e.rotazioneId){ setShowDeleteRotEvtDialog({evt:e, dKey:dayKey, cId:calId}); }
                 else if(window.confirm("Eliminare questo evento?")){ delEvt(dayKey,calId,e.id); }
               }}
               style={{background:"rgba(0,0,0,0.2)",border:"none",borderRadius:6,
-                color:"#fff",width:26,height:26,cursor:"pointer",fontSize:14,marginLeft:4,flexShrink:0}}>×</button>
+                color:"#fff",width:26,height:26,cursor:"pointer",fontSize:14,marginLeft:4,flexShrink:0,
+                display:soloConsultazione?"none":undefined}}>×</button>
           </div>
         ))}
         {form&&(
@@ -4552,7 +4604,7 @@ function Sec({label,children,T}){
 
 // #region SEZIONE 25: MODELLO CARD & FORM (fix: colore libero via palette condivisa)
 // ═══════════════════════════════════════════════════════════════
-function ModelloCard({m, T, accent, fasceAutomatiche, onEdit, onDelete, onMoveUp, onMoveDown, onDragStart, onDragOver, onDrop, onTouchStart, onTouchMove, onTouchEnd}){
+function ModelloCard({m, T, accent, fasceAutomatiche, onEdit, onDelete, onMoveUp, onMoveDown, onDragStart, onDragOver, onDrop, onTouchStart, onTouchMove, onTouchEnd, selectMode, selected, onToggleSelect}){
   const colore=m.coloreCustom||(m.tempo==="h24"?"#64748b":getColorByTime(m.inizio, fasceAutomatiche));
   const durata=m.tempo==="h24"?"Tutto il giorno"
     :m.tempo==="6h15"&&m.inizio?`${m.inizio} - ${calcFine6h15(m.inizio)} • 6h 15m`
@@ -4568,8 +4620,16 @@ function ModelloCard({m, T, accent, fasceAutomatiche, onEdit, onDelete, onMoveUp
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
       data-modello-id={m.id}
-      style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:onDragStart?"grab":"pointer",touchAction:onTouchStart?"none":"auto"}}
-      onClick={onEdit}>
+      style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:selectMode?"pointer":(onDragStart?"grab":"pointer"),touchAction:onTouchStart?"none":"auto"}}
+      onClick={selectMode?onToggleSelect:onEdit}>
+      {selectMode&&(
+        <div style={{width:20,height:20,borderRadius:6,marginRight:10,flexShrink:0,
+          border:`2px solid ${selected?accent:T.border}`,
+          background:selected?accent:"transparent",
+          display:"flex",alignItems:"center",justifyContent:"center"}}>
+          {selected&&<span style={{color:"#fff",fontSize:13,fontWeight:900}}>✓</span>}
+        </div>
+      )}
       <div style={{width:36,height:36,borderRadius:10,background:colore+"33",
         border:`2px solid ${colore}`,display:"flex",alignItems:"center",justifyContent:"center",
         flexShrink:0,marginRight:12}}>
@@ -4580,18 +4640,18 @@ function ModelloCard({m, T, accent, fasceAutomatiche, onEdit, onDelete, onMoveUp
           textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.titolo||"Senza nome"}</div>
         <div style={{fontSize:16,color:T.sub,marginTop:1}}>{durata}</div>
       </div>
-      {onMoveUp&&<button onClick={e=>{e.stopPropagation();onMoveUp();}}
+      {!selectMode&&onMoveUp&&<button onClick={e=>{e.stopPropagation();onMoveUp();}}
         style={{background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:8,color:"#475569",
           cursor:"pointer",fontSize:20,padding:"6px 10px",minWidth:36,minHeight:36,
           display:"flex",alignItems:"center",justifyContent:"center",marginRight:2}}>▲</button>}
-      {onMoveDown&&<button onClick={e=>{e.stopPropagation();onMoveDown();}}
+      {!selectMode&&onMoveDown&&<button onClick={e=>{e.stopPropagation();onMoveDown();}}
         style={{background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:8,color:"#475569",
           cursor:"pointer",fontSize:20,padding:"6px 10px",minWidth:36,minHeight:36,
           display:"flex",alignItems:"center",justifyContent:"center",marginRight:4}}>▼</button>}
-      <button onClick={e=>{e.stopPropagation();if(window.confirm("Eliminare questo modello?"))onDelete();}}
+      {!selectMode&&<button onClick={e=>{e.stopPropagation();if(window.confirm("Eliminare questo modello?"))onDelete();}}
         style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:18,
-          padding:"0 4px",marginRight:4}}>×</button>
-      <span style={{color:T.sub,fontSize:14}}>›</span>
+          padding:"0 4px",marginRight:4}}>×</button>}
+      {!selectMode&&<span style={{color:T.sub,fontSize:14}}>›</span>}
     </div>
   );
 }
