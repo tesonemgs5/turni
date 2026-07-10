@@ -1381,6 +1381,13 @@ function sortedModelli(){
             }
             continue;
           }
+          if(e.tempo==="h24"){
+            if(fasceFiltro.length===0||fasceFiltro.includes("h24")){
+              result.totale++; result.h24++;
+              if(e.modelloId) perModello[e.modelloId]=(perModello[e.modelloId]||0)+1;
+            }
+            continue;
+          }
           if(!e.tIn) continue;
           const [h,m]=e.tIn.split(":").map(Number);
           const mins=h*60+m;
@@ -3947,18 +3954,22 @@ function FasceExpand({data, pct1, pct2, T, modelli, accent}){
     return Object.entries(data.perModello||{}).filter(([mid])=>{
       const m=modelli.find(x=>x.id===mid);
       if(!m) return false;
+      if(fascia==="h24") return m.tempo==="h24";
       if(m.tempo==="h24") return false;
       if(!m.inizio) return false;
       const [h]=m.inizio.split(":").map(Number);
       const mins=h*60+(parseInt((m.inizio.split(":")||["0","0"])[1]||"0"));
       if(fascia==="primo") return mins>=360&&mins<705;
-      return mins>=705;
+      return mins>=705||mins<360;
     });
   }
 
+  const pctH24 = data.totale>0 ? Math.round(((data.h24||0)/data.totale)*100) : 0;
+
   const fasce=[
     {key:"primo",  label:"1° TURNO (06:00-11:45)", color:"#f59e0b", count:data.primo||0,  pct:pct1},
-    {key:"secondo",label:"2° TURNO (12:00-23:59)", color:"#f97316", count:data.secondo||0, pct:pct2},
+    {key:"secondo",label:"2° TURNO",                color:"#f97316", count:data.secondo||0, pct:pct2},
+    {key:"h24",    label:"H24",                     color:COLORE_H24, count:data.h24||0,   pct:pctH24},
   ];
 
   return (
