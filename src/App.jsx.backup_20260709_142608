@@ -58,6 +58,7 @@ export function getContrastTextColor(hex){
 // ═══════════════════════════════════════════════════════════════
 import { useState, useEffect, useRef, Fragment } from "react";
 import { supabase } from "./supabase";
+import Tesseract from "tesseract.js";
 
 const MONTHS = ["Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno",
                 "Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"];
@@ -100,6 +101,22 @@ function clearLocalStorageCache(){
 function daysInMonth(y,m){ return new Date(y,m+1,0).getDate(); }
 function firstDay(y,m){ const d=new Date(y,m,1).getDay(); return d===0?6:d-1; }
 function dkey(y,m,d){ return `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`; }
+function fmtDataIT(input){
+  // Accetta una date_key "YYYY-MM-DD" oppure un oggetto Date, restituisce "GG-MM-AAAA"
+  if(input instanceof Date){
+    const g=String(input.getDate()).padStart(2,"0");
+    const m=String(input.getMonth()+1).padStart(2,"0");
+    const a=input.getFullYear();
+    return `${g}-${m}-${a}`;
+  }
+  if(typeof input==="string" && /^\d{4}-\d{2}-\d{2}$/.test(input)){
+    const [a,m,g]=input.split("-");
+    return `${g}-${m}-${a}`;
+  }
+  return input;
+}
+const NOMI_GIORNI_IT=["domenica","lunedì","martedì","mercoledì","giovedì","venerdì","sabato"];
+const NOMI_MESI_IT=["gennaio","febbraio","marzo","aprile","maggio","giugno","luglio","agosto","settembre","ottobre","novembre","dicembre"];
 
 function easter(y){
   const a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4;
@@ -226,6 +243,8 @@ export default function App({ session }){
   const [rotForm, setRotForm] = useState({ tipo:"personalizzata", titolo:"", dataInizio:"", nSettimane:52, modellaLavoroId:null, modelloNLId:null, modelloRSId:null });
   const [showRotDetail, setShowRotDetail] = useState(null);
   const [showApplyRotDialog, setShowApplyRotDialog] = useState(null);
+  const [showDeleteRotEvtDialog, setShowDeleteRotEvtDialog] = useState(null);
+  const [showImportaFotoDialog, setShowImportaFotoDialog] = useState(false);
   const [showModelloPicker, setShowModelloPicker] = useState(false);
   const [quickModeModello, setQuickModeModello] = useState(null);
   const [showRotazionePicker, setShowRotazionePicker] = useState(false);
@@ -625,6 +644,49 @@ export default function App({ session }){
       const ns=JSON.parse(JSON.stringify(prev));
       if(ns.events?.[dKey]?.[cId])
         ns.events[dKey][cId]=ns.events[dKey][cId].filter(e=>e.id!==evtId);
+      if(syncMode==='on' && sheetsUrl) saveToSheets(ns.events, ns.calendars);
+      return ns;
+    });
+  }
+
+  async function delEvtiRotazioneDaData(rotazioneId, fromDateKey, cId, limit=null){
+    let query = supabase.from("events").select("id,date_key")
+      .eq("rotazione_id", rotazioneId).eq("user_id", userId)
+      .gte("date_key", fromDateKey).order("date_key",{ascending:true});
+    const { data: rows, error } = await query;
+    if(error || !rows) return;
+    const toDelete = limit ? rows.slice(0, limit) : rows;
+    const ids = toDelete.map(r=>r.id);
+    if(ids.length===0) return;
+    await supabase.from("events").delete().in("id", ids).eq("user_id", userId);
+    setStore(prev=>{
+      const ns=JSON.parse(JSON.stringify(prev));
+      const idSet = new Set(ids);
+      for(const dKey of Object.keys(ns.events||{})){
+        if(ns.events[dKey]?.[cId]){
+          ns.events[dKey][cId] = ns.events[dKey][cId].filter(e=>!idSet.has(e.id));
+        }
+      }
+      if(syncMode==='on' && sheetsUrl) saveToSheets(ns.events, ns.calendars);
+      return ns;
+    });
+  }
+
+  async function delTutteEvtiRotazione(rotazioneId, cId){
+    const { data: rows, error } = await supabase.from("events").select("id")
+      .eq("rotazione_id", rotazioneId).eq("user_id", userId);
+    if(error || !rows) return;
+    const ids = rows.map(r=>r.id);
+    if(ids.length===0) return;
+    await supabase.from("events").delete().in("id", ids).eq("user_id", userId);
+    setStore(prev=>{
+      const ns=JSON.parse(JSON.stringify(prev));
+      const idSet = new Set(ids);
+      for(const dKey of Object.keys(ns.events||{})){
+        if(ns.events[dKey]?.[cId]){
+          ns.events[dKey][cId] = ns.events[dKey][cId].filter(e=>!idSet.has(e.id));
+        }
+      }
       if(syncMode==='on' && sheetsUrl) saveToSheets(ns.events, ns.calendars);
       return ns;
     });
@@ -1097,6 +1159,86 @@ function sortedModelli(){
     setRotazioni(prev=>prev.map(r=>r.id===rotId?{...r,griglia}:r));
   }
 
+  async function inserisciEventoGenerico(mod, dataEv, rotazioneId, nuoviEventiLocali, labelOverride=null){
+    if(!mod && !labelOverride) return;
+    const dateKey = dkey(dataEv.getFullYear(), dataEv.getMonth(), dataEv.getDate());
+    const color = mod ? (mod.coloreCustom || (mod.tempo==="h24" ? "#64748b" : colByTime(mod.inizio))) : "#94a3b8";
+    const label = (labelOverride || mod?.label || mod?.titolo || "").toUpperCase();
+    const allDay = mod ? mod.tempo==="h24" : true;
+    const tIn = (!mod || allDay) ? "" : (mod.inizio || "");
+    const tOut = (!mod || allDay) ? "" : (mod.tempo==="6h15" ? calcFine6h15(mod.inizio) : (mod.fine || ""));
+
+    const { data, error } = await supabase.from("events").insert({
+      user_id: userId,
+      calendar_id: calId,
+      date_key: dateKey,
+      label,
+      color,
+      all_day: allDay,
+      time_in: tIn,
+      time_out: tOut,
+      place: "",
+      map_url: "",
+      note: "",
+      modello_id: mod?.id || null,
+      rotazione_id: rotazioneId,
+      collega: "",
+      auto: "",
+      prot_pag_fine: null,
+      prot_rec_fine: null,
+    }).select().maybeSingle();
+
+    if(error) {
+      console.error("Errore inserimento evento:", error);
+      return;
+    }
+
+    if(!nuoviEventiLocali[dateKey]) nuoviEventiLocali[dateKey] = {};
+    if(!nuoviEventiLocali[dateKey][calId]) nuoviEventiLocali[dateKey][calId] = [];
+    nuoviEventiLocali[dateKey][calId].push({
+      id: data.id,
+      color,
+      label,
+      allDay: data.all_day,
+      tIn: data.time_in || "",
+      tOut: data.time_out || "",
+      place: "",
+      map: "",
+      note: "",
+      modelloId: data.modello_id || null,
+      rotazioneId: data.rotazione_id || null,
+      collega: "",
+      auto: "",
+    });
+  }
+
+  async function importaEventiSingoli(righe){
+    // righe: [{ dateKey, modelloId }] -- righe senza modelloId vengono ignorate
+    if(!userId || !calId || !righe?.length) return;
+    const nuoviEventiLocali = {};
+    for(const r of righe){
+      if(!r.modelloId) continue;
+      const mod = modelli.find(m=>m.id===r.modelloId);
+      if(!mod) continue;
+      const [y,m,d] = r.dateKey.split("-").map(Number);
+      const dataEv = new Date(y, m-1, d);
+      await inserisciEventoGenerico(mod, dataEv, null, nuoviEventiLocali);
+    }
+    setStore(prev => {
+      const ns = JSON.parse(JSON.stringify(prev));
+      for(const [dateKey, calMap] of Object.entries(nuoviEventiLocali)) {
+        if(!ns.events[dateKey]) ns.events[dateKey] = {};
+        for(const [cid, evts] of Object.entries(calMap)) {
+          if(!ns.events[dateKey][cid]) ns.events[dateKey][cid] = [];
+          ns.events[dateKey][cid].push(...evts);
+        }
+      }
+      saveToLocalStorage(ns.events, ns.calendars, modelli);
+      if(syncMode === "on" && sheetsUrl) saveToSheets(ns.events, ns.calendars);
+      return ns;
+    });
+  }
+
   async function applyRotazione(rotId, startDayKey, numRipetizioni, modPartenza="RS") {
     if(!userId || !calId || !startDayKey || !numRipetizioni) return;
     const rot = rotazioni.find(r=>r.id===rotId);
@@ -1108,56 +1250,7 @@ function sortedModelli(){
     const nuoviEventiLocali = {};
 
     async function inserisciEvento(mod, dataEv){
-      if(!mod) return;
-      const dateKey = dkey(dataEv.getFullYear(), dataEv.getMonth(), dataEv.getDate());
-      const color = mod.coloreCustom || (mod.tempo==="h24" ? "#64748b" : colByTime(mod.inizio));
-      const label = (mod.label || mod.titolo || "").toUpperCase();
-      const allDay = mod.tempo==="h24";
-      const tIn = allDay ? "" : (mod.inizio || "");
-      const tOut = allDay ? "" : (mod.tempo==="6h15" ? calcFine6h15(mod.inizio) : (mod.fine || ""));
-
-      const { data, error } = await supabase.from("events").insert({
-        user_id: userId,
-        calendar_id: calId,
-        date_key: dateKey,
-        label,
-        color,
-        all_day: allDay,
-        time_in: tIn,
-        time_out: tOut,
-        place: "",
-        map_url: "",
-        note: "",
-        modello_id: mod.id || null,
-        rotazione_id: rot.id,
-        collega: "",
-        auto: "",
-        prot_pag_fine: null,
-        prot_rec_fine: null,
-      }).select().maybeSingle();
-
-      if(error) {
-        console.error("Errore inserimento evento rotazione:", error);
-        return;
-      }
-
-      if(!nuoviEventiLocali[dateKey]) nuoviEventiLocali[dateKey] = {};
-      if(!nuoviEventiLocali[dateKey][calId]) nuoviEventiLocali[dateKey][calId] = [];
-      nuoviEventiLocali[dateKey][calId].push({
-        id: data.id,
-        color,
-        label,
-        allDay: data.all_day,
-        tIn: data.time_in || "",
-        tOut: data.time_out || "",
-        place: "",
-        map: "",
-        note: "",
-        modelloId: data.modello_id || null,
-        rotazioneId: data.rotazione_id || null,
-        collega: "",
-        auto: "",
-      });
+      await inserisciEventoGenerico(mod, dataEv, rot.id, nuoviEventiLocali);
     }
 
     if(rot.tipo === "nlrs_scalante") {
@@ -1972,6 +2065,16 @@ function sortedModelli(){
           borderRadius:10,padding:"6px 12px",fontSize:12,
           color:store.calendars.find(c=>c.id===calId)?.color||accent,fontWeight:700}}>
            Modelli di: {store.calendars.find(c=>c.id===calId)?.name||""}
+        </div>
+      )}
+      {modelliTab==="turni"&&(
+        <div style={{margin:"0 12px 10px"}}>
+          <button onClick={()=>setShowImportaFotoDialog(true)}
+            style={{width:"100%",background:T.surface,border:`1px dashed ${T.border}`,borderRadius:10,
+              color:T.text,padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:13,
+              display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+            📷 Importa da foto ({NOMI_MESI_IT[month]} {year})
+          </button>
         </div>
       )}
 
@@ -2810,7 +2913,7 @@ function sortedModelli(){
         onClick={e=>e.stopPropagation()}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
           <div>
-            <div style={{fontSize:19,fontWeight:900,color:T.text}}>{dayKey.split("-").reverse().join("-")}</div>
+            <div style={{fontSize:19,fontWeight:900,color:T.text}}>{fmtDataIT(dayKey)}</div>
             <div style={{fontSize:13,color:accent,fontWeight:700}}>{activeCal?.name||"Seleziona un calendario"}</div>
           </div>
           <div style={{display:"flex",gap:8}}>
@@ -2904,7 +3007,10 @@ function sortedModelli(){
               });}}
               style={{background:"rgba(0,0,0,0.2)",border:"none",borderRadius:6,
                 color:"#fff",width:26,height:26,cursor:"pointer",fontSize:14,marginLeft:4,flexShrink:0}}>✏️</button>
-            <button onClick={e2=>{e2.stopPropagation();delEvt(dayKey,calId,e.id);}}
+            <button onClick={e2=>{e2.stopPropagation();
+                if(e.rotazioneId){ setShowDeleteRotEvtDialog({evt:e, dKey:dayKey, cId:calId}); }
+                else if(window.confirm("Eliminare questo evento?")){ delEvt(dayKey,calId,e.id); }
+              }}
               style={{background:"rgba(0,0,0,0.2)",border:"none",borderRadius:6,
                 color:"#fff",width:26,height:26,cursor:"pointer",fontSize:14,marginLeft:4,flexShrink:0}}>×</button>
           </div>
@@ -3185,7 +3291,7 @@ function sortedModelli(){
                     <div key={e.id} style={{background:T.s2,borderRadius:8,padding:"8px 10px",marginBottom:4}}>
                       <div style={{display:"flex",justifyContent:"space-between"}}>
                         <span style={{fontSize:11,fontWeight:800,color:e.color}}>{e.label}</span>
-                        <span style={{fontSize:9,color:T.sub}}>{e.date_key}</span>
+                        <span style={{fontSize:9,color:T.sub}}>{fmtDataIT(e.date_key)}</span>
                       </div>
                       <div style={{fontSize:9,color:T.sub}}>Cal: {cal?.name||"?"}</div>
                     </div>
@@ -3503,6 +3609,73 @@ function sortedModelli(){
           </div>
         </div>
       )}
+      {showDeleteRotEvtDialog && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:600,
+          display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
+          onClick={()=>setShowDeleteRotEvtDialog(null)}>
+          <div style={{background:T.surface,borderRadius:16,width:"100%",maxWidth:360,
+            padding:20,boxShadow:"0 8px 32px rgba(0,0,0,0.3)"}}
+            onClick={e=>e.stopPropagation()}>
+            <div style={{fontSize:16,fontWeight:900,color:T.text,marginBottom:8}}>Eliminare evento</div>
+            <div style={{fontSize:13,color:T.sub,marginBottom:16}}>
+              Questo evento fa parte di una rotazione. Cosa vuoi eliminare?
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:12}}>
+              <button onClick={async()=>{
+                  const {evt,dKey,cId}=showDeleteRotEvtDialog;
+                  setShowDeleteRotEvtDialog(null);
+                  await delEvt(dKey,cId,evt.id);
+                }}
+                style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
+                  color:T.text,padding:"10px 12px",cursor:"pointer",fontWeight:700,fontSize:13,textAlign:"left"}}>
+                Solo questa giornata
+              </button>
+              <button onClick={async()=>{
+                  const {evt,dKey,cId}=showDeleteRotEvtDialog;
+                  const n = parseInt(window.prompt("Quante ripetizioni vuoi eliminare (da questa data in poi)?","1"))||0;
+                  setShowDeleteRotEvtDialog(null);
+                  if(n>0) await delEvtiRotazioneDaData(evt.rotazioneId, dKey, cId, n);
+                }}
+                style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
+                  color:T.text,padding:"10px 12px",cursor:"pointer",fontWeight:700,fontSize:13,textAlign:"left"}}>
+                Solo N ripetizioni da questa data
+              </button>
+              <button onClick={async()=>{
+                  const {evt,cId}=showDeleteRotEvtDialog;
+                  if(window.confirm("Eliminare TUTTI gli eventi di questa rotazione? L'azione non è reversibile.")){
+                    setShowDeleteRotEvtDialog(null);
+                    await delTutteEvtiRotazione(evt.rotazioneId, cId);
+                  }
+                }}
+                style={{background:"#ef444422",border:"1px solid #ef4444",borderRadius:10,
+                  color:"#ef4444",padding:"10px 12px",cursor:"pointer",fontWeight:700,fontSize:13,textAlign:"left"}}>
+                Tutti gli eventi della rotazione
+              </button>
+            </div>
+            <button onClick={()=>setShowDeleteRotEvtDialog(null)}
+              style={{width:"100%",background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
+                color:T.sub,padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
+              Annulla
+            </button>
+          </div>
+        </div>
+      )}
+      {showImportaFotoDialog && (
+        <ImportaFotoDialog T={T} accent={accent} dark={dark} modelli={modelli} year={year} month={month}
+          onClose={()=>setShowImportaFotoDialog(false)}
+          onConfirm={async(righeValide)=>{
+            await importaEventiSingoli(righeValide);
+            setShowImportaFotoDialog(false);
+          }}/>
+      )}
+      {showImportaFotoDialog && (
+        <ImportaFotoDialog T={T} accent={accent} dark={dark} modelli={modelli} year={year} month={month}
+          onClose={()=>setShowImportaFotoDialog(false)}
+          onConfirm={async(righeValide)=>{
+            await importaEventiSingoli(righeValide);
+            setShowImportaFotoDialog(false);
+          }}/>
+      )}
       {showApplyRotDialog && (
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:600,
           display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
@@ -3512,7 +3685,7 @@ function sortedModelli(){
             onClick={e=>e.stopPropagation()}>
             <div style={{fontSize:16,fontWeight:900,color:T.text,marginBottom:8}}>Applica Rotazione</div>
             <div style={{fontSize:13,color:T.sub,marginBottom:16}}>
-              Stai applicando la rotazione <strong>{showApplyRotDialog.titolo||"Senza nome"}</strong> a partire dal {dayKey}
+              Stai applicando la rotazione <strong>{showApplyRotDialog.titolo||"Senza nome"}</strong> a partire dal {fmtDataIT(dayKey)}
               {showApplyRotDialog.tipo==="nlrs_scalante"?" (primo RS)":" (domenica)"}.
               <br/><br/>
               {showApplyRotDialog.tipo==="nlrs_scalante"
@@ -4745,6 +4918,169 @@ function GrigliaRotazione({rot, T, accent, modelli, fasceAutomatiche, onUpdate})
   );
 }
 
+function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onConfirm}){
+  const [step, setStep] = useState("upload"); // upload | ocr | preview
+  const [imgFile, setImgFile] = useState(null);
+  const [imgPreviewUrl, setImgPreviewUrl] = useState(null);
+  const [progresso, setProgresso] = useState(0);
+  const [righe, setRighe] = useState([]); // [{giorno, testoLetto, dateKey, modelloId}]
+  const [errore, setErrore] = useState("");
+
+  // Mapping fisso testo-foto -> titolo modello reale.
+  // Solo questi 4 vengono importati per ora; tutto il resto resta ignorato (vuoto).
+  const MAPPING_TURNI = {
+    "primo": "MATTINA",
+    "secondo": "POMERIGGIO",
+    "terzo": "3°TURNO",
+    "notturno": "NOTTE",
+    "notte": "NOTTE",
+  };
+
+  const RIGA_REGEX = /(lun|mar|mer|gio|ven|sab|dom)\.?\s*(\d{1,2})[^\wàèéìòù]*([a-zA-Zàèéìòù°'\s]+)/gi;
+
+  function trovaModelloPerTesto(testoLetto){
+    const t = (testoLetto||"").toLowerCase().trim();
+    const titoloTarget = MAPPING_TURNI[t];
+    if(!titoloTarget) return null; // non nella mappa -> lasciato vuoto, come richiesto
+    const mod = modelli.find(m=>(m.titolo||"").toUpperCase() === titoloTarget);
+    return mod || null;
+  }
+
+  async function handleFile(file){
+    setImgFile(file);
+    setImgPreviewUrl(URL.createObjectURL(file));
+    setErrore("");
+    setStep("ocr");
+    setProgresso(0);
+    try{
+      const { data } = await Tesseract.recognize(file, "ita", {
+        logger: m => { if(m.status==="recognizing text") setProgresso(Math.round((m.progress||0)*100)); }
+      });
+      const testo = data.text || "";
+      const righeGrezze = [];
+      let mtc;
+      RIGA_REGEX.lastIndex = 0;
+      while((mtc = RIGA_REGEX.exec(testo)) !== null){
+        righeGrezze.push({ giornoAbbr: mtc[1], numGiorno: parseInt(mtc[2],10), testoTurno: mtc[3].trim() });
+      }
+      if(righeGrezze.length===0){
+        setErrore("Non sono riuscito a leggere nessuna riga dalla foto. Puoi aggiungere le righe manualmente qui sotto.");
+      }
+      const mm = String(month+1).padStart(2,"0");
+      const righeElaborate = righeGrezze.map(r=>{
+        const mod = trovaModelloPerTesto(r.testoTurno);
+        const dd = String(r.numGiorno).padStart(2,"0");
+        const dateKey = `${year}-${mm}-${dd}`;
+        return {
+          giorno: r.giornoAbbr,
+          testoLetto: r.testoTurno,
+          dateKey,
+          modelloId: mod ? mod.id : null,
+        };
+      });
+      setRighe(righeElaborate);
+      setStep("preview");
+    }catch(err){
+      console.error("Errore OCR:", err);
+      setErrore("Errore durante la lettura della foto. Riprova con un'immagine più nitida.");
+      setStep("preview");
+      setRighe([]);
+    }
+  }
+
+  function rimuoviRiga(idx){
+    setRighe(prev=>prev.filter((_,i)=>i!==idx));
+  }
+
+  const righeImportabili = righe.filter(r=>r.dateKey && r.modelloId);
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:700,
+      display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
+      onClick={onClose}>
+      <div style={{background:T.surface,borderRadius:16,width:"100%",maxWidth:420,maxHeight:"85vh",
+        display:"flex",flexDirection:"column",boxShadow:"0 8px 32px rgba(0,0,0,0.3)"}}
+        onClick={e=>e.stopPropagation()}>
+
+        <div style={{padding:"18px 20px 12px",borderBottom:`1px solid ${T.border}`}}>
+          <div style={{fontSize:16,fontWeight:900,color:T.text}}>📷 Importa da foto</div>
+          <div style={{fontSize:12,color:T.sub,marginTop:2}}>
+            Mese in corso: {NOMI_MESI_IT[month]} {year}. Per ora vengono importati solo Primo, Secondo, Terzo e Notturno.
+          </div>
+        </div>
+
+        <div style={{flex:1,overflowY:"auto",padding:16}}>
+
+          {step==="upload"&&(
+            <label style={{display:"block",border:`2px dashed ${T.border}`,borderRadius:12,
+              padding:"32px 16px",textAlign:"center",cursor:"pointer",color:T.sub,fontSize:13}}>
+              Tocca per scegliere la foto della tabella
+              <input type="file" accept="image/*" style={{display:"none"}}
+                onChange={e=>{ const f=e.target.files?.[0]; if(f) handleFile(f); }}/>
+            </label>
+          )}
+
+          {step==="ocr"&&(
+            <div style={{textAlign:"center",padding:"40px 16px"}}>
+              {imgPreviewUrl&&<img src={imgPreviewUrl} alt="" style={{maxWidth:"100%",maxHeight:140,borderRadius:8,marginBottom:16}}/>}
+              <div style={{fontSize:13,color:T.sub,marginBottom:10}}>Lettura della foto in corso… {progresso}%</div>
+              <div style={{height:6,background:T.s2,borderRadius:3,overflow:"hidden"}}>
+                <div style={{height:"100%",width:`${progresso}%`,background:accent,transition:"width 0.2s"}}/>
+              </div>
+            </div>
+          )}
+
+          {step==="preview"&&(
+            <>
+              {errore&&(
+                <div style={{background:"#ef444422",border:"1px solid #ef4444",borderRadius:8,
+                  padding:"8px 10px",fontSize:12,color:"#ef4444",marginBottom:12}}>
+                  {errore}
+                </div>
+              )}
+              <div style={{fontSize:12,color:T.sub,marginBottom:10}}>
+                {righe.length} righe lette, {righeImportabili.length} riconosciute e pronte per l'import.
+                Le altre (riposi, ferie, ecc.) restano ignorate per ora.
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {righe.map((r,idx)=>(
+                  <div key={idx} style={{display:"flex",gap:6,alignItems:"center",
+                    background:T.s2,borderRadius:8,padding:"6px 8px",
+                    opacity:r.modelloId?1:0.5}}>
+                    <span style={{width:80,fontSize:11,color:T.sub}}>{r.giorno} {r.dateKey?.slice(8,10)}</span>
+                    <span style={{flex:1,fontSize:11,color:T.text}}>
+                      {r.testoLetto} {r.modelloId ? "→ "+modelli.find(m=>m.id===r.modelloId)?.titolo : "(ignorato)"}
+                    </span>
+                    <button onClick={()=>rimuoviRiga(idx)}
+                      style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:16,padding:"0 4px"}}>×</button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div style={{display:"flex",gap:8,padding:16,borderTop:`1px solid ${T.border}`}}>
+          <button onClick={onClose}
+            style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
+              color:T.sub,padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
+            Annulla
+          </button>
+          {step==="preview"&&(
+            <button onClick={()=>onConfirm(righeImportabili)}
+              disabled={righeImportabili.length===0}
+              style={{flex:2,background:accent,border:"none",borderRadius:10,
+                color:"#fff",padding:"10px 0",cursor:righeImportabili.length===0?"default":"pointer",
+                fontWeight:800,fontSize:12,opacity:righeImportabili.length===0?0.5:1}}>
+              Conferma import ({righeImportabili.length})
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function NLRSScalanteView({rot, T, accent, modelli}){
   const modRS=modelli.find(m=>m.id===rot.modelloRSId);
   const modNL=modelli.find(m=>m.id===rot.modelloNLId);
@@ -4830,14 +5166,14 @@ function NLRSScalanteView({rot, T, accent, modelli}){
                 <div style={{flex:1,padding:"10px 12px",borderRight:`1px solid ${T.border}`}}>
                   <div style={{fontSize:10,fontWeight:800,color:cRS,marginBottom:3}}>RS</div>
                   <div style={{fontSize:12,fontWeight:700,color:T.text}}>
-                    {cp.rs.date.toLocaleDateString("it-IT",{weekday:"short",day:"numeric",month:"short"})}
+                    {NOMI_GIORNI_IT[cp.rs.date.getDay()].slice(0,3)} {fmtDataIT(cp.rs.date)}
                   </div>
                   <div style={{fontSize:11,color:T.sub,marginTop:2}}>{modRS?.titolo||"—"}</div>
                 </div>
                 <div style={{flex:1,padding:"10px 12px"}}>
                   <div style={{fontSize:10,fontWeight:800,color:cNL,marginBottom:3}}>NL (+7gg)</div>
                   <div style={{fontSize:12,fontWeight:700,color:T.text}}>
-                    {cp.nl.date.toLocaleDateString("it-IT",{weekday:"short",day:"numeric",month:"short"})}
+                    {NOMI_GIORNI_IT[cp.nl.date.getDay()].slice(0,3)} {fmtDataIT(cp.nl.date)}
                   </div>
                   <div style={{fontSize:11,color:T.sub,marginTop:2}}>{modNL?.titolo||"—"}</div>
                 </div>
@@ -4902,7 +5238,7 @@ function DomenicheView({rot, T, accent, modelli, fasceAutomatiche, onUpdate}){
                   <span style={{fontSize:10,color:T.sub}}>({`${i%4+1}ª/4`})</span>
                 </div>
                 <div style={{fontSize:12,color:T.sub,marginTop:1}}>
-                  {dom.date.toLocaleDateString("it-IT",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}
+                  {NOMI_GIORNI_IT[dom.date.getDay()]} {fmtDataIT(dom.date)}
                 </div>
                 {effM&&<div style={{fontSize:11,fontWeight:700,color:c,marginTop:2}}>{effM.titolo}</div>}
               </div>
@@ -4975,7 +5311,7 @@ function NLRSView({rot, T, accent, modelli}){
                 <span style={{fontSize:11,fontWeight:900,color:c}}>{ev.tipo}</span>
               </div>
               <div style={{flex:1}}>
-                <div style={{fontSize:11,color:T.sub}}>Sett. {ev.sett} · {ev.date.toLocaleDateString("it-IT",{weekday:"long",day:"numeric",month:"short"})}</div>
+                <div style={{fontSize:11,color:T.sub}}>Sett. {ev.sett} · {NOMI_GIORNI_IT[ev.date.getDay()]} {fmtDataIT(ev.date)}</div>
                 <div style={{fontSize:13,fontWeight:700,color:T.text}}>{m?.titolo||"Nessun modello"}</div>
               </div>
             </div>
