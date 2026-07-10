@@ -692,6 +692,32 @@ export default function App({ session }){
     });
   }
 
+  async function cancellaTuttiEventiMese(y, m, cId){
+    // Cancella tutti gli eventi del mese (y=anno, m=mese 0-based) sul calendario cId
+    const mm = String(m+1).padStart(2,"0");
+    const ultimoGiorno = new Date(y, m+1, 0).getDate();
+    const fromKey = `${y}-${mm}-01`;
+    const toKey = `${y}-${mm}-${String(ultimoGiorno).padStart(2,"0")}`;
+    const { data: rows, error } = await supabase.from("events").select("id")
+      .eq("user_id", userId).eq("calendar_id", cId)
+      .gte("date_key", fromKey).lte("date_key", toKey);
+    if(error || !rows) return;
+    const ids = rows.map(r=>r.id);
+    if(ids.length===0) return;
+    await supabase.from("events").delete().in("id", ids).eq("user_id", userId);
+    setStore(prev=>{
+      const ns=JSON.parse(JSON.stringify(prev));
+      for(const dKey of Object.keys(ns.events||{})){
+        if(dKey>=fromKey && dKey<=toKey && ns.events[dKey]?.[cId]){
+          delete ns.events[dKey][cId];
+        }
+      }
+      saveToLocalStorage(ns.events, ns.calendars, modelli);
+      if(syncMode==='on' && sheetsUrl) saveToSheets(ns.events, ns.calendars);
+      return ns;
+    });
+  }
+
   function calcMinuti(tIn, tOut){
     if(!tIn||!tOut) return 0;
     const [h1,m1]=tIn.split(":").map(Number);
@@ -3493,8 +3519,16 @@ function sortedModelli(){
               {showModelloPicker==="quick"?(quickModeModello?"Tocca i giorni da riempire":"Scegli modello da applicare"):"Scegli modello"}
             </div>
             {showModelloPicker==="quick"&&!quickModeModello?(
-              <button onClick={()=>setShowImportaFotoDialog(true)}
-                style={{background:"none",border:"none",color:accent,fontSize:20,cursor:"pointer",width:32}}>📷</button>
+              <div style={{display:"flex",gap:6}}>
+                <button onClick={()=>setShowImportaFotoDialog(true)}
+                  style={{background:"none",border:"none",color:accent,fontSize:20,cursor:"pointer",width:32}}>📷</button>
+                <button onClick={()=>{
+                    if(confirm(`Cancellare TUTTI gli eventi di ${NOMI_MESI_IT[month]} ${year} su questo calendario? L'azione non è reversibile.`)){
+                      cancellaTuttiEventiMese(year, month, calId);
+                    }
+                  }}
+                  style={{background:"none",border:"none",color:"#ef4444",fontSize:20,cursor:"pointer",width:32}}>🗑️</button>
+              </div>
             ):(
               <div style={{width:32}}/>
             )}
