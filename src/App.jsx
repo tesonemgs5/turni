@@ -1367,36 +1367,19 @@ function sortedModelli(){
     const {from, to} = getReportRange();
     const result = { totale:0, primo:0, secondo:0, h24:0, app:0, auto:0 };
     const perModello = {};
-    const fasceFiltro = cfg?.fasceFiltro || [];
     const modelliInclusi = cfg?.modelliInclusi || [];
+    const fasceManuali = cfg?.fasceManuali || {};
+    const fasceFiltro = cfg?.fasceFiltro || [];
     for(const [dateKey, calMap] of Object.entries(store.events)){
       if(dateKey < from || dateKey > to) continue;
       for(const [, evts] of Object.entries(calMap)){
         for(const e of evts){
           if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
-          if(e.allDay){
-            if(fasceFiltro.length===0||fasceFiltro.includes("h24")){
-              result.totale++; result.h24++;
-              if(e.modelloId) perModello[e.modelloId]=(perModello[e.modelloId]||0)+1;
-            }
-            continue;
-          }
-          if(e.tempo==="h24"){
-            if(fasceFiltro.length===0||fasceFiltro.includes("h24")){
-              result.totale++; result.h24++;
-              if(e.modelloId) perModello[e.modelloId]=(perModello[e.modelloId]||0)+1;
-            }
-            continue;
-          }
-          if(!e.tIn) continue;
-          const [h,m]=e.tIn.split(":").map(Number);
-          const mins=h*60+m;
-          let fascia="";
-          if(mins>=360&&mins<705) fascia="primo";
-          else fascia="secondo";
-          if(fasceFiltro.length>0 && !fasceFiltro.includes(fascia)) continue;
+          const fascia = e.modelloId ? (fasceManuali[e.modelloId]||"") : "";
+          if(fasceFiltro.length>0 && !fasceFiltro.includes(fascia||"nessuna")) continue;
           result.totale++;
-          result[fascia]=(result[fascia]||0)+1;
+          if(fascia==="primo"||fascia==="secondo") result[fascia]=(result[fascia]||0)+1;
+          else result.h24++;
           if(e.modelloId) perModello[e.modelloId]=(perModello[e.modelloId]||0)+1;
           const modelloEvt = e.modelloId ? modelli.find(mm=>mm.id===e.modelloId) : null;
           const titoloEvt = (modelloEvt?.titolo||"").toUpperCase();
@@ -1407,6 +1390,7 @@ function sortedModelli(){
     }
     return {...result, perModello};
   }
+
 
   function computeConteggio(){
     return computeConteggioForReport({fasceFiltro:[]});
@@ -1968,7 +1952,7 @@ function sortedModelli(){
                     </div>
                     <span style={{fontSize:15,fontWeight:700,color:T.text}}>Tutti i modelli</span>
                   </div>
-                  {modelli.map((m,i,arr)=>{
+                  {sortedModelli().map((m,i,arr)=>{
                     const selezionato = inclusi.includes(m.id);
                     const colore = m.coloreCustom||colByTime(m.inizio);
                     return (
@@ -3947,20 +3931,17 @@ function SmartTimeInput({ value, onChange, style }) {
 
 // #region SEZIONE 23: REPORT SUBCOMPONENTS
 // ═══════════════════════════════════════════════════════════════
-function FasceExpand({data, pct1, pct2, T, modelli, accent}){
+function FasceExpand({data, pct1, pct2, T, modelli, accent, cfg}){
   const [openFascia, setOpenFascia] = useState(null);
+  const fasceManuali = cfg?.fasceManuali || {};
 
   function turniDiFascia(fascia){
     return Object.entries(data.perModello||{}).filter(([mid])=>{
       const m=modelli.find(x=>x.id===mid);
       if(!m) return false;
-      if(fascia==="h24") return m.tempo==="h24";
-      if(m.tempo==="h24") return false;
-      if(!m.inizio) return false;
-      const [h]=m.inizio.split(":").map(Number);
-      const mins=h*60+(parseInt((m.inizio.split(":")||["0","0"])[1]||"0"));
-      if(fascia==="primo") return mins>=360&&mins<705;
-      return mins>=705||mins<360;
+      const assegnata = fasceManuali[mid]||"";
+      if(fascia==="h24") return assegnata==="";
+      return assegnata===fascia;
     });
   }
 
@@ -3969,7 +3950,7 @@ function FasceExpand({data, pct1, pct2, T, modelli, accent}){
   const fasce=[
     {key:"primo",  label:"1° TURNO (06:00-11:45)", color:"#f59e0b", count:data.primo||0,  pct:pct1},
     {key:"secondo",label:"2° TURNO",                color:"#f97316", count:data.secondo||0, pct:pct2},
-    {key:"h24",    label:"H24",                     color:COLORE_H24, count:data.h24||0,   pct:pctH24},
+    {key:"h24",    label:"NON ASSEGNATI",           color:COLORE_H24, count:data.h24||0,   pct:pctH24},
   ];
 
   return (
@@ -4061,58 +4042,49 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, fas
         {showTurniList&&(
   <div style={{background:T.s2,borderRadius:8,padding:"8px 10px",marginBottom:8}}>
     <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>
-      Clicca per includere/escludere dal conteggio
-    </div>
-    <div onClick={()=>onUpdateCfg({...cfg,fasceFiltro:[]})}
-      style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",
-        borderRadius:6,cursor:"pointer",marginBottom:4,
-        background:(cfg.fasceFiltro||[]).length===0?accent+"22":"transparent",
-        border:`1px solid ${(cfg.fasceFiltro||[]).length===0?accent:T.border}`}}>
-      <span style={{fontSize:11,fontWeight:700,
-        color:(cfg.fasceFiltro||[]).length===0?accent:T.text}}>✓ Tutti i turni</span>
-      <span style={{fontSize:12,fontWeight:800,color:T.sub,marginLeft:"auto"}}>{data.totale}</span>
+      Assegna manualmente ogni modello al 1° o 2° TURNO
     </div>
     {Object.entries(data.perModello||{}).map(([mid,cnt])=>{
       const m=modelli.find(x=>x.id===mid);
       if(!m) return null;
       const c=m.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
-      const getFascia=()=>{
-        if(m.allDay||m.tempo==="h24") return "h24";
-        if(!m.inizio) return null;
-        const [h]=m.inizio.split(":").map(Number);
-        const mins=h*60+(parseInt(m.inizio.split(":")[1]||"0"));
-        if(mins>=360&&mins<705) return "primo";
-        return "secondo";
-      };
-      const fascia=getFascia();
-      const filtroAttivo=(cfg.fasceFiltro||[]).length>0;
-      const selezionato=!filtroAttivo||(fascia&&(cfg.fasceFiltro||[]).includes(fascia));
+      const fasceManuali=cfg.fasceManuali||{};
+      const faseCorrente=fasceManuali[mid]||"";
+      function setFascia(val){
+        const next={...fasceManuali};
+        if(val==="") delete next[mid];
+        else next[mid]=val;
+        onUpdateCfg({...cfg,fasceManuali:next});
+      }
       return (
-        <div key={mid} onClick={()=>{
-          if(!fascia) return;
-          const cur=cfg.fasceFiltro||[];
-          if(cur.length===0){
-            onUpdateCfg({...cfg,fasceFiltro:[fascia]});
-          } else if(cur.includes(fascia)){
-            const next=cur.filter(f=>f!==fascia);
-            onUpdateCfg({...cfg,fasceFiltro:next});
-          } else {
-            onUpdateCfg({...cfg,fasceFiltro:[...cur,fascia]});
-          }
-        }} style={{display:"flex",alignItems:"center",gap:8,
-          padding:"6px 8px",borderRadius:6,cursor:"pointer",marginBottom:4,
-          background:selezionato?c+"18":"transparent",
-          border:`1px solid ${selezionato?c+"44":T.border}`}}>
+        <div key={mid} style={{display:"flex",alignItems:"center",gap:8,
+          padding:"6px 8px",borderRadius:6,marginBottom:4,
+          background:c+"10",border:`1px solid ${T.border}`}}>
           <div style={{width:8,height:8,borderRadius:"50%",background:c,flexShrink:0}}/>
           <div style={{flex:1}}>
-            <span style={{fontSize:12,fontWeight:selezionato?700:400,
-              color:selezionato?T.text:T.sub}}>{m.titolo}</span>
+            <span style={{fontSize:12,fontWeight:700,color:T.text}}>{m.titolo}</span>
             <span style={{fontSize:10,color:T.sub,marginLeft:6}}>
               {m.tempo==="h24"?"H24":m.tempo==="6h15"&&m.inizio?`${m.inizio} - ${calcFine6h15(m.inizio)}`:m.inizio&&m.fine?`${m.inizio} - ${m.fine}`:m.inizio||""}
             </span>
           </div>
-          <span style={{fontSize:13,fontWeight:800,color:selezionato?T.text:T.sub}}>{cnt}</span>
-          {selezionato&&<span style={{fontSize:10,color:c}}>✓</span>}
+          <span style={{fontSize:12,fontWeight:800,color:T.sub}}>{cnt}</span>
+          <div style={{display:"flex",gap:3}}>
+            <button onClick={()=>setFascia("primo")}
+              style={{fontSize:10,fontWeight:800,padding:"4px 7px",borderRadius:6,cursor:"pointer",
+                background:faseCorrente==="primo"?"#f59e0b":"transparent",
+                color:faseCorrente==="primo"?"#fff":T.sub,
+                border:`1px solid ${faseCorrente==="primo"?"#f59e0b":T.border}`}}>1°</button>
+            <button onClick={()=>setFascia("secondo")}
+              style={{fontSize:10,fontWeight:800,padding:"4px 7px",borderRadius:6,cursor:"pointer",
+                background:faseCorrente==="secondo"?"#f97316":"transparent",
+                color:faseCorrente==="secondo"?"#fff":T.sub,
+                border:`1px solid ${faseCorrente==="secondo"?"#f97316":T.border}`}}>2°</button>
+            <button onClick={()=>setFascia("")}
+              style={{fontSize:10,fontWeight:800,padding:"4px 7px",borderRadius:6,cursor:"pointer",
+                background:faseCorrente===""?T.sub:"transparent",
+                color:faseCorrente===""?"#fff":T.sub,
+                border:`1px solid ${T.border}`}}>—</button>
+          </div>
         </div>
       );
     })}
@@ -4123,7 +4095,7 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, fas
             <div style={{width:`${pct}%`,height:"100%",background:accent,borderRadius:3,transition:"width 0.3s"}}/>
           </div>
         )}
-        <FasceExpand data={data} pct1={pct1} pct2={pct2} T={T} modelli={modelli} accent={accent}/>
+        <FasceExpand data={data} pct1={pct1} pct2={pct2} T={T} modelli={modelli} accent={accent} cfg={cfg}/>
       </div>
 
       <div style={{background:T.surface,borderRadius:10,padding:12}}>
