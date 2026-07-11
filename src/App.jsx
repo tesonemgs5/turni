@@ -2053,26 +2053,26 @@ function sortedModelli(){
                 <div style={{textAlign:"center",padding:"40px 24px",color:T.sub}}>Nessun modello creato ancora.</div>
               ):(
                 <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
-                  <div onClick={()=>updateConteggioConfig(reportId, {...cfg, modelliInclusi:[]})}
-                    style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer",
-                      borderBottom:`1px solid ${T.border}`}}>
-                    <div style={{width:20,height:20,borderRadius:6,marginRight:12,flexShrink:0,
-                      border:`2px solid ${inclusi.length===0?accent:T.border}`,
-                      background:inclusi.length===0?accent:"transparent",
-                      display:"flex",alignItems:"center",justifyContent:"center"}}>
-                      {inclusi.length===0&&<span style={{color:"#fff",fontSize:13,fontWeight:900}}>✓</span>}
+                  {!isTurnazione&&(
+                    <div onClick={()=>updateConteggioConfig(reportId, {...cfg, modelliInclusi:[]})}
+                      style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer",
+                        borderBottom:`1px solid ${T.border}`}}>
+                      <div style={{width:20,height:20,borderRadius:6,marginRight:12,flexShrink:0,
+                        border:`2px solid ${inclusi.length===0?accent:T.border}`,
+                        background:inclusi.length===0?accent:"transparent",
+                        display:"flex",alignItems:"center",justifyContent:"center"}}>
+                        {inclusi.length===0&&<span style={{color:"#fff",fontSize:13,fontWeight:900}}>✓</span>}
+                      </div>
+                      <span style={{fontSize:15,fontWeight:700,color:T.text}}>Tutti i modelli</span>
                     </div>
-                    <span style={{fontSize:15,fontWeight:700,color:T.text}}>Tutti i modelli</span>
-                  </div>
+                  )}
                   {sortedModelli().map((m,i,arr)=>{
                     const selezionato = inclusi.includes(m.id);
                     const colore = m.coloreCustom||colByTime(m.inizio);
                     return (
                       <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
-                        <div onClick={()=>{
-                          const next = selezionato ? inclusi.filter(id=>id!==m.id) : [...inclusi, m.id];
-                          updateConteggioConfig(reportId, {...cfg, modelliInclusi: next});
-                        }} style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}>
+                        <div onClick={()=>toggleModello(m)}
+                          style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}>
                           <div style={{width:20,height:20,borderRadius:6,marginRight:12,flexShrink:0,
                             border:`2px solid ${selezionato?colore:T.border}`,
                             background:selezionato?colore:"transparent",
