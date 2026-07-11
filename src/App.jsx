@@ -154,6 +154,17 @@ function calcDurata(tIn,tOut){
   const hh=Math.floor(mins/60),mm=mins%60;
   return `${hh}h${mm>0?` ${mm}m`:""}`;
 }
+function isModelloTurnazioneDefault(m){
+  if(m.tempo==="6h15") return true;
+  if(m.tempo==="personalizzato" && m.inizio && m.fine){
+    const [h1,m1]=m.inizio.split(":").map(Number);
+    const [h2,m2]=m.fine.split(":").map(Number);
+    let mins=(h2*60+m2)-(h1*60+m1);
+    if(mins<0) mins+=24*60;
+    return mins===375 || mins===390; // 6h15 o 6h30
+  }
+  return false;
+}
 function getShiftBand(tIn){
   if(!tIn) return "diurno";
   const [h]=tIn.split(":").map(Number);
@@ -1401,7 +1412,7 @@ function sortedModelli(){
     const {from, to} = getReportRange();
     const esclusi = cfg?.modelliEsclusi || [];
     const aggiunti = cfg?.modelliAggiunti || [];
-    const default6h15 = modelli.filter(m=>m.tempo==="6h15" && !esclusi.includes(m.id)).map(m=>m.id);
+    const default6h15 = modelli.filter(m=>isModelloTurnazioneDefault(m) && !esclusi.includes(m.id)).map(m=>m.id);
     const modelliInclusi = [...new Set([...default6h15, ...aggiunti])];
     const gruppiManuali = cfg?.gruppiManuali || {}; // { modelloId: "primo"|"secondo"|"app"|"auto" }
     const result = { totale:0, primo:0, secondo:0, app:0, auto:0 };
@@ -1486,7 +1497,7 @@ function sortedModelli(){
     setStore(s=>({...s, reports:newRep}));
     saveSettings({reports:newRep});
     if(type==="turnazione"){
-      const default6h15 = modelli.filter(m=>m.tempo==="6h15").map(m=>m.id);
+      const default6h15 = modelli.filter(m=>isModelloTurnazioneDefault(m)).map(m=>m.id);
       if(default6h15.length>0){
         const newCfg = {...conteggioConfigs, [newReport.id]: {fasceFiltro:[], modelliInclusi:default6h15}};
         setConteggioConfigs(newCfg);
@@ -2016,7 +2027,7 @@ function sortedModelli(){
         const esclusi = cfg.modelliEsclusi||[];
         const aggiunti = cfg.modelliAggiunti||[];
         const inclusi = isTurnazione
-          ? [...modelli.filter(m=>m.tempo==="6h15"&&!esclusi.includes(m.id)).map(m=>m.id), ...aggiunti]
+          ? [...modelli.filter(m=>isModelloTurnazioneDefault(m)&&!esclusi.includes(m.id)).map(m=>m.id), ...aggiunti]
           : (cfg.modelliInclusi||[]);
         function toggleModello(m){
           if(!isTurnazione){
@@ -2025,7 +2036,7 @@ function sortedModelli(){
             updateConteggioConfig(reportId, {...cfg, modelliInclusi: next});
             return;
           }
-          if(m.tempo==="6h15"){
+          if(isModelloTurnazioneDefault(m)){
             const attualmenteIncluso = !esclusi.includes(m.id);
             const nextEsclusi = attualmenteIncluso ? [...esclusi, m.id] : esclusi.filter(id=>id!==m.id);
             updateConteggioConfig(reportId, {...cfg, modelliEsclusi: nextEsclusi});
