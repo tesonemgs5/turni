@@ -1399,7 +1399,10 @@ function sortedModelli(){
 
   function computeTurnazioneForReport(cfg){
     const {from, to} = getReportRange();
-    const modelliInclusi = cfg?.modelliInclusi || [];
+    const esclusi = cfg?.modelliEsclusi || [];
+    const aggiunti = cfg?.modelliAggiunti || [];
+    const default6h15 = modelli.filter(m=>m.tempo==="6h15" && !esclusi.includes(m.id)).map(m=>m.id);
+    const modelliInclusi = [...new Set([...default6h15, ...aggiunti])];
     const gruppiManuali = cfg?.gruppiManuali || {}; // { modelloId: "primo"|"secondo"|"app"|"auto" }
     const result = { totale:0, primo:0, secondo:0, app:0, auto:0 };
     const perModello = {};
@@ -1520,7 +1523,7 @@ function sortedModelli(){
     const saved = conteggioConfigs[reportId];
     if(saved) return saved;
     if(reportType==="turnazione"){
-      return { fasceFiltro:[], modelliInclusi: modelli.filter(m=>m.tempo==="6h15").map(m=>m.id) };
+      return { fasceFiltro:[], modelliEsclusi:[], modelliAggiunti:[] };
     }
     return { fasceFiltro:[], modelliInclusi:[] };
   }
@@ -2009,7 +2012,29 @@ function sortedModelli(){
         const reportId = showReportModelliPicker;
         const reportType = (store.reports||[]).find(rr=>rr.id===reportId)?.type;
         const cfg = getConteggioConfig(reportId, reportType);
-        const inclusi = cfg.modelliInclusi||[];
+        const isTurnazione = reportType==="turnazione";
+        const esclusi = cfg.modelliEsclusi||[];
+        const aggiunti = cfg.modelliAggiunti||[];
+        const inclusi = isTurnazione
+          ? [...modelli.filter(m=>m.tempo==="6h15"&&!esclusi.includes(m.id)).map(m=>m.id), ...aggiunti]
+          : (cfg.modelliInclusi||[]);
+        function toggleModello(m){
+          if(!isTurnazione){
+            const selezionato = (cfg.modelliInclusi||[]).includes(m.id);
+            const next = selezionato ? (cfg.modelliInclusi||[]).filter(id=>id!==m.id) : [...(cfg.modelliInclusi||[]), m.id];
+            updateConteggioConfig(reportId, {...cfg, modelliInclusi: next});
+            return;
+          }
+          if(m.tempo==="6h15"){
+            const attualmenteIncluso = !esclusi.includes(m.id);
+            const nextEsclusi = attualmenteIncluso ? [...esclusi, m.id] : esclusi.filter(id=>id!==m.id);
+            updateConteggioConfig(reportId, {...cfg, modelliEsclusi: nextEsclusi});
+          } else {
+            const attualmenteIncluso = aggiunti.includes(m.id);
+            const nextAggiunti = attualmenteIncluso ? aggiunti.filter(id=>id!==m.id) : [...aggiunti, m.id];
+            updateConteggioConfig(reportId, {...cfg, modelliAggiunti: nextAggiunti});
+          }
+        }
         return (
           <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:600,
             display:"flex",flexDirection:"column"}}>
