@@ -431,6 +431,7 @@ export default function App({ session }){
           colore:m.colore, coloreCustom:m.colore_custom||null,
           posizione:m.posizione||"", sortOrder:m.sort_order||0,
           calendarId:m.calendar_id||null,
+          categoria:m.categoria||"",
         })));
 
         const { data: coloriDb } = await supabase.from("colori").select("*").eq("user_id", userId).order("created_at");
@@ -463,6 +464,7 @@ export default function App({ session }){
           colore:m.colore, coloreCustom:m.colore_custom||null,
           posizione:m.posizione||"", sortOrder:m.sort_order||0,
           calendarId:m.calendar_id||null,
+          categoria:m.categoria||"",
         }));
 
         setStore({ calendars, events, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings, fasceAutomatiche: savedFasce });
@@ -1281,6 +1283,7 @@ function sortedModelli(){
       posizione:(data.posizione||"").toUpperCase()||null,
       sort_order:data.sortOrder||modelli.length,
       calendar_id: targetCalId,
+      categoria: data.categoria||null,
     };
     if(data.coloreCustom) await ensureColoreRegistrato(data.coloreCustom);
     if(data.id){
@@ -1621,7 +1624,9 @@ function sortedModelli(){
           const overrideGruppo = e.modelloId ? gruppiManuali[e.modelloId] : null;
           let gruppo;
           const isModelloStandard = modelloEvt && isModelloTurnazioneDefault(modelloEvt);
-          if(overrideGruppo){
+          if(modelloEvt?.categoria){
+            gruppo = modelloEvt.categoria;
+          } else if(overrideGruppo){
             gruppo = overrideGruppo;
           } else if(isModelloStandard){
             const isPrimo = modelloEvt.inizio && inRange(minsOf(modelloEvt.inizio), 360, 705);
@@ -5192,6 +5197,19 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, onSave}){
           </div>
         </div>
       )}
+      <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>CATEGORIA (per report Turnazione)</div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:16}}>
+        {[["","Automatica"],["primo","1° Turno"],["secondo","2° Turno"],["app","APP"],["auto","AUTO"]].map(([v,l])=>(
+          <button key={v||"__auto__"} onClick={()=>setForm(f=>({...f,categoria:v}))}
+            style={{flex:"1 1 30%",padding:"9px 4px",borderRadius:10,border:"none",cursor:"pointer",
+              fontWeight:700,fontSize:11,
+              background:(form.categoria||"")===v?accent:T.s2,
+              color:(form.categoria||"")===v?"#fff":T.sub}}>{l}</button>
+        ))}
+      </div>
+      <div style={{fontSize:11,color:T.sub,marginTop:-10,marginBottom:16,paddingLeft:4}}>
+        "Automatica" decide da sola in base a titolo/orario. Scegliendo una categoria qui, ogni evento creato da questo modello finirà sempre in quel gruppo nel report Turnazione.
+      </div>
       <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>COLORE</div>
       <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,padding:"12px 14px",marginBottom:16}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
