@@ -1399,9 +1399,14 @@ function sortedModelli(){
 
   function computeTurnazioneForReport(cfg){
     const {from, to} = getReportRange();
-    const modelliInclusi = cfg?.modelliInclusi || [];
+    const modelliInclusiCfg = cfg?.modelliInclusi || [];
+    const modelliInclusi = modelliInclusiCfg.length>0
+      ? modelliInclusiCfg
+      : modelli.filter(m=>m.tempo==="6h15").map(m=>m.id);
+    const gruppiManuali = cfg?.gruppiManuali || {}; // { modelloId: "primo"|"secondo"|"app"|"auto" }
     const result = { totale:0, primo:0, secondo:0, app:0, auto:0 };
     const perModello = {};
+    const perGruppo = { primo:{}, secondo:{}, app:{}, auto:{} };
     for(const [dateKey, calMap] of Object.entries(store.events)){
       if(dateKey < from || dateKey > to) continue;
       for(const [, evts] of Object.entries(calMap)){
@@ -1409,22 +1414,35 @@ function sortedModelli(){
           if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
           result.totale++;
           const modelloEvt = e.modelloId ? modelli.find(mm=>mm.id===e.modelloId) : null;
-          const isPrimo = modelloEvt && modelloEvt.tempo!=="h24" && modelloEvt.inizio
-            && inRange(minsOf(modelloEvt.inizio), 360, 705);
-          if(isPrimo) result.primo++; else result.secondo++;
+          const titoloEvt = (modelloEvt?.titolo||"").toUpperCase();
+          const overrideGruppo = e.modelloId ? gruppiManuali[e.modelloId] : null;
+          let gruppo;
+          if(overrideGruppo){
+            gruppo = overrideGruppo;
+          } else if(titoloEvt.includes("APP")){
+            gruppo = "app";
+          } else if(titoloEvt.includes("AUTO")){
+            gruppo = "auto";
+          } else {
+            const isPrimo = modelloEvt && modelloEvt.tempo!=="h24" && modelloEvt.inizio
+              && inRange(minsOf(modelloEvt.inizio), 360, 705);
+            gruppo = isPrimo ? "primo" : "secondo";
+          }
+          result[gruppo] = (result[gruppo]||0)+1;
           if(e.modelloId){
             if(!perModello[e.modelloId]) perModello[e.modelloId] = { count:0, dates:[] };
             perModello[e.modelloId].count++;
             perModello[e.modelloId].dates.push(dateKey);
+            if(!perGruppo[gruppo][e.modelloId]) perGruppo[gruppo][e.modelloId] = { count:0, dates:[] };
+            perGruppo[gruppo][e.modelloId].count++;
+            perGruppo[gruppo][e.modelloId].dates.push(dateKey);
           }
-          const titoloEvt = (modelloEvt?.titolo||"").toUpperCase();
-          if(titoloEvt.includes("APP")) result.app++;
-          else if(titoloEvt.includes("AUTO")) result.auto++;
         }
       }
     }
     Object.values(perModello).forEach(v=>v.dates.sort());
-    return {...result, perModello};
+    Object.values(perGruppo).forEach(g=>Object.values(g).forEach(v=>v.dates.sort()));
+    return {...result, perModello, perGruppo, modelliInclusiEffettivi:modelliInclusi};
   }
 
   function computeConteggio(){
@@ -4242,13 +4260,31 @@ function TurnazioneConfigCard({T, r, cfg, data, modelli, accent, fasceAutomatich
   const [editingName, setEditingName] = useState(false);
   const [tmpName, setTmpName] = useState(r.label);
   const [openModello, setOpenModello] = useState(null);
+  const [openGruppo, setOpenGruppo] = useState(null);
   const pct1 = data.totale>0 ? Math.round(((data.primo||0)/data.totale)*100) : 0;
   const pct2 = data.totale>0 ? Math.round(((data.secondo||0)/data.totale)*100) : 0;
+  const pctApp = data.totale>0 ? Math.round(((data.app||0)/data.totale)*100) : 0;
+  const pctAuto = data.totale>0 ? Math.round(((data.auto||0)/data.totale)*100) : 0;
 
   function fmtData(dateKey){
     const [y,m,d] = dateKey.split("-");
     return `${d}/${m}/${y}`;
   }
+
+  const gruppiManuali = cfg.gruppiManuali || {};
+  function setGruppoModello(mid, gruppo){
+    const next = {...gruppiManuali};
+    if(!gruppo) delete next[mid];
+    else next[mid] = gruppo;
+    onUpdateCfg({...cfg, gruppiManuali:next});
+  }
+
+  const GRUPPI = [
+    {key:"primo",  label:"1° TURNO", color:"#f59e0b", count:data.primo||0,  pct:pct1},
+    {key:"secondo",label:"2° TURNO", color:"#f97316", count:data.secondo||0,pct:pct2},
+    {key:"app",    label:"APP",      color:"#3b82f6", count:data.app||0,    pct:pctApp},
+    {key:"auto",   label:"AUTO",     color:"#8b5cf6", count:data.auto||0,   pct:pctAuto},
+  ];
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
@@ -4279,36 +4315,49 @@ function TurnazioneConfigCard({T, r, cfg, data, modelli, accent, fasceAutomatich
       </div>
 
       <div style={{display:"flex",flexDirection:"column",gap:6}}>
-        {[
-          {key:"primo",  label:"1° TURNO (06:00-11:45)", color:"#f59e0b", count:data.primo||0, pct:pct1},
-          {key:"secondo",label:"2° TURNO",                color:"#f97316", count:data.secondo||0, pct:pct2},
-        ].map(f=>(
-          <div key={f.key} style={{display:"flex",justifyContent:"space-between",alignItems:"center",
-            padding:"8px 10px",background:f.color+"22",borderRadius:8,border:`1px solid ${f.color}44`}}>
-            <span style={{fontSize:13,fontWeight:800,color:f.color}}>{f.label}</span>
-            <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <span style={{fontSize:12,fontWeight:700,color:f.color,background:f.color+"22",
-                borderRadius:6,padding:"2px 7px"}}>{f.pct}%</span>
-              <span style={{fontSize:16,fontWeight:900,color:T.text}}>{f.count}</span>
+        {GRUPPI.map(f=>{
+          const isOpen = openGruppo===f.key;
+          return (
+          <div key={f.key}>
+            <div onClick={()=>setOpenGruppo(isOpen?null:f.key)}
+              style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",
+                padding:"8px 10px",background:f.color+"22",borderRadius:isOpen?"8px 8px 0 0":8,
+                border:`1px solid ${f.color}44`}}>
+              <span style={{fontSize:13,fontWeight:800,color:f.color}}>{f.label} {isOpen?"▲":"▼"}</span>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:12,fontWeight:700,color:f.color,background:f.color+"22",
+                  borderRadius:6,padding:"2px 7px"}}>{f.pct}%</span>
+                <span style={{fontSize:16,fontWeight:900,color:T.text}}>{f.count}</span>
+              </div>
             </div>
+            {isOpen&&(
+              <div style={{background:T.s2,borderRadius:"0 0 8px 8px",border:`1px solid ${f.color}44`,
+                borderTop:"none",padding:"8px 10px"}}>
+                {modelli.length===0?(
+                  <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"6px 0"}}>Nessun modello</div>
+                ):modelli.map(m=>{
+                  const attivo = gruppiManuali[m.id]
+                    ? gruppiManuali[m.id]===f.key
+                    : (data.perGruppo?.[f.key]?.[m.id]!==undefined);
+                  const info = data.perGruppo?.[f.key]?.[m.id];
+                  const c = m.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
+                  return (
+                    <div key={m.id} style={{display:"flex",alignItems:"center",gap:8,
+                      padding:"5px 6px",borderRadius:6,marginBottom:3,background:T.surface}}>
+                      <input type="checkbox" checked={attivo}
+                        onChange={()=>setGruppoModello(m.id, attivo?"":f.key)}
+                        style={{cursor:"pointer",flexShrink:0}}/>
+                      <div style={{width:8,height:8,borderRadius:"50%",background:c,flexShrink:0}}/>
+                      <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>{m.titolo}</span>
+                      <span style={{fontSize:13,fontWeight:800,color:T.text}}>{info?.count||0}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        ))}
-      </div>
-
-      <div style={{background:T.surface,borderRadius:10,padding:12}}>
-        <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:8}}>APP / AUTO</div>
-        <div style={{display:"flex",flexDirection:"column",gap:6}}>
-          {[
-            {key:"app",  label:"APP",  color:"#3b82f6", count:data.app||0},
-            {key:"auto", label:"AUTO", color:"#8b5cf6", count:data.auto||0},
-          ].map(g=>(
-            <div key={g.key} style={{display:"flex",justifyContent:"space-between",alignItems:"center",
-              padding:"8px 10px",background:g.color+"22",borderRadius:8,border:`1px solid ${g.color}44`}}>
-              <span style={{fontSize:13,fontWeight:800,color:g.color}}>{g.label}</span>
-              <span style={{fontSize:16,fontWeight:900,color:T.text}}>{g.count}</span>
-            </div>
-          ))}
-        </div>
+          );
+        })}
       </div>
 
       <div>
