@@ -1516,8 +1516,13 @@ function sortedModelli(){
     saveSettings({reports:reps});
   }
 
-  function getConteggioConfig(reportId){
-    return conteggioConfigs[reportId] || { fasceFiltro:[], modelliInclusi:[] };
+  function getConteggioConfig(reportId, reportType){
+    const saved = conteggioConfigs[reportId];
+    if(saved) return saved;
+    if(reportType==="turnazione"){
+      return { fasceFiltro:[], modelliInclusi: modelli.filter(m=>m.tempo==="6h15").map(m=>m.id) };
+    }
+    return { fasceFiltro:[], modelliInclusi:[] };
   }
 
   function updateConteggioConfig(reportId, cfg){
@@ -1817,7 +1822,7 @@ function sortedModelli(){
 
   function renderReportCard(r){
     const isOpen = openReportConfig===r.id;
-    const cfg = getConteggioConfig(r.id);
+    const cfg = getConteggioConfig(r.id, r.type);
     const data = computeConteggioForReport(cfg);
     const pct = totaleTurni>0 ? Math.round((data.totale/totaleTurni)*100) : 0;
 
@@ -1882,7 +1887,7 @@ function sortedModelli(){
             )}
             {r.type==="turnazione" && (
               <TurnazioneConfigCard T={T} r={r} cfg={cfg} data={computeTurnazioneForReport(cfg)}
-                modelli={modelli} accent={accent} fasceAutomatiche={fasceAutomatiche}
+                modelli={modelli} modelliOrdinati={sortedModelli()} accent={accent} fasceAutomatiche={fasceAutomatiche}
                 onRename={label=>renameReport(r.id, label)}
                 onUpdateCfg={newCfg=>updateConteggioConfig(r.id, newCfg)}/>
             )}
@@ -2002,7 +2007,8 @@ function sortedModelli(){
       )}
       {showReportModelliPicker&&(()=>{
         const reportId = showReportModelliPicker;
-        const cfg = getConteggioConfig(reportId);
+        const reportType = (store.reports||[]).find(rr=>rr.id===reportId)?.type;
+        const cfg = getConteggioConfig(reportId, reportType);
         const inclusi = cfg.modelliInclusi||[];
         return (
           <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:600,
@@ -4261,7 +4267,8 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, fas
   );
 }
 
-function TurnazioneConfigCard({T, r, cfg, data, modelli, accent, fasceAutomatiche, onRename, onUpdateCfg}){
+function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati, accent, fasceAutomatiche, onRename, onUpdateCfg}){
+  const modelliPerLista = modelliOrdinati || modelli;
   const [editingName, setEditingName] = useState(false);
   const [tmpName, setTmpName] = useState(r.label);
   const [openModello, setOpenModello] = useState(null);
@@ -4338,9 +4345,14 @@ function TurnazioneConfigCard({T, r, cfg, data, modelli, accent, fasceAutomatich
             {isOpen&&(
               <div style={{background:T.s2,borderRadius:"0 0 8px 8px",border:`1px solid ${f.color}44`,
                 borderTop:"none",padding:"8px 10px"}}>
-                {modelli.length===0?(
+                {modelliPerLista.length===0?(
                   <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"6px 0"}}>Nessun modello</div>
-                ):modelli.map(m=>{
+                ):[...modelliPerLista].sort((a,b)=>{
+                  const attA = gruppiManuali[a.id] ? gruppiManuali[a.id]===f.key : (data.perGruppo?.[f.key]?.[a.id]!==undefined);
+                  const attB = gruppiManuali[b.id] ? gruppiManuali[b.id]===f.key : (data.perGruppo?.[f.key]?.[b.id]!==undefined);
+                  if(attA!==attB) return attA?-1:1;
+                  return 0;
+                }).map(m=>{
                   const attivo = gruppiManuali[m.id]
                     ? gruppiManuali[m.id]===f.key
                     : (data.perGruppo?.[f.key]?.[m.id]!==undefined);
