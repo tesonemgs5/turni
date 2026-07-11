@@ -1399,10 +1399,7 @@ function sortedModelli(){
 
   function computeTurnazioneForReport(cfg){
     const {from, to} = getReportRange();
-    const modelliInclusiCfg = cfg?.modelliInclusi || [];
-    const modelliInclusi = modelliInclusiCfg.length>0
-      ? modelliInclusiCfg
-      : modelli.filter(m=>m.tempo==="6h15").map(m=>m.id);
+    const modelliInclusi = cfg?.modelliInclusi || [];
     const gruppiManuali = cfg?.gruppiManuali || {}; // { modelloId: "primo"|"secondo"|"app"|"auto" }
     const result = { totale:0, primo:0, secondo:0, app:0, auto:0 };
     const perModello = {};
@@ -1485,6 +1482,14 @@ function sortedModelli(){
     const newRep = [...(store.reports||[]), newReport];
     setStore(s=>({...s, reports:newRep}));
     saveSettings({reports:newRep});
+    if(type==="turnazione"){
+      const default6h15 = modelli.filter(m=>m.tempo==="6h15").map(m=>m.id);
+      if(default6h15.length>0){
+        const newCfg = {...conteggioConfigs, [newReport.id]: {fasceFiltro:[], modelliInclusi:default6h15}};
+        setConteggioConfigs(newCfg);
+        saveSettings({conteggio_configs: newCfg});
+      }
+    }
   }
 
   function removeReport(id){
