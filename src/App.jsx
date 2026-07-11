@@ -4343,8 +4343,25 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, fas
         </div>
         {showTurniList&&(
   <div style={{background:T.s2,borderRadius:8,padding:"8px 10px",marginBottom:8}}>
-    <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>
-      Assegna manualmente ogni modello al 1° o 2° TURNO
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+      <div style={{fontSize:10,color:T.sub,fontWeight:700}}>
+        Assegna manualmente ogni modello al 1° o 2° TURNO
+      </div>
+      <button onClick={()=>{
+          const next={...(cfg.fasceManuali||{})};
+          Object.keys(data.perModello||{}).forEach(mid=>{
+            const m=modelli.find(x=>x.id===mid);
+            if(!m || m.tempo==="h24") return;
+            const mins=oraInMinuti(m.inizio);
+            if(mins===null) return;
+            next[mid] = mins<720 ? "primo" : "secondo"; // prima delle 12:00 -> 1°, dopo -> 2°
+          });
+          onUpdateCfg({...cfg,fasceManuali:next});
+        }}
+        style={{fontSize:10,fontWeight:800,padding:"4px 8px",borderRadius:6,cursor:"pointer",
+          background:accent,color:"#fff",border:"none"}}>
+        Assegna automaticamente
+      </button>
     </div>
     {Object.entries(data.perModello||{}).map(([mid,cnt])=>{
       const m=modelli.find(x=>x.id===mid);
