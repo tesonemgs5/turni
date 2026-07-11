@@ -3354,7 +3354,8 @@ function sortedModelli(){
                       <button key={m.id}
                         onClick={()=>setForm(f=>({...f,modelloId:m.id,shiftId:null,label:m.label||m.titolo,colorOvr:null,
                           dur:m.tempo==="h24"?"allday":m.tempo==="6h15"?"fixed":"custom",
-                          tIn:m.inizio||"",tOut:m.fine||""}))}
+                          tIn:m.inizio||"",
+                          tOut:m.tempo==="6h15"&&m.inizio?calcFine6h15(m.inizio):(m.fine||"")}))}
                         style={{background:form.modelloId===m.id?c:T.surface,
                           border:`2px solid ${form.modelloId===m.id?c:T.border}`,
                           borderRadius:10,padding:"6px 10px",cursor:"pointer",
@@ -3434,7 +3435,8 @@ function sortedModelli(){
     <div style={{display:"flex",gap:8,marginBottom:8}}>
       <div style={{flex:1}}>
         <div style={{fontSize:9,color:T.sub,marginBottom:3}}>INGRESSO</div>
-        <SmartTimeInput value={form.tIn||""} onChange={v=>setForm(f=>({...f,tIn:v,tOut:""}))}
+        <SmartTimeInput value={form.tIn||""} onChange={v=>setForm(f=>({...f,tIn:v,
+          tOut: f.dur==="fixed"&&v ? calcFine6h15(v) : ""}))}
           style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
             borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
       </div>
