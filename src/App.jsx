@@ -171,6 +171,7 @@ function isFestivo(dateKey){
 // ═══════════════════════════════════════════════════════════════
 const REPORT_TEMPLATES = [
   { type:"conteggio_turni", label:"Conteggio turni", desc:"Conta i turni per fascia oraria" },
+  { type:"turnazione",      label:"Turnazione", desc:"Turni per modello con date, 1°/2° turno automatico" },
   { type:"indennita",       label:"Indennità di servizio", desc:"Calcola le indennità per fascia" },
   { type:"ore_turno",       label:"Ore per turno", desc:"Stima ore lavorate" },
   { type:"straordinari",    label:"Straordinari", desc:"Protrazioni e straordinari" },
@@ -1396,6 +1397,36 @@ function sortedModelli(){
   }
 
 
+  function computeTurnazioneForReport(cfg){
+    const {from, to} = getReportRange();
+    const modelliInclusi = cfg?.modelliInclusi || [];
+    const result = { totale:0, primo:0, secondo:0, app:0, auto:0 };
+    const perModello = {};
+    for(const [dateKey, calMap] of Object.entries(store.events)){
+      if(dateKey < from || dateKey > to) continue;
+      for(const [, evts] of Object.entries(calMap)){
+        for(const e of evts){
+          if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
+          result.totale++;
+          const modelloEvt = e.modelloId ? modelli.find(mm=>mm.id===e.modelloId) : null;
+          const isPrimo = modelloEvt && modelloEvt.tempo!=="h24" && modelloEvt.inizio
+            && inRange(minsOf(modelloEvt.inizio), 360, 705);
+          if(isPrimo) result.primo++; else result.secondo++;
+          if(e.modelloId){
+            if(!perModello[e.modelloId]) perModello[e.modelloId] = { count:0, dates:[] };
+            perModello[e.modelloId].count++;
+            perModello[e.modelloId].dates.push(dateKey);
+          }
+          const titoloEvt = (modelloEvt?.titolo||"").toUpperCase();
+          if(titoloEvt.includes("APP")) result.app++;
+          else if(titoloEvt.includes("AUTO")) result.auto++;
+        }
+      }
+    }
+    Object.values(perModello).forEach(v=>v.dates.sort());
+    return {...result, perModello};
+  }
+
   function computeConteggio(){
     return computeConteggioForReport({fasceFiltro:[]});
   }
@@ -1825,6 +1856,12 @@ function sortedModelli(){
                 onRename={label=>renameReport(r.id, label)}
                 onUpdateCfg={newCfg=>updateConteggioConfig(r.id, newCfg)}
                 onGoToModelli={()=>setScreen("modelli")}/>
+            )}
+            {r.type==="turnazione" && (
+              <TurnazioneConfigCard T={T} r={r} cfg={cfg} data={computeTurnazioneForReport(cfg)}
+                modelli={modelli} accent={accent} fasceAutomatiche={fasceAutomatiche}
+                onRename={label=>renameReport(r.id, label)}
+                onUpdateCfg={newCfg=>updateConteggioConfig(r.id, newCfg)}/>
             )}
             {r.type==="indennita" && (
               <IndennitaConfig T={T} values={indennita} setValues={setIndennita}
@@ -4192,6 +4229,129 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, fas
                 <span style={{flex:1,fontSize:12,color:T.text}}>{m.titolo}</span>
                 <span style={{fontSize:11,color:T.sub}}>{mp}%</span>
                 <span style={{fontSize:14,fontWeight:800,color:T.text}}>{cnt}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TurnazioneConfigCard({T, r, cfg, data, modelli, accent, fasceAutomatiche, onRename, onUpdateCfg}){
+  const [editingName, setEditingName] = useState(false);
+  const [tmpName, setTmpName] = useState(r.label);
+  const [openModello, setOpenModello] = useState(null);
+  const pct1 = data.totale>0 ? Math.round(((data.primo||0)/data.totale)*100) : 0;
+  const pct2 = data.totale>0 ? Math.round(((data.secondo||0)/data.totale)*100) : 0;
+
+  function fmtData(dateKey){
+    const [y,m,d] = dateKey.split("-");
+    return `${d}/${m}/${y}`;
+  }
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      <div style={{background:T.surface,borderRadius:10,padding:"10px 12px"}}>
+        <div style={{fontSize:10,color:T.sub,marginBottom:4}}>NOME REPORT</div>
+        {editingName?(
+          <div style={{display:"flex",gap:6}}>
+            <input value={tmpName} onChange={e=>setTmpName(e.target.value)}
+              style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
+                borderRadius:8,padding:"6px 10px",color:T.text,fontSize:13,outline:"none"}}/>
+            <button onClick={()=>{onRename(tmpName);setEditingName(false);}}
+              style={{background:accent,border:"none",borderRadius:8,color:"#fff",
+                padding:"6px 12px",cursor:"pointer",fontWeight:800,fontSize:12}}>✓</button>
+          </div>
+        ):(
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontSize:14,fontWeight:700,color:T.text,flex:1}}>{r.label}</span>
+            <button onClick={()=>setEditingName(true)}
+              style={{background:"none",border:"none",color:accent,cursor:"pointer",fontSize:16,padding:"0 4px"}}>✏️</button>
+          </div>
+        )}
+      </div>
+
+      <div style={{background:T.surface,borderRadius:10,padding:"10px 12px",
+        display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span style={{fontSize:10,color:T.sub,fontWeight:700}}>TOTALE TURNI</span>
+        <span style={{fontSize:20,fontWeight:900,color:T.text}}>{data.totale}</span>
+      </div>
+
+      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+        {[
+          {key:"primo",  label:"1° TURNO (06:00-11:45)", color:"#f59e0b", count:data.primo||0, pct:pct1},
+          {key:"secondo",label:"2° TURNO",                color:"#f97316", count:data.secondo||0, pct:pct2},
+        ].map(f=>(
+          <div key={f.key} style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+            padding:"8px 10px",background:f.color+"22",borderRadius:8,border:`1px solid ${f.color}44`}}>
+            <span style={{fontSize:13,fontWeight:800,color:f.color}}>{f.label}</span>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:12,fontWeight:700,color:f.color,background:f.color+"22",
+                borderRadius:6,padding:"2px 7px"}}>{f.pct}%</span>
+              <span style={{fontSize:16,fontWeight:900,color:T.text}}>{f.count}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{background:T.surface,borderRadius:10,padding:12}}>
+        <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:8}}>APP / AUTO</div>
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {[
+            {key:"app",  label:"APP",  color:"#3b82f6", count:data.app||0},
+            {key:"auto", label:"AUTO", color:"#8b5cf6", count:data.auto||0},
+          ].map(g=>(
+            <div key={g.key} style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+              padding:"8px 10px",background:g.color+"22",borderRadius:8,border:`1px solid ${g.color}44`}}>
+              <span style={{fontSize:13,fontWeight:800,color:g.color}}>{g.label}</span>
+              <span style={{fontSize:16,fontWeight:900,color:T.text}}>{g.count}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>FILTRA PER COLLEGA</div>
+        <input
+          type="text"
+          value={cfg.filtraCollega||""}
+          onChange={e=>onUpdateCfg({...cfg,filtraCollega:e.target.value})}
+          placeholder="Nome collega..."
+          style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
+            borderRadius:10,padding:"10px 14px",color:T.text,fontSize:13,
+            outline:"none",boxSizing:"border-box"}}/>
+      </div>
+
+      {modelli.length>0&&data.perModello&&Object.keys(data.perModello).length>0&&(
+        <div style={{background:T.surface,borderRadius:10,padding:12}}>
+          <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:8}}>PER MODELLO</div>
+          {Object.entries(data.perModello).map(([mid,info])=>{
+            const m=modelli.find(x=>x.id===mid);
+            if(!m) return null;
+            const c=m.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
+            const isOpen = openModello===mid;
+            return (
+              <div key={mid} style={{marginBottom:4}}>
+                <div onClick={()=>setOpenModello(isOpen?null:mid)}
+                  style={{display:"flex",alignItems:"center",gap:8,
+                    padding:"6px 8px",background:T.s2,borderRadius:isOpen?"6px 6px 0 0":6,cursor:"pointer"}}>
+                  <div style={{width:10,height:10,borderRadius:"50%",background:c}}/>
+                  <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>{m.titolo}</span>
+                  <span style={{fontSize:14,fontWeight:800,color:T.text}}>{info.count}</span>
+                  <span style={{fontSize:11,color:T.sub}}>{isOpen?"▲":"▼"}</span>
+                </div>
+                {isOpen&&(
+                  <div style={{background:T.surface,border:`1px solid ${T.border}`,borderTop:"none",
+                    borderRadius:"0 0 6px 6px",padding:"8px 10px",display:"flex",flexWrap:"wrap",gap:6}}>
+                    {info.dates.map(dk=>(
+                      <span key={dk} style={{fontSize:11,fontWeight:600,color:T.text,
+                        background:c+"18",border:`1px solid ${c}44`,borderRadius:6,padding:"3px 7px"}}>
+                        {fmtData(dk)}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })}
