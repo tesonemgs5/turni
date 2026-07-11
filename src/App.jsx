@@ -27,7 +27,19 @@ export const FASCE_AUTOMATICHE_DEFAULT = [
 export const FASCE_AUTOMATICHE = FASCE_AUTOMATICHE_DEFAULT; // retro-compat
 export const COLORE_H24 = "#64748b";
 
-function minsOf(tIn){ const [h,m]=tIn.split(":").map(Number); return h*60+m; }
+function minsOf(tIn){
+  if(!tIn) return 0;
+  let s=String(tIn).trim().replace(/["']/g,"").trim();
+  let m=s.match(/^(\d{1,2})[:.,](\d{1,2})/);
+  if(!m){
+    const digits=s.match(/^(\d{3,4})$/);
+    if(digits){ const d=digits[1].padStart(4,"0"); m=[null,d.slice(0,2),d.slice(2,4)]; }
+  }
+  if(!m) return 0;
+  const h=parseInt(m[1],10), mi=parseInt(m[2],10);
+  if(!Number.isFinite(h)||!Number.isFinite(mi)) return 0;
+  return h*60+mi;
+}
 function inRange(mins, from, to){ return from<=to ? (mins>=from && mins<to) : (mins>=from || mins<to); }
 export function getColorByTime(tIn, fasce=FASCE_AUTOMATICHE_DEFAULT){
   if(!tIn) return COLORE_H24;
@@ -139,35 +151,115 @@ function italianHols(y){
 // #region SEZIONE 4: COLOR & TIME FUNCTIONS
 // ═══════════════════════════════════════════════════════════════
 // getColorByTime / getColorLabel sono in SEZIONE 0 (ex font.jsx).
+// ─── Parser tollerante per QUALSIASI scrittura di un orario ───
+// Accetta: "6:15", "06:15", "6.15", "6,15", "615" (senza separatore),
+// "6:15:00" (con secondi), con spazi o virgolette attorno, ecc.
+// Ritorna sempre "HH:MM" a due cifre (formato canonico), oppure "" se non
+// è un orario riconoscibile (l'input era vuoto o proprio incomprensibile).
+function normalizzaOraHHMM(raw){
+  if(raw===null || raw===undefined) return "";
+  let s=String(raw).trim().replace(/["']/g,"").trim();
+  if(!s) return "";
+  // "6:15:00" -> tronca i secondi
+  s=s.replace(/^(\d{1,2}[:.,]\d{1,2})[:.,]\d{1,2}$/, "$1");
+  // separatori misti (":" "." ",") -> uniforma a ":"
+  let m=s.match(/^(\d{1,2})[:.,](\d{1,2})$/);
+  if(!m){
+    // senza separatore, es "615" (6:15) o "0615" (06:15)
+    const digits=s.match(/^(\d{1,4})$/);
+    if(digits){
+      const d=digits[1].padStart(4,"0");
+      m=[null, d.slice(0,2), d.slice(2,4)];
+    }
+  }
+  if(!m) return "";
+  let h=parseInt(m[1],10), mm=parseInt(m[2],10);
+  if(!Number.isFinite(h)||!Number.isFinite(mm)||h>23||mm>59) return "";
+  return `${String(h).padStart(2,"0")}:${String(mm).padStart(2,"0")}`;
+}
+// Converte un orario (in qualsiasi formato tollerato) in minuti dalla mezzanotte.
+function oraInMinuti(raw){
+  const hhmm=normalizzaOraHHMM(raw);
+  if(!hhmm) return null;
+  const [h,m]=hhmm.split(":").map(Number);
+  return h*60+m;
+}
 function calcFine6h15(tIn){
-  if(!tIn) return "";
-  const [h,m]=tIn.split(":").map(Number);
-  const tot=h*60+m+375;
+  const mins=oraInMinuti(tIn);
+  if(mins===null) return "";
+  const tot=mins+375;
   return `${String(Math.floor(tot/60)%24).padStart(2,"0")}:${String(tot%60).padStart(2,"0")}`;
 }
 function calcDurata(tIn,tOut){
-  if(!tIn||!tOut) return "";
-  const [h1,m1]=tIn.split(":").map(Number);
-  const [h2,m2]=tOut.split(":").map(Number);
-  let mins=(h2*60+m2)-(h1*60+m1);
+  const m1=oraInMinuti(tIn), m2=oraInMinuti(tOut);
+  if(m1===null||m2===null) return "";
+  let mins=m2-m1;
   if(mins<0) mins+=24*60;
   const hh=Math.floor(mins/60),mm=mins%60;
   return `${hh}h${mm>0?` ${mm}m`:""}`;
 }
-function isModelloTurnazioneDefault(m){
-  if(m.tempo==="6h15") return true;
-  if(m.tempo==="personalizzato" && m.inizio && m.fine){
-    const [h1,m1]=m.inizio.split(":").map(Number);
-    const [h2,m2]=m.fine.split(":").map(Number);
-    let mins=(h2*60+m2)-(h1*60+m1);
-    if(mins<0) mins+=24*60;
-    return mins===375 || mins===390; // 6h15 o 6h30
+// ─── Parser tollerante per varianti "sporche" del campo tempo ───
+// Riconosce QUALSIASI scrittura tipo: "6h15", "6h 15m", "6h15m", "6:15",
+// "06:15", "375" (minuti totali), '"6h15"' (con virgolette), spazi extra, ecc.
+// Ritorna i minuti totali (es. 375) oppure null se non è un formato riconoscibile.
+function parseMinutiDaStringaTempo(raw){
+  if(raw===null || raw===undefined) return null;
+  // numero puro -> già minuti totali
+  if(typeof raw==="number" && Number.isFinite(raw)) return raw;
+  let s=String(raw).trim();
+  if(!s) return null;
+  // rimuove virgolette (singole o doppie) e spazi superflui attorno ai numeri
+  s=s.replace(/["']/g,"").trim();
+  // stringa che è solo un numero -> minuti totali (es. "375")
+  if(/^\d+$/.test(s)) return parseInt(s,10);
+  // pattern tipo "6h15", "6h 15m", "6h15m", "6 h 15 m", "6h", "6:15", "06:15"
+  const m=s.match(/^(\d{1,2})\s*[h:]\s*(\d{1,2})?\s*m?$/i);
+  if(m){
+    const ore=parseInt(m[1],10);
+    const min=m[2]?parseInt(m[2],10):0;
+    return ore*60+min;
   }
-  return false;
+  return null;
+}
+// Calcola i minuti reali di un modello dal suo campo tempo (se è una scrittura
+// libera del tipo "6h15") oppure da inizio/fine (se presenti e validi).
+function minutiTurnoModello(m){
+  // 1) prova a leggere il campo tempo come durata scritta liberamente
+  //    (es. "6h15", "6h 15m", "6:15"...) — utile per import/dati legacy
+  //    ma SOLO se non è uno dei valori "di stato" noti del sistema.
+  if(m.tempo && m.tempo!=="personalizzato" && m.tempo!=="h24"){
+    const daTempo=parseMinutiDaStringaTempo(m.tempo);
+    if(daTempo!==null) return daTempo;
+  }
+  // 2) altrimenti calcola dalla coppia inizio/fine, se presenti (in QUALSIASI
+  //    formato tollerato, non solo "HH:MM" pulito)
+  if(m.inizio && m.fine){
+    const m1=oraInMinuti(m.inizio), m2=oraInMinuti(m.fine);
+    if(m1!==null && m2!==null){
+      let mins=m2-m1;
+      if(mins<0) mins+=24*60;
+      return mins;
+    }
+  }
+  return null;
+}
+function isModelloTurnazioneDefault(m){
+  if(m.tempo==="h24") return false; // H24 non è mai 6h15/6h30
+  const mins=minutiTurnoModello(m);
+  const isDefault = mins===375 || mins===390; // 6h15 o 6h30
+  // Segnala in console i modelli "salvati" dal parser tollerante ma che
+  // NON sono già nel formato canonico "6h15" — così emergono subito i
+  // dati sporchi da sistemare con normalizzaModelliTempo(), invece di
+  // scoprirli mesi dopo. Non blocca nulla, è solo un avviso per lo sviluppatore.
+  if(isDefault && m.tempo!=="6h15" && typeof window!=="undefined" && window.__DEBUG_MODELLI__){
+    console.warn(`[modelli] formato non standard rilevato su "${m.titolo||m.id}": tempo="${m.tempo}" inizio="${m.inizio}" fine="${m.fine}" → normalizzato a ${mins} min. Esegui normalizzaModelliTempo() per fissarlo a DB.`);
+  }
+  return isDefault;
 }
 function getShiftBand(tIn){
-  if(!tIn) return "diurno";
-  const [h]=tIn.split(":").map(Number);
+  const mins=oraInMinuti(tIn);
+  if(mins===null) return "diurno";
+  const h=Math.floor(mins/60);
   if(h>=6 && h<22) return "diurno";
   return "notturno";
 }
@@ -735,10 +827,9 @@ export default function App({ session }){
   }
 
   function calcMinuti(tIn, tOut){
-    if(!tIn||!tOut) return 0;
-    const [h1,m1]=tIn.split(":").map(Number);
-    const [h2,m2]=tOut.split(":").map(Number);
-    let mins=(h2*60+m2)-(h1*60+m1);
+    const m1=oraInMinuti(tIn), m2=oraInMinuti(tOut);
+    if(m1===null||m2===null) return 0;
+    let mins=m2-m1;
     if(mins<0) mins+=24*60;
     return mins;
   }
@@ -997,17 +1088,70 @@ export default function App({ session }){
   }
 
   async function handleLogout(){ await supabase.auth.signOut(); }
+
+  // ─── Manutenzione: standardizza tempo/inizio/fine di tutti i modelli ───
+  // Riscrive su Supabase, per ogni modello con formato "sporco", i campi:
+  //   - tempo: "6h15" quando la durata è 6h15/6h30 (qualunque fosse la scrittura originale)
+  //   - inizio: sempre in "HH:MM" pulito (es. "6.15" -> "06:15")
+  //   - fine: ricalcolata da inizio via calcFine6h15 per i modelli 6h15/6h30,
+  //           altrimenti solo normalizzata in "HH:MM" per i modelli personalizzati
+  // Va lanciata una tantum (es. da console: window.normalizzaModelliTempo())
+  // dopo aver verificato in anteprima l'elenco che stampa.
+  async function normalizzaModelliTempo({dryRun=true}={}){
+    if(!userId){ console.warn("normalizzaModelliTempo: utente non loggato"); return; }
+    function calcolaTarget(m){
+      if(m.tempo==="h24") return null; // H24 non ha inizio/fine, niente da normalizzare
+      const inizioNorm=normalizzaOraHHMM(m.inizio);
+      const mins=minutiTurnoModello(m);
+      const isDefault = mins===375 || mins===390;
+      const target = isDefault
+        ? { tempo:"6h15", inizio:inizioNorm, fine: inizioNorm?calcFine6h15(inizioNorm):(m.fine||"") }
+        : { tempo:"personalizzato", inizio:inizioNorm, fine: normalizzaOraHHMM(m.fine) };
+      const cambiato = target.tempo!==m.tempo || target.inizio!==(m.inizio||"") || target.fine!==(m.fine||"");
+      return cambiato ? target : null;
+    }
+    const daSistemare = (modelli||[])
+      .map(m=>({ m, target: calcolaTarget(m) }))
+      .filter(x=>x.target!==null);
+    if(daSistemare.length===0){ console.log("✅ Nessun modello da normalizzare, sono già tutti in formato standard."); return; }
+    console.table(daSistemare.map(({m,target})=>({
+      id:m.id, titolo:m.titolo,
+      tempo_attuale:m.tempo, tempo_nuovo:target.tempo,
+      inizio_attuale:m.inizio, inizio_nuovo:target.inizio,
+      fine_attuale:m.fine, fine_nuovo:target.fine,
+    })));
+    if(dryRun){
+      console.log(`ℹ️ Anteprima: ${daSistemare.length} modelli verrebbero normalizzati. Richiama con {dryRun:false} per applicare davvero su Supabase.`);
+      return daSistemare;
+    }
+    let ok=0, ko=0;
+    for(const {m,target} of daSistemare){
+      if((target.tempo==="6h15") && !target.inizio){
+        console.warn(`⚠️ Modello "${m.titolo}" (${m.id}) ha durata 6h15/6h30 ma nessun orario di inizio leggibile: sistemalo a mano.`);
+        ko++; continue;
+      }
+      const { error } = await supabase.from("modelli")
+        .update({ tempo:target.tempo, inizio:target.inizio, fine:target.fine })
+        .eq("id", m.id).eq("user_id", userId);
+      if(error){ console.error(`❌ Errore su "${m.titolo}" (${m.id}):`, error); ko++; }
+      else ok++;
+    }
+    console.log(`✅ Normalizzati ${ok} modelli su Supabase${ko>0?`, ${ko} da controllare a mano`:""}. Ricarica la pagina per vedere i dati aggiornati.`);
+    setModelli(prev=>prev.map(m=>{
+      const hit=daSistemare.find(d=>d.m.id===m.id);
+      return hit ? {...m, ...hit.target} : m;
+    }));
+  }
+  useEffect(()=>{
+    if(typeof window!=="undefined") window.normalizzaModelliTempo = normalizzaModelliTempo;
+  }, [modelli, userId]);
 // #endregion
 
 
 // #region SEZIONE 13: CRUD MODELLI + COLORI (con fix sync colore custom)
 // ═══════════════════════════════════════════════════════════════
 function sortedModelli(){
-  const toMins=t=>{
-    if(!t) return null;
-    const[h,m]=t.split(":").map(Number);
-    return h*60+m;
-  };
+  const toMins=t=>oraInMinuti(t);
   const INTESTAZIONI={
     "NOTTE":     -1,
     "MATTINA":   6*60-1,
@@ -1034,9 +1178,11 @@ function sortedModelli(){
   function getFasciaModello(m){
     if(m.tempo==="h24") return "libero";
     if(!m.inizio) return "libero";
-    const [h]=m.inizio.split(":").map(Number);
+    const mins=oraInMinuti(m.inizio);
+    if(mins===null) return "libero";
+    const h=Math.floor(mins/60), mi=mins%60;
     if(h>=6&&h<12) return "mattina";
-    if(h>=12&&h<16||(h===16&&parseInt((m.inizio.split(":")[1]||"0"))<30)) return "pomeriggio";
+    if(h>=12&&h<16||(h===16&&mi<30)) return "pomeriggio";
     if(h>=16&&h<23) return "terzo";
     return "notte";
   }
@@ -2645,7 +2791,7 @@ function sortedModelli(){
     setStore(s=>({...s, fasceAutomatiche:nuove}));
     saveSettings({fasce_automatiche:nuove});
   }
-  function timeToMins(t){ if(!t) return 0; const [h,m]=t.split(":").map(Number); return h*60+m; }
+  function timeToMins(t){ const mins=oraInMinuti(t); return mins===null?0:mins; }
   function minsToTime(m){ m=((m%1440)+1440)%1440; return `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`; }
 
   const settingsView = (
@@ -3143,10 +3289,9 @@ function sortedModelli(){
               {e.collega&&<div style={{color:"rgba(255,255,255,0.8)",fontSize:17,marginTop:3}}>👮 {e.collega}</div>}
               {(e.protPagFine||e.protRecFine)&&(()=>{
                 function calcDurProt(tBase, oraFine){
-                  if(!oraFine||!tBase) return "";
-                  const [h1,m1]=tBase.split(":").map(Number);
-                  const [h2,m2]=oraFine.split(":").map(Number);
-                  let d=(h2*60+m2)-(h1*60+m1);
+                  const m1=oraInMinuti(tBase), m2=oraInMinuti(oraFine);
+                  if(m1===null||m2===null) return "";
+                  let d=m2-m1;
                   if(d<0) d+=24*60;
                   return d>0?Math.floor(d/60)+"h"+(d%60>0?" "+d%60+"m":""):"";
                 }
@@ -3313,10 +3458,9 @@ function sortedModelli(){
     {(()=>{
       const tBase = form.tOut||calcFine6h15(form.tIn)||"";
       function calcDur(oraFine){
-        if(!oraFine||!tBase) return "";
-        const [h1,m1]=tBase.split(":").map(Number);
-        const [h2,m2]=oraFine.split(":").map(Number);
-        let d=(h2*60+m2)-(h1*60+m1);
+        const m1=oraInMinuti(tBase), m2=oraInMinuti(oraFine);
+        if(m1===null||m2===null) return "";
+        let d=m2-m1;
         if(d<0) d+=24*60;
         return d>0?Math.floor(d/60)+"h"+(d%60>0?" "+d%60+"m":""):"";
       }
