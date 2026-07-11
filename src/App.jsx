@@ -1886,10 +1886,15 @@ function sortedModelli(){
                   border:`1px solid ${T.border}`,borderRadius:20,padding:"6px 12px",
                   fontSize:12,fontWeight:700,color:T.text,cursor:"pointer"}}>
                 📋 Filtra modelli
-                {(cfg.modelliInclusi||[]).length>0&&(
-                  <span style={{background:accent,color:"#fff",borderRadius:10,
-                    padding:"1px 7px",fontSize:11,fontWeight:800}}>{cfg.modelliInclusi.length}</span>
-                )}
+                {(()=>{
+                  const count = r.type==="turnazione"
+                    ? [...modelli.filter(m=>isModelloTurnazioneDefault(m)&&!(cfg.modelliEsclusi||[]).includes(m.id)).map(m=>m.id), ...(cfg.modelliAggiunti||[])].length
+                    : (cfg.modelliInclusi||[]).length;
+                  return count>0&&(
+                    <span style={{background:accent,color:"#fff",borderRadius:10,
+                      padding:"1px 7px",fontSize:11,fontWeight:800}}>{count}</span>
+                  );
+                })()}
               </button>
             </div>
             {r.type==="conteggio_turni" && (
