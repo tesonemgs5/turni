@@ -1145,6 +1145,52 @@ export default function App({ session }){
   useEffect(()=>{
     if(typeof window!=="undefined") window.normalizzaModelliTempo = normalizzaModelliTempo;
   }, [modelli, userId]);
+
+  // ─── Manutenzione: sistema eventi storici con orario di uscita mancante ───
+  // Prima del fix, un evento con modello 6h15/6h30 (o INGRESSO digitato a mano)
+  // poteva salvare time_out vuoto pur mostrandolo calcolato in UI.
+  // Per ogni evento con time_in valorizzato e time_out vuoto:
+  //   - se ha un modello collegato con tempo "6h15" -> fine = calcFine6h15(time_in)
+  //   - se ha un modello collegato "personalizzato" con fine propria -> fine = mod.fine
+  //   - altrimenti (nessun modello o non determinabile) -> calcFine6h15(time_in) come fallback standard
+  // Va lanciata una tantum da console: window.normalizzaEventiTempo({dryRun:false})
+  async function normalizzaEventiTempo({dryRun=true}={}){
+    if(!userId){ console.warn("normalizzaEventiTempo: utente non loggato"); return; }
+    const { data: evts, error: fetchErr } = await supabase.from("events")
+      .select("id,date_key,time_in,time_out,modello_id,label").eq("user_id", userId);
+    if(fetchErr){ console.error("normalizzaEventiTempo: errore lettura eventi", fetchErr); return; }
+    const daSistemare = (evts||[])
+      .filter(e=>e.time_in && !e.time_out)
+      .map(e=>{
+        const mod = modelli.find(m=>m.id===e.modello_id);
+        let fineCalcolata = "";
+        if(mod && mod.tempo==="6h15") fineCalcolata = calcFine6h15(e.time_in);
+        else if(mod && mod.fine) fineCalcolata = normalizzaOraHHMM(mod.fine);
+        else fineCalcolata = calcFine6h15(e.time_in); // fallback standard 6h15
+        return { e, fineCalcolata };
+      })
+      .filter(x=>x.fineCalcolata);
+    if(daSistemare.length===0){ console.log("✅ Nessun evento da normalizzare, time_out già ok per tutti."); return; }
+    console.table(daSistemare.map(({e,fineCalcolata})=>({
+      id:e.id, data:e.date_key, label:e.label,
+      time_in:e.time_in, time_out_attuale:e.time_out||"(vuoto)", time_out_nuovo:fineCalcolata,
+    })));
+    if(dryRun){
+      console.log(`ℹ️ Anteprima: ${daSistemare.length} eventi verrebbero sistemati. Richiama con {dryRun:false} per applicare davvero su Supabase.`);
+      return daSistemare;
+    }
+    let ok=0, ko=0;
+    for(const {e,fineCalcolata} of daSistemare){
+      const { error } = await supabase.from("events")
+        .update({ time_out: fineCalcolata }).eq("id", e.id).eq("user_id", userId);
+      if(error){ console.error(`❌ Errore su evento ${e.id} (${e.date_key}):`, error); ko++; }
+      else ok++;
+    }
+    console.log(`✅ Sistemati ${ok} eventi su Supabase${ko>0?`, ${ko} da controllare a mano`:""}. Ricarica la pagina per vedere i dati aggiornati.`);
+  }
+  useEffect(()=>{
+    if(typeof window!=="undefined") window.normalizzaEventiTempo = normalizzaEventiTempo;
+  }, [modelli, userId]);
 // #endregion
 
 
@@ -3279,14 +3325,21 @@ function sortedModelli(){
             }}
             style={{background:e.color,borderRadius:10,padding:"10px 12px",marginBottom:8,cursor:"pointer",
               display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+            {(()=>{
+              const cardTextColor=getContrastTextColor(e.color);
+              const cardSubColor=cardTextColor==="#ffffff"?"rgba(255,255,255,0.85)":"rgba(15,23,42,0.75)";
+              const cardShadow=cardTextColor==="#ffffff"?"0 1px 3px rgba(0,0,0,0.3)":"none";
+              const durataEvt=(!e.allDay&&e.tIn&&e.tOut)?calcDurata(e.tIn,e.tOut):"";
+              return (
+              <>
             <div style={{flex:1}}>
-              <div style={{color:"#fff",fontSize:20,fontWeight:800,textShadow:"0 1px 3px rgba(0,0,0,0.3)"}}>{e.label}</div>
+              <div style={{color:cardTextColor,fontSize:20,fontWeight:800,textShadow:cardShadow}}>{e.label}</div>
               {!e.allDay&&e.tIn&&(
-                <div style={{color:"rgba(255,255,255,0.85)",fontSize:17,marginTop:2}}>
-                  🕐 {e.tIn}{e.tOut?` → ${e.tOut}`:""}
+                <div style={{color:cardSubColor,fontSize:17,marginTop:2}}>
+                  🕐 {e.tIn}{e.tOut?` → ${e.tOut}`:""}{durataEvt?` · ${durataEvt}`:""}
                 </div>
               )}
-              {e.collega&&<div style={{color:"rgba(255,255,255,0.8)",fontSize:17,marginTop:3}}>👮 {e.collega}</div>}
+              {e.collega&&<div style={{color:cardSubColor,fontSize:17,marginTop:3}}>👮 {e.collega}</div>}
               {(e.protPagFine||e.protRecFine)&&(()=>{
                 function calcDurProt(tBase, oraFine){
                   const m1=oraInMinuti(tBase), m2=oraInMinuti(oraFine);
@@ -3316,16 +3369,19 @@ function sortedModelli(){
                 map:e.map||"",note:e.note||"",collega:e.collega||"",auto:e.auto||"",
                 protPagFine:e.protPagFine||"",protRecFine:e.protRecFine||"",
               });}}
-              style={{background:"rgba(0,0,0,0.2)",border:"none",borderRadius:6,
-                color:"#fff",width:26,height:26,cursor:"pointer",fontSize:14,marginLeft:4,flexShrink:0,
+              style={{background:cardTextColor==="#ffffff"?"rgba(0,0,0,0.2)":"rgba(255,255,255,0.35)",border:"none",borderRadius:6,
+                color:cardTextColor,width:26,height:26,cursor:"pointer",fontSize:14,marginLeft:4,flexShrink:0,
                 display:soloConsultazione?"none":undefined}}>✏️</button>
             <button onClick={e2=>{e2.stopPropagation();
                 if(e.rotazioneId){ setShowDeleteRotEvtDialog({evt:e, dKey:dayKey, cId:calId}); }
                 else if(window.confirm("Eliminare questo evento?")){ delEvt(dayKey,calId,e.id); }
               }}
-              style={{background:"rgba(0,0,0,0.2)",border:"none",borderRadius:6,
-                color:"#fff",width:26,height:26,cursor:"pointer",fontSize:14,marginLeft:4,flexShrink:0,
+              style={{background:cardTextColor==="#ffffff"?"rgba(0,0,0,0.2)":"rgba(255,255,255,0.35)",border:"none",borderRadius:6,
+                color:cardTextColor,width:26,height:26,cursor:"pointer",fontSize:14,marginLeft:4,flexShrink:0,
                 display:soloConsultazione?"none":undefined}}>×</button>
+              </>
+              );
+            })()}
           </div>
         ))}
         {form&&(
