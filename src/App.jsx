@@ -68,7 +68,7 @@ export function getContrastTextColor(hex){
 
 // #region SEZIONE 1: IMPORTS + COSTANTI
 // ═══════════════════════════════════════════════════════════════
-import { useState, useEffect, useRef, Fragment } from "react";
+import { useState, useEffect, useRef, useMemo, Fragment } from "react";
 import { supabase } from "./supabase";
 import Tesseract from "tesseract.js";
 
@@ -104,6 +104,29 @@ function clearLocalStorageCache(){
   localStorage.removeItem('cache_calendars');
   localStorage.removeItem('cache_modelli');
   localStorage.removeItem('cache_timestamp');
+}
+// ── Helper immutabili per lo store eventi. Al posto del deep-clone completo
+// (JSON.parse(JSON.stringify(prev))) che ricopia TUTTO lo storico ad ogni
+// singola modifica, questi toccano solo il giorno/calendario interessato:
+// tutti gli altri giorni restano lo stesso riferimento (più veloce, e più
+// corretto per eventuali ottimizzazioni di render future con React.memo).
+// Usati solo nei CRUD "singolo evento" (hot path, chiamati ad ogni tap);
+// le operazioni bulk (rotazioni, import, cancellazioni massive) continuano
+// a usare il deep-clone completo perché toccano molti giorni sparsi insieme.
+function withEventoAggiunto(store, dayKey, calId, evt){
+  const dayEvents = { ...(store.events[dayKey]||{}) };
+  dayEvents[calId] = [...(dayEvents[calId]||[]), evt];
+  return { ...store, events: { ...store.events, [dayKey]: dayEvents } };
+}
+function withEventoAggiornato(store, dayKey, calId, evtId, patch){
+  const dayEvents = { ...(store.events[dayKey]||{}) };
+  dayEvents[calId] = (dayEvents[calId]||[]).map(e=>e.id===evtId?{...e,...patch}:e);
+  return { ...store, events: { ...store.events, [dayKey]: dayEvents } };
+}
+function withEventoRimosso(store, dayKey, calId, evtId){
+  const dayEvents = { ...(store.events[dayKey]||{}) };
+  dayEvents[calId] = (dayEvents[calId]||[]).filter(e=>e.id!==evtId);
+  return { ...store, events: { ...store.events, [dayKey]: dayEvents } };
 }
 // #endregion
 
@@ -256,16 +279,19 @@ function isModelloTurnazioneDefault(m){
   }
   return isDefault;
 }
-function categoriaAutomaticaModello(m){
+// ── Due assi di classificazione automatica, completamente indipendenti:
+// TURNO (1°/2°) decide solo in base all'orario di inizio.
+// APP/AUTO decide solo in base al titolo del modello.
+function categoriaTurnoAutomatica(m){
+  if(!m) return null;
+  if(m.tempo==="h24" || !m.inizio) return null; // H24 non ha una fascia oraria di inizio
+  const isPrimo = inRange(minsOf(m.inizio), 360, 705);
+  return isPrimo ? "primo" : "secondo";
+}
+function categoriaAppAutoAutomatica(m){
   if(!m) return null;
   const titoloEvt=(m.titolo||"").toUpperCase();
-  if(isModelloTurnazioneDefault(m)){
-    return titoloEvt.includes("APP") ? "app" : "auto";
-  }
-  if(titoloEvt.includes("APP")) return "app";
-  if(titoloEvt.includes("AUTO")) return "auto";
-  const isPrimo = m.tempo!=="h24" && m.inizio && inRange(minsOf(m.inizio), 360, 705);
-  return isPrimo ? "primo" : "secondo";
+  return titoloEvt.includes("APP") ? "app" : "auto";
 }
 function getShiftBand(tIn){
   const mins=oraInMinuti(tIn);
@@ -328,6 +354,15 @@ export default function App({ session }){
   const [nhD,     setNhD]     = useState("");
   const [nhM,     setNhM]     = useState("");
   const [bgSyncing, setBgSyncing] = useState(false);
+  const [dbError, setDbError] = useState("");
+  const dbErrorTimer = useRef(null);
+  function segnalaErroreDb(error, contesto){
+    console.error(`[${contesto}]`, error);
+    const msg = error?.message || "Errore sconosciuto";
+    setDbError(`⚠️ ${contesto}: ${msg}`);
+    if(dbErrorTimer.current) clearTimeout(dbErrorTimer.current);
+    dbErrorTimer.current = setTimeout(()=>setDbError(""), 6000);
+  }
   const [sheetsUrl, setSheetsUrl] = useState("");
   const [sheetsSecret, setSheetsSecret] = useState("");
   const [stats, setStats] = useState(null);
@@ -442,7 +477,8 @@ export default function App({ session }){
           colore:m.colore, coloreCustom:m.colore_custom||null,
           posizione:m.posizione||"", sortOrder:m.sort_order||0,
           calendarId:m.calendar_id||null,
-          categoria:m.categoria||"",
+          categoria:(m.categoria==="primo"||m.categoria==="secondo")?m.categoria:"",
+          categoriaAppAuto:(m.categoria_app_auto==="app"||m.categoria_app_auto==="auto")?m.categoria_app_auto:((m.categoria==="app"||m.categoria==="auto")?m.categoria:""),
         })));
 
         const { data: coloriDb } = await supabase.from("colori").select("*").eq("user_id", userId).order("created_at");
@@ -475,7 +511,8 @@ export default function App({ session }){
           colore:m.colore, coloreCustom:m.colore_custom||null,
           posizione:m.posizione||"", sortOrder:m.sort_order||0,
           calendarId:m.calendar_id||null,
-          categoria:m.categoria||"",
+          categoria:(m.categoria==="primo"||m.categoria==="secondo")?m.categoria:"",
+          categoriaAppAuto:(m.categoria_app_auto==="app"||m.categoria_app_auto==="auto")?m.categoria_app_auto:((m.categoria==="app"||m.categoria==="auto")?m.categoria:""),
         }));
 
         setStore({ calendars, events, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings, fasceAutomatiche: savedFasce });
@@ -604,19 +641,21 @@ export default function App({ session }){
     const { data, error } = await supabase.from("calendars").insert({
       user_id: userId, name, color, is_main: isFirst, shifts: [],
     }).select().maybeSingle();
-    if(error){ console.log(error); return null; }
+    if(error){ segnalaErroreDb(error, "Creazione calendario"); return null; }
     return data;
   }
   async function updateCalendar(cId, fields){
     if(!userId) return;
-    await supabase.from("calendars").update(fields).eq("id", cId).eq("user_id", userId);
+    const { error } = await supabase.from("calendars").update(fields).eq("id", cId).eq("user_id", userId);
+    if(error) segnalaErroreDb(error, "Aggiornamento calendario");
   }
   async function deleteCalendar(cId){
     if(!userId) return;
-    await supabase.from("calendars").delete().eq("id", cId).eq("user_id", userId);
+    const { error } = await supabase.from("calendars").delete().eq("id", cId).eq("user_id", userId);
+    if(error){ segnalaErroreDb(error, "Eliminazione calendario"); return; }
     const newCals = store.calendars.filter(c=>c.id!==cId);
     saveToLocalStorage(store.events, newCals, modelli);
-    if(syncMode==='on' && sheetsUrl) await saveToSheets(store.events, newCals);
+    await syncSeAttivo(store.events, newCals);
   }
 // #endregion
 
@@ -678,7 +717,7 @@ export default function App({ session }){
       prot_pag_fine: form.protPagFine||null,
       prot_rec_fine: form.protRecFine||null,
     }).select().maybeSingle();
-    if(error){ console.log(error); return; }
+    if(error){ segnalaErroreDb(error, "Salvataggio turno"); return; }
     const evt = {
       id: data.id, color, label, allDay: data.all_day,
       tIn: data.time_in||"", tOut: data.time_out||"",
@@ -690,12 +729,9 @@ export default function App({ session }){
     };
 
     setStore(prev=>{
-      const ns = JSON.parse(JSON.stringify(prev));
-      if(!ns.events[dayKey]) ns.events[dayKey]={};
-      if(!ns.events[dayKey][calId]) ns.events[dayKey][calId]=[];
-      ns.events[dayKey][calId].push(evt);
+      const ns = withEventoAggiunto(prev, dayKey, calId, evt);
       saveToLocalStorage(ns.events, ns.calendars, modelli);
-      if(syncMode==='on') saveToSheets(ns.events, ns.calendars);
+      syncSeAttivo(ns.events, ns.calendars);
       return ns;
     });
     setForm(null); setDayKey(null);
@@ -738,22 +774,19 @@ export default function App({ session }){
       prot_pag_fine: form.protPagFine||null,
       prot_rec_fine: form.protRecFine||null,
     }).eq("id", form.editId).eq("user_id", userId);
-    if(error){ console.log(error); return; }
+    if(error){ segnalaErroreDb(error, "Modifica turno"); return; }
 
     setStore(prev=>{
-      const ns = JSON.parse(JSON.stringify(prev));
-      const list = ns.events?.[dayKey]?.[calId];
-      if(list){
-        const idx = list.findIndex(e=>e.id===form.editId);
-        if(idx>-1) list[idx]={...list[idx], label, color,
-          allDay: form.dur==="allday", tIn: tInFinal, tOut: tOutFinal,
-          place: (form.place||"").toUpperCase(), map: form.map||"",
-          note: (form.note||"").toUpperCase(), modelloId: form.modelloId||null,
-          collega: (form.collega||"").toUpperCase(), auto: (form.auto||"").toUpperCase(),
-          protPagFine: form.protPagFine||"", protRecFine: form.protRecFine||"",
-        };
-      }
-      if(syncMode==='on' && sheetsUrl) saveToSheets(ns.events, ns.calendars);
+      const patch = {label, color,
+        allDay: form.dur==="allday", tIn: tInFinal, tOut: tOutFinal,
+        place: (form.place||"").toUpperCase(), map: form.map||"",
+        note: (form.note||"").toUpperCase(), modelloId: form.modelloId||null,
+        collega: (form.collega||"").toUpperCase(), auto: (form.auto||"").toUpperCase(),
+        protPagFine: form.protPagFine||"", protRecFine: form.protRecFine||"",
+      };
+      const ns = withEventoAggiornato(prev, dayKey, calId, form.editId, patch);
+      saveToLocalStorage(ns.events, ns.calendars, modelli);
+      syncSeAttivo(ns.events, ns.calendars);
       return ns;
     });
     setForm(null); setDayKey(null);
@@ -762,10 +795,9 @@ export default function App({ session }){
   async function delEvt(dKey, cId, evtId){
     await supabase.from("events").delete().eq("id", evtId).eq("user_id", userId);
     setStore(prev=>{
-      const ns=JSON.parse(JSON.stringify(prev));
-      if(ns.events?.[dKey]?.[cId])
-        ns.events[dKey][cId]=ns.events[dKey][cId].filter(e=>e.id!==evtId);
-      if(syncMode==='on' && sheetsUrl) saveToSheets(ns.events, ns.calendars);
+      const ns = withEventoRimosso(prev, dKey, cId, evtId);
+      saveToLocalStorage(ns.events, ns.calendars, modelli);
+      syncSeAttivo(ns.events, ns.calendars);
       return ns;
     });
   }
@@ -788,7 +820,7 @@ export default function App({ session }){
           ns.events[dKey][cId] = ns.events[dKey][cId].filter(e=>!idSet.has(e.id));
         }
       }
-      if(syncMode==='on' && sheetsUrl) saveToSheets(ns.events, ns.calendars);
+      syncSeAttivo(ns.events, ns.calendars);
       return ns;
     });
   }
@@ -808,7 +840,7 @@ export default function App({ session }){
           ns.events[dKey][cId] = ns.events[dKey][cId].filter(e=>!idSet.has(e.id));
         }
       }
-      if(syncMode==='on' && sheetsUrl) saveToSheets(ns.events, ns.calendars);
+      syncSeAttivo(ns.events, ns.calendars);
       return ns;
     });
   }
@@ -834,7 +866,7 @@ export default function App({ session }){
         }
       }
       saveToLocalStorage(ns.events, ns.calendars, modelli);
-      if(syncMode==='on' && sheetsUrl) saveToSheets(ns.events, ns.calendars);
+      syncSeAttivo(ns.events, ns.calendars);
       return ns;
     });
   }
@@ -870,6 +902,16 @@ export default function App({ session }){
       });
       return "✅ Esportato su Sheets";
     } catch(e){ return "❌ Errore connessione Sheets"; }
+  }
+
+  // Wrapper unico per il sync "automatico" dopo un CRUD: prima erano 15 punti
+  // diversi nel file, ciascuno con una condizione leggermente diversa
+  // (chi controllava solo syncMode, chi solo sheetsUrl, chi entrambi).
+  // Il salvataggio esplicito da pulsante ("Esporta su Sheets") continua a
+  // chiamare saveToSheets(...) direttamente, senza passare da qui.
+  async function syncSeAttivo(events, calendars, modelliOverride=modelli){
+    if(syncMode!=='on' || !sheetsUrl) return;
+    return saveToSheets(events, calendars, sheetsUrl, sheetsSecret, modelliOverride);
   }
 
   async function loadFromSheets(customUrl=sheetsUrl, customSecret=sheetsSecret){
@@ -1155,9 +1197,13 @@ export default function App({ session }){
       return hit ? {...m, ...hit.target} : m;
     }));
   }
-  useEffect(()=>{
-    if(typeof window!=="undefined") window.normalizzaModelliTempo = normalizzaModelliTempo;
-  }, [modelli, userId]);
+  // Non più esposta su window: era uno script di migrazione una tantum,
+  // già eseguito. La funzione resta definita sopra se dovesse servire ancora
+  // (richiamabile riattivando temporaneamente l'useEffect qui sotto),
+  // ma non è più raggiungibile dalla console di chiunque apra l'app pubblica.
+  // useEffect(()=>{
+  //   if(typeof window!=="undefined") window.normalizzaModelliTempo = normalizzaModelliTempo;
+  // }, [modelli, userId]);
 
   // ─── Manutenzione: sistema eventi storici con orario di uscita mancante ───
   // Prima del fix, un evento con modello 6h15/6h30 (o INGRESSO digitato a mano)
@@ -1201,15 +1247,18 @@ export default function App({ session }){
     }
     console.log(`✅ Sistemati ${ok} eventi su Supabase${ko>0?`, ${ko} da controllare a mano`:""}. Ricarica la pagina per vedere i dati aggiornati.`);
   }
-  useEffect(()=>{
-    if(typeof window!=="undefined") window.normalizzaEventiTempo = normalizzaEventiTempo;
-  }, [modelli, userId]);
+  // Stesso discorso: script di migrazione una tantum, non più esposto su window.
+  // useEffect(()=>{
+  //   if(typeof window!=="undefined") window.normalizzaEventiTempo = normalizzaEventiTempo;
+  // }, [modelli, userId]);
 // #endregion
 
 
 // #region SEZIONE 13: CRUD MODELLI + COLORI (con fix sync colore custom)
 // ═══════════════════════════════════════════════════════════════
-function sortedModelli(){
+// Memoizzato: prima veniva ricalcolato (sort completo) ad ogni singolo
+// render dell'app, anche quando i modelli non erano cambiati.
+const modelliOrdinati = useMemo(()=>{
   const toMins=t=>oraInMinuti(t);
   const INTESTAZIONI={
     "NOTTE":     -1,
@@ -1232,7 +1281,7 @@ function sortedModelli(){
     if(vA!==vB) return vA-vB;
     return (a.sortOrder||0)-(b.sortOrder||0);
   });
-}
+}, [modelli]);
 
   function getFasciaModello(m){
     if(m.tempo==="h24") return "libero";
@@ -1294,7 +1343,8 @@ function sortedModelli(){
       posizione:(data.posizione||"").toUpperCase()||null,
       sort_order:data.sortOrder||modelli.length,
       calendar_id: targetCalId,
-      categoria: data.categoria||null,
+      categoria: (data.categoria==="primo"||data.categoria==="secondo") ? data.categoria : null,
+      categoria_app_auto: (data.categoriaAppAuto==="app"||data.categoriaAppAuto==="auto") ? data.categoriaAppAuto : null,
     };
     if(data.coloreCustom) await ensureColoreRegistrato(data.coloreCustom);
     if(data.id){
@@ -1324,7 +1374,7 @@ function sortedModelli(){
 
       setModelli(prev=>{
         const updated=prev.map(m=>m.id===data.id?{...m,...data,colore:coloreEff,calendarId:targetCalId}:m);
-        if(sheetsUrl) saveToSheets(store.events, store.calendars, sheetsUrl, sheetsSecret, updated);
+        syncSeAttivo(store.events, store.calendars, updated);
         return updated;
       });
     } else {
@@ -1334,7 +1384,7 @@ function sortedModelli(){
         await supabase.from("modelli").update({sort_order:newSortOrder}).eq("id",res.id).eq("user_id",userId);
         setModelli(prev=>{
           const updated=[...prev,{...data,id:res.id,colore:coloreEff,sortOrder:newSortOrder,calendarId:targetCalId}];
-          if(sheetsUrl) saveToSheets(store.events, store.calendars, sheetsUrl, sheetsSecret, updated);
+          syncSeAttivo(store.events, store.calendars, updated);
           return updated;
         });
       }
@@ -1345,7 +1395,7 @@ function sortedModelli(){
     await supabase.from("modelli").delete().eq("id",id).eq("user_id",userId);
     setModelli(prev=>{
       const updated=prev.filter(m=>m.id!==id);
-      if(sheetsUrl) saveToSheets(store.events, store.calendars, sheetsUrl, sheetsSecret, updated);
+      syncSeAttivo(store.events, store.calendars, updated);
       return updated;
     });
   }
@@ -1356,7 +1406,7 @@ function sortedModelli(){
     const { data, error } = await supabase.from("colori").insert({
       user_id: userId, hex,
     }).select().maybeSingle();
-    if(error){ console.log(error); return; }
+    if(error){ segnalaErroreDb(error, "Aggiunta colore"); return; }
     setColoriExtra(prev=>[...prev, hex]);
   }
 
@@ -1398,7 +1448,7 @@ function sortedModelli(){
       setStore(s=>({...s, fasceAutomatiche:nuoveFasce}));
       saveSettings({fasce_automatiche:nuoveFasce});
     }
-    if(sheetsUrl) saveToSheets(store.events, store.calendars, sheetsUrl, sheetsSecret, modelli);
+    syncSeAttivo(store.events, store.calendars, modelli);
   }
 
   async function saveRotazione(data){
@@ -1508,7 +1558,7 @@ function sortedModelli(){
         }
       }
       saveToLocalStorage(ns.events, ns.calendars, modelli);
-      if(syncMode === "on" && sheetsUrl) saveToSheets(ns.events, ns.calendars);
+      syncSeAttivo(ns.events, ns.calendars);
       return ns;
     });
   }
@@ -1585,7 +1635,7 @@ function sortedModelli(){
         }
       }
       saveToLocalStorage(ns.events, ns.calendars, modelli);
-      if(syncMode === "on" && sheetsUrl) saveToSheets(ns.events, ns.calendars);
+      syncSeAttivo(ns.events, ns.calendars);
       return ns;
     });
   }
@@ -1654,24 +1704,41 @@ function sortedModelli(){
           if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
           result.totale++;
           const modelloEvt = e.modelloId ? modelli.find(mm=>mm.id===e.modelloId) : null;
-          const titoloEvt = (modelloEvt?.titolo||"").toUpperCase();
           const overrideGruppo = e.modelloId ? gruppiManuali[e.modelloId] : null;
-          let gruppo;
-          if(modelloEvt?.categoria){
-            gruppo = modelloEvt.categoria;
-          } else if(overrideGruppo){
-            gruppo = overrideGruppo;
-          } else {
-            gruppo = categoriaAutomaticaModello(modelloEvt) || "secondo";
-          }
-          result[gruppo] = (result[gruppo]||0)+1;
+          const overrideTurno = (overrideGruppo==="primo"||overrideGruppo==="secondo") ? overrideGruppo : null;
+          const overrideAppAuto = (overrideGruppo==="app"||overrideGruppo==="auto") ? overrideGruppo : null;
+
+          // ── Asse 1: TURNO (1°/2°) — indipendente, decide su categoria manuale del
+          // modello, poi override di questo report, poi automatico per orario.
+          const gruppoTurno = (modelloEvt?.categoria==="primo"||modelloEvt?.categoria==="secondo")
+            ? modelloEvt.categoria
+            : (overrideTurno || categoriaTurnoAutomatica(modelloEvt));
+
+          // ── Asse 2: APP/AUTO — indipendente, stessa priorità ma decide su titolo.
+          const gruppoAppAuto = (modelloEvt?.categoriaAppAuto==="app"||modelloEvt?.categoriaAppAuto==="auto")
+            ? modelloEvt.categoriaAppAuto
+            : (overrideAppAuto || categoriaAppAutoAutomatica(modelloEvt) || "auto");
+
           if(e.modelloId){
             if(!perModello[e.modelloId]) perModello[e.modelloId] = { count:0, dates:[] };
             perModello[e.modelloId].count++;
             perModello[e.modelloId].dates.push(dateKey);
-            if(!perGruppo[gruppo][e.modelloId]) perGruppo[gruppo][e.modelloId] = { count:0, dates:[] };
-            perGruppo[gruppo][e.modelloId].count++;
-            perGruppo[gruppo][e.modelloId].dates.push(dateKey);
+          }
+          if(gruppoTurno){
+            result[gruppoTurno] = (result[gruppoTurno]||0)+1;
+            if(e.modelloId){
+              if(!perGruppo[gruppoTurno][e.modelloId]) perGruppo[gruppoTurno][e.modelloId] = { count:0, dates:[] };
+              perGruppo[gruppoTurno][e.modelloId].count++;
+              perGruppo[gruppoTurno][e.modelloId].dates.push(dateKey);
+            }
+          }
+          if(gruppoAppAuto){
+            result[gruppoAppAuto] = (result[gruppoAppAuto]||0)+1;
+            if(e.modelloId){
+              if(!perGruppo[gruppoAppAuto][e.modelloId]) perGruppo[gruppoAppAuto][e.modelloId] = { count:0, dates:[] };
+              perGruppo[gruppoAppAuto][e.modelloId].count++;
+              perGruppo[gruppoAppAuto][e.modelloId].dates.push(dateKey);
+            }
           }
         }
       }
@@ -1790,16 +1857,13 @@ function sortedModelli(){
       all_day:allDay, time_in:tIn, time_out:tOut, place:"", map_url:"", note:"",
       modello_id:mod.id, collega:"", auto:"",
     }).select().maybeSingle();
-    if(error){ console.log(error); return; }
+    if(error){ segnalaErroreDb(error, "Inserimento rapido turno"); return; }
     const evt = { id:data.id, color, label, allDay, tIn, tOut, place:"", map:"", note:"",
       modelloId:mod.id, collega:"", auto:"" };
     setStore(prev=>{
-      const ns = JSON.parse(JSON.stringify(prev));
-      if(!ns.events[key]) ns.events[key]={};
-      if(!ns.events[key][calId]) ns.events[key][calId]=[];
-      ns.events[key][calId].push(evt);
+      const ns = withEventoAggiunto(prev, key, calId, evt);
       saveToLocalStorage(ns.events, ns.calendars, modelli);
-      if(syncMode==='on') saveToSheets(ns.events, ns.calendars);
+      syncSeAttivo(ns.events, ns.calendars);
       return ns;
     });
   }
@@ -2131,7 +2195,7 @@ function sortedModelli(){
             )}
             {r.type==="turnazione" && (
               <TurnazioneConfigCard T={T} r={r} cfg={cfg} data={computeTurnazioneForReport(cfg)}
-                modelli={modelli} modelliOrdinati={sortedModelli()} accent={accent} fasceAutomatiche={fasceAutomatiche}
+                modelli={modelli} modelliOrdinati={modelliOrdinati} accent={accent} fasceAutomatiche={fasceAutomatiche}
                 onRename={label=>renameReport(r.id, label)}
                 onUpdateCfg={newCfg=>updateConteggioConfig(r.id, newCfg)}/>
             )}
@@ -2307,7 +2371,7 @@ function sortedModelli(){
                       <span style={{fontSize:15,fontWeight:700,color:T.text}}>Tutti i modelli</span>
                     </div>
                   )}
-                  {sortedModelli().map((m,i,arr)=>{
+                  {modelliOrdinati.map((m,i,arr)=>{
                     const selezionato = inclusi.includes(m.id);
                     const colore = m.coloreCustom||colByTime(m.inizio);
                     return (
@@ -2445,8 +2509,8 @@ function sortedModelli(){
         {modelliTab==="turni"&&(()=>{
           const mainCalId = store.calendars.find(c=>c.isMain)?.id||null;
           const modelliVisibili = calId===null
-            ? sortedModelli()
-            : sortedModelli().filter(m=>{
+            ? modelliOrdinati
+            : modelliOrdinati.filter(m=>{
                 const mcid = m.calendarId||mainCalId;
                 return mcid===calId;
               });
@@ -2706,7 +2770,7 @@ function sortedModelli(){
                 </div>
               ):(
                 <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
-                  {sortedModelli().map((m,i,arr)=>{
+                  {modelliOrdinati.map((m,i,arr)=>{
                     const matchAuto = !m.coloreCustom && (
                       (m.tempo==="h24" && hex===COLORE_H24) ||
                       (m.tempo!=="h24" && m.inizio && colByTime(m.inizio)===hex)
@@ -2808,7 +2872,7 @@ function sortedModelli(){
               <div style={{width:32}}/>
             </div>
             <RotazioneForm T={T} form={rotForm} setForm={setRotForm} accent={accent} modelli={modelli}
-              sortedModelli={sortedModelli}
+              sortedModelli={modelliOrdinati}
               onSave={()=>{ saveRotazione({...rotForm,id:editRotazione?.id}); setShowRotForm(false); }}/>
           </div>
         </div>
@@ -3017,7 +3081,7 @@ function sortedModelli(){
                 await deleteCalendar(c.id);
                 const newCals=store.calendars.filter(x=>x.id!==c.id);
                 setStore(s=>({...s,calendars:newCals}));
-                if(syncMode==='on' && sheetsUrl) saveToSheets(store.events,newCals);
+                syncSeAttivo(store.events,newCals);
               }} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:18}}>×</button>
             </div>
             {exCal===c.id&&(
@@ -3090,7 +3154,7 @@ function sortedModelli(){
               const newCals=[...store.calendars,{id:dbCal.id,name:dbCal.name,color:dbCal.color,isMain:dbCal.is_main,shifts:[]}];
               setStore(s=>({...s,calendars:newCals}));
               if(!calId) setCalId(dbCal.id);
-              if(syncMode==='on' && sheetsUrl) saveToSheets(store.events,newCals);
+              syncSeAttivo(store.events,newCals);
             }
             setNcName("");
           }} style={{background:"#3b82f6",border:"none",borderRadius:8,color:"#fff",padding:"8px 14px",cursor:"pointer",fontWeight:800,fontSize:14}}>+</button>
@@ -3743,6 +3807,16 @@ function sortedModelli(){
         @keyframes calSlideInLeft { from { transform:translateX(100%); opacity:0; } to { transform:translateX(0); opacity:1; } }
         @keyframes calSlideInRight { from { transform:translateX(-100%); opacity:0; } to { transform:translateX(0); opacity:1; } }
       `}</style>
+      {dbError && (
+        <div style={{position:"fixed",top:8,left:"50%",transform:"translateX(-50%)",zIndex:9999,
+          maxWidth:440,width:"calc(100% - 24px)",background:"#ef4444",color:"#fff",
+          padding:"10px 14px",borderRadius:10,fontSize:12,fontWeight:700,
+          boxShadow:"0 4px 16px rgba(0,0,0,0.25)",display:"flex",alignItems:"center",gap:8}}
+          onClick={()=>setDbError("")}>
+          <span style={{flex:1}}>{dbError}</span>
+          <span style={{cursor:"pointer",opacity:0.8}}>✕</span>
+        </div>
+      )}
       <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>
         {screen==="cal"      && calView}
         {screen==="report"   && reportView}
@@ -3946,7 +4020,7 @@ function sortedModelli(){
             )}
             {(()=>{
               const mainCalId4 = store.calendars.find(c=>c.isMain)?.id||null;
-              const modelliPicker = sortedModelli().filter(m=>{
+              const modelliPicker = modelliOrdinati.filter(m=>{
                 const mcid = m.calendarId||mainCalId4;
                 return !calId || mcid===calId;
               });
@@ -5231,14 +5305,19 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, onSave}){
           </div>
         </div>
       )}
-      <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>CATEGORIA (per report Turnazione)</div>
+      <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>CATEGORIA TURNO (per report Turnazione)</div>
       {(()=>{
-        const catAuto = categoriaAutomaticaModello(form);
-        const renderBtn=([v,l])=>{
-          const selezionato = (form.categoria||"")===v;
-          const suggeritoDaAuto = !form.categoria && v!=="" && v===catAuto;
+        // ── Due gruppi indipendenti, ciascuno con la propria "Automatica" e
+        // il proprio campo dati: form.categoria (TURNO) e form.categoriaAppAuto
+        // (APP/AUTO). Non sono collegati fra loro in nessun modo.
+        const catAutoTurno = categoriaTurnoAutomatica(form);
+        const catAutoAppAuto = categoriaAppAutoAutomatica(form);
+        const renderBtn=(campo, catAuto)=>([v,l])=>{
+          const valoreAttuale = form[campo]||"";
+          const selezionato = valoreAttuale===v;
+          const suggeritoDaAuto = !valoreAttuale && v!=="" && v===catAuto;
           return (
-            <button key={v||l} onClick={()=>setForm(f=>({...f,categoria:v}))}
+            <button key={v||l} onClick={()=>setForm(f=>({...f,[campo]:v}))}
               style={{flex:"1 1 30%",padding:"9px 4px",borderRadius:10,cursor:"pointer",
                 fontWeight:700,fontSize:11,
                 border:suggeritoDaAuto?`2px solid ${accent}`:"2px solid transparent",
@@ -5247,14 +5326,15 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, onSave}){
           );
         };
         return (
-          <>
-            <div style={{display:"flex",gap:6,marginBottom:6}}>
-              {[["","Automatica"],["primo","1° Turno"],["secondo","2° Turno"]].map(renderBtn)}
+          <div style={{marginBottom:16}}>
+            <div style={{display:"flex",gap:6,marginBottom:10}}>
+              {[["","Automatica"],["primo","1° Turno"],["secondo","2° Turno"]].map(renderBtn("categoria", catAutoTurno))}
             </div>
-            <div style={{display:"flex",gap:6,marginBottom:16}}>
-              {[["","Automatica"],["app","APP"],["auto","AUTO"]].map(renderBtn)}
+            <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>CATEGORIA APP/AUTO (per report Turnazione)</div>
+            <div style={{display:"flex",gap:6}}>
+              {[["","Automatica"],["app","APP"],["auto","AUTO"]].map(renderBtn("categoriaAppAuto", catAutoAppAuto))}
             </div>
-          </>
+          </div>
         );
       })()}
       <div style={{fontSize:11,color:T.sub,marginTop:-10,marginBottom:16,paddingLeft:4}}>
@@ -5407,7 +5487,7 @@ function ModelloSelector({label, value, onChange, modelli, T, required=false, la
   const sel = modelli.find(m=>m.id===value);
   const [open, setOpen] = useState(false);
   const colore = sel?(sel.coloreCustom||getColorByTime(sel.inizio)):"#94a3b8";
-  const listaOrdinata = sortedModelli ? sortedModelli() : modelli;
+  const listaOrdinata = sortedModelli || modelli;
   return (
     <div style={{borderBottom:last?"none":`1px solid ${T.border}`}}>
       <div style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}
