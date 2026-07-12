@@ -3596,7 +3596,8 @@ const modelliOrdinati = useMemo(()=>{
                     background:form.colorOvr||(form.shiftId?activeCal?.shifts?.find(s=>s.id===form.shiftId)?.color:activeCal?.color)||"#94a3b8",
                     border:`2px solid ${T.border}`}}
                     onClick={e=>{e.stopPropagation();setPal(pal==="ec"?null:"ec");}}/>
-                  {pal==="ec"&&<Pal T={T} onPick={p=>{setForm(f=>({...f,colorOvr:p}));setPal(null);}} up/>}
+                  {pal==="ec"&&<Pal T={T} onPick={p=>{setForm(f=>({...f,colorOvr:p}));setPal(null);}} up
+                    coloriRecenti={[...new Set(modelli.map(m=>m.coloreCustom).filter(Boolean))]}/>}
                 </div>
                 {form.colorOvr&&(
                   <button onClick={()=>setForm(f=>({...f,colorOvr:null}))}
@@ -3875,7 +3876,7 @@ const modelliOrdinati = useMemo(()=>{
               <div style={{width:32}}/>
             </div>
             <ModelForm T={T} form={modelForm} setForm={setModelForm} accent={accent} dark={dark}
-              fasceAutomatiche={fasceAutomatiche}
+              fasceAutomatiche={fasceAutomatiche} modelli={modelli}
               onSave={async()=>{
                 await saveModello({...modelForm,id:editModello?.id});
                 setShowModelForm(false);
@@ -5157,21 +5158,42 @@ function HexColorPicker({T, value, onChange}){
   );
 }
 
-function Pal({T, cur, onPick, up=false}){
+function Pal({T, cur, onPick, up=false, coloriRecenti=null}){
+  const [espansa,setEspansa]=useState(!coloriRecenti || coloriRecenti.length===0);
   return (
     <div style={{position:"absolute",zIndex:500,
       ...(up?{bottom:30,left:0}:{top:30,left:0}),
       background:T.surface,border:`1px solid ${T.border}`,
-      borderRadius:12,padding:10,boxShadow:"0 8px 32px rgba(0,0,0,0.25)"}}
+      borderRadius:12,padding:10,boxShadow:"0 8px 32px rgba(0,0,0,0.25)",width:200}}
       onClick={e=>e.stopPropagation()}>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:6}}>
-        {PALETTE.map(p=>(
-          <div key={p} onClick={()=>onPick(p)}
-            style={{width:24,height:24,borderRadius:"50%",background:p,cursor:"pointer",
-              outline:cur===p?`3px solid ${p==="#ffffff"?"#000":"#fff"}`:"none",
-              outlineOffset:2}}/>
-        ))}
-      </div>
+      {!espansa&&coloriRecenti&&coloriRecenti.length>0&&(
+        <>
+          <div style={{fontSize:10,fontWeight:700,color:T.sub,marginBottom:6,paddingLeft:2}}>USATI DI RECENTE</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:6,marginBottom:8}}>
+            {coloriRecenti.map(p=>(
+              <div key={p} onClick={()=>onPick(p)}
+                style={{width:24,height:24,borderRadius:"50%",background:p,cursor:"pointer",
+                  outline:cur===p?`3px solid ${p==="#ffffff"?"#000":"#fff"}`:"none",
+                  outlineOffset:2}}/>
+            ))}
+          </div>
+          <button onClick={()=>setEspansa(true)}
+            style={{width:"100%",background:T.s2,border:"none",borderRadius:8,
+              padding:"6px 0",fontSize:11,fontWeight:700,color:T.sub,cursor:"pointer"}}>
+            Altri colori…
+          </button>
+        </>
+      )}
+      {espansa&&(
+        <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:6}}>
+          {PALETTE.map(p=>(
+            <div key={p} onClick={()=>onPick(p)}
+              style={{width:24,height:24,borderRadius:"50%",background:p,cursor:"pointer",
+                outline:cur===p?`3px solid ${p==="#ffffff"?"#000":"#fff"}`:"none",
+                outlineOffset:2}}/>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -5279,11 +5301,12 @@ function ModelloCard({m, T, accent, fasceAutomatiche, onEdit, onDelete, onMoveUp
   );
 }
 
-function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, onSave}){
+function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[], onSave}){
   const autoColore=form.tempo==="h24"?"#64748b":getColorByTime(form.inizio, fasceAutomatiche);
   const coloreVis=form.coloreCustom||autoColore;
   const fineAuto=form.tempo==="6h15"&&form.inizio?calcFine6h15(form.inizio):null;
   const [showPal,setShowPal]=useState(false);
+  const [showPalTutti,setShowPalTutti]=useState(false);
   return (
     <div style={{padding:"16px 14px 40px"}}>
       <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:8}}>
@@ -5402,15 +5425,35 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, onSave}){
               style={{background:"none",border:"none",color:T.sub,fontSize:11,cursor:"pointer",flexShrink:0}}>↩ auto</button>
           )}
         </div>
-        {showPal&&(
-          <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8,marginTop:12}}>
-            {PALETTE.map(p=>(
-              <div key={p} onClick={()=>{setForm(f=>({...f,coloreCustom:p}));setShowPal(false);}}
-                style={{width:32,height:32,borderRadius:"50%",background:p,cursor:"pointer",
-                  outline:coloreVis===p?`3px solid #64748b`:"none",outlineOffset:2}}/>
-            ))}
-          </div>
-        )}
+        {showPal&&(()=>{
+          const coloriRecenti=[...new Set(modelli.map(m=>m.coloreCustom).filter(Boolean))];
+          const mostraRecenti = coloriRecenti.length>0 && !showPalTutti;
+          return mostraRecenti ? (
+            <div style={{marginTop:12}}>
+              <div style={{fontSize:10,fontWeight:700,color:T.sub,marginBottom:6}}>USATI DI RECENTE</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8,marginBottom:8}}>
+                {coloriRecenti.map(p=>(
+                  <div key={p} onClick={()=>{setForm(f=>({...f,coloreCustom:p}));setShowPal(false);}}
+                    style={{width:32,height:32,borderRadius:"50%",background:p,cursor:"pointer",
+                      outline:coloreVis===p?`3px solid #64748b`:"none",outlineOffset:2}}/>
+                ))}
+              </div>
+              <button onClick={()=>setShowPalTutti(true)}
+                style={{width:"100%",background:T.s2,border:"none",borderRadius:8,
+                  padding:"7px 0",fontSize:12,fontWeight:700,color:T.sub,cursor:"pointer"}}>
+                Altri colori…
+              </button>
+            </div>
+          ) : (
+            <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8,marginTop:12}}>
+              {PALETTE.map(p=>(
+                <div key={p} onClick={()=>{setForm(f=>({...f,coloreCustom:p}));setShowPal(false);}}
+                  style={{width:32,height:32,borderRadius:"50%",background:p,cursor:"pointer",
+                    outline:coloreVis===p?`3px solid #64748b`:"none",outlineOffset:2}}/>
+              ))}
+            </div>
+          );
+        })()}
       </div>
 
       <button onClick={onSave}
