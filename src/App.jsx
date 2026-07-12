@@ -2742,13 +2742,14 @@ const modelliOrdinati = useMemo(()=>{
           <div style={{background:T.surface,borderRadius:16,width:"100%",maxWidth:360,padding:20}}
             onClick={e=>e.stopPropagation()}>
             <div style={{fontSize:16,fontWeight:900,color:T.text,marginBottom:14}}>Aggiungi colore</div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8,marginBottom:10}}>
               {PALETTE.map(p=>(
                 <div key={p} onClick={()=>{addColoreExtra(p);setShowAddColorPicker(false);}}
                   style={{width:32,height:32,borderRadius:"50%",background:p,cursor:"pointer",
                     border:`2px solid ${T.border}`}}/>
               ))}
             </div>
+            <HexColorPicker T={T} value="#000000" onChange={p=>{addColoreExtra(p);setShowAddColorPicker(false);}}/>
             <button onClick={()=>setShowAddColorPicker(false)}
               style={{width:"100%",marginTop:16,background:T.s2,border:`1px solid ${T.border}`,
                 borderRadius:10,color:T.sub,padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:13}}>
@@ -2848,6 +2849,28 @@ const modelliOrdinati = useMemo(()=>{
             <div style={{fontSize:12,color:T.sub,marginBottom:14}}>
               Attuale: {showEditFasciaColor.toUpperCase()}. Scegli il nuovo colore dalla palette.
             </div>
+            {(()=>{
+              const coloriUsati=[...new Set(modelli.map(m=>m.coloreCustom||(m.tempo==="h24"?COLORE_H24:colByTime(m.inizio))).filter(Boolean))]
+                .filter(h=>h!==showEditFasciaColor);
+              return coloriUsati.length>0 ? (
+                <>
+                  <div style={{fontSize:12,color:T.sub,fontWeight:700,marginBottom:6}}>USATI</div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8,marginBottom:14}}>
+                    {coloriUsati.map(p=>(
+                      <div key={p} onClick={async()=>{
+                        const old = showEditFasciaColor;
+                        setShowEditFasciaColor(null);
+                        setShowColorAssignPicker(p);
+                        await replaceColoreEverywhere(old, p);
+                      }}
+                        style={{width:32,height:32,borderRadius:"50%",background:p,cursor:"pointer",
+                          border:`2px solid ${T.border}`}}/>
+                    ))}
+                  </div>
+                  <div style={{fontSize:12,color:T.sub,fontWeight:700,marginBottom:6}}>TUTTI I COLORI</div>
+                </>
+              ) : null;
+            })()}
             <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8}}>
               {PALETTE.map(p=>(
                 <div key={p} onClick={async()=>{
@@ -3063,7 +3086,9 @@ const modelliOrdinati = useMemo(()=>{
                 <div style={{width:24,height:24,borderRadius:"50%",background:c.color,
                   border:`2px solid ${T.border}`,cursor:"pointer"}}
                   onClick={e=>{e.stopPropagation();setPal(pal===c.id?null:c.id);}}/>
-                {pal===c.id&&<Pal T={T} cur={c.color} onPick={p=>{
+                {pal===c.id&&<Pal T={T} cur={c.color}
+                  coloriUsati={[...new Set(store.calendars.map(cc=>cc.color).filter(Boolean))]}
+                  onPick={p=>{
                   const newCals=JSON.parse(JSON.stringify(store.calendars));
                   newCals[ci].color=p;
                   setStore(s=>({...s,calendars:newCals}));
@@ -3113,7 +3138,9 @@ const modelliOrdinati = useMemo(()=>{
                     <div style={{position:"relative",flexShrink:0}}>
                       <div style={{width:20,height:20,borderRadius:"50%",background:sh.color,cursor:"pointer"}}
                         onClick={e=>{e.stopPropagation();setPal(pal===sh.id?null:sh.id);}}/>
-                      {pal===sh.id&&<Pal T={T} cur={sh.color} onPick={p=>{
+                      {pal===sh.id&&<Pal T={T} cur={sh.color}
+                        coloriUsati={[...new Set((c.shifts||[]).map(s2=>s2.color).filter(Boolean))]}
+                        onPick={p=>{
                         const newCals=JSON.parse(JSON.stringify(store.calendars));
                         newCals[ci].shifts[si].color=p;
                         setStore(s=>({...s,calendars:newCals}));
@@ -3138,7 +3165,9 @@ const modelliOrdinati = useMemo(()=>{
                     <div style={{width:22,height:22,borderRadius:"50%",background:nsColor,
                       border:`2px solid ${T.border}`,cursor:"pointer"}}
                       onClick={e=>{e.stopPropagation();setPal(pal==="ns"?null:"ns");}}/>
-                    {pal==="ns"&&<Pal T={T} cur={nsColor} onPick={p=>{setNsColor(p);setPal(null);}}/>}
+                    {pal==="ns"&&<Pal T={T} cur={nsColor}
+                      coloriUsati={[...new Set((c.shifts||[]).map(s2=>s2.color).filter(Boolean))]}
+                      onPick={p=>{setNsColor(p);setPal(null);}}/>}
                   </div>
                   <input value={nsName} onChange={e=>setNsName(e.target.value)} placeholder="Nome turno..."
                     style={{flex:1,background:T.surface,border:`1px solid ${T.border}`,
@@ -3162,7 +3191,9 @@ const modelliOrdinati = useMemo(()=>{
             <div style={{width:24,height:24,borderRadius:"50%",background:ncColor,
               border:`2px solid ${T.border}`,cursor:"pointer"}}
               onClick={e=>{e.stopPropagation();setPal(pal==="nc"?null:"nc");}}/>
-            {pal==="nc"&&<Pal T={T} cur={ncColor} onPick={p=>{setNcColor(p);setPal(null);}}/>}
+            {pal==="nc"&&<Pal T={T} cur={ncColor}
+              coloriUsati={[...new Set(store.calendars.map(cc=>cc.color).filter(Boolean))]}
+              onPick={p=>{setNcColor(p);setPal(null);}}/>}
           </div>
           <input value={ncName} onChange={e=>setNcName(e.target.value)} placeholder="Nome calendario..."
             style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
@@ -3597,7 +3628,7 @@ const modelliOrdinati = useMemo(()=>{
                     border:`2px solid ${T.border}`}}
                     onClick={e=>{e.stopPropagation();setPal(pal==="ec"?null:"ec");}}/>
                   {pal==="ec"&&<Pal T={T} onPick={p=>{setForm(f=>({...f,colorOvr:p}));setPal(null);}} up
-                    coloriRecenti={[...new Set(modelli.map(m=>m.coloreCustom).filter(Boolean))]}/>}
+                    coloriUsati={[...new Set(modelli.map(m=>m.coloreCustom||(m.tempo==="h24"?COLORE_H24:colByTime(m.inizio))).filter(Boolean))]}/>}
                 </div>
                 {form.colorOvr&&(
                   <button onClick={()=>setForm(f=>({...f,colorOvr:null}))}
@@ -5158,42 +5189,39 @@ function HexColorPicker({T, value, onChange}){
   );
 }
 
-function Pal({T, cur, onPick, up=false, coloriRecenti=null}){
-  const [espansa,setEspansa]=useState(!coloriRecenti || coloriRecenti.length===0);
+function Pal({T, cur, onPick, up=false, coloriUsati=null}){
   return (
     <div style={{position:"absolute",zIndex:500,
       ...(up?{bottom:30,left:0}:{top:30,left:0}),
       background:T.surface,border:`1px solid ${T.border}`,
-      borderRadius:12,padding:10,boxShadow:"0 8px 32px rgba(0,0,0,0.25)",width:200}}
+      borderRadius:12,padding:10,boxShadow:"0 8px 32px rgba(0,0,0,0.25)",width:200,
+      maxHeight:320,overflowY:"auto"}}
       onClick={e=>e.stopPropagation()}>
-      {!espansa&&coloriRecenti&&coloriRecenti.length>0&&(
+      {coloriUsati&&coloriUsati.length>0&&(
         <>
-          <div style={{fontSize:10,fontWeight:700,color:T.sub,marginBottom:6,paddingLeft:2}}>USATI DI RECENTE</div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:6,marginBottom:8}}>
-            {coloriRecenti.map(p=>(
+          <div style={{fontSize:10,fontWeight:700,color:T.sub,marginBottom:6,paddingLeft:2}}>USATI</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:6,marginBottom:10}}>
+            {coloriUsati.map(p=>(
               <div key={p} onClick={()=>onPick(p)}
                 style={{width:24,height:24,borderRadius:"50%",background:p,cursor:"pointer",
                   outline:cur===p?`3px solid ${p==="#ffffff"?"#000":"#fff"}`:"none",
                   outlineOffset:2}}/>
             ))}
           </div>
-          <button onClick={()=>setEspansa(true)}
-            style={{width:"100%",background:T.s2,border:"none",borderRadius:8,
-              padding:"6px 0",fontSize:11,fontWeight:700,color:T.sub,cursor:"pointer"}}>
-            Altri colori…
-          </button>
+          <div style={{fontSize:10,fontWeight:700,color:T.sub,marginBottom:6,paddingLeft:2}}>TUTTI I COLORI</div>
         </>
       )}
-      {espansa&&(
-        <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:6}}>
-          {PALETTE.map(p=>(
-            <div key={p} onClick={()=>onPick(p)}
-              style={{width:24,height:24,borderRadius:"50%",background:p,cursor:"pointer",
-                outline:cur===p?`3px solid ${p==="#ffffff"?"#000":"#fff"}`:"none",
-                outlineOffset:2}}/>
-          ))}
-        </div>
-      )}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:6}}>
+        {PALETTE.map(p=>(
+          <div key={p} onClick={()=>onPick(p)}
+            style={{width:24,height:24,borderRadius:"50%",background:p,cursor:"pointer",
+              outline:cur===p?`3px solid ${p==="#ffffff"?"#000":"#fff"}`:"none",
+              outlineOffset:2}}/>
+        ))}
+      </div>
+      <div style={{marginTop:8}}>
+        <HexColorPicker T={T} value={cur||"#000000"} onChange={onPick}/>
+      </div>
     </div>
   );
 }
@@ -5306,7 +5334,6 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[]
   const coloreVis=form.coloreCustom||autoColore;
   const fineAuto=form.tempo==="6h15"&&form.inizio?calcFine6h15(form.inizio):null;
   const [showPal,setShowPal]=useState(false);
-  const [showPalTutti,setShowPalTutti]=useState(false);
   return (
     <div style={{padding:"16px 14px 40px"}}>
       <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:8}}>
@@ -5426,31 +5453,30 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[]
           )}
         </div>
         {showPal&&(()=>{
-          const coloriRecenti=[...new Set(modelli.map(m=>m.coloreCustom).filter(Boolean))];
-          const mostraRecenti = coloriRecenti.length>0 && !showPalTutti;
-          return mostraRecenti ? (
+          const coloriUsati=[...new Set(modelli.map(m=>m.coloreCustom||(m.tempo==="h24"?COLORE_H24:getColorByTime(m.inizio, fasceAutomatiche))).filter(Boolean))];
+          return (
             <div style={{marginTop:12}}>
-              <div style={{fontSize:10,fontWeight:700,color:T.sub,marginBottom:6}}>USATI DI RECENTE</div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8,marginBottom:8}}>
-                {coloriRecenti.map(p=>(
+              {coloriUsati.length>0&&(
+                <>
+                  <div style={{fontSize:10,fontWeight:700,color:T.sub,marginBottom:6}}>USATI</div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8,marginBottom:10}}>
+                    {coloriUsati.map(p=>(
+                      <div key={p} onClick={()=>{setForm(f=>({...f,coloreCustom:p}));setShowPal(false);}}
+                        style={{width:32,height:32,borderRadius:"50%",background:p,cursor:"pointer",
+                          outline:coloreVis===p?`3px solid #64748b`:"none",outlineOffset:2}}/>
+                    ))}
+                  </div>
+                  <div style={{fontSize:10,fontWeight:700,color:T.sub,marginBottom:6}}>TUTTI I COLORI</div>
+                </>
+              )}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8,marginBottom:10}}>
+                {PALETTE.map(p=>(
                   <div key={p} onClick={()=>{setForm(f=>({...f,coloreCustom:p}));setShowPal(false);}}
                     style={{width:32,height:32,borderRadius:"50%",background:p,cursor:"pointer",
                       outline:coloreVis===p?`3px solid #64748b`:"none",outlineOffset:2}}/>
                 ))}
               </div>
-              <button onClick={()=>setShowPalTutti(true)}
-                style={{width:"100%",background:T.s2,border:"none",borderRadius:8,
-                  padding:"7px 0",fontSize:12,fontWeight:700,color:T.sub,cursor:"pointer"}}>
-                Altri colori…
-              </button>
-            </div>
-          ) : (
-            <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8,marginTop:12}}>
-              {PALETTE.map(p=>(
-                <div key={p} onClick={()=>{setForm(f=>({...f,coloreCustom:p}));setShowPal(false);}}
-                  style={{width:32,height:32,borderRadius:"50%",background:p,cursor:"pointer",
-                    outline:coloreVis===p?`3px solid #64748b`:"none",outlineOffset:2}}/>
-              ))}
+              <HexColorPicker T={T} value={coloreVis} onChange={p=>setForm(f=>({...f,coloreCustom:p}))}/>
             </div>
           );
         })()}
