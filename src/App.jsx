@@ -290,6 +290,7 @@ function categoriaTurnoAutomatica(m){
 }
 function categoriaAppAutoAutomatica(m){
   if(!m) return null;
+  if(m.tempo==="h24") return null; // H24 non ha mai categoria APP/AUTO
   const titoloEvt=(m.titolo||"").toUpperCase();
   return titoloEvt.includes("APP") ? "app" : "auto";
 }
@@ -5280,7 +5281,7 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, onSave}){
       <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>DURATA TURNO</div>
       <div style={{display:"flex",gap:8,marginBottom:16}}>
         {[["h24","H24"],["6h15","6h 15m"],["personalizzato","Personalizzato"]].map(([v,l])=>(
-          <button key={v} onClick={()=>setForm(f=>({...f,tempo:v}))}
+          <button key={v} onClick={()=>setForm(f=>({...f,tempo:v, categoriaAppAuto: v==="h24" ? "" : f.categoriaAppAuto}))}
             style={{flex:1,padding:"10px 4px",borderRadius:10,border:"none",cursor:"pointer",
               fontWeight:700,fontSize:12,
               background:form.tempo===v?accent:T.s2,
@@ -5316,8 +5317,9 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, onSave}){
           const valoreAttuale = form[campo]||"";
           const selezionato = valoreAttuale===v;
           const suggeritoDaAuto = !valoreAttuale && v!=="" && v===catAuto;
+          const nuovoValore = (selezionato && v!=="") ? "" : v;
           return (
-            <button key={v||l} onClick={()=>setForm(f=>({...f,[campo]:v}))}
+            <button key={v||l} onClick={()=>setForm(f=>({...f,[campo]:nuovoValore}))}
               style={{flex:"1 1 30%",padding:"9px 4px",borderRadius:10,cursor:"pointer",
                 fontWeight:700,fontSize:11,
                 border:suggeritoDaAuto?`2px solid ${accent}`:"2px solid transparent",
@@ -5325,15 +5327,20 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, onSave}){
                 color:selezionato?"#fff":(suggeritoDaAuto?accent:T.sub)}}>{l}</button>
           );
         };
+        const isH24 = form.tempo==="h24";
         return (
           <div style={{marginBottom:16}}>
             <div style={{display:"flex",gap:6,marginBottom:10}}>
               {[["","Automatica"],["primo","1° Turno"],["secondo","2° Turno"]].map(renderBtn("categoria", catAutoTurno))}
             </div>
-            <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>CATEGORIA APP/AUTO (per report Turnazione)</div>
-            <div style={{display:"flex",gap:6}}>
-              {[["","Automatica"],["app","APP"],["auto","AUTO"]].map(renderBtn("categoriaAppAuto", catAutoAppAuto))}
-            </div>
+            {!isH24 && (
+              <>
+                <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>CATEGORIA APP/AUTO (per report Turnazione)</div>
+                <div style={{display:"flex",gap:6}}>
+                  {[["","Automatica"],["app","APP"],["auto","AUTO"]].map(renderBtn("categoriaAppAuto", catAutoAppAuto))}
+                </div>
+              </>
+            )}
           </div>
         );
       })()}
