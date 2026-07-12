@@ -1346,6 +1346,7 @@ const modelliOrdinati = useMemo(()=>{
       calendar_id: targetCalId,
       categoria: (data.categoria==="primo"||data.categoria==="secondo") ? data.categoria : null,
       categoria_app_auto: (data.categoriaAppAuto==="app"||data.categoriaAppAuto==="auto") ? data.categoriaAppAuto : null,
+      categoria_manuale_vuota: !!data.categoriaManualeVuota,
     };
     if(data.coloreCustom) await ensureColoreRegistrato(data.coloreCustom);
     if(data.id){
@@ -1711,14 +1712,20 @@ const modelliOrdinati = useMemo(()=>{
 
           // ── Asse 1: TURNO (1°/2°) — indipendente, decide su categoria manuale del
           // modello, poi override di questo report, poi automatico per orario.
-          const gruppoTurno = (modelloEvt?.categoria==="primo"||modelloEvt?.categoria==="secondo")
-            ? modelloEvt.categoria
-            : (overrideTurno || categoriaTurnoAutomatica(modelloEvt));
+          // Se l'utente ha esplicitamente deselezionato tutto, niente auto: nessun gruppo.
+          const gruppoTurno = modelloEvt?.categoria_manuale_vuota
+            ? null
+            : ((modelloEvt?.categoria==="primo"||modelloEvt?.categoria==="secondo")
+              ? modelloEvt.categoria
+              : (overrideTurno || categoriaTurnoAutomatica(modelloEvt)));
 
           // ── Asse 2: APP/AUTO — indipendente, stessa priorità ma decide su titolo.
-          const gruppoAppAuto = (modelloEvt?.categoriaAppAuto==="app"||modelloEvt?.categoriaAppAuto==="auto")
-            ? modelloEvt.categoriaAppAuto
-            : (overrideAppAuto || categoriaAppAutoAutomatica(modelloEvt) || "auto");
+          // Se l'utente ha esplicitamente deselezionato tutto, niente auto: nessun gruppo.
+          const gruppoAppAuto = modelloEvt?.categoria_manuale_vuota
+            ? null
+            : ((modelloEvt?.categoriaAppAuto==="app"||modelloEvt?.categoriaAppAuto==="auto")
+              ? modelloEvt.categoriaAppAuto
+              : (overrideAppAuto || categoriaAppAutoAutomatica(modelloEvt) || "auto"));
 
           if(e.modelloId){
             if(!perModello[e.modelloId]) perModello[e.modelloId] = { count:0, dates:[] };
@@ -2532,7 +2539,8 @@ const modelliOrdinati = useMemo(()=>{
                     onEdit={()=>{ if(!showMoveMode){ setEditModello(m); setModelForm({
                       ...m,
                       categoria:(m.categoria==="primo"||m.categoria==="secondo")?m.categoria:"",
-                      categoriaAppAuto:(m.categoria_app_auto==="app"||m.categoria_app_auto==="auto")?m.categoria_app_auto:((m.categoria==="app"||m.categoria==="auto")?m.categoria:"")
+                      categoriaAppAuto:(m.categoria_app_auto==="app"||m.categoria_app_auto==="auto")?m.categoria_app_auto:((m.categoria==="app"||m.categoria==="auto")?m.categoria:""),
+                      categoriaManualeVuota: !!m.categoria_manuale_vuota
                     }); setShowModelForm(true); } }}
                     onDelete={()=>deleteModello(m.id)}
                     onMoveUp={showMoveMode?()=>moveH24(m.id,"up"):null}
@@ -2601,7 +2609,8 @@ const modelliOrdinati = useMemo(()=>{
                     if(m){ setEditModello(m); setModelForm({
                       ...m,
                       categoria:(m.categoria==="primo"||m.categoria==="secondo")?m.categoria:"",
-                      categoriaAppAuto:(m.categoria_app_auto==="app"||m.categoria_app_auto==="auto")?m.categoria_app_auto:((m.categoria==="app"||m.categoria==="auto")?m.categoria:"")
+                      categoriaAppAuto:(m.categoria_app_auto==="app"||m.categoria_app_auto==="auto")?m.categoria_app_auto:((m.categoria==="app"||m.categoria==="auto")?m.categoria:""),
+                      categoriaManualeVuota: !!m.categoria_manuale_vuota
                     }); setShowModelForm(true); setSelectedModelloIds([]); }
                   }}
                   style={{background:accent,border:"none",borderRadius:8,
@@ -5327,7 +5336,7 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, onSave}){
           const suggeritoDaAuto = !valoreAttuale && v!=="" && v===catAuto;
           const nuovoValore = (selezionato && v!=="") ? "" : v;
           return (
-            <button key={v||l} onClick={()=>setForm(f=>({...f,[campo]:nuovoValore}))}
+            <button key={v||l} onClick={()=>setForm(f=>({...f,[campo]:nuovoValore,categoriaManualeVuota:false}))}
               style={{flex:"1 1 30%",padding:"9px 4px",borderRadius:10,cursor:"pointer",
                 fontWeight:700,fontSize:11,
                 border:suggeritoDaAuto?`2px solid ${accent}`:"2px solid transparent",
@@ -5344,18 +5353,16 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, onSave}){
             {!isH24 && (
               <>
                 <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>CATEGORIA APP/AUTO (per report Turnazione)</div>
-                <div style={{display:"flex",gap:6,marginBottom:10}}>
+                <div style={{display:"flex",gap:6}}>
                   {[["","Automatica"],["app","APP"],["auto","AUTO"]].map(renderBtn("categoriaAppAuto", catAutoAppAuto))}
                 </div>
               </>
             )}
-            {(!!(form.categoria) || !!(form.categoriaAppAuto)) && (
-              <button onClick={()=>setForm(f=>({...f,categoria:"",categoriaAppAuto:""}))}
-                style={{marginTop:4,width:"100%",padding:"8px 4px",borderRadius:10,border:"none",cursor:"pointer",
-                  fontWeight:700,fontSize:11,background:"transparent",color:"#ef4444",textDecoration:"underline"}}>
-                Deseleziona tutto (torna ad Automatica)
-              </button>
-            )}
+            <button onClick={()=>setForm(f=>({...f,categoria:"",categoriaAppAuto:"",categoriaManualeVuota:true}))}
+              style={{marginTop:10,width:"100%",padding:"8px 4px",borderRadius:10,border:"none",cursor:"pointer",
+                fontWeight:700,fontSize:11,background:"transparent",color:"#ef4444",textDecoration:"underline"}}>
+              Deseleziona tutto (nessuna categoria)
+            </button>
           </div>
         );
       })()}
