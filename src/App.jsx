@@ -1288,6 +1288,29 @@ function sortedModelli(){
     if(data.coloreCustom) await ensureColoreRegistrato(data.coloreCustom);
     if(data.id){
       await supabase.from("modelli").update(payload).eq("id",data.id).eq("user_id",userId);
+
+      // ── Retroattivo: propaga le modifiche a tutti i turni già in calendario
+      const labelNuova = (data.label||data.titolo||"").toUpperCase();
+      const tInNuovo = data.tempo==="h24" ? "" : (data.inizio||"");
+      const tOutNuovo = data.tempo==="h24" ? "" : (data.tempo==="6h15" ? (calcFine6h15(data.inizio)||"") : (data.fine||""));
+      await supabase.from("events").update({
+        label: labelNuova, color: coloreEff, time_in: tInNuovo, time_out: tOutNuovo,
+      }).eq("modello_id", data.id).eq("user_id", userId);
+      setStore(prev=>{
+        const ns = JSON.parse(JSON.stringify(prev));
+        Object.keys(ns.events||{}).forEach(dk=>{
+          Object.keys(ns.events[dk]||{}).forEach(cid=>{
+            ns.events[dk][cid] = (ns.events[dk][cid]||[]).map(e=>
+              e.modelloId===data.id
+                ? {...e, label:labelNuova, color:coloreEff, tIn:tInNuovo, tOut:tOutNuovo}
+                : e
+            );
+          });
+        });
+        saveToLocalStorage(ns.events, ns.calendars, modelli);
+        return ns;
+      });
+
       setModelli(prev=>{
         const updated=prev.map(m=>m.id===data.id?{...m,...data,colore:coloreEff,calendarId:targetCalId}:m);
         if(sheetsUrl) saveToSheets(store.events, store.calendars, sheetsUrl, sheetsSecret, updated);
@@ -2502,6 +2525,16 @@ function sortedModelli(){
                   color:T.sub,padding:"7px 12px",cursor:"pointer",fontWeight:700,fontSize:12}}>
                 Annulla
               </button>
+              {selectedModelloIds.length===1&&(
+                <button onClick={()=>{
+                    const m=modelli.find(x=>x.id===selectedModelloIds[0]);
+                    if(m){ setEditModello(m); setModelForm(m); setShowModelForm(true); setSelectedModelloIds([]); }
+                  }}
+                  style={{background:accent,border:"none",borderRadius:8,
+                    color:"#fff",padding:"7px 14px",cursor:"pointer",fontWeight:800,fontSize:12}}>
+                  ✏️ Modifica
+                </button>
+              )}
               <button onClick={async()=>{
                   if(!window.confirm(`Eliminare ${selectedModelloIds.length} modelli selezionati?`)) return;
                   for(const id of selectedModelloIds) await deleteModello(id);
