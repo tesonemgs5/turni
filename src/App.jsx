@@ -5344,10 +5344,17 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, onSave}){
             {!isH24 && (
               <>
                 <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>CATEGORIA APP/AUTO (per report Turnazione)</div>
-                <div style={{display:"flex",gap:6}}>
+                <div style={{display:"flex",gap:6,marginBottom:10}}>
                   {[["","Automatica"],["app","APP"],["auto","AUTO"]].map(renderBtn("categoriaAppAuto", catAutoAppAuto))}
                 </div>
               </>
+            )}
+            {(!!(form.categoria) || !!(form.categoriaAppAuto)) && (
+              <button onClick={()=>setForm(f=>({...f,categoria:"",categoriaAppAuto:""}))}
+                style={{marginTop:4,width:"100%",padding:"8px 4px",borderRadius:10,border:"none",cursor:"pointer",
+                  fontWeight:700,fontSize:11,background:"transparent",color:"#ef4444",textDecoration:"underline"}}>
+                Deseleziona tutto (torna ad Automatica)
+              </button>
             )}
           </div>
         );
