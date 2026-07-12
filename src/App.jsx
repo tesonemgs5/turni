@@ -5232,23 +5232,31 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, onSave}){
         </div>
       )}
       <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>CATEGORIA (per report Turnazione)</div>
-      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:16}}>
-        {(()=>{
-          const catAuto = categoriaAutomaticaModello(form);
-          return [["","Automatica"],["primo","1° Turno"],["secondo","2° Turno"],["app","APP"],["auto","AUTO"]].map(([v,l])=>{
-            const selezionato = (form.categoria||"")===v;
-            const suggeritoDaAuto = !form.categoria && v!=="" && v===catAuto;
-            return (
-              <button key={v||"__auto__"} onClick={()=>setForm(f=>({...f,categoria:v}))}
-                style={{flex:"1 1 30%",padding:"9px 4px",borderRadius:10,cursor:"pointer",
-                  fontWeight:700,fontSize:11,
-                  border:suggeritoDaAuto?`2px solid ${accent}`:"2px solid transparent",
-                  background:selezionato?accent:T.s2,
-                  color:selezionato?"#fff":(suggeritoDaAuto?accent:T.sub)}}>{l}</button>
-            );
-          });
-        })()}
-      </div>
+      {(()=>{
+        const catAuto = categoriaAutomaticaModello(form);
+        const renderBtn=([v,l])=>{
+          const selezionato = (form.categoria||"")===v;
+          const suggeritoDaAuto = !form.categoria && v!=="" && v===catAuto;
+          return (
+            <button key={v||l} onClick={()=>setForm(f=>({...f,categoria:v}))}
+              style={{flex:"1 1 30%",padding:"9px 4px",borderRadius:10,cursor:"pointer",
+                fontWeight:700,fontSize:11,
+                border:suggeritoDaAuto?`2px solid ${accent}`:"2px solid transparent",
+                background:selezionato?accent:T.s2,
+                color:selezionato?"#fff":(suggeritoDaAuto?accent:T.sub)}}>{l}</button>
+          );
+        };
+        return (
+          <>
+            <div style={{display:"flex",gap:6,marginBottom:6}}>
+              {[["","Automatica"],["primo","1° Turno"],["secondo","2° Turno"]].map(renderBtn)}
+            </div>
+            <div style={{display:"flex",gap:6,marginBottom:16}}>
+              {[["","Automatica"],["app","APP"],["auto","AUTO"]].map(renderBtn)}
+            </div>
+          </>
+        );
+      })()}
       <div style={{fontSize:11,color:T.sub,marginTop:-10,marginBottom:16,paddingLeft:4}}>
         "Automatica" decide da sola in base a titolo/orario. Scegliendo una categoria qui, ogni evento creato da questo modello finirà sempre in quel gruppo nel report Turnazione.
       </div>
