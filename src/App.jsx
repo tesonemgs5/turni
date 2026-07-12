@@ -2529,7 +2529,11 @@ const modelliOrdinati = useMemo(()=>{
                     selectMode={!editMode}
                     selected={selectedModelloIds.includes(m.id)}
                     onToggleSelect={()=>setSelectedModelloIds(prev=>prev.includes(m.id)?prev.filter(id=>id!==m.id):[...prev,m.id])}
-                    onEdit={()=>{ if(!showMoveMode){ setEditModello(m); setModelForm(m); setShowModelForm(true); } }}
+                    onEdit={()=>{ if(!showMoveMode){ setEditModello(m); setModelForm({
+                      ...m,
+                      categoria:(m.categoria==="primo"||m.categoria==="secondo")?m.categoria:"",
+                      categoriaAppAuto:(m.categoria_app_auto==="app"||m.categoria_app_auto==="auto")?m.categoria_app_auto:((m.categoria==="app"||m.categoria==="auto")?m.categoria:"")
+                    }); setShowModelForm(true); } }}
                     onDelete={()=>deleteModello(m.id)}
                     onMoveUp={showMoveMode?()=>moveH24(m.id,"up"):null}
                     onMoveDown={showMoveMode?()=>moveH24(m.id,"down"):null}
@@ -2594,7 +2598,11 @@ const modelliOrdinati = useMemo(()=>{
               {selectedModelloIds.length===1&&(
                 <button onClick={()=>{
                     const m=modelli.find(x=>x.id===selectedModelloIds[0]);
-                    if(m){ setEditModello(m); setModelForm(m); setShowModelForm(true); setSelectedModelloIds([]); }
+                    if(m){ setEditModello(m); setModelForm({
+                      ...m,
+                      categoria:(m.categoria==="primo"||m.categoria==="secondo")?m.categoria:"",
+                      categoriaAppAuto:(m.categoria_app_auto==="app"||m.categoria_app_auto==="auto")?m.categoria_app_auto:((m.categoria==="app"||m.categoria==="auto")?m.categoria:"")
+                    }); setShowModelForm(true); setSelectedModelloIds([]); }
                   }}
                   style={{background:accent,border:"none",borderRadius:8,
                     color:"#fff",padding:"7px 14px",cursor:"pointer",fontWeight:800,fontSize:12}}>
