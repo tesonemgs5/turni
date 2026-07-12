@@ -5201,7 +5201,7 @@ function SecCollapsible({label,children,T}){
   const [open,setOpen]=useState(false);
   return (
     <div style={{background:T.surface,border:`1px solid ${T.border}`,
-      borderRadius:12,marginBottom:14,overflow:"hidden"}}>
+      borderRadius:12,marginBottom:14}}>
       <div onClick={()=>setOpen(o=>!o)}
         style={{display:"flex",alignItems:"center",justifyContent:"space-between",
           padding:"12px 14px",cursor:"pointer"}}>
