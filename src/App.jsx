@@ -1346,7 +1346,8 @@ const modelliOrdinati = useMemo(()=>{
       calendar_id: targetCalId,
       categoria: (data.categoria==="primo"||data.categoria==="secondo") ? data.categoria : null,
       categoria_app_auto: (data.categoriaAppAuto==="app"||data.categoriaAppAuto==="auto") ? data.categoriaAppAuto : null,
-      categoria_manuale_vuota: !!data.categoriaManualeVuota,
+      categoria_turno_vuoto: !!data.turnoVuoto,
+      categoria_app_auto_vuoto: !!data.appAutoVuoto,
     };
     if(data.coloreCustom) await ensureColoreRegistrato(data.coloreCustom);
     if(data.id){
@@ -1712,16 +1713,16 @@ const modelliOrdinati = useMemo(()=>{
 
           // ── Asse 1: TURNO (1°/2°) — indipendente, decide su categoria manuale del
           // modello, poi override di questo report, poi automatico per orario.
-          // Se l'utente ha esplicitamente deselezionato tutto, niente auto: nessun gruppo.
-          const gruppoTurno = modelloEvt?.categoria_manuale_vuota
+          // Se l'utente ha esplicitamente deselezionato questo asse, niente auto: nessun gruppo.
+          const gruppoTurno = modelloEvt?.categoria_turno_vuoto
             ? null
             : ((modelloEvt?.categoria==="primo"||modelloEvt?.categoria==="secondo")
               ? modelloEvt.categoria
               : (overrideTurno || categoriaTurnoAutomatica(modelloEvt)));
 
           // ── Asse 2: APP/AUTO — indipendente, stessa priorità ma decide su titolo.
-          // Se l'utente ha esplicitamente deselezionato tutto, niente auto: nessun gruppo.
-          const gruppoAppAuto = modelloEvt?.categoria_manuale_vuota
+          // Se l'utente ha esplicitamente deselezionato questo asse, niente auto: nessun gruppo.
+          const gruppoAppAuto = modelloEvt?.categoria_app_auto_vuoto
             ? null
             : ((modelloEvt?.categoriaAppAuto==="app"||modelloEvt?.categoriaAppAuto==="auto")
               ? modelloEvt.categoriaAppAuto
@@ -2540,7 +2541,8 @@ const modelliOrdinati = useMemo(()=>{
                       ...m,
                       categoria:(m.categoria==="primo"||m.categoria==="secondo")?m.categoria:"",
                       categoriaAppAuto:(m.categoria_app_auto==="app"||m.categoria_app_auto==="auto")?m.categoria_app_auto:((m.categoria==="app"||m.categoria==="auto")?m.categoria:""),
-                      categoriaManualeVuota: !!m.categoria_manuale_vuota
+                      turnoVuoto: !!m.categoria_turno_vuoto,
+                      appAutoVuoto: !!m.categoria_app_auto_vuoto
                     }); setShowModelForm(true); } }}
                     onDelete={()=>deleteModello(m.id)}
                     onMoveUp={showMoveMode?()=>moveH24(m.id,"up"):null}
@@ -2610,7 +2612,8 @@ const modelliOrdinati = useMemo(()=>{
                       ...m,
                       categoria:(m.categoria==="primo"||m.categoria==="secondo")?m.categoria:"",
                       categoriaAppAuto:(m.categoria_app_auto==="app"||m.categoria_app_auto==="auto")?m.categoria_app_auto:((m.categoria==="app"||m.categoria==="auto")?m.categoria:""),
-                      categoriaManualeVuota: !!m.categoria_manuale_vuota
+                      turnoVuoto: !!m.categoria_turno_vuoto,
+                      appAutoVuoto: !!m.categoria_app_auto_vuoto
                     }); setShowModelForm(true); setSelectedModelloIds([]); }
                   }}
                   style={{background:accent,border:"none",borderRadius:8,
@@ -5330,13 +5333,13 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, onSave}){
         // (APP/AUTO). Non sono collegati fra loro in nessun modo.
         const catAutoTurno = categoriaTurnoAutomatica(form);
         const catAutoAppAuto = categoriaAppAutoAutomatica(form);
-        const renderBtn=(campo, catAuto)=>([v,l])=>{
+        const renderBtn=(campo, catAuto, flagCampo)=>([v,l])=>{
           const valoreAttuale = form[campo]||"";
-          const selezionato = valoreAttuale===v;
-          const suggeritoDaAuto = !valoreAttuale && v!=="" && v===catAuto;
+          const selezionato = valoreAttuale===v && !form[flagCampo];
+          const suggeritoDaAuto = !valoreAttuale && v!=="" && v===catAuto && !form[flagCampo];
           const nuovoValore = (selezionato && v!=="") ? "" : v;
           return (
-            <button key={v||l} onClick={()=>setForm(f=>({...f,[campo]:nuovoValore,categoriaManualeVuota:false}))}
+            <button key={v||l} onClick={()=>setForm(f=>({...f,[campo]:nuovoValore,[flagCampo]:false}))}
               style={{flex:"1 1 30%",padding:"9px 4px",borderRadius:10,cursor:"pointer",
                 fontWeight:700,fontSize:11,
                 border:suggeritoDaAuto?`2px solid ${accent}`:"2px solid transparent",
@@ -5344,25 +5347,35 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, onSave}){
                 color:selezionato?"#fff":(suggeritoDaAuto?accent:T.sub)}}>{l}</button>
           );
         };
+        const renderDeselBtn=(flagCampo, campo)=>{
+          const attivo = !!form[flagCampo];
+          return (
+            <button onClick={()=>setForm(f=>({...f,[flagCampo]:!attivo,[campo]: !attivo ? "" : f[campo]}))}
+              style={{marginTop:6,marginBottom:10,width:"100%",padding:"7px 4px",borderRadius:10,
+                border:attivo?"2px solid #ef4444":"2px solid transparent",cursor:"pointer",
+                fontWeight:700,fontSize:11,
+                background:attivo?"#ef444422":"transparent",
+                color:"#ef4444"}}>
+              {attivo?"✓ Nessuna categoria (riattiva per tornare all'automatismo)":"Nessuna categoria per questo asse"}
+            </button>
+          );
+        };
         const isH24 = form.tempo==="h24";
         return (
           <div style={{marginBottom:16}}>
             <div style={{display:"flex",gap:6,marginBottom:10}}>
-              {[["","Automatica"],["primo","1° Turno"],["secondo","2° Turno"]].map(renderBtn("categoria", catAutoTurno))}
+              {[["","Automatica"],["primo","1° Turno"],["secondo","2° Turno"]].map(renderBtn("categoria", catAutoTurno, "turnoVuoto"))}
             </div>
+            {renderDeselBtn("turnoVuoto","categoria")}
             {!isH24 && (
               <>
                 <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>CATEGORIA APP/AUTO (per report Turnazione)</div>
                 <div style={{display:"flex",gap:6}}>
-                  {[["","Automatica"],["app","APP"],["auto","AUTO"]].map(renderBtn("categoriaAppAuto", catAutoAppAuto))}
+                  {[["","Automatica"],["app","APP"],["auto","AUTO"]].map(renderBtn("categoriaAppAuto", catAutoAppAuto, "appAutoVuoto"))}
                 </div>
+                {renderDeselBtn("appAutoVuoto","categoriaAppAuto")}
               </>
             )}
-            <button onClick={()=>setForm(f=>({...f,categoria:"",categoriaAppAuto:"",categoriaManualeVuota:true}))}
-              style={{marginTop:10,width:"100%",padding:"8px 4px",borderRadius:10,border:"none",cursor:"pointer",
-                fontWeight:700,fontSize:11,background:"transparent",color:"#ef4444",textDecoration:"underline"}}>
-              Deseleziona tutto (nessuna categoria)
-            </button>
           </div>
         );
       })()}
