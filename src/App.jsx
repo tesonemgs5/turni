@@ -19,8 +19,8 @@ export const PALETTE = [
 
 // Colori automatici per fascia oraria (default, sovrascrivibili da Impostazioni)
 export const FASCE_AUTOMATICHE_DEFAULT = [
-  { key:"mattina",     label:"MATTINA",     color:"#f59e0b", from:360,  to:705  },
-  { key:"pomeriggio",  label:"POMERIGGIO",  color:"#f97316", from:705,  to:1035 },
+  { key:"mattina",     label:"PRIMO",       color:"#f59e0b", from:360,  to:705  },
+  { key:"pomeriggio",  label:"SECONDO",     color:"#f97316", from:705,  to:1035 },
   { key:"terzo_turno", label:"3° TURNO",    color:"#8b5cf6", from:1035, to:1080 },
   { key:"notte",       label:"NOTTE",       color:"#1e40af", from:1080, to:360  },
 ];
@@ -1351,7 +1351,11 @@ const modelliOrdinati = useMemo(()=>{
     };
     if(data.coloreCustom) await ensureColoreRegistrato(data.coloreCustom);
     if(data.id){
-      await supabase.from("modelli").update(payload).eq("id",data.id).eq("user_id",userId);
+      const { error: errUpdate } = await supabase.from("modelli").update(payload).eq("id",data.id).eq("user_id",userId);
+      if(errUpdate){
+        console.error("Errore salvataggio modello (update):", errUpdate);
+        return { ok:false, error: errUpdate.message };
+      }
 
       // ── Retroattivo: propaga le modifiche a tutti i turni già in calendario
       const labelNuova = (data.label||data.titolo||"").toUpperCase();
@@ -1380,8 +1384,13 @@ const modelliOrdinati = useMemo(()=>{
         syncSeAttivo(store.events, store.calendars, updated);
         return updated;
       });
+      return { ok:true };
     } else {
-      const {data:res}=await supabase.from("modelli").insert(payload).select().maybeSingle();
+      const {data:res, error:errInsert}=await supabase.from("modelli").insert(payload).select().maybeSingle();
+      if(errInsert){
+        console.error("Errore salvataggio modello (insert):", errInsert);
+        return { ok:false, error: errInsert.message };
+      }
       if(res){
         const newSortOrder=modelli.length*10;
         await supabase.from("modelli").update({sort_order:newSortOrder}).eq("id",res.id).eq("user_id",userId);
@@ -1390,7 +1399,9 @@ const modelliOrdinati = useMemo(()=>{
           syncSeAttivo(store.events, store.calendars, updated);
           return updated;
         });
+        return { ok:true };
       }
+      return { ok:false, error:"Nessun dato restituito dal salvataggio." };
     }
   }
 
@@ -1544,9 +1555,12 @@ const modelliOrdinati = useMemo(()=>{
       if(!r.modelloId) continue;
       const mod = modelli.find(m=>m.id===r.modelloId);
       if(!mod) continue;
-      // Non sovrascrivere giorni che hanno già eventi su questo calendario
-      const eventiEsistenti = store.events?.[r.dateKey]?.[calId];
-      if(eventiEsistenti && eventiEsistenti.length>0) continue;
+      // Se il giorno ha già un evento con lo stesso modello, non duplicare.
+      // Se ha eventi con modelli diversi, aggiungi sotto (non sovrascrivere).
+      // Se non ha eventi, aggiungi normalmente.
+      const eventiEsistenti = store.events?.[r.dateKey]?.[calId] || [];
+      const giaPresente = eventiEsistenti.some(ev => ev.modelloId === r.modelloId);
+      if(giaPresente) continue;
       const [y,m,d] = r.dateKey.split("-").map(Number);
       const dataEv = new Date(y, m-1, d);
       await inserisciEventoGenerico(mod, dataEv, null, nuoviEventiLocali);
@@ -3832,9 +3846,13 @@ const modelliOrdinati = useMemo(()=>{
             <ModelForm T={T} form={modelForm} setForm={setModelForm} accent={accent} dark={dark}
               fasceAutomatiche={fasceAutomatiche} modelli={modelli}
               onSave={async()=>{
-                await saveModello({...modelForm,id:editModello?.id});
-                setShowModelForm(false);
-                setShowModelloPicker(true);
+                const esito = await saveModello({...modelForm,id:editModello?.id});
+                if(esito?.ok){
+                  setShowModelForm(false);
+                  setShowModelloPicker(true);
+                } else {
+                  alert("Errore nel salvataggio del modello: "+(esito?.error||"errore sconosciuto")+"\n\nIl modello NON è stato salvato, controlla i dati e riprova.");
+                }
               }}/>
           </div>
         </div>
@@ -4237,24 +4255,14 @@ function CalBadge({ calId, calAttivo, coloreCal, testoContrasto, T, store, setSt
           <span style={{fontSize:10,color:testoContrasto,opacity:0.7}}>🎨</span>
         </div>
         {showCalPal&&(
-          <div style={{position:"absolute",top:36,left:0,background:T.surface,
-            border:`1px solid ${T.border}`,borderRadius:12,padding:10,zIndex:500,
-            boxShadow:"0 8px 32px rgba(0,0,0,0.25)"}}
-            onClick={e=>e.stopPropagation()}>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:6}}>
-              {["#ef4444","#f97316","#f59e0b","#eab308","#84cc16","#22c55e",
-                "#10b981","#14b8a6","#06b6d4","#3b82f6","#6366f1","#8b5cf6",
-                "#a855f7","#ec4899","#f43f5e","#64748b","#0f172a","#1e40af"].map(p=>(
-                <div key={p} onClick={()=>{
-                  const newCals=JSON.parse(JSON.stringify(store.calendars));
-                  const idx=newCals.findIndex(c=>c.id===calId);
-                  if(idx>-1){ newCals[idx].color=p; setStore(s=>({...s,calendars:newCals})); updateCalendar(calId,{color:p}); }
-                  setShowCalPal(false);
-                }} style={{width:24,height:24,borderRadius:"50%",background:p,cursor:"pointer",
-                  outline:coloreCal===p?"3px solid #64748b":"none",outlineOffset:2}}/>
-              ))}
-            </div>
-          </div>
+          <ColorPickerModal T={T} cur={coloreCal} title={`Colore ${calAttivo.name||"calendario"}`}
+            coloriUsati={[...new Set(store.calendars.map(cc=>cc.color).filter(Boolean))]}
+            onPick={p=>{
+              const newCals=JSON.parse(JSON.stringify(store.calendars));
+              const idx=newCals.findIndex(c=>c.id===calId);
+              if(idx>-1){ newCals[idx].color=p; setStore(s=>({...s,calendars:newCals})); updateCalendar(calId,{color:p}); }
+            }}
+            onClose={()=>setShowCalPal(false)}/>
         )}
       </div>
       {store&&store.calendars&&store.calendars.length>1&&(
@@ -5169,11 +5177,19 @@ function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, title="Sce
                   style={{width:32,height:32,borderRadius:"50%",background:p,cursor:"pointer",
                     outline:cur===p?`3px solid ${T.text}`:"none",outlineOffset:2,flexShrink:0}}/>
               ))}
+              <div onClick={()=>{
+                  const hexBox = boxRef.current?.querySelector("[data-hex-picker]");
+                  hexBox?.scrollIntoView({behavior:"smooth", block:"center"});
+                }}
+                title="Aggiungi un colore nuovo"
+                style={{width:32,height:32,borderRadius:"50%",background:T.s2,cursor:"pointer",
+                  border:`1.5px dashed ${T.sub}`,display:"flex",alignItems:"center",justifyContent:"center",
+                  fontSize:18,fontWeight:800,color:T.sub,lineHeight:1,flexShrink:0}}>+</div>
             </div>
           </>
         )}
 
-        <div style={{fontSize:12,color:T.sub,fontWeight:700,marginBottom:8}}>Colore personalizzato (HEX)</div>
+        <div data-hex-picker style={{fontSize:12,color:T.sub,fontWeight:700,marginBottom:8}}>Colore personalizzato (HEX)</div>
         <HexColorPicker T={T} value={cur} onChange={onPick}/>
       </div>
     </div>
