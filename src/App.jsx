@@ -390,6 +390,7 @@ export default function App({ session }){
   const [showAddColorPicker, setShowAddColorPicker] = useState(false); // popup "+" per aggiungere un colore alla sezione
   const [coloriExtra, setColoriExtra] = useState([]); // colori aggiunti manualmente o generati da modelli
   const [showEditFasciaColor, setShowEditFasciaColor] = useState(null); // key della fascia automatica di cui si sta editando il colore
+  const [showHexFascia, setShowHexFascia] = useState(false);
 
   const [rotazioni, setRotazioni] = useState([]);
   const [showRotForm, setShowRotForm] = useState(false);
@@ -2742,13 +2743,6 @@ const modelliOrdinati = useMemo(()=>{
           <div style={{background:T.surface,borderRadius:16,width:"100%",maxWidth:360,padding:20}}
             onClick={e=>e.stopPropagation()}>
             <div style={{fontSize:16,fontWeight:900,color:T.text,marginBottom:14}}>Aggiungi colore</div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8,marginBottom:10}}>
-              {PALETTE.map(p=>(
-                <div key={p} onClick={()=>{addColoreExtra(p);setShowAddColorPicker(false);}}
-                  style={{width:32,height:32,borderRadius:"50%",background:p,cursor:"pointer",
-                    border:`2px solid ${T.border}`}}/>
-              ))}
-            </div>
             <HexColorPicker T={T} value="#000000" onChange={p=>{addColoreExtra(p);setShowAddColorPicker(false);}}/>
             <button onClick={()=>setShowAddColorPicker(false)}
               style={{width:"100%",marginTop:16,background:T.s2,border:`1px solid ${T.border}`,
@@ -2866,31 +2860,24 @@ const modelliOrdinati = useMemo(()=>{
                         style={{width:32,height:32,borderRadius:"50%",background:p,cursor:"pointer",
                           border:`2px solid ${T.border}`}}/>
                     ))}
+                    <div onClick={()=>setShowHexFascia(s=>!s)}
+                      style={{width:32,height:32,borderRadius:"50%",background:T.s2,cursor:"pointer",
+                        border:`1px dashed ${T.sub}`,display:"flex",alignItems:"center",justifyContent:"center",
+                        fontSize:18,fontWeight:800,color:T.sub,lineHeight:1}}>+</div>
                   </div>
-                  <div style={{fontSize:12,color:T.sub,fontWeight:700,marginBottom:6}}>TUTTI I COLORI</div>
                 </>
               ) : null;
             })()}
-            <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8}}>
-              {PALETTE.map(p=>(
-                <div key={p} onClick={async()=>{
-                  const old = showEditFasciaColor;
-                  setShowEditFasciaColor(null);
-                  setShowColorAssignPicker(p);
-                  await replaceColoreEverywhere(old, p);
-                }}
-                  style={{width:32,height:32,borderRadius:"50%",background:p,cursor:"pointer",
-                    border:`2px solid ${showEditFasciaColor===p?"#000":T.border}`}}/>
-              ))}
-            </div>
-            <div style={{marginTop:16}}>
-              <div style={{fontSize:12,color:T.sub,fontWeight:700,marginBottom:6}}>Colore personalizzato (HEX)</div>
-              <HexColorPicker T={T} value={showEditFasciaColor}
-                onChange={async(nuovo)=>{
-                  const old = showEditFasciaColor;
-                  await replaceColoreEverywhere(old, nuovo);
-                }}/>
-            </div>
+            {(showHexFascia || [...new Set(modelli.map(m=>m.coloreCustom||(m.tempo==="h24"?COLORE_H24:colByTime(m.inizio))).filter(Boolean))].filter(h=>h!==showEditFasciaColor).length===0)&&(
+              <div style={{marginTop:4}}>
+                <div style={{fontSize:12,color:T.sub,fontWeight:700,marginBottom:6}}>Colore personalizzato (HEX)</div>
+                <HexColorPicker T={T} value={showEditFasciaColor}
+                  onChange={async(nuovo)=>{
+                    const old = showEditFasciaColor;
+                    await replaceColoreEverywhere(old, nuovo);
+                  }}/>
+              </div>
+            )}
             <button onClick={()=>setShowEditFasciaColor(null)}
               style={{width:"100%",marginTop:16,background:T.s2,border:`1px solid ${T.border}`,
                 borderRadius:10,color:T.sub,padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:13}}>
@@ -3029,22 +3016,9 @@ const modelliOrdinati = useMemo(()=>{
                   style={{width:26,height:26,borderRadius:"50%",background:f.color,
                     border:`2px solid ${T.border}`,cursor:"pointer"}}/>
                 {showFasciaColorPicker===f.key&&(
-                  <div style={{position:"absolute",top:32,left:0,background:T.surface,
-                    border:`1px solid ${T.border}`,borderRadius:12,padding:10,zIndex:200,
-                    boxShadow:"0 8px 24px rgba(0,0,0,0.2)",width:200}}
-                    onClick={e=>e.stopPropagation()}>
-                    <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:6}}>
-                      {PALETTE.map(p=>(
-                        <div key={p} onClick={()=>{ updateFascia(f.key,{color:p}); setShowFasciaColorPicker(null); }}
-                          style={{width:24,height:24,borderRadius:"50%",background:p,cursor:"pointer",
-                            outline:f.color===p?"2px solid #000":"none",outlineOffset:2}}/>
-                      ))}
-                    </div>
-                    <div style={{marginTop:8}}>
-                      <HexColorPicker T={T} value={f.color}
-                        onChange={(nuovo)=>{ updateFascia(f.key,{color:nuovo}); }}/>
-                    </div>
-                  </div>
+                  <Pal T={T} cur={f.color}
+                    coloriUsati={[...new Set(modelli.map(m=>m.coloreCustom||(m.tempo==="h24"?COLORE_H24:colByTime(m.inizio))).filter(Boolean))]}
+                    onPick={p=>{ updateFascia(f.key,{color:p}); setShowFasciaColorPicker(null); }}/>
                 )}
               </div>
               <input value={f.label} onChange={e=>updateFascia(f.key,{label:e.target.value.toUpperCase()})}
@@ -5190,38 +5164,36 @@ function HexColorPicker({T, value, onChange}){
 }
 
 function Pal({T, cur, onPick, up=false, coloriUsati=null}){
+  const [showHex,setShowHex]=useState(!coloriUsati || coloriUsati.length===0);
   return (
     <div style={{position:"absolute",zIndex:500,
-      ...(up?{bottom:30,left:0}:{top:30,left:0}),
+      ...(up?{bottom:28,left:0}:{top:28,left:0}),
       background:T.surface,border:`1px solid ${T.border}`,
-      borderRadius:12,padding:10,boxShadow:"0 8px 32px rgba(0,0,0,0.25)",width:200,
-      maxHeight:320,overflowY:"auto"}}
+      borderRadius:10,padding:8,boxShadow:"0 8px 32px rgba(0,0,0,0.25)",width:160,
+      maxHeight:260,overflowY:"auto"}}
       onClick={e=>e.stopPropagation()}>
       {coloriUsati&&coloriUsati.length>0&&(
         <>
-          <div style={{fontSize:10,fontWeight:700,color:T.sub,marginBottom:6,paddingLeft:2}}>USATI</div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:6,marginBottom:10}}>
+          <div style={{fontSize:9,fontWeight:700,color:T.sub,marginBottom:5,paddingLeft:2}}>USATI</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:5,marginBottom:6}}>
             {coloriUsati.map(p=>(
               <div key={p} onClick={()=>onPick(p)}
-                style={{width:24,height:24,borderRadius:"50%",background:p,cursor:"pointer",
-                  outline:cur===p?`3px solid ${p==="#ffffff"?"#000":"#fff"}`:"none",
+                style={{width:20,height:20,borderRadius:"50%",background:p,cursor:"pointer",
+                  outline:cur===p?`2px solid ${p==="#ffffff"?"#000":"#fff"}`:"none",
                   outlineOffset:2}}/>
             ))}
+            <div onClick={()=>setShowHex(s=>!s)}
+              style={{width:20,height:20,borderRadius:"50%",background:T.s2,cursor:"pointer",
+                border:`1px dashed ${T.sub}`,display:"flex",alignItems:"center",justifyContent:"center",
+                fontSize:12,fontWeight:800,color:T.sub,lineHeight:1}}>+</div>
           </div>
-          <div style={{fontSize:10,fontWeight:700,color:T.sub,marginBottom:6,paddingLeft:2}}>TUTTI I COLORI</div>
         </>
       )}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:6}}>
-        {PALETTE.map(p=>(
-          <div key={p} onClick={()=>onPick(p)}
-            style={{width:24,height:24,borderRadius:"50%",background:p,cursor:"pointer",
-              outline:cur===p?`3px solid ${p==="#ffffff"?"#000":"#fff"}`:"none",
-              outlineOffset:2}}/>
-        ))}
-      </div>
-      <div style={{marginTop:8}}>
-        <HexColorPicker T={T} value={cur||"#000000"} onChange={onPick}/>
-      </div>
+      {showHex&&(
+        <div style={{marginTop:coloriUsati&&coloriUsati.length>0?4:0}}>
+          <HexColorPicker T={T} value={cur||"#000000"} onChange={onPick}/>
+        </div>
+      )}
     </div>
   );
 }
@@ -5334,6 +5306,7 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[]
   const coloreVis=form.coloreCustom||autoColore;
   const fineAuto=form.tempo==="6h15"&&form.inizio?calcFine6h15(form.inizio):null;
   const [showPal,setShowPal]=useState(false);
+  const [showHexModel,setShowHexModel]=useState(false);
   return (
     <div style={{padding:"16px 14px 40px"}}>
       <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:8}}>
@@ -5455,28 +5428,27 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[]
         {showPal&&(()=>{
           const coloriUsati=[...new Set(modelli.map(m=>m.coloreCustom||(m.tempo==="h24"?COLORE_H24:getColorByTime(m.inizio, fasceAutomatiche))).filter(Boolean))];
           return (
-            <div style={{marginTop:12}}>
+            <div style={{marginTop:10,background:T.surface,border:`1px solid ${T.border}`,
+              borderRadius:10,padding:8,maxWidth:160}}>
               {coloriUsati.length>0&&(
                 <>
-                  <div style={{fontSize:10,fontWeight:700,color:T.sub,marginBottom:6}}>USATI</div>
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8,marginBottom:10}}>
+                  <div style={{fontSize:9,fontWeight:700,color:T.sub,marginBottom:5}}>USATI</div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:5,marginBottom:6}}>
                     {coloriUsati.map(p=>(
                       <div key={p} onClick={()=>{setForm(f=>({...f,coloreCustom:p}));setShowPal(false);}}
-                        style={{width:32,height:32,borderRadius:"50%",background:p,cursor:"pointer",
-                          outline:coloreVis===p?`3px solid #64748b`:"none",outlineOffset:2}}/>
+                        style={{width:20,height:20,borderRadius:"50%",background:p,cursor:"pointer",
+                          outline:coloreVis===p?`2px solid #64748b`:"none",outlineOffset:2}}/>
                     ))}
+                    <div onClick={()=>setShowHexModel(s=>!s)}
+                      style={{width:20,height:20,borderRadius:"50%",background:T.s2,cursor:"pointer",
+                        border:`1px dashed ${T.sub}`,display:"flex",alignItems:"center",justifyContent:"center",
+                        fontSize:12,fontWeight:800,color:T.sub,lineHeight:1}}>+</div>
                   </div>
-                  <div style={{fontSize:10,fontWeight:700,color:T.sub,marginBottom:6}}>TUTTI I COLORI</div>
                 </>
               )}
-              <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8,marginBottom:10}}>
-                {PALETTE.map(p=>(
-                  <div key={p} onClick={()=>{setForm(f=>({...f,coloreCustom:p}));setShowPal(false);}}
-                    style={{width:32,height:32,borderRadius:"50%",background:p,cursor:"pointer",
-                      outline:coloreVis===p?`3px solid #64748b`:"none",outlineOffset:2}}/>
-                ))}
-              </div>
-              <HexColorPicker T={T} value={coloreVis} onChange={p=>setForm(f=>({...f,coloreCustom:p}))}/>
+              {(showHexModel || coloriUsati.length===0)&&(
+                <HexColorPicker T={T} value={coloreVis} onChange={p=>setForm(f=>({...f,coloreCustom:p}))}/>
+              )}
             </div>
           );
         })()}
