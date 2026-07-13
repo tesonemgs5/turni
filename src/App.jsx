@@ -390,7 +390,6 @@ export default function App({ session }){
   const [showAddColorPicker, setShowAddColorPicker] = useState(false); // popup "+" per aggiungere un colore alla sezione
   const [coloriExtra, setColoriExtra] = useState([]); // colori aggiunti manualmente o generati da modelli
   const [showEditFasciaColor, setShowEditFasciaColor] = useState(null); // key della fascia automatica di cui si sta editando il colore
-  const [showHexFascia, setShowHexFascia] = useState(false);
 
   const [rotazioni, setRotazioni] = useState([]);
   const [showRotForm, setShowRotForm] = useState(false);
@@ -2737,20 +2736,9 @@ const modelliOrdinati = useMemo(()=>{
       </div>
 
       {showAddColorPicker&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:600,
-          display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
-          onClick={()=>setShowAddColorPicker(false)}>
-          <div style={{background:T.surface,borderRadius:16,width:"100%",maxWidth:360,padding:20}}
-            onClick={e=>e.stopPropagation()}>
-            <div style={{fontSize:16,fontWeight:900,color:T.text,marginBottom:14}}>Aggiungi colore</div>
-            <HexColorPicker T={T} value="#000000" onChange={p=>{addColoreExtra(p);setShowAddColorPicker(false);}}/>
-            <button onClick={()=>setShowAddColorPicker(false)}
-              style={{width:"100%",marginTop:16,background:T.s2,border:`1px solid ${T.border}`,
-                borderRadius:10,color:T.sub,padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:13}}>
-              Annulla
-            </button>
-          </div>
-        </div>
+        <ColorPickerModal T={T} cur="#3b82f6" title="Aggiungi colore"
+          onPick={p=>{addColoreExtra(p);setShowAddColorPicker(false);}}
+          onClose={()=>setShowAddColorPicker(false)}/>
       )}
 
       {showColorAssignPicker&&(()=>{
@@ -2831,60 +2819,14 @@ const modelliOrdinati = useMemo(()=>{
       })()}
 
       {showEditFasciaColor&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:700,
-          display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
-          onClick={()=>setShowEditFasciaColor(null)}>
-          <div style={{background:T.surface,borderRadius:16,width:"100%",maxWidth:360,padding:20}}
-            onClick={e=>e.stopPropagation()}>
-            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
-              <div style={{width:28,height:28,borderRadius:"50%",background:showEditFasciaColor,border:`2px solid ${T.border}`}}/>
-              <div style={{fontSize:16,fontWeight:900,color:T.text}}>Cambia colore</div>
-            </div>
-            <div style={{fontSize:12,color:T.sub,marginBottom:14}}>
-              Attuale: {showEditFasciaColor.toUpperCase()}. Scegli il nuovo colore dalla palette.
-            </div>
-            {(()=>{
-              const coloriUsati=[...new Set(modelli.map(m=>m.coloreCustom||(m.tempo==="h24"?COLORE_H24:colByTime(m.inizio))).filter(Boolean))]
-                .filter(h=>h!==showEditFasciaColor);
-              return coloriUsati.length>0 ? (
-                <>
-                  <div style={{fontSize:12,color:T.sub,fontWeight:700,marginBottom:6}}>USATI</div>
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8,marginBottom:14}}>
-                    {coloriUsati.map(p=>(
-                      <div key={p} onClick={async()=>{
-                        const old = showEditFasciaColor;
-                        setShowEditFasciaColor(null);
-                        setShowColorAssignPicker(p);
-                        await replaceColoreEverywhere(old, p);
-                      }}
-                        style={{width:32,height:32,borderRadius:"50%",background:p,cursor:"pointer",
-                          border:`2px solid ${T.border}`}}/>
-                    ))}
-                    <div onClick={()=>setShowHexFascia(s=>!s)}
-                      style={{width:32,height:32,borderRadius:"50%",background:T.s2,cursor:"pointer",
-                        border:`1px dashed ${T.sub}`,display:"flex",alignItems:"center",justifyContent:"center",
-                        fontSize:18,fontWeight:800,color:T.sub,lineHeight:1}}>+</div>
-                  </div>
-                </>
-              ) : null;
-            })()}
-            {(showHexFascia || [...new Set(modelli.map(m=>m.coloreCustom||(m.tempo==="h24"?COLORE_H24:colByTime(m.inizio))).filter(Boolean))].filter(h=>h!==showEditFasciaColor).length===0)&&(
-              <div style={{marginTop:4}}>
-                <div style={{fontSize:12,color:T.sub,fontWeight:700,marginBottom:6}}>Colore personalizzato (HEX)</div>
-                <HexColorPicker T={T} value={showEditFasciaColor}
-                  onChange={async(nuovo)=>{
-                    const old = showEditFasciaColor;
-                    await replaceColoreEverywhere(old, nuovo);
-                  }}/>
-              </div>
-            )}
-            <button onClick={()=>setShowEditFasciaColor(null)}
-              style={{width:"100%",marginTop:16,background:T.s2,border:`1px solid ${T.border}`,
-                borderRadius:10,color:T.sub,padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:13}}>
-              Annulla
-            </button>
-          </div>
-        </div>
+        <ColorPickerModal T={T} cur={showEditFasciaColor} title="Cambia colore"
+          coloriUsati={[...new Set(modelli.map(m=>m.coloreCustom||(m.tempo==="h24"?COLORE_H24:colByTime(m.inizio))).filter(Boolean))].filter(h=>h!==showEditFasciaColor)}
+          onPick={async(p)=>{
+            const old = showEditFasciaColor;
+            setShowColorAssignPicker(p);
+            await replaceColoreEverywhere(old, p);
+          }}
+          onClose={()=>setShowEditFasciaColor(null)}/>
       )}
 
       {showRotForm&&(
@@ -3016,9 +2958,10 @@ const modelliOrdinati = useMemo(()=>{
                   style={{width:26,height:26,borderRadius:"50%",background:f.color,
                     border:`2px solid ${T.border}`,cursor:"pointer"}}/>
                 {showFasciaColorPicker===f.key&&(
-                  <Pal T={T} cur={f.color}
+                  <ColorPickerModal T={T} cur={f.color} title={`Colore ${f.label}`}
                     coloriUsati={[...new Set(modelli.map(m=>m.coloreCustom||(m.tempo==="h24"?COLORE_H24:colByTime(m.inizio))).filter(Boolean))]}
-                    onPick={p=>{ updateFascia(f.key,{color:p}); setShowFasciaColorPicker(null); }}/>
+                    onPick={p=>{ updateFascia(f.key,{color:p}); }}
+                    onClose={()=>setShowFasciaColorPicker(null)}/>
                 )}
               </div>
               <input value={f.label} onChange={e=>updateFascia(f.key,{label:e.target.value.toUpperCase()})}
@@ -3060,15 +3003,15 @@ const modelliOrdinati = useMemo(()=>{
                 <div style={{width:24,height:24,borderRadius:"50%",background:c.color,
                   border:`2px solid ${T.border}`,cursor:"pointer"}}
                   onClick={e=>{e.stopPropagation();setPal(pal===c.id?null:c.id);}}/>
-                {pal===c.id&&<Pal T={T} cur={c.color}
+                {pal===c.id&&<ColorPickerModal T={T} cur={c.color} title={`Colore ${c.name||"calendario"}`}
                   coloriUsati={[...new Set(store.calendars.map(cc=>cc.color).filter(Boolean))]}
                   onPick={p=>{
                   const newCals=JSON.parse(JSON.stringify(store.calendars));
                   newCals[ci].color=p;
                   setStore(s=>({...s,calendars:newCals}));
                   updateCalendar(c.id,{color:p});
-                  setPal(null);
-                }}/>}
+                }}
+                  onClose={()=>setPal(null)}/>}
               </div>
               <input value={c.name}
                 onChange={e=>{const newCals=JSON.parse(JSON.stringify(store.calendars));newCals[ci].name=e.target.value;setStore(s=>({...s,calendars:newCals}));}}
@@ -3112,15 +3055,15 @@ const modelliOrdinati = useMemo(()=>{
                     <div style={{position:"relative",flexShrink:0}}>
                       <div style={{width:20,height:20,borderRadius:"50%",background:sh.color,cursor:"pointer"}}
                         onClick={e=>{e.stopPropagation();setPal(pal===sh.id?null:sh.id);}}/>
-                      {pal===sh.id&&<Pal T={T} cur={sh.color}
+                      {pal===sh.id&&<ColorPickerModal T={T} cur={sh.color} title={`Colore ${sh.label||"turno"}`}
                         coloriUsati={[...new Set((c.shifts||[]).map(s2=>s2.color).filter(Boolean))]}
                         onPick={p=>{
                         const newCals=JSON.parse(JSON.stringify(store.calendars));
                         newCals[ci].shifts[si].color=p;
                         setStore(s=>({...s,calendars:newCals}));
                         updateCalendar(c.id,{shifts:newCals[ci].shifts});
-                        setPal(null);
-                      }}/>}
+                      }}
+                        onClose={()=>setPal(null)}/>}
                     </div>
                     <input value={sh.label}
                       onChange={e=>{const newCals=JSON.parse(JSON.stringify(store.calendars));newCals[ci].shifts[si].label=e.target.value;setStore(s=>({...s,calendars:newCals}));}}
@@ -3139,9 +3082,10 @@ const modelliOrdinati = useMemo(()=>{
                     <div style={{width:22,height:22,borderRadius:"50%",background:nsColor,
                       border:`2px solid ${T.border}`,cursor:"pointer"}}
                       onClick={e=>{e.stopPropagation();setPal(pal==="ns"?null:"ns");}}/>
-                    {pal==="ns"&&<Pal T={T} cur={nsColor}
+                    {pal==="ns"&&<ColorPickerModal T={T} cur={nsColor} title="Colore nuovo turno"
                       coloriUsati={[...new Set((c.shifts||[]).map(s2=>s2.color).filter(Boolean))]}
-                      onPick={p=>{setNsColor(p);setPal(null);}}/>}
+                      onPick={p=>setNsColor(p)}
+                      onClose={()=>setPal(null)}/>}
                   </div>
                   <input value={nsName} onChange={e=>setNsName(e.target.value)} placeholder="Nome turno..."
                     style={{flex:1,background:T.surface,border:`1px solid ${T.border}`,
@@ -3165,9 +3109,10 @@ const modelliOrdinati = useMemo(()=>{
             <div style={{width:24,height:24,borderRadius:"50%",background:ncColor,
               border:`2px solid ${T.border}`,cursor:"pointer"}}
               onClick={e=>{e.stopPropagation();setPal(pal==="nc"?null:"nc");}}/>
-            {pal==="nc"&&<Pal T={T} cur={ncColor}
+            {pal==="nc"&&<ColorPickerModal T={T} cur={ncColor} title="Colore nuovo calendario"
               coloriUsati={[...new Set(store.calendars.map(cc=>cc.color).filter(Boolean))]}
-              onPick={p=>{setNcColor(p);setPal(null);}}/>}
+              onPick={p=>setNcColor(p)}
+              onClose={()=>setPal(null)}/>}
           </div>
           <input value={ncName} onChange={e=>setNcName(e.target.value)} placeholder="Nome calendario..."
             style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
@@ -3601,7 +3546,11 @@ const modelliOrdinati = useMemo(()=>{
                     background:form.colorOvr||(form.shiftId?activeCal?.shifts?.find(s=>s.id===form.shiftId)?.color:activeCal?.color)||"#94a3b8",
                     border:`2px solid ${T.border}`}}
                     onClick={e=>{e.stopPropagation();setPal(pal==="ec"?null:"ec");}}/>
-                  {pal==="ec"&&<Pal T={T} onPick={p=>{setForm(f=>({...f,colorOvr:p}));setPal(null);}} up
+                  {pal==="ec"&&<ColorPickerModal T={T}
+                    cur={form.colorOvr||(form.shiftId?activeCal?.shifts?.find(s=>s.id===form.shiftId)?.color:activeCal?.color)||"#94a3b8"}
+                    title="Colore evento"
+                    onPick={p=>setForm(f=>({...f,colorOvr:p}))}
+                    onClose={()=>setPal(null)}
                     coloriUsati={[...new Set(modelli.map(m=>m.coloreCustom||(m.tempo==="h24"?COLORE_H24:colByTime(m.inizio))).filter(Boolean))]}/>}
                 </div>
                 {form.colorOvr&&(
@@ -5163,37 +5112,70 @@ function HexColorPicker({T, value, onChange}){
   );
 }
 
-function Pal({T, cur, onPick, up=false, coloriUsati=null}){
-  const [showHex,setShowHex]=useState(!coloriUsati || coloriUsati.length===0);
+function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, title="Scegli colore"}){
+  const [pos,setPos]=useState(null); // null = centrato di default
+  const dragState = useRef(null);
+  const boxRef = useRef(null);
+
+  function startDrag(e){
+    const clientX = e.touches?e.touches[0].clientX:e.clientX;
+    const clientY = e.touches?e.touches[0].clientY:e.clientY;
+    const rect = boxRef.current.getBoundingClientRect();
+    dragState.current = { offX: clientX-rect.left, offY: clientY-rect.top };
+    window.addEventListener("mousemove", onDrag);
+    window.addEventListener("mouseup", stopDrag);
+    window.addEventListener("touchmove", onDrag, {passive:false});
+    window.addEventListener("touchend", stopDrag);
+  }
+  function onDrag(e){
+    if(!dragState.current) return;
+    if(e.touches) e.preventDefault();
+    const clientX = e.touches?e.touches[0].clientX:e.clientX;
+    const clientY = e.touches?e.touches[0].clientY:e.clientY;
+    setPos({ left: clientX-dragState.current.offX, top: clientY-dragState.current.offY });
+  }
+  function stopDrag(){
+    dragState.current = null;
+    window.removeEventListener("mousemove", onDrag);
+    window.removeEventListener("mouseup", stopDrag);
+    window.removeEventListener("touchmove", onDrag);
+    window.removeEventListener("touchend", stopDrag);
+  }
+  useEffect(()=>()=>stopDrag(), []);
+
   return (
-    <div style={{position:"absolute",zIndex:500,
-      ...(up?{bottom:28,left:0}:{top:28,left:0}),
-      background:T.surface,border:`1px solid ${T.border}`,
-      borderRadius:10,padding:8,boxShadow:"0 8px 32px rgba(0,0,0,0.25)",width:160,
-      maxHeight:260,overflowY:"auto"}}
-      onClick={e=>e.stopPropagation()}>
-      {coloriUsati&&coloriUsati.length>0&&(
-        <>
-          <div style={{fontSize:9,fontWeight:700,color:T.sub,marginBottom:5,paddingLeft:2}}>USATI</div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:5,marginBottom:6}}>
-            {coloriUsati.map(p=>(
-              <div key={p} onClick={()=>onPick(p)}
-                style={{width:20,height:20,borderRadius:"50%",background:p,cursor:"pointer",
-                  outline:cur===p?`2px solid ${p==="#ffffff"?"#000":"#fff"}`:"none",
-                  outlineOffset:2}}/>
-            ))}
-            <div onClick={()=>setShowHex(s=>!s)}
-              style={{width:20,height:20,borderRadius:"50%",background:T.s2,cursor:"pointer",
-                border:`1px dashed ${T.sub}`,display:"flex",alignItems:"center",justifyContent:"center",
-                fontSize:12,fontWeight:800,color:T.sub,lineHeight:1}}>+</div>
-          </div>
-        </>
-      )}
-      {showHex&&(
-        <div style={{marginTop:coloriUsati&&coloriUsati.length>0?4:0}}>
-          <HexColorPicker T={T} value={cur||"#000000"} onChange={onPick}/>
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:900,
+      display:pos?"block":"flex",alignItems:"center",justifyContent:"center",padding:16}}
+      onClick={onClose}>
+      <div ref={boxRef}
+        style={{background:T.surface,borderRadius:16,width:"100%",maxWidth:340,
+          maxHeight:"88vh",overflowY:"auto",padding:18,
+          ...(pos?{position:"fixed",left:pos.left,top:pos.top,margin:0}:{})}}
+        onClick={e=>e.stopPropagation()}>
+        <div onMouseDown={startDrag} onTouchStart={startDrag}
+          style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,cursor:"grab",userSelect:"none"}}>
+          <div style={{width:26,height:26,borderRadius:"50%",background:cur,border:`2px solid ${T.border}`,flexShrink:0}}/>
+          <div style={{fontSize:16,fontWeight:900,color:T.text,flex:1}}>{title}</div>
+          <button onClick={onClose}
+            style={{background:"none",border:"none",fontSize:18,color:T.sub,cursor:"pointer",padding:4,lineHeight:1}}>✕</button>
         </div>
-      )}
+
+        {coloriUsati&&coloriUsati.length>0&&(
+          <>
+            <div style={{fontSize:12,color:T.sub,fontWeight:700,marginBottom:8}}>USATI</div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:16}}>
+              {coloriUsati.map(p=>(
+                <div key={p} onClick={()=>onPick(p)}
+                  style={{width:32,height:32,borderRadius:"50%",background:p,cursor:"pointer",
+                    outline:cur===p?`3px solid ${T.text}`:"none",outlineOffset:2,flexShrink:0}}/>
+              ))}
+            </div>
+          </>
+        )}
+
+        <div style={{fontSize:12,color:T.sub,fontWeight:700,marginBottom:8}}>Colore personalizzato (HEX)</div>
+        <HexColorPicker T={T} value={cur} onChange={onPick}/>
+      </div>
     </div>
   );
 }
@@ -5306,7 +5288,6 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[]
   const coloreVis=form.coloreCustom||autoColore;
   const fineAuto=form.tempo==="6h15"&&form.inizio?calcFine6h15(form.inizio):null;
   const [showPal,setShowPal]=useState(false);
-  const [showHexModel,setShowHexModel]=useState(false);
   return (
     <div style={{padding:"16px 14px 40px"}}>
       <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:8}}>
@@ -5425,33 +5406,12 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[]
               style={{background:"none",border:"none",color:T.sub,fontSize:11,cursor:"pointer",flexShrink:0}}>↩ auto</button>
           )}
         </div>
-        {showPal&&(()=>{
-          const coloriUsati=[...new Set(modelli.map(m=>m.coloreCustom||(m.tempo==="h24"?COLORE_H24:getColorByTime(m.inizio, fasceAutomatiche))).filter(Boolean))];
-          return (
-            <div style={{marginTop:10,background:T.surface,border:`1px solid ${T.border}`,
-              borderRadius:10,padding:8,maxWidth:160}}>
-              {coloriUsati.length>0&&(
-                <>
-                  <div style={{fontSize:9,fontWeight:700,color:T.sub,marginBottom:5}}>USATI</div>
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:5,marginBottom:6}}>
-                    {coloriUsati.map(p=>(
-                      <div key={p} onClick={()=>{setForm(f=>({...f,coloreCustom:p}));setShowPal(false);}}
-                        style={{width:20,height:20,borderRadius:"50%",background:p,cursor:"pointer",
-                          outline:coloreVis===p?`2px solid #64748b`:"none",outlineOffset:2}}/>
-                    ))}
-                    <div onClick={()=>setShowHexModel(s=>!s)}
-                      style={{width:20,height:20,borderRadius:"50%",background:T.s2,cursor:"pointer",
-                        border:`1px dashed ${T.sub}`,display:"flex",alignItems:"center",justifyContent:"center",
-                        fontSize:12,fontWeight:800,color:T.sub,lineHeight:1}}>+</div>
-                  </div>
-                </>
-              )}
-              {(showHexModel || coloriUsati.length===0)&&(
-                <HexColorPicker T={T} value={coloreVis} onChange={p=>setForm(f=>({...f,coloreCustom:p}))}/>
-              )}
-            </div>
-          );
-        })()}
+        {showPal&&(
+          <ColorPickerModal T={T} cur={coloreVis} title="Colore modello"
+            coloriUsati={[...new Set(modelli.map(m=>m.coloreCustom||(m.tempo==="h24"?COLORE_H24:getColorByTime(m.inizio, fasceAutomatiche))).filter(Boolean))]}
+            onPick={p=>setForm(f=>({...f,coloreCustom:p}))}
+            onClose={()=>setShowPal(false)}/>
+        )}
       </div>
 
       <button onClick={onSave}
