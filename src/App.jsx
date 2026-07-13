@@ -619,7 +619,7 @@ export default function App({ session }){
   function getEvts(key,cid){ return store.events?.[key]?.[cid]||[]; }
   function allEvts(key){
     const res=[];
-    const soloCal = (!editMode && selectedCalIds.length>0) ? selectedCalIds : null;
+    const soloCal = editMode ? (calId?[calId]:null) : (selectedCalIds.length>0 ? selectedCalIds : null);
     if(mainCal && (!soloCal||soloCal.includes(mainCal.id))) getEvts(key,mainCal.id).forEach(e=>res.push({...e,_cid:mainCal.id}));
     store.calendars.filter(c=>!c.isMain && (!soloCal||soloCal.includes(c.id))).forEach(c=>
       getEvts(key,c.id).forEach(e=>res.push({...e,_cid:c.id})));
