@@ -2057,9 +2057,6 @@ const modelliOrdinati = useMemo(()=>{
             <button key={c.id} onClick={()=>{
                 if(editMode){ setCalId(c.id); return; }
                 setSelectedCalIds(prev=> prev.includes(c.id) ? prev.filter(id=>id!==c.id) : [...prev, c.id]);
-                // Anche in consultazione, l'ultimo calendario toccato diventa quello "attivo"
-                // per le altre pagine (Modelli, OCR, nuovi eventi), non solo il filtro visivo.
-                setCalId(c.id);
               }}
               style={{display:"flex",alignItems:"center",gap:3,flexShrink:0,cursor:"pointer",
                 background:attivo?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.1)",
