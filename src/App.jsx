@@ -82,12 +82,13 @@ function uid(){ return Math.random().toString(36).slice(2)+Date.now().toString(3
 
 // #region SEZIONE 2: LOCALSTORAGE CACHE
 // ═══════════════════════════════════════════════════════════════
-function saveToLocalStorage(events, calendars, modelli){
+function saveToLocalStorage(events, calendars, modelli, calId){
   try {
     localStorage.setItem('cache_events', JSON.stringify(events));
     localStorage.setItem('cache_calendars', JSON.stringify(calendars));
     localStorage.setItem('cache_modelli', JSON.stringify(modelli));
     localStorage.setItem('cache_timestamp', new Date().toISOString());
+    if(calId) localStorage.setItem('cache_calId', calId);
   } catch(e){ console.warn('localStorage error:', e); }
 }
 function loadFromLocalStorage(){
@@ -96,7 +97,8 @@ function loadFromLocalStorage(){
     const calendars = JSON.parse(localStorage.getItem('cache_calendars')||'[]');
     const modelli = JSON.parse(localStorage.getItem('cache_modelli')||'[]');
     const timestamp = localStorage.getItem('cache_timestamp')||null;
-    return { events, calendars, modelli, timestamp };
+    const calId = localStorage.getItem('cache_calId')||null;
+    return { events, calendars, modelli, timestamp, calId };
   } catch(e){ return null; }
 }
 function clearLocalStorageCache(){
@@ -104,6 +106,7 @@ function clearLocalStorageCache(){
   localStorage.removeItem('cache_calendars');
   localStorage.removeItem('cache_modelli');
   localStorage.removeItem('cache_timestamp');
+  localStorage.removeItem('cache_calId');
 }
 // ── Helper immutabili per lo store eventi. Al posto del deep-clone completo
 // (JSON.parse(JSON.stringify(prev))) che ricopia TUTTO lo storico ad ogni
@@ -334,6 +337,9 @@ export default function App({ session }){
   const [year,  setYear]  = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
   const [calId, setCalId] = useState(null);
+  useEffect(()=>{
+    if(calId){ try{ localStorage.setItem('cache_calId', calId); }catch(e){} }
+  }, [calId]);
   const [editMode, setEditMode] = useState(false); // "M" — ON = modifica singola, OFF = selezione multipla
   const [selectedCalIds, setSelectedCalIds] = useState([]); // selezione multipla calendari (editMode OFF)
   const [selectedModelloIds, setSelectedModelloIds] = useState([]); // selezione multipla modelli (editMode OFF)
@@ -437,7 +443,8 @@ export default function App({ session }){
         if(cached && cached.calendars.length > 0){
           setStore(s=>({...s, calendars:cached.calendars, events:cached.events}));
           setModelli(cached.modelli||[]);
-          setCalId(cached.calendars[0]?.id||null);
+          const calIdValido = cached.calId && cached.calendars.some(c=>c.id===cached.calId);
+          setCalId(calIdValido ? cached.calId : (cached.calendars[0]?.id||null));
           setLoading(false);
         }
         const { data: cals } = await supabase.from("calendars").select("*").eq("user_id", userId).order("created_at");
@@ -517,8 +524,12 @@ export default function App({ session }){
         }));
 
         setStore({ calendars, events, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings, fasceAutomatiche: savedFasce });
-        setCalId(calendars[0]?.id||null);
-        saveToLocalStorage(events, calendars, modelliMappati);
+        setCalId(prevCalId => {
+          if(prevCalId && calendars.some(c=>c.id===prevCalId)) return prevCalId;
+          const daCache = cached?.calId && calendars.some(c=>c.id===cached.calId) ? cached.calId : null;
+          return daCache || calendars[0]?.id || null;
+        });
+        saveToLocalStorage(events, calendars, modelliMappati, cached?.calId);
 
         // Sincronizza i colori custom già presenti sui modelli con la
         // tabella "colori", nel caso in cui siano stati creati da versioni
