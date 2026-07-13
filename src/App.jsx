@@ -2057,6 +2057,9 @@ const modelliOrdinati = useMemo(()=>{
             <button key={c.id} onClick={()=>{
                 if(editMode){ setCalId(c.id); return; }
                 setSelectedCalIds(prev=> prev.includes(c.id) ? prev.filter(id=>id!==c.id) : [...prev, c.id]);
+                // Anche in consultazione, l'ultimo calendario toccato diventa quello "attivo"
+                // per le altre pagine (Modelli, OCR, nuovi eventi), non solo il filtro visivo.
+                setCalId(c.id);
               }}
               style={{display:"flex",alignItems:"center",gap:3,flexShrink:0,cursor:"pointer",
                 background:attivo?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.1)",
@@ -4192,7 +4195,9 @@ const modelliOrdinati = useMemo(()=>{
         </div>
       )}
       {showImportaFotoDialog && (
-        <ImportaFotoDialog T={T} accent={accent} dark={dark} modelli={modelli} year={year} month={month}
+        <ImportaFotoDialog T={T} accent={accent} dark={dark}
+          modelli={modelli.filter(m=>!m.calendarId || m.calendarId===calId)}
+          year={year} month={month}
           onClose={()=>setShowImportaFotoDialog(false)}
           onConfirm={async(righeValide)=>{
             await importaEventiSingoli(righeValide);
