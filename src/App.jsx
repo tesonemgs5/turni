@@ -1274,7 +1274,9 @@ const modelliOrdinati = useMemo(()=>{
   const toMins=t=>oraInMinuti(t);
   const INTESTAZIONI={
     "NOTTE":     -1,
+    "PRIMO":     6*60-1,
     "MATTINA":   6*60-1,
+    "SECONDO":   12*60-1,
     "POMERIGGIO":12*60-1,
     "3° TURNO":  16*60-1,
   };
@@ -5729,10 +5731,10 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
   // Radici testo-foto -> titolo modello reale. Basta trovare la radice (2-3 lettere)
   // dentro il testo letto dall'OCR, anche con rumore/orari/spazi attorno.
   const MAPPING_TURNI = [
-    { radice: "prim", titolo: "MATTINA" },
-    { radice: "second", titolo: "POMERIGGIO" },
-    { radice: "terz", titolo: "3°TURNO" },
-    { radice: "nott", titolo: "NOTTE" },
+    { radice: "prim", titoli: ["PRIMO","MATTINA"] },
+    { radice: "second", titoli: ["SECONDO","POMERIGGIO"] },
+    { radice: "terz", titoli: ["3°TURNO","3° TURNO"] },
+    { radice: "nott", titoli: ["NOTTE"] },
   ];
 
   const GIORNI_ABBR = "lun|mar|mer|gio|ven|sab|dom";
@@ -5745,7 +5747,8 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
     const t = (testoLetto||"").toLowerCase();
     const match = MAPPING_TURNI.find(m=>t.includes(m.radice));
     if(!match) return null; // nessuna radice riconosciuta -> lasciato vuoto
-    const mod = modelli.find(m=>(m.titolo||"").toUpperCase() === match.titolo);
+    const titoloMod = (m)=>(m.titolo||"").toUpperCase();
+    const mod = modelli.find(m=>match.titoli.includes(titoloMod(m)));
     return mod || null;
   }
 
