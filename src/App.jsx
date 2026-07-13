@@ -1332,6 +1332,29 @@ const modelliOrdinati = useMemo(()=>{
     } catch(e){ console.warn("ensureColoreRegistrato:", e); }
   }
 
+  // Prova a salvare; se Supabase segnala una colonna mancante nello schema,
+  // la rimuove dal payload e riprova, finché va a buon fine o non c'è più nulla da togliere.
+  // Così l'app resta funzionante anche se lo schema del DB non è ancora aggiornato.
+  async function supabaseUpsertConRetry(query, payloadIniziale, isInsert){
+    let payload = {...payloadIniziale};
+    for(let tentativi=0; tentativi<10; tentativi++){
+      const q = isInsert
+        ? supabase.from("modelli").insert(payload).select().maybeSingle()
+        : query(payload);
+      const { data, error } = await q;
+      if(!error) return { data, error:null, payloadUsato:payload };
+      const match = /Could not find the '([^']+)' column/.exec(error.message||"");
+      if(match && match[1] in payload){
+        console.warn(`Colonna '${match[1]}' assente su Supabase: la ometto e riprovo. Esegui l'ALTER TABLE per abilitarla stabilmente.`);
+        const { [match[1]]: _omessa, ...resto } = payload;
+        payload = resto;
+        continue;
+      }
+      return { data:null, error, payloadUsato:payload };
+    }
+    return { data:null, error:{message:"Troppi tentativi di retry sullo schema"}, payloadUsato:payload };
+  }
+
   async function saveModello(data){
     if(!userId) return;
     const coloreEff=data.coloreCustom||(data.tempo==="h24"?"#64748b":colByTime(data.inizio));
@@ -1351,7 +1374,10 @@ const modelliOrdinati = useMemo(()=>{
     };
     if(data.coloreCustom) await ensureColoreRegistrato(data.coloreCustom);
     if(data.id){
-      const { error: errUpdate } = await supabase.from("modelli").update(payload).eq("id",data.id).eq("user_id",userId);
+      const { error: errUpdate } = await supabaseUpsertConRetry(
+        (p)=>supabase.from("modelli").update(p).eq("id",data.id).eq("user_id",userId),
+        payload, false
+      );
       if(errUpdate){
         console.error("Errore salvataggio modello (update):", errUpdate);
         return { ok:false, error: errUpdate.message };
@@ -1386,7 +1412,7 @@ const modelliOrdinati = useMemo(()=>{
       });
       return { ok:true };
     } else {
-      const {data:res, error:errInsert}=await supabase.from("modelli").insert(payload).select().maybeSingle();
+      const {data:res, error:errInsert}=await supabaseUpsertConRetry(null, payload, true);
       if(errInsert){
         console.error("Errore salvataggio modello (insert):", errInsert);
         return { ok:false, error: errInsert.message };
