@@ -5742,10 +5742,11 @@ function GrigliaRotazione({rot, T, accent, modelli, fasceAutomatiche, onUpdate})
 }
 
 function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onConfirm}){
-  const [step, setStep] = useState("upload"); // upload | ocr
+  const [step, setStep] = useState("upload"); // upload | ocr | chiedi-gemini | gemini-ocr
   const [imgPreviewUrl, setImgPreviewUrl] = useState(null);
   const [progresso, setProgresso] = useState(0);
   const [errore, setErrore] = useState("");
+  const pendingFile = useRef(null);
 
   // Radici testo-foto -> titolo modello reale. Basta trovare la radice (2-3 lettere)
   // dentro il testo letto dall'OCR, anche con rumore/orari/spazi attorno.
@@ -5814,6 +5815,7 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
   }
 
   async function handleFile(file){
+    pendingFile.current = file;
     setImgPreviewUrl(URL.createObjectURL(file));
     setErrore("");
     setStep("ocr");
@@ -5841,14 +5843,52 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
       }
 
       if(righeElaborate.length===0){
-        setErrore("Non sono riuscito a riconoscere nessun turno dalla foto. Riprova con un'immagine più nitida.");
-        setStep("upload");
+        setErrore("Non sono riuscito a riconoscere nessun turno dalla foto in locale.");
+        setStep("chiedi-gemini");
         return;
       }
       await onConfirm(righeElaborate);
     }catch(err){
       console.error("Errore OCR:", err);
-      setErrore("Errore durante la lettura della foto. Riprova con un'immagine più nitida.");
+      setErrore("Errore durante la lettura della foto in locale.");
+      setStep("chiedi-gemini");
+    }
+  }
+
+  async function handleFileConGemini(file){
+    setErrore("");
+    setStep("gemini-ocr");
+    try{
+      const base64 = await new Promise((res, rej)=>{
+        const r = new FileReader();
+        r.onload = () => res(r.result.split(",")[1]);
+        r.onerror = () => rej(new Error("Lettura file fallita"));
+        r.readAsDataURL(file);
+      });
+      const resp = await fetch("/api/estrai-turni", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ fileBase64: base64, mimeType: file.type })
+      });
+      if(!resp.ok) throw new Error("Chiamata AI fallita");
+      const turniTrovati = await resp.json(); // [{data:"YYYY-MM-DD", turno:"..."}]
+
+      const righeElaborate = [];
+      for(const t of (turniTrovati||[])){
+        const mod = trovaModelloPerTesto(t.turno);
+        if(!mod) continue;
+        righeElaborate.push({ dateKey: t.data, modelloId: mod.id });
+      }
+
+      if(righeElaborate.length===0){
+        setErrore("Anche l'AI non è riuscita a riconoscere turni in questo file.");
+        setStep("upload");
+        return;
+      }
+      await onConfirm(righeElaborate);
+    }catch(err){
+      console.error("Errore Gemini:", err);
+      setErrore("Errore durante la lettura con l'AI. Riprova.");
       setStep("upload");
     }
   }
@@ -5884,6 +5924,12 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
                 <input type="file" accept="image/*" style={{display:"none"}}
                   onChange={e=>{ const f=e.target.files?.[0]; if(f) handleFile(f); }}/>
               </label>
+              <label style={{display:"block",marginTop:10,border:`2px dashed ${accent}`,borderRadius:12,
+                padding:"14px 16px",textAlign:"center",cursor:"pointer",color:accent,fontSize:13,fontWeight:700}}>
+                🤖 Interpreta direttamente con l'AI (foto o PDF)
+                <input type="file" accept="image/*,application/pdf" style={{display:"none"}}
+                  onChange={e=>{ const f=e.target.files?.[0]; if(f){ pendingFile.current=f; setImgPreviewUrl(f.type.startsWith("image")?URL.createObjectURL(f):null); handleFileConGemini(f); } }}/>
+              </label>
             </>
           )}
 
@@ -5894,6 +5940,35 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
               <div style={{height:6,background:T.s2,borderRadius:3,overflow:"hidden"}}>
                 <div style={{height:"100%",width:`${progresso}%`,background:accent,transition:"width 0.2s"}}/>
               </div>
+            </div>
+          )}
+
+          {step==="chiedi-gemini"&&(
+            <div style={{textAlign:"center",padding:"20px 8px"}}>
+              {imgPreviewUrl&&<img src={imgPreviewUrl} alt="" style={{maxWidth:"100%",maxHeight:140,borderRadius:8,marginBottom:16}}/>}
+              {errore&&<div style={{fontSize:13,color:T.sub,marginBottom:16}}>{errore}</div>}
+              <div style={{fontSize:13,color:T.text,marginBottom:16,fontWeight:700}}>
+                Il file non è leggibile in locale. Vuoi provare con l'intelligenza artificiale (Gemini)?
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={()=>{ setStep("upload"); setErrore(""); }}
+                  style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
+                    color:T.sub,padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
+                  No, riprovo la foto
+                </button>
+                <button onClick={()=>handleFileConGemini(pendingFile.current)}
+                  style={{flex:1,background:accent,border:"none",borderRadius:10,
+                    color:"#fff",padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
+                  🤖 Sì, usa l'AI
+                </button>
+              </div>
+            </div>
+          )}
+
+          {step==="gemini-ocr"&&(
+            <div style={{textAlign:"center",padding:"40px 16px"}}>
+              {imgPreviewUrl&&<img src={imgPreviewUrl} alt="" style={{maxWidth:"100%",maxHeight:140,borderRadius:8,marginBottom:16}}/>}
+              <div style={{fontSize:13,color:T.sub}}>Lettura del file con l'AI in corso…</div>
             </div>
           )}
         </div>
