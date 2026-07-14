@@ -1973,6 +1973,20 @@ const modelliOrdinati = useMemo(()=>{
         touchStartX.current=null; touchStartY.current=null;
       }}
       style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden",position:"relative"}}>
+      <style>{`
+        .calSideArrow{display:flex}
+        @media (hover:none){ .calSideArrow{display:none} }
+      `}</style>
+      <button className="calSideArrow" onClick={goPrevMonth}
+        style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",
+          zIndex:5,width:36,height:36,borderRadius:"50%",border:"none",
+          background:"rgba(0,0,0,0.25)",color:"#fff",fontSize:20,fontWeight:900,
+          alignItems:"center",justifyContent:"center",cursor:"pointer"}}>‹</button>
+      <button className="calSideArrow" onClick={goNextMonth}
+        style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",
+          zIndex:5,width:36,height:36,borderRadius:"50%",border:"none",
+          background:"rgba(0,0,0,0.25)",color:"#fff",fontSize:20,fontWeight:900,
+          alignItems:"center",justifyContent:"center",cursor:"pointer"}}>›</button>
       <div style={{background:accent,display:"flex",alignItems:"center",
         gap:5,padding:"6px 8px",overflowX:"auto",scrollbarWidth:"none",flexShrink:0}}>
         <button onClick={()=>month===0?(setYear(y=>y-1),setMonth(11)):setMonth(m=>m-1)} style={NB}>‹</button>
