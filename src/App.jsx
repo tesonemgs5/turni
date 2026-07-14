@@ -1973,20 +1973,6 @@ const modelliOrdinati = useMemo(()=>{
         touchStartX.current=null; touchStartY.current=null;
       }}
       style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden",position:"relative"}}>
-      <style>{`
-        .calSideArrow{display:flex}
-        @media (hover:none){ .calSideArrow{display:none} }
-      `}</style>
-      <button className="calSideArrow" onClick={goPrevMonth}
-        style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",
-          zIndex:5,width:36,height:36,borderRadius:"50%",border:"none",
-          background:"rgba(0,0,0,0.25)",color:"#fff",fontSize:20,fontWeight:900,
-          alignItems:"center",justifyContent:"center",cursor:"pointer"}}>‹</button>
-      <button className="calSideArrow" onClick={goNextMonth}
-        style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",
-          zIndex:5,width:36,height:36,borderRadius:"50%",border:"none",
-          background:"rgba(0,0,0,0.25)",color:"#fff",fontSize:20,fontWeight:900,
-          alignItems:"center",justifyContent:"center",cursor:"pointer"}}>›</button>
       <div style={{background:accent,display:"flex",alignItems:"center",
         gap:5,padding:"6px 8px",overflowX:"auto",scrollbarWidth:"none",flexShrink:0}}>
         <button onClick={()=>month===0?(setYear(y=>y-1),setMonth(11)):setMonth(m=>m-1)} style={NB}>‹</button>
@@ -3846,6 +3832,25 @@ const modelliOrdinati = useMemo(()=>{
       onClick={()=>pal&&setPal(null)}>
       <style>{`
         @keyframes calSlideOutLeft { from { transform:translateX(0); opacity:1; } to { transform:translateX(-100%); opacity:0; } }
+        .calOuterArrow{display:flex}
+        @media (hover:none), (max-width:640px) { .calOuterArrow{display:none} }
+      `}</style>
+      {screen==="cal" && (
+        <>
+          <button className="calOuterArrow" onClick={goPrevMonth}
+            style={{position:"fixed",left:"calc(50% - 280px)",top:"50%",transform:"translateY(-50%)",
+              zIndex:50,width:44,height:44,borderRadius:"50%",border:"1px solid #e2e8f0",
+              background:"#fff",color:"#334155",fontSize:22,fontWeight:900,
+              alignItems:"center",justifyContent:"center",cursor:"pointer",
+              boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}}>‹</button>
+          <button className="calOuterArrow" onClick={goNextMonth}
+            style={{position:"fixed",right:"calc(50% - 280px)",top:"50%",transform:"translateY(-50%)",
+              zIndex:50,width:44,height:44,borderRadius:"50%",border:"1px solid #e2e8f0",
+              background:"#fff",color:"#334155",fontSize:22,fontWeight:900,
+              alignItems:"center",justifyContent:"center",cursor:"pointer",
+              boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}}>›</button>
+        </>
+      )}
         @keyframes calSlideOutRight { from { transform:translateX(0); opacity:1; } to { transform:translateX(100%); opacity:0; } }
         @keyframes calSlideInLeft { from { transform:translateX(100%); opacity:0; } to { transform:translateX(0); opacity:1; } }
         @keyframes calSlideInRight { from { transform:translateX(-100%); opacity:0; } to { transform:translateX(0); opacity:1; } }
