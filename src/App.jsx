@@ -3847,7 +3847,7 @@ const modelliOrdinati = useMemo(()=>{
               alignItems:"center",justifyContent:"center",cursor:"pointer",
               boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}}>‹</button>
           <button className="calOuterArrow" onClick={goNextMonth}
-            style={{position:"fixed",right:"calc(50% - 280px)",top:"50%",transform:"translateY(-50%)",
+            style={{position:"fixed",right:"calc(50% - 320px)",top:"50%",transform:"translateY(-50%)",
               zIndex:50,width:44,height:44,borderRadius:"50%",border:"1px solid #e2e8f0",
               background:"#fff",color:"#334155",fontSize:22,fontWeight:900,
               alignItems:"center",justifyContent:"center",cursor:"pointer",
