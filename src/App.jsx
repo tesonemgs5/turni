@@ -3832,6 +3832,9 @@ const modelliOrdinati = useMemo(()=>{
       onClick={()=>pal&&setPal(null)}>
       <style>{`
         @keyframes calSlideOutLeft { from { transform:translateX(0); opacity:1; } to { transform:translateX(-100%); opacity:0; } }
+        @keyframes calSlideOutRight { from { transform:translateX(0); opacity:1; } to { transform:translateX(100%); opacity:0; } }
+        @keyframes calSlideInLeft { from { transform:translateX(100%); opacity:0; } to { transform:translateX(0); opacity:1; } }
+        @keyframes calSlideInRight { from { transform:translateX(-100%); opacity:0; } to { transform:translateX(0); opacity:1; } }
         .calOuterArrow{display:flex}
         @media (hover:none), (max-width:640px) { .calOuterArrow{display:none} }
       `}</style>
@@ -3851,10 +3854,6 @@ const modelliOrdinati = useMemo(()=>{
               boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}}>›</button>
         </>
       )}
-        @keyframes calSlideOutRight { from { transform:translateX(0); opacity:1; } to { transform:translateX(100%); opacity:0; } }
-        @keyframes calSlideInLeft { from { transform:translateX(100%); opacity:0; } to { transform:translateX(0); opacity:1; } }
-        @keyframes calSlideInRight { from { transform:translateX(-100%); opacity:0; } to { transform:translateX(0); opacity:1; } }
-      `}</style>
       {dbError && (
         <div style={{position:"fixed",top:8,left:"50%",transform:"translateX(-50%)",zIndex:9999,
           maxWidth:440,width:"calc(100% - 24px)",background:"#ef4444",color:"#fff",
