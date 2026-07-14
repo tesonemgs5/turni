@@ -1999,6 +1999,12 @@ const modelliOrdinati = useMemo(()=>{
             borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:"#fff",flexShrink:0}}>
           ✏️
         </button>
+        <button onClick={()=>setShowImportAI(true)}
+          title="Importa turni da foto/PDF con AI"
+          style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.4)",
+            borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:"#fff",flexShrink:0}}>
+          📷
+        </button>
         <button onClick={()=>{
             setEditMode(em=>{
               const next=!em;
