@@ -70,7 +70,6 @@ export function getContrastTextColor(hex){
 // ═══════════════════════════════════════════════════════════════
 import { useState, useEffect, useRef, useMemo, Fragment } from "react";
 import { supabase } from "./supabase";
-import Tesseract from "tesseract.js";
 
 const MONTHS = ["Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno",
                 "Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"];
@@ -342,6 +341,7 @@ export default function App({ session }){
   }, [calId]);
   const [editMode, setEditMode] = useState(false); // "M" — ON = modifica singola, OFF = selezione multipla
   const [selectedCalIds, setSelectedCalIds] = useState([]); // selezione multipla calendari (editMode OFF)
+  const [reportCalIds, setReportCalIds] = useState([]); // selezione calendari per il Report (vuoto = tutti)
   const [selectedModelloIds, setSelectedModelloIds] = useState([]); // selezione multipla modelli (editMode OFF)
   const [screen, setScreen] = useState("cal");
   const [dayKey, setDayKey] = useState(null);
@@ -438,7 +438,7 @@ export default function App({ session }){
     if(!userId) return;
     (async()=>{
       try {
-        // Mostra subito i dati da localStorage
+        // Mostra subito i dati da localStorage (invariato)
         const cached = loadFromLocalStorage();
         if(cached && cached.calendars.length > 0){
           setStore(s=>({...s, calendars:cached.calendars, events:cached.events}));
@@ -447,9 +447,24 @@ export default function App({ session }){
           setCalId(calIdValido ? cached.calId : (cached.calendars[0]?.id||null));
           setLoading(false);
         }
-        const { data: cals } = await supabase.from("calendars").select("*").eq("user_id", userId).order("created_at");
-        const { data: evts } = await supabase.from("events").select("*").eq("user_id", userId);
-        const { data: settings } = await supabase.from("user_settings").select("*").eq("user_id", userId).maybeSingle();
+
+        // Tutte le query indipendenti PARALLELE, invece che in sequenza:
+        // il tempo totale ora è quello della più lenta, non la somma di tutte.
+        const [
+          { data: cals },
+          { data: evts },
+          { data: settings },
+          { data: modelliDb },
+          { data: coloriDb },
+          { data: rotazioniDb },
+        ] = await Promise.all([
+          supabase.from("calendars").select("*").eq("user_id", userId).order("created_at"),
+          supabase.from("events").select("*").eq("user_id", userId),
+          supabase.from("user_settings").select("*").eq("user_id", userId).maybeSingle(),
+          supabase.from("modelli").select("*").eq("user_id", userId).order("sort_order"),
+          supabase.from("colori").select("*").eq("user_id", userId).order("created_at"),
+          supabase.from("rotazioni").select("*").eq("user_id", userId).order("created_at"),
+        ]);
 
         const calendars = (cals||[]).map(c=>({
           id: c.id, name: c.name, color: c.color, isMain: c.is_main, shifts: c.shifts||[],
@@ -478,41 +493,6 @@ export default function App({ session }){
         const savedConteggioConfigs = settings?.conteggio_configs || {};
         const savedFasce = settings?.fasce_automatiche || FASCE_AUTOMATICHE_DEFAULT;
 
-        const { data: modelliDb } = await supabase.from("modelli").select("*").eq("user_id", userId).order("sort_order");
-        setModelli((modelliDb||[]).map(m=>({
-          id:m.id, titolo:m.titolo, label:m.label||"", tempo:m.tempo,
-          inizio:m.inizio||"", fine:m.fine||"",
-          colore:m.colore, coloreCustom:m.colore_custom||null,
-          posizione:m.posizione||"", sortOrder:m.sort_order||0,
-          calendarId:m.calendar_id||null,
-          categoria:(m.categoria==="primo"||m.categoria==="secondo")?m.categoria:"",
-          categoriaAppAuto:(m.categoria_app_auto==="app"||m.categoria_app_auto==="auto")?m.categoria_app_auto:((m.categoria==="app"||m.categoria==="auto")?m.categoria:""),
-        })));
-
-        const { data: coloriDb } = await supabase.from("colori").select("*").eq("user_id", userId).order("created_at");
-        setColoriExtra((coloriDb||[]).map(c=>c.hex));
-
-        const { data: rotazioniDb } = await supabase.from("rotazioni").select("*").eq("user_id", userId).order("created_at");
-        setRotazioni((rotazioniDb||[]).map(r=>({
-          id:r.id, tipo:r.tipo, titolo:r.titolo,
-          dataInizio:r.data_inizio||"", nSettimane:r.n_settimane||52,
-          modellaLavoroId:r.modello_lavoro_id||null,
-          modelloNLId:r.modello_nl_id||null,
-          modelloRSId:r.modello_rs_id||null,
-          griglia:r.griglia||{},
-        })));
-
-        setSheetsUrl(sUrl);
-        setSheetsSecret(sSec);
-        setIndennita(savedIndennita);
-        setConteggioConfigs(savedConteggioConfigs);
-
-        try {
-          const { data: curStats } = await supabase.from("usage_stats").select("login_count").eq("user_id", userId).maybeSingle();
-          const newCount = (curStats?.login_count || 0) + 1;
-          await supabase.from("usage_stats").upsert({ user_id: userId, last_active: new Date().toISOString(), login_count: newCount });
-        } catch(statErr) { console.warn("Stats error:", statErr); }
-
         const modelliMappati = (modelliDb||[]).map(m=>({
           id:m.id, titolo:m.titolo, label:m.label||"", tempo:m.tempo,
           inizio:m.inizio||"", fine:m.fine||"",
@@ -523,56 +503,81 @@ export default function App({ session }){
           categoriaAppAuto:(m.categoria_app_auto==="app"||m.categoria_app_auto==="auto")?m.categoria_app_auto:((m.categoria==="app"||m.categoria==="auto")?m.categoria:""),
         }));
 
+        const rotazioniMappate = (rotazioniDb||[]).map(r=>({
+          id:r.id, tipo:r.tipo, titolo:r.titolo,
+          dataInizio:r.data_inizio||"", nSettimane:r.n_settimane||52,
+          modellaLavoroId:r.modello_lavoro_id||null,
+          modelloNLId:r.modello_nl_id||null,
+          modelloRSId:r.modello_rs_id||null,
+          griglia:r.griglia||{},
+        }));
+
+        // Applico TUTTO insieme, in un solo giro di render: niente più
+        // calendario che appare prima e modelli/colori che arrivano dopo.
         setStore({ calendars, events, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings, fasceAutomatiche: savedFasce });
+        setModelli(modelliMappati);
+        setColoriExtra((coloriDb||[]).map(c=>c.hex));
+        setRotazioni(rotazioniMappate);
+        setSheetsUrl(sUrl);
+        setSheetsSecret(sSec);
+        setIndennita(savedIndennita);
+        setConteggioConfigs(savedConteggioConfigs);
         setCalId(prevCalId => {
           if(prevCalId && calendars.some(c=>c.id===prevCalId)) return prevCalId;
           const daCache = cached?.calId && calendars.some(c=>c.id===cached.calId) ? cached.calId : null;
           return daCache || calendars[0]?.id || null;
         });
         saveToLocalStorage(events, calendars, modelliMappati, cached?.calId);
-
-        // Sincronizza i colori custom già presenti sui modelli con la
-        // tabella "colori", nel caso in cui siano stati creati da versioni
-        // precedenti dell'app che non salvavano il colore lì.
-        try {
-          const coloriUsati = [...new Set((modelliDb||[]).map(m=>m.colore_custom).filter(Boolean))];
-          const coloriGiaSalvati = new Set((coloriDb||[]).map(c=>c.hex));
-          const daSalvare = coloriUsati.filter(hex=>!coloriGiaSalvati.has(hex));
-          const nuoviColoriSalvati = [];
-
-          for(const hex of daSalvare){
-            const { data:cRes } = await supabase.from("colori").insert({ user_id:userId, hex }).select().maybeSingle();
-            if(cRes) nuoviColoriSalvati.push(hex);
-          }
-
-          if(nuoviColoriSalvati.length > 0) {
-            setColoriExtra(prev => {
-              const aggiornato = [...prev];
-              nuoviColoriSalvati.forEach(hex => {
-                if(!aggiornato.includes(hex)) aggiornato.push(hex);
-              });
-              return aggiornato;
-            });
-          }
-        } catch(e){ console.warn("Sync colori modelli:", e); }
-
-        // Inizializza sortOrder per modelli H24 che hanno tutti 0
-        const h24senza = (modelliDb||[]).filter(m=>(m.tempo==="h24"||!m.inizio)&&(m.sort_order||0)===0);
-        if(h24senza.length>1){
-          await Promise.all(h24senza.map((m, i) =>
-            supabase.from("modelli").update({sort_order:i*10}).eq("id",m.id).eq("user_id",userId)
-          ));
-          const {data:modelliDb2}=await supabase.from("modelli").select("*").eq("user_id",userId).order("sort_order");
-          setModelli((modelliDb2||[]).map(m=>({
-            id:m.id,titolo:m.titolo,label:m.label||"",tempo:m.tempo,
-            inizio:m.inizio||"",fine:m.fine||"",
-            colore:m.colore,coloreCustom:m.colore_custom||null,
-            posizione:m.posizione||"",sortOrder:m.sort_order||0,
-          })));
-        }
         isInitialized.current = true;
-      } catch(e){ console.log("Errore startup:", e); }
-      setLoading(false);
+        setLoading(false);
+
+        // ── Da qui in giù: sola manutenzione in background. Non serve per
+        // mostrare il calendario, quindi non blocca né ridisegna la UI a meno
+        // che trovi davvero qualcosa da correggere (casi rari).
+        (async()=>{
+          try {
+            const { data: curStats } = await supabase.from("usage_stats").select("login_count").eq("user_id", userId).maybeSingle();
+            const newCount = (curStats?.login_count || 0) + 1;
+            await supabase.from("usage_stats").upsert({ user_id: userId, last_active: new Date().toISOString(), login_count: newCount });
+          } catch(statErr) { console.warn("Stats error:", statErr); }
+
+          // Sincronizza i colori custom già presenti sui modelli con la tabella "colori"
+          try {
+            const coloriUsati = [...new Set((modelliDb||[]).map(m=>m.colore_custom).filter(Boolean))];
+            const coloriGiaSalvati = new Set((coloriDb||[]).map(c=>c.hex));
+            const daSalvare = coloriUsati.filter(hex=>!coloriGiaSalvati.has(hex));
+            const nuoviColoriSalvati = [];
+            for(const hex of daSalvare){
+              const { data:cRes } = await supabase.from("colori").insert({ user_id:userId, hex }).select().maybeSingle();
+              if(cRes) nuoviColoriSalvati.push(hex);
+            }
+            if(nuoviColoriSalvati.length > 0) {
+              setColoriExtra(prev => {
+                const aggiornato = [...prev];
+                nuoviColoriSalvati.forEach(hex => { if(!aggiornato.includes(hex)) aggiornato.push(hex); });
+                return aggiornato;
+              });
+            }
+          } catch(e){ console.warn("Sync colori modelli:", e); }
+
+          // Inizializza sortOrder per modelli H24 che hanno tutti 0
+          try {
+            const h24senza = (modelliDb||[]).filter(m=>(m.tempo==="h24"||!m.inizio)&&(m.sort_order||0)===0);
+            if(h24senza.length>1){
+              await Promise.all(h24senza.map((m, i) =>
+                supabase.from("modelli").update({sort_order:i*10}).eq("id",m.id).eq("user_id",userId)
+              ));
+              const {data:modelliDb2}=await supabase.from("modelli").select("*").eq("user_id",userId).order("sort_order");
+              setModelli((modelliDb2||[]).map(m=>({
+                id:m.id,titolo:m.titolo,label:m.label||"",tempo:m.tempo,
+                inizio:m.inizio||"",fine:m.fine||"",
+                colore:m.colore,coloreCustom:m.colore_custom||null,
+                posizione:m.posizione||"",sortOrder:m.sort_order||0,
+              })));
+            }
+          } catch(e){ console.warn("Fix sortOrder h24:", e); }
+        })();
+      } catch(e){ console.log("Errore startup:", e); setLoading(false); }
     })();
   },[userId]);
 // #endregion
@@ -1723,7 +1728,8 @@ const modelliOrdinati = useMemo(()=>{
     const fasceFiltro = cfg?.fasceFiltro || [];
     for(const [dateKey, calMap] of Object.entries(store.events)){
       if(dateKey < from || dateKey > to) continue;
-      for(const [, evts] of Object.entries(calMap)){
+      for(const [cid, evts] of Object.entries(calMap)){
+        if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
         for(const e of evts){
           if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
           const fascia = e.modelloId ? (fasceManuali[e.modelloId]||"") : "";
@@ -1755,7 +1761,8 @@ const modelliOrdinati = useMemo(()=>{
     const perGruppo = { primo:{}, secondo:{}, app:{}, auto:{} };
     for(const [dateKey, calMap] of Object.entries(store.events)){
       if(dateKey < from || dateKey > to) continue;
-      for(const [, evts] of Object.entries(calMap)){
+      for(const [cid, evts] of Object.entries(calMap)){
+        if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
         for(const e of evts){
           if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
           result.totale++;
@@ -1820,7 +1827,8 @@ const modelliOrdinati = useMemo(()=>{
     for(const [dateKey, calMap] of Object.entries(store.events)){
       if(dateKey < from || dateKey > to) continue;
       const fest = isFestivo(dateKey);
-      for(const [, evts] of Object.entries(calMap)){
+      for(const [cid, evts] of Object.entries(calMap)){
+        if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
         for(const e of evts){
           if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
           if(e.allDay) continue;
@@ -2267,7 +2275,7 @@ const modelliOrdinati = useMemo(()=>{
                 calc={computeIndennita(cfg.modelliInclusi||[])} onSave={()=>saveSettings({indennita})}/>
             )}
             {r.type==="ore_turno" && <OrePerTurnoView T={T} data={data}/>}
-            {r.type==="straordinari" && <StraordinariView T={T} data={data} store={store} reportRange={{from:range.from,to:range.to}} modelliInclusi={cfg.modelliInclusi||[]}/>}
+            {r.type==="straordinari" && <StraordinariView T={T} data={data} store={store} reportRange={{from:range.from,to:range.to}} modelliInclusi={cfg.modelliInclusi||[]} reportCalIds={reportCalIds}/>}
             {r.type==="guadagni" && (
               <GuadagniView T={T} indennita={indennita} calc={computeIndennita(cfg.modelliInclusi||[])}/>
             )}
@@ -2288,6 +2296,31 @@ const modelliOrdinati = useMemo(()=>{
           {range.label} ▾
         </button>
       </div>
+
+      {store.calendars.length>0 && (
+        <div style={{display:"flex",alignItems:"center",gap:5,padding:"0 12px 10px",
+          overflowX:"auto",scrollbarWidth:"none"}}>
+          {store.calendars.map(c=>{
+            const attivo = reportCalIds.length===0 || reportCalIds.includes(c.id);
+            return (
+              <button key={c.id} onClick={()=>{
+                  setReportCalIds(prev=>{
+                    if(prev.length===0) return [c.id];
+                    const next = prev.includes(c.id) ? prev.filter(id=>id!==c.id) : [...prev, c.id];
+                    return next.length===store.calendars.length ? [] : next;
+                  });
+                }}
+                style={{display:"flex",alignItems:"center",gap:3,flexShrink:0,cursor:"pointer",
+                  background:attivo?(T.dark?"rgba(255,255,255,0.15)":T.s2):"transparent",
+                  border:`1.5px solid ${attivo?accent:T.border}`,
+                  borderRadius:20,padding:"3px 9px 3px 6px"}}>
+                <div style={{width:8,height:8,borderRadius:"50%",background:c.color}}/>
+                <span style={{color:attivo?T.text:T.sub,fontSize:12,fontWeight:700}}>{c.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {activeReports.length>0 && (
         <div style={{margin:"8px 12px"}}>
@@ -4908,7 +4941,7 @@ function OrePerTurnoView({T, data}){
   );
 }
 
-function StraordinariView({T, data, store, reportRange, modelliInclusi=[]}){
+function StraordinariView({T, data, store, reportRange, modelliInclusi=[], reportCalIds=[]}){
   const {from, to} = reportRange || {from:"", to:""};
 
   let minPagamento = 0;
@@ -4917,7 +4950,8 @@ function StraordinariView({T, data, store, reportRange, modelliInclusi=[]}){
   for(const [dateKey, calMap] of Object.entries(store?.events||{})){
     if(from && dateKey < from) continue;
     if(to   && dateKey > to  ) continue;
-    for(const [, evts] of Object.entries(calMap)){
+    for(const [cid, evts] of Object.entries(calMap)){
+      if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
       for(const e of evts){
         if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
         const nota  = (e.note||"").toUpperCase();
@@ -5742,11 +5776,10 @@ function GrigliaRotazione({rot, T, accent, modelli, fasceAutomatiche, onUpdate})
 }
 
 function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onConfirm}){
-  const [step, setStep] = useState("upload"); // upload | ocr | chiedi-gemini | gemini-ocr
+  const [step, setStep] = useState("upload"); // upload | ocr
   const [imgPreviewUrl, setImgPreviewUrl] = useState(null);
   const [progresso, setProgresso] = useState(0);
   const [errore, setErrore] = useState("");
-  const pendingFile = useRef(null);
 
   // Radici testo-foto -> titolo modello reale. Basta trovare la radice (2-3 lettere)
   // dentro il testo letto dall'OCR, anche con rumore/orari/spazi attorno.
@@ -5815,12 +5848,12 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
   }
 
   async function handleFile(file){
-    pendingFile.current = file;
     setImgPreviewUrl(URL.createObjectURL(file));
     setErrore("");
     setStep("ocr");
     setProgresso(0);
     try{
+      const Tesseract = (await import("tesseract.js")).default;
       const { data } = await Tesseract.recognize(file, "ita", {
         logger: m => { if(m.status==="recognizing text") setProgresso(Math.round((m.progress||0)*100)); }
       });
@@ -5843,52 +5876,14 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
       }
 
       if(righeElaborate.length===0){
-        setErrore("Non sono riuscito a riconoscere nessun turno dalla foto in locale.");
-        setStep("chiedi-gemini");
-        return;
-      }
-      await onConfirm(righeElaborate);
-    }catch(err){
-      console.error("Errore OCR:", err);
-      setErrore("Errore durante la lettura della foto in locale.");
-      setStep("chiedi-gemini");
-    }
-  }
-
-  async function handleFileConGemini(file){
-    setErrore("");
-    setStep("gemini-ocr");
-    try{
-      const base64 = await new Promise((res, rej)=>{
-        const r = new FileReader();
-        r.onload = () => res(r.result.split(",")[1]);
-        r.onerror = () => rej(new Error("Lettura file fallita"));
-        r.readAsDataURL(file);
-      });
-      const resp = await fetch("/api/estrai-turni", {
-        method: "POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ fileBase64: base64, mimeType: file.type })
-      });
-      if(!resp.ok) throw new Error("Chiamata AI fallita");
-      const turniTrovati = await resp.json(); // [{data:"YYYY-MM-DD", turno:"..."}]
-
-      const righeElaborate = [];
-      for(const t of (turniTrovati||[])){
-        const mod = trovaModelloPerTesto(t.turno);
-        if(!mod) continue;
-        righeElaborate.push({ dateKey: t.data, modelloId: mod.id });
-      }
-
-      if(righeElaborate.length===0){
-        setErrore("Anche l'AI non è riuscita a riconoscere turni in questo file.");
+        setErrore("Non sono riuscito a riconoscere nessun turno dalla foto. Riprova con un'immagine più nitida.");
         setStep("upload");
         return;
       }
       await onConfirm(righeElaborate);
     }catch(err){
-      console.error("Errore Gemini:", err);
-      setErrore("Errore durante la lettura con l'AI. Riprova.");
+      console.error("Errore OCR:", err);
+      setErrore("Errore durante la lettura della foto. Riprova con un'immagine più nitida.");
       setStep("upload");
     }
   }
@@ -5924,12 +5919,6 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
                 <input type="file" accept="image/*" style={{display:"none"}}
                   onChange={e=>{ const f=e.target.files?.[0]; if(f) handleFile(f); }}/>
               </label>
-              <label style={{display:"block",marginTop:10,border:`2px dashed ${accent}`,borderRadius:12,
-                padding:"14px 16px",textAlign:"center",cursor:"pointer",color:accent,fontSize:13,fontWeight:700}}>
-                🤖 Interpreta direttamente con l'AI (foto o PDF)
-                <input type="file" accept="image/*,application/pdf" style={{display:"none"}}
-                  onChange={e=>{ const f=e.target.files?.[0]; if(f){ pendingFile.current=f; setImgPreviewUrl(f.type.startsWith("image")?URL.createObjectURL(f):null); handleFileConGemini(f); } }}/>
-              </label>
             </>
           )}
 
@@ -5940,35 +5929,6 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
               <div style={{height:6,background:T.s2,borderRadius:3,overflow:"hidden"}}>
                 <div style={{height:"100%",width:`${progresso}%`,background:accent,transition:"width 0.2s"}}/>
               </div>
-            </div>
-          )}
-
-          {step==="chiedi-gemini"&&(
-            <div style={{textAlign:"center",padding:"20px 8px"}}>
-              {imgPreviewUrl&&<img src={imgPreviewUrl} alt="" style={{maxWidth:"100%",maxHeight:140,borderRadius:8,marginBottom:16}}/>}
-              {errore&&<div style={{fontSize:13,color:T.sub,marginBottom:16}}>{errore}</div>}
-              <div style={{fontSize:13,color:T.text,marginBottom:16,fontWeight:700}}>
-                Il file non è leggibile in locale. Vuoi provare con l'intelligenza artificiale (Gemini)?
-              </div>
-              <div style={{display:"flex",gap:8}}>
-                <button onClick={()=>{ setStep("upload"); setErrore(""); }}
-                  style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
-                    color:T.sub,padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
-                  No, riprovo la foto
-                </button>
-                <button onClick={()=>handleFileConGemini(pendingFile.current)}
-                  style={{flex:1,background:accent,border:"none",borderRadius:10,
-                    color:"#fff",padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
-                  🤖 Sì, usa l'AI
-                </button>
-              </div>
-            </div>
-          )}
-
-          {step==="gemini-ocr"&&(
-            <div style={{textAlign:"center",padding:"40px 16px"}}>
-              {imgPreviewUrl&&<img src={imgPreviewUrl} alt="" style={{maxWidth:"100%",maxHeight:140,borderRadius:8,marginBottom:16}}/>}
-              <div style={{fontSize:13,color:T.sub}}>Lettura del file con l'AI in corso…</div>
             </div>
           )}
         </div>
