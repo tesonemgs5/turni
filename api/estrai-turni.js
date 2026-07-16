@@ -22,7 +22,7 @@ Se un giorno non ha turno assegnato o è vuoto, non includerlo nell'array.`;
 
   try {
     const r = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+      "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent",
       {
         method: "POST",
         headers: {
@@ -30,7 +30,6 @@ Se un giorno non ha turno assegnato o è vuoto, non includerlo nell'array.`;
           "x-goog-api-key": apiKey,
         },
         body: JSON.stringify({
-          contents: [
             {
               parts: [
                 { text: prompt },
