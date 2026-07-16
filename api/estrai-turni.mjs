@@ -34,7 +34,7 @@ Se un giorno non ha turno assegnato o è vuoto, non includerlo nell'array.`;
             {
               parts: [
                 { text: prompt },
-                { inline_data: { mime_type: mimeType, data: fileBase64 } },
+                { inlineData: { mimeType: mimeType, data: fileBase64 } },
               ],
             },
           ],
