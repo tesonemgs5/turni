@@ -30,6 +30,7 @@ Se un giorno non ha turno assegnato o è vuoto, non includerlo nell'array.`;
           "x-goog-api-key": apiKey,
         },
         body: JSON.stringify({
+          contents: [
             {
               parts: [
                 { text: prompt },
@@ -66,7 +67,6 @@ Se un giorno non ha turno assegnato o è vuoto, non includerlo nell'array.`;
       return res.status(502).json({ error: "Formato risposta AI inatteso" });
     }
 
-    // Validazione minima: tengo solo le righe con data e turno leggibili
     const turniValidi = turni.filter(
       (t) => t && typeof t.data === "string" && typeof t.turno === "string" && /^\d{4}-\d{2}-\d{2}$/.test(t.data)
     );
