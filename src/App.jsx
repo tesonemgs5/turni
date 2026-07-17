@@ -5769,11 +5769,48 @@ function GrigliaRotazione({rot, T, accent, modelli, fasceAutomatiche, onUpdate})
   );
 }
 
+// Preprocessing immagine per migliorare la lettura OCR: upscaling, scala di grigi
+// pesata, binarizzazione ad alto contrasto (bianco/nero netto). Restituisce un
+// nuovo File (stesso nome, tipo image/png) pronto per Tesseract.
+async function preprocessaImmagine(file){
+  const bitmap = await createImageBitmap(file);
+  const SCALA = 2; // upscaling 2x per migliorare la lettura di caratteri piccoli
+  const w = bitmap.width * SCALA;
+  const h = bitmap.height * SCALA;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(bitmap, 0, 0, w, h);
+
+  const imgData = ctx.getImageData(0, 0, w, h);
+  const px = imgData.data;
+
+  // Scala di grigi pesata (luminanza percettiva) + soglia di binarizzazione fissa.
+  // La soglia 150 è un compromesso ragionevole per foto di tabelle stampate
+  // scattate con smartphone in condizioni di luce normali.
+  const SOGLIA = 150;
+  for(let i=0; i<px.length; i+=4){
+    const grigio = 0.299*px[i] + 0.587*px[i+1] + 0.114*px[i+2];
+    const bn = grigio >= SOGLIA ? 255 : 0;
+    px[i] = bn; px[i+1] = bn; px[i+2] = bn;
+  }
+  ctx.putImageData(imgData, 0, 0);
+
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+  return new File([blob], (file.name||"foto") + "-preproc.png", { type: "image/png" });
+}
+
 function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onConfirm}){
-  const [step, setStep] = useState("upload"); // upload | ocr | chiedi-gemini | gemini-ocr
+  const [step, setStep] = useState("upload"); // upload | ocr | chiedi-gemini | gemini-ocr | incolla-json
   const [imgPreviewUrl, setImgPreviewUrl] = useState(null);
   const [progresso, setProgresso] = useState(0);
   const [errore, setErrore] = useState("");
+  const [confidenzaRaggiunta, setConfidenzaRaggiunta] = useState(null); // ultima confidenza OCR calcolata (0-100)
+  const [testoJsonIncollato, setTestoJsonIncollato] = useState("");
   const pendingFile = useRef(null);
 
   // Radici testo-foto -> titolo modello reale. Basta trovare la radice (2-3 lettere)
@@ -5798,6 +5835,20 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
     const titoloMod = (m)=>(m.titolo||"").toUpperCase();
     const mod = modelli.find(m=>match.titoli.includes(titoloMod(m)));
     return mod || null;
+  }
+
+  // Confidenza media Tesseract, calcolata solo sulle parole i cui caratteri
+  // corrispondono a una radice di turno riconosciuta (non su tutto il testo
+  // della pagina, che includerebbe intestazioni, icone lette come testo, ecc.).
+  function calcolaConfidenzaTurni(ocrWords, radiciTrovate){
+    if(!ocrWords || ocrWords.length===0) return 0;
+    const paroleRilevanti = ocrWords.filter(w=>{
+      const testo = (w.text||"").toLowerCase();
+      return radiciTrovate.some(r=>testo.includes(r) || r.includes(testo));
+    });
+    if(paroleRilevanti.length===0) return 0;
+    const somma = paroleRilevanti.reduce((acc,w)=>acc+(w.confidence||0), 0);
+    return somma / paroleRilevanti.length;
   }
 
   // Passaggio 1: parsing riga-per-riga (split su \n).
@@ -5842,41 +5893,74 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
     return risultato;
   }
 
+  // Esegue un singolo tentativo di lettura OCR su un file (già grezzo o già
+  // preprocessato) e restituisce sia le righe elaborate sia la confidenza
+  // media raggiunta sulle sole parole rilevanti per i turni.
+  async function tentativoOCR(file, onProgress){
+    const Tesseract = (await import("tesseract.js")).default;
+    const { data } = await Tesseract.recognize(file, "ita", {
+      logger: m => { if(m.status==="recognizing text" && onProgress) onProgress(Math.round((m.progress||0)*100)); }
+    });
+    const testo = data.text || "";
+
+    const daRigaPerRiga = parseRigaPerRiga(testo);
+    const daGlobale = parseGlobale(testo);
+    const numeriGiorno = new Set([...daRigaPerRiga.keys(), ...daGlobale.keys()]);
+
+    const mm = String(month+1).padStart(2,"0");
+    const righeElaborate = [];
+    const radiciTrovate = [];
+    for(const numGiorno of numeriGiorno){
+      const testoTurno = daRigaPerRiga.get(numGiorno) || daGlobale.get(numGiorno);
+      const mod = trovaModelloPerTesto(testoTurno);
+      if(!mod) continue;
+      const dd = String(numGiorno).padStart(2,"0");
+      righeElaborate.push({ dateKey: `${year}-${mm}-${dd}`, modelloId: mod.id });
+      const radice = MAPPING_TURNI.find(m=>(testoTurno||"").toLowerCase().includes(m.radice));
+      if(radice) radiciTrovate.push(radice.radice);
+    }
+
+    // data.words è disponibile nell'output di Tesseract.js v5+; se assente
+    // per qualche motivo, si tratta il caso come confidenza 0 (forza il tentativo successivo).
+    const parole = data.words || [];
+    const confidenza = calcolaConfidenzaTurni(parole, radiciTrovate);
+
+    return { righeElaborate, confidenza };
+  }
+
   async function handleFile(file){
     pendingFile.current = file;
     setImgPreviewUrl(URL.createObjectURL(file));
     setErrore("");
     setStep("ocr");
     setProgresso(0);
+    setConfidenzaRaggiunta(null);
     try{
-      const Tesseract = (await import("tesseract.js")).default;
-      const { data } = await Tesseract.recognize(file, "ita", {
-        logger: m => { if(m.status==="recognizing text") setProgresso(Math.round((m.progress||0)*100)); }
-      });
-      const testo = data.text || "";
-
-      // Doppio controllo: combino i due passaggi, il riga-per-riga ha priorità
-      // (è più affidabile sui turni consecutivi uguali), il globale completa i buchi.
-      const daRigaPerRiga = parseRigaPerRiga(testo);
-      const daGlobale = parseGlobale(testo);
-      const numeriGiorno = new Set([...daRigaPerRiga.keys(), ...daGlobale.keys()]);
-
-      const mm = String(month+1).padStart(2,"0");
-      const righeElaborate = [];
-      for(const numGiorno of numeriGiorno){
-        const testoTurno = daRigaPerRiga.get(numGiorno) || daGlobale.get(numGiorno);
-        const mod = trovaModelloPerTesto(testoTurno);
-        if(!mod) continue;
-        const dd = String(numGiorno).padStart(2,"0");
-        righeElaborate.push({ dateKey: `${year}-${mm}-${dd}`, modelloId: mod.id });
-      }
-
-      if(righeElaborate.length===0){
-        setErrore("Non sono riuscito a riconoscere nessun turno dalla foto in locale.");
-        setStep("chiedi-gemini");
+      // Tentativo 1: foto così com'è, nessun preprocessing. Criterio severo:
+      // deve essere una lettura esatta (confidenza piena, >=99.5 per tollerare
+      // arrotondamenti interni di Tesseract), altrimenti si scarta subito
+      // il risultato e si passa al preprocessing, anche se qualche turno
+      // fosse comunque stato riconosciuto per caso.
+      const tentativo1 = await tentativoOCR(file, setProgresso);
+      if(tentativo1.righeElaborate.length>0 && tentativo1.confidenza>=99.5){
+        setConfidenzaRaggiunta(tentativo1.confidenza);
+        await onConfirm(tentativo1.righeElaborate);
         return;
       }
-      await onConfirm(righeElaborate);
+
+      // Tentativo 2: foto preprocessata (contrasto, bianco/nero, upscaling).
+      // Qui la soglia è più permissiva: basta il 90% di confidenza media.
+      setProgresso(0);
+      const filePreproc = await preprocessaImmagine(file);
+      const tentativo2 = await tentativoOCR(filePreproc, setProgresso);
+      setConfidenzaRaggiunta(tentativo2.confidenza);
+      if(tentativo2.righeElaborate.length>0 && tentativo2.confidenza>=90){
+        await onConfirm(tentativo2.righeElaborate);
+        return;
+      }
+
+      setErrore(`Lettura poco affidabile (confidenza ${Math.round(tentativo2.confidenza)}%, sotto la soglia del 90%).`);
+      setStep("chiedi-gemini");
     }catch(err){
       console.error("Errore OCR:", err);
       setErrore("Errore durante la lettura della foto in locale.");
@@ -5922,6 +6006,37 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
     }
   }
 
+  async function handleImportaJsonIncollato(){
+    setErrore("");
+    let turniTrovati;
+    try{
+      turniTrovati = JSON.parse(testoJsonIncollato.trim());
+    }catch(err){
+      setErrore("Il testo incollato non è un JSON valido. Controlla di aver copiato tutto, comprese le parentesi quadre [ ].");
+      return;
+    }
+    if(!Array.isArray(turniTrovati)){
+      setErrore("Il JSON deve essere un array, es: [{\"data\":\"2026-07-01\",\"turno\":\"Primo\"}]");
+      return;
+    }
+
+    const righeElaborate = [];
+    for(const t of turniTrovati){
+      if(!t || typeof t.data!=="string" || typeof t.turno!=="string") continue;
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(t.data)) continue;
+      const mod = trovaModelloPerTesto(t.turno);
+      if(!mod) continue;
+      righeElaborate.push({ dateKey: t.data, modelloId: mod.id });
+    }
+
+    if(righeElaborate.length===0){
+      setErrore("Nessun turno riconosciuto in questo JSON (controlla il formato di data e nomi turno).");
+      return;
+    }
+    await onConfirm(righeElaborate);
+  }
+
+
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:700,
       display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
@@ -5959,7 +6074,49 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
                 <input type="file" accept="image/*,application/pdf" style={{display:"none"}}
                   onChange={e=>{ const f=e.target.files?.[0]; if(f){ pendingFile.current=f; setImgPreviewUrl(f.type.startsWith("image")?URL.createObjectURL(f):null); handleFileConGemini(f); } }}/>
               </label>
+              <button onClick={()=>{ setErrore(""); setStep("incolla-json"); }}
+                style={{display:"block",width:"100%",marginTop:10,border:`2px dashed ${T.sub}`,borderRadius:12,
+                  padding:"14px 16px",textAlign:"center",cursor:"pointer",color:T.sub,fontSize:13,fontWeight:700,
+                  background:"transparent"}}>
+                📋 Incolla un JSON già pronto
+              </button>
             </>
+          )}
+
+          {step==="incolla-json"&&(
+            <div>
+              {errore&&(
+                <div style={{background:"#ef444422",border:"1px solid #ef4444",borderRadius:8,
+                  padding:"8px 10px",fontSize:12,color:"#ef4444",marginBottom:12}}>
+                  {errore}
+                </div>
+              )}
+              <div style={{fontSize:12,color:T.sub,marginBottom:8}}>
+                Incolla qui l'array JSON con i turni, es: <code>[{"{"}"data":"2026-07-01","turno":"Primo"{"}"}]</code>
+              </div>
+              <textarea
+                value={testoJsonIncollato}
+                onChange={e=>setTestoJsonIncollato(e.target.value)}
+                placeholder='[{"data":"2026-07-01","turno":"Primo"}]'
+                style={{width:"100%",minHeight:160,borderRadius:10,border:`1px solid ${T.border}`,
+                  background:T.s2,color:T.text,fontSize:12,fontFamily:"monospace",padding:10,
+                  boxSizing:"border-box",resize:"vertical"}}
+              />
+              <div style={{display:"flex",gap:8,marginTop:12}}>
+                <button onClick={()=>{ setStep("upload"); setErrore(""); }}
+                  style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
+                    color:T.sub,padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
+                  Annulla
+                </button>
+                <button onClick={handleImportaJsonIncollato}
+                  disabled={!testoJsonIncollato.trim()}
+                  style={{flex:1,background:testoJsonIncollato.trim()?accent:T.s2,border:"none",borderRadius:10,
+                    color:testoJsonIncollato.trim()?"#fff":T.sub,padding:"10px 0",
+                    cursor:testoJsonIncollato.trim()?"pointer":"not-allowed",fontWeight:700,fontSize:12}}>
+                  Importa
+                </button>
+              </div>
+            </div>
           )}
 
           {step==="ocr"&&(
@@ -5976,6 +6133,11 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
             <div style={{textAlign:"center",padding:"20px 8px"}}>
               {imgPreviewUrl&&<img src={imgPreviewUrl} alt="" style={{maxWidth:"100%",maxHeight:140,borderRadius:8,marginBottom:16}}/>}
               {errore&&<div style={{fontSize:13,color:T.sub,marginBottom:16}}>{errore}</div>}
+              {confidenzaRaggiunta!=null&&(
+                <div style={{fontSize:11,color:T.sub,marginBottom:16}}>
+                  Confidenza lettura locale raggiunta: {Math.round(confidenzaRaggiunta)}%
+                </div>
+              )}
               <div style={{fontSize:13,color:T.text,marginBottom:16,fontWeight:700}}>
                 Il file non è leggibile in locale. Vuoi provare con l'intelligenza artificiale (Gemini)?
               </div>
@@ -5991,6 +6153,11 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
                   🤖 Sì, usa l'AI
                 </button>
               </div>
+              <button onClick={()=>{ setErrore(""); setStep("incolla-json"); }}
+                style={{width:"100%",marginTop:8,background:"transparent",border:`1px solid ${T.border}`,
+                  borderRadius:10,color:T.sub,padding:"9px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
+                📋 Oppure incolla un JSON già pronto
+              </button>
             </div>
           )}
 
