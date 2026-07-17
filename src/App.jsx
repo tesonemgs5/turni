@@ -5810,6 +5810,7 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
   const [progresso, setProgresso] = useState(0);
   const [errore, setErrore] = useState("");
   const [confidenzaRaggiunta, setConfidenzaRaggiunta] = useState(null); // ultima confidenza OCR calcolata (0-100)
+  const [nessunTurnoRilevato, setNessunTurnoRilevato] = useState(false); // true se l'OCR non ha trovato nessuna parola simile a un turno noto
   const [testoJsonIncollato, setTestoJsonIncollato] = useState("");
   const pendingFile = useRef(null);
 
@@ -5840,15 +5841,26 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
   // Confidenza media Tesseract, calcolata solo sulle parole i cui caratteri
   // corrispondono a una radice di turno riconosciuta (non su tutto il testo
   // della pagina, che includerebbe intestazioni, icone lette come testo, ecc.).
+  // Restituisce un oggetto (non un numero nudo) per distinguere due casi molto
+  // diversi che altrimenti finirebbero entrambi a "0%":
+  //  - nessunaParolaRilevante: l'OCR non ha trovato NESSUNA parola che somigli
+  //    a un turno noto (foto di tutt'altro, o lettura totalmente fallita) ->
+  //    lo 0% qui non è una misura di qualità, è "non applicabile".
+  //  - altrimenti: confidenza reale calcolata sulle parole trovate, che può
+  //    legittimamente essere bassa (es. 12%) se l'OCR le ha lette male.
   function calcolaConfidenzaTurni(ocrWords, radiciTrovate){
-    if(!ocrWords || ocrWords.length===0) return 0;
+    if(!ocrWords || ocrWords.length===0 || radiciTrovate.length===0){
+      return { confidenza: 0, nessunaParolaRilevante: true };
+    }
     const paroleRilevanti = ocrWords.filter(w=>{
       const testo = (w.text||"").toLowerCase();
       return radiciTrovate.some(r=>testo.includes(r) || r.includes(testo));
     });
-    if(paroleRilevanti.length===0) return 0;
+    if(paroleRilevanti.length===0){
+      return { confidenza: 0, nessunaParolaRilevante: true };
+    }
     const somma = paroleRilevanti.reduce((acc,w)=>acc+(w.confidence||0), 0);
-    return somma / paroleRilevanti.length;
+    return { confidenza: somma / paroleRilevanti.length, nessunaParolaRilevante: false };
   }
 
   // Passaggio 1: parsing riga-per-riga (split su \n).
@@ -5921,11 +5933,12 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
     }
 
     // data.words è disponibile nell'output di Tesseract.js v5+; se assente
-    // per qualche motivo, si tratta il caso come confidenza 0 (forza il tentativo successivo).
+    // per qualche motivo, si tratta come se nessuna parola rilevante fosse
+    // stata trovata (forza il tentativo successivo, con messaggio corretto).
     const parole = data.words || [];
-    const confidenza = calcolaConfidenzaTurni(parole, radiciTrovate);
+    const { confidenza, nessunaParolaRilevante } = calcolaConfidenzaTurni(parole, radiciTrovate);
 
-    return { righeElaborate, confidenza };
+    return { righeElaborate, confidenza, nessunaParolaRilevante };
   }
 
   async function handleFile(file){
@@ -5935,6 +5948,7 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
     setStep("ocr");
     setProgresso(0);
     setConfidenzaRaggiunta(null);
+    setNessunTurnoRilevato(false);
     try{
       // Tentativo 1: foto così com'è, nessun preprocessing. Criterio severo:
       // deve essere una lettura esatta (confidenza piena, >=99.5 per tollerare
@@ -5942,7 +5956,7 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
       // il risultato e si passa al preprocessing, anche se qualche turno
       // fosse comunque stato riconosciuto per caso.
       const tentativo1 = await tentativoOCR(file, setProgresso);
-      if(tentativo1.righeElaborate.length>0 && tentativo1.confidenza>=99.5){
+      if(tentativo1.righeElaborate.length>0 && !tentativo1.nessunaParolaRilevante && tentativo1.confidenza>=99.5){
         setConfidenzaRaggiunta(tentativo1.confidenza);
         await onConfirm(tentativo1.righeElaborate);
         return;
@@ -5953,13 +5967,18 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
       setProgresso(0);
       const filePreproc = await preprocessaImmagine(file);
       const tentativo2 = await tentativoOCR(filePreproc, setProgresso);
-      setConfidenzaRaggiunta(tentativo2.confidenza);
-      if(tentativo2.righeElaborate.length>0 && tentativo2.confidenza>=90){
+      setNessunTurnoRilevato(tentativo2.nessunaParolaRilevante);
+      if(!tentativo2.nessunaParolaRilevante) setConfidenzaRaggiunta(tentativo2.confidenza);
+      if(tentativo2.righeElaborate.length>0 && !tentativo2.nessunaParolaRilevante && tentativo2.confidenza>=90){
         await onConfirm(tentativo2.righeElaborate);
         return;
       }
 
-      setErrore(`Lettura poco affidabile (confidenza ${Math.round(tentativo2.confidenza)}%, sotto la soglia del 90%).`);
+      if(tentativo2.nessunaParolaRilevante){
+        setErrore("Non ho trovato nella foto nessuna parola simile a un turno conosciuto (Primo, Secondo, Terzo, Notte).");
+      }else{
+        setErrore(`Lettura poco affidabile (confidenza ${Math.round(tentativo2.confidenza)}%, sotto la soglia del 90%).`);
+      }
       setStep("chiedi-gemini");
     }catch(err){
       console.error("Errore OCR:", err);
@@ -6132,9 +6151,9 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
           {step==="chiedi-gemini"&&(
             <div style={{textAlign:"center",padding:"20px 8px"}}>
               {imgPreviewUrl&&<img src={imgPreviewUrl} alt="" style={{maxWidth:"100%",maxHeight:140,borderRadius:8,marginBottom:16}}/>}
-              {errore&&<div style={{fontSize:13,color:T.sub,marginBottom:16}}>{errore}</div>}
-              {confidenzaRaggiunta!=null&&(
-                <div style={{fontSize:11,color:T.sub,marginBottom:16}}>
+              {errore&&<div style={{fontSize:13,color:T.text,marginBottom:16}}>{errore}</div>}
+              {confidenzaRaggiunta!=null&&!nessunTurnoRilevato&&(
+                <div style={{fontSize:12,color:T.text,fontWeight:600,marginBottom:16}}>
                   Confidenza lettura locale raggiunta: {Math.round(confidenzaRaggiunta)}%
                 </div>
               )}
