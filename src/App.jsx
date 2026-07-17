@@ -5825,7 +5825,9 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
 
   const GIORNI_ABBR = "lun|mar|mer|gio|ven|sab|dom";
   // Riconosce l'inizio di una riga tabella: "mer 01", "mer. 01", "01 mer", ecc.
-  const INIZIO_RIGA_REGEX = new RegExp(`^\\s*(?:(${GIORNI_ABBR})\\.?\\s*(\\d{1,2})|(\\d{1,2})\\s*(${GIORNI_ABBR})\\.?)`, "i");
+  // Tollerante a icone/simboli spuri prima del giorno (es. emoji di ferie/riposo
+  // lette da Tesseract come caratteri strani), non solo spazi bianchi.
+  const INIZIO_RIGA_REGEX = new RegExp(`^[^a-zA-Z0-9]{0,6}(?:(${GIORNI_ABBR})\\.?\\s*(\\d{1,2})|(\\d{1,2})\\s*(${GIORNI_ABBR})\\.?)`, "i");
   // Fallback: cerca ovunque nel testo, usato solo per completare i giorni mancanti
   const RIGA_REGEX_GLOBALE = new RegExp(`(${GIORNI_ABBR})\\.?\\s*(\\d{1,2})[^\\wàèéìòù]*([a-zA-Zàèéìòù°'\\s]+)`, "gi");
 
@@ -5910,9 +5912,21 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
   // media raggiunta sulle sole parole rilevanti per i turni.
   async function tentativoOCR(file, onProgress){
     const Tesseract = (await import("tesseract.js")).default;
-    const { data } = await Tesseract.recognize(file, "ita", {
-      logger: m => { if(m.status==="recognizing text" && onProgress) onProgress(Math.round((m.progress||0)*100)); }
-    });
+    let data;
+    try{
+      const risultato = await Tesseract.recognize(file, "ita", {
+        logger: m => { if(m.status==="recognizing text" && onProgress) onProgress(Math.round((m.progress||0)*100)); }
+      });
+      data = risultato.data;
+    }catch(errTess){
+      // Tesseract scarica il modello linguistico italiano da un CDN esterno al
+      // primo uso; se la rete non lo raggiunge, l'errore arriva qui invece che
+      // come "zero parole lette" -> lo segnaliamo in modo esplicito e distinto.
+      console.error("Errore Tesseract (probabile problema di rete/download modello):", errTess);
+      const erroreRete = new Error("Impossibile caricare il modulo di lettura offline (problema di connessione). Riprova o usa l'AI.");
+      erroreRete.isErroreRete = true;
+      throw erroreRete;
+    }
     const testo = data.text || "";
 
     const daRigaPerRiga = parseRigaPerRiga(testo);
@@ -5982,7 +5996,7 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
       setStep("chiedi-gemini");
     }catch(err){
       console.error("Errore OCR:", err);
-      setErrore("Errore durante la lettura della foto in locale.");
+      setErrore(err && err.isErroreRete ? err.message : "Errore durante la lettura della foto in locale.");
       setStep("chiedi-gemini");
     }
   }
