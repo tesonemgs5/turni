@@ -5964,34 +5964,26 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
     setConfidenzaRaggiunta(null);
     setNessunTurnoRilevato(false);
     try{
-      // Tentativo 1: foto così com'è, nessun preprocessing. Criterio severo:
-      // deve essere una lettura esatta (confidenza piena, >=99.5 per tollerare
-      // arrotondamenti interni di Tesseract), altrimenti si scarta subito
-      // il risultato e si passa al preprocessing, anche se qualche turno
-      // fosse comunque stato riconosciuto per caso.
-      const tentativo1 = await tentativoOCR(file, setProgresso);
-      if(tentativo1.righeElaborate.length>0 && !tentativo1.nessunaParolaRilevante && tentativo1.confidenza>=99.5){
-        setConfidenzaRaggiunta(tentativo1.confidenza);
-        await onConfirm(tentativo1.righeElaborate);
-        return;
-      }
-
-      // Tentativo 2: foto preprocessata (contrasto, bianco/nero, upscaling).
-      // Qui la soglia è più permissiva: basta il 90% di confidenza media.
-      setProgresso(0);
+      // Preprocessing sempre applicato (contrasto, bianco/nero, upscaling) per
+      // dare a Tesseract la miglior immagine possibile fin dal primo tentativo.
       const filePreproc = await preprocessaImmagine(file);
-      const tentativo2 = await tentativoOCR(filePreproc, setProgresso);
-      setNessunTurnoRilevato(tentativo2.nessunaParolaRilevante);
-      if(!tentativo2.nessunaParolaRilevante) setConfidenzaRaggiunta(tentativo2.confidenza);
-      if(tentativo2.righeElaborate.length>0 && !tentativo2.nessunaParolaRilevante && tentativo2.confidenza>=90){
-        await onConfirm(tentativo2.righeElaborate);
+      const risultato = await tentativoOCR(filePreproc, setProgresso);
+
+      setNessunTurnoRilevato(risultato.nessunaParolaRilevante);
+      if(!risultato.nessunaParolaRilevante) setConfidenzaRaggiunta(risultato.confidenza);
+
+      // Nessuna soglia di confidenza bloccante: se sono stati riconosciuti
+      // turni, si accettano. La confidenza resta visibile solo come
+      // informazione, non come filtro che scarta risultati validi.
+      if(risultato.righeElaborate.length>0){
+        await onConfirm(risultato.righeElaborate);
         return;
       }
 
-      if(tentativo2.nessunaParolaRilevante){
+      if(risultato.nessunaParolaRilevante){
         setErrore("Non ho trovato nella foto nessuna parola simile a un turno conosciuto (Primo, Secondo, Terzo, Notte).");
       }else{
-        setErrore(`Lettura poco affidabile (confidenza ${Math.round(tentativo2.confidenza)}%, sotto la soglia del 90%).`);
+        setErrore("Non sono riuscito a riconoscere nessun turno dalla foto in locale.");
       }
       setStep("chiedi-gemini");
     }catch(err){
@@ -6165,13 +6157,13 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
           {step==="chiedi-gemini"&&(
             <div style={{textAlign:"center",padding:"20px 8px"}}>
               {imgPreviewUrl&&<img src={imgPreviewUrl} alt="" style={{maxWidth:"100%",maxHeight:140,borderRadius:8,marginBottom:16}}/>}
-              {errore&&<div style={{fontSize:13,color:T.text,marginBottom:16}}>{errore}</div>}
+              {errore&&<div style={{fontSize:13,color:"#1a1a1a",fontWeight:600,marginBottom:16}}>{errore}</div>}
               {confidenzaRaggiunta!=null&&!nessunTurnoRilevato&&(
-                <div style={{fontSize:12,color:T.text,fontWeight:600,marginBottom:16}}>
+                <div style={{fontSize:12,color:"#1a1a1a",fontWeight:600,marginBottom:16}}>
                   Confidenza lettura locale raggiunta: {Math.round(confidenzaRaggiunta)}%
                 </div>
               )}
-              <div style={{fontSize:13,color:T.text,marginBottom:16,fontWeight:700}}>
+              <div style={{fontSize:13,color:"#1a1a1a",marginBottom:16,fontWeight:700}}>
                 Il file non è leggibile in locale. Vuoi provare con l'intelligenza artificiale (Gemini)?
               </div>
               <div style={{display:"flex",gap:8}}>
