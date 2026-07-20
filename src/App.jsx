@@ -1587,8 +1587,11 @@ const modelliOrdinati = useMemo(()=>{
 
   async function importaEventiSingoli(righe){
     // righe: [{ dateKey, modelloId }] -- righe senza modelloId vengono ignorate
-    if(!userId || !calId || !righe?.length) return;
+    // Restituisce il numero di righe EFFETTIVAMENTE scritte (esclude modelloId
+    // mancante, modello inesistente, e duplicati già presenti sullo stesso giorno).
+    if(!userId || !calId || !righe?.length) return 0;
     const nuoviEventiLocali = {};
+    let nScritte = 0;
     for(const r of righe){
       if(!r.modelloId) continue;
       const mod = modelli.find(m=>m.id===r.modelloId);
@@ -1602,6 +1605,7 @@ const modelliOrdinati = useMemo(()=>{
       const [y,m,d] = r.dateKey.split("-").map(Number);
       const dataEv = new Date(y, m-1, d);
       await inserisciEventoGenerico(mod, dataEv, null, nuoviEventiLocali);
+      nScritte++;
     }
     setStore(prev => {
       const ns = JSON.parse(JSON.stringify(prev));
@@ -1616,6 +1620,7 @@ const modelliOrdinati = useMemo(()=>{
       syncSeAttivo(ns.events, ns.calendars);
       return ns;
     });
+    return nScritte;
   }
 
   async function applyRotazione(rotId, startDayKey, numRipetizioni, modPartenza="RS") {
@@ -4245,8 +4250,8 @@ const modelliOrdinati = useMemo(()=>{
           year={year} month={month}
           onClose={()=>setShowImportaFotoDialog(false)}
           onConfirm={async(righeValide)=>{
-            await importaEventiSingoli(righeValide);
-            setShowImportaFotoDialog(false);
+            const n = await importaEventiSingoli(righeValide);
+            return n;
           }}/>
       )}
       {showApplyRotDialog && (
@@ -5805,13 +5810,15 @@ async function preprocessaImmagine(file){
 }
 
 function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onConfirm}){
-  const [step, setStep] = useState("upload"); // upload | ocr | chiedi-gemini | gemini-ocr | incolla-json
+  const [step, setStep] = useState("scegli-tipo"); // scegli-tipo | upload | ocr | chiedi-gemini | gemini-ocr | incolla-json | riepilogo
+  const [tipoTabella, setTipoTabella] = useState(null); // "personale" | "stella"
   const [imgPreviewUrl, setImgPreviewUrl] = useState(null);
   const [progresso, setProgresso] = useState(0);
   const [errore, setErrore] = useState("");
   const [confidenzaRaggiunta, setConfidenzaRaggiunta] = useState(null); // ultima confidenza OCR calcolata (0-100)
   const [nessunTurnoRilevato, setNessunTurnoRilevato] = useState(false); // true se l'OCR non ha trovato nessuna parola simile a un turno noto
   const [testoJsonIncollato, setTestoJsonIncollato] = useState("");
+  const [nRigheAggiunte, setNRigheAggiunte] = useState(0);
   const pendingFile = useRef(null);
 
   // Radici testo-foto -> titolo modello reale. Basta trovare la radice (2-3 lettere)
@@ -5910,7 +5917,9 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
   // Esegue un singolo tentativo di lettura OCR su un file (già grezzo o già
   // preprocessato) e restituisce sia le righe elaborate sia la confidenza
   // media raggiunta sulle sole parole rilevanti per i turni.
-  async function tentativoOCR(file, onProgress){
+  // tipoTabella: "personale" (Primo/Secondo/Terzo/Notte, un modello per giorno)
+  //           o "stella" (ricerca "stella" per fascia oraria, più modelli per giorno).
+  async function tentativoOCR(file, onProgress, tipoTabella){
     const Tesseract = (await import("tesseract.js")).default;
     let data;
     try{
@@ -5928,6 +5937,7 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
       throw erroreRete;
     }
     const testo = data.text || "";
+    const parole = data.words || [];
 
     const daRigaPerRiga = parseRigaPerRiga(testo);
     const daGlobale = parseGlobale(testo);
@@ -5936,20 +5946,45 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
     const mm = String(month+1).padStart(2,"0");
     const righeElaborate = [];
     const radiciTrovate = [];
-    for(const numGiorno of numeriGiorno){
-      const testoTurno = daRigaPerRiga.get(numGiorno) || daGlobale.get(numGiorno);
-      const mod = trovaModelloPerTesto(testoTurno);
-      if(!mod) continue;
-      const dd = String(numGiorno).padStart(2,"0");
-      righeElaborate.push({ dateKey: `${year}-${mm}-${dd}`, modelloId: mod.id });
-      const radice = MAPPING_TURNI.find(m=>(testoTurno||"").toLowerCase().includes(m.radice));
-      if(radice) radiciTrovate.push(radice.radice);
+
+    if(tipoTabella==="stella"){
+      // Percorso per posizione: serve la Y di ogni riga-data nota, dedotta
+      // dalle parole che compongono il numero di giorno riconosciuto da
+      // INIZIO_RIGA_REGEX (stesso regex del parsing testuale, ma qui si cerca
+      // la parola-numero corrispondente dentro `parole` per prenderne la Y).
+      const numeroGiorniRigheData = [];
+      for(const numGiorno of numeriGiorno){
+        const paroleNumero = parole.find(w=>{
+          const t=(w.text||"").replace(/\D/g,"");
+          return t && parseInt(t,10)===numGiorno;
+        });
+        if(paroleNumero){
+          const yCentro = (paroleNumero.bbox.y0+paroleNumero.bbox.y1)/2;
+          numeroGiorniRigheData.push([numGiorno, yCentro]);
+        }
+      }
+      const trovati = trovaRigheStellaPerPosizione(parole, numeroGiorniRigheData);
+      for(const r of trovati){
+        const dd = String(r.numGiorno).padStart(2,"0");
+        righeElaborate.push({ dateKey: `${year}-${mm}-${dd}`, modelloId: r.modelloId });
+      }
+      if(trovati.length>0) radiciTrovate.push("stella");
+    }else{
+      for(const numGiorno of numeriGiorno){
+        const testoTurno = daRigaPerRiga.get(numGiorno) || daGlobale.get(numGiorno);
+        const dd = String(numGiorno).padStart(2,"0");
+        const dateKey = `${year}-${mm}-${dd}`;
+        const mod = trovaModelloPerTesto(testoTurno);
+        if(!mod) continue;
+        righeElaborate.push({ dateKey, modelloId: mod.id });
+        const radice = MAPPING_TURNI.find(m=>(testoTurno||"").toLowerCase().includes(m.radice));
+        if(radice) radiciTrovate.push(radice.radice);
+      }
     }
 
     // data.words è disponibile nell'output di Tesseract.js v5+; se assente
     // per qualche motivo, si tratta come se nessuna parola rilevante fosse
     // stata trovata (forza il tentativo successivo, con messaggio corretto).
-    const parole = data.words || [];
     const { confidenza, nessunaParolaRilevante } = calcolaConfidenzaTurni(parole, radiciTrovate);
 
     return { righeElaborate, confidenza, nessunaParolaRilevante };
@@ -5967,7 +6002,7 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
       // Preprocessing sempre applicato (contrasto, bianco/nero, upscaling) per
       // dare a Tesseract la miglior immagine possibile fin dal primo tentativo.
       const filePreproc = await preprocessaImmagine(file);
-      const risultato = await tentativoOCR(filePreproc, setProgresso);
+      const risultato = await tentativoOCR(filePreproc, setProgresso, tipoTabella);
 
       setNessunTurnoRilevato(risultato.nessunaParolaRilevante);
       if(!risultato.nessunaParolaRilevante) setConfidenzaRaggiunta(risultato.confidenza);
@@ -5976,12 +6011,16 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
       // turni, si accettano. La confidenza resta visibile solo come
       // informazione, non come filtro che scarta risultati validi.
       if(risultato.righeElaborate.length>0){
-        await onConfirm(risultato.righeElaborate);
+        const n = await onConfirm(risultato.righeElaborate);
+        setNRigheAggiunte(n||0);
+        setStep("riepilogo");
         return;
       }
 
       if(risultato.nessunaParolaRilevante){
-        setErrore("Non ho trovato nella foto nessuna parola simile a un turno conosciuto (Primo, Secondo, Terzo, Notte).");
+        setErrore(tipoTabella==="stella"
+          ? "Non ho trovato nella foto nessuna occorrenza di \"Stella\"."
+          : "Non ho trovato nella foto nessuna parola simile a un turno conosciuto (Primo, Secondo, Terzo, Notte).");
       }else{
         setErrore("Non sono riuscito a riconoscere nessun turno dalla foto in locale.");
       }
@@ -6031,34 +6070,179 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
     }
   }
 
+  // Converte "1 agosto 2026" -> "2026-08-01". Tollerante a maiuscole/minuscole
+  // e a piccole variazioni di spaziatura. Restituisce null se non riconosciuta.
+  function dataItalianaToISO(testo){
+    const MESI_IT = ["gennaio","febbraio","marzo","aprile","maggio","giugno",
+      "luglio","agosto","settembre","ottobre","novembre","dicembre"];
+    const m = /^(\d{1,2})\s+([a-zàèéìòù]+)\s+(\d{4})$/i.exec((testo||"").trim());
+    if(!m) return null;
+    const giorno = parseInt(m[1], 10);
+    const indiceMese = MESI_IT.indexOf(m[2].toLowerCase());
+    if(indiceMese<0) return null;
+    const anno = m[3];
+    return `${anno}-${String(indiceMese+1).padStart(2,"0")}-${String(giorno).padStart(2,"0")}`;
+  }
+
+  // Estrae l'orario di inizio (in minuti) dalla chiave di una fascia oraria,
+  // es. "00.00_06.30" o "6.00-12.15" o "06:00_12:30" -> minuti dall'inizio inizio fascia.
+  // Tollerante a "." ":" o "-" come separatore ore/minuti, e a "_" "-" tra inizio e fine.
+  function estraiMinutiInizioFascia(chiave){
+    const primaParte = (chiave||"").split(/[_]/)[0].trim();
+    const m = /^(\d{1,2})[.:h]?(\d{2})?/.exec(primaParte);
+    if(!m) return null;
+    const ore = parseInt(m[1], 10);
+    const minuti = m[2] ? parseInt(m[2], 10) : 0;
+    return ore*60 + minuti;
+  }
+
+  // Trova, tra i modelli del calendario corrente, quello il cui orario di
+  // inizio (m.inizio, già in formato HH:MM) è più vicino ai minuti richiesti,
+  // entro la tolleranza data (default 30 minuti, come da fasce indicative).
+  // Trova, tra i modelli del calendario corrente, quello il cui orario di
+  // inizio (m.inizio, già in formato HH:MM) è più vicino ai minuti richiesti,
+  // entro la tolleranza data (default 30 minuti, come da fasce indicative).
+  function trovaModelloPerOrarioInizio(minutiRichiesti, tolleranzaMinuti=30){
+    if(minutiRichiesti==null) return null;
+    let migliore = null, distanzaMigliore = Infinity;
+    for(const mod of modelli){
+      if(!mod.inizio) continue;
+      const minMod = oraInMinuti(mod.inizio);
+      if(minMod==null) continue;
+      const distanza = Math.min(Math.abs(minMod-minutiRichiesti), 1440-Math.abs(minMod-minutiRichiesti));
+      if(distanza < distanzaMigliore){
+        distanzaMigliore = distanza;
+        migliore = mod;
+      }
+    }
+    return distanzaMigliore<=tolleranzaMinuti ? migliore : null;
+  }
+
+  // Analizza le parole OCR (con coordinate) per trovare, per ogni occorrenza di
+  // "stella", a quale COLONNA della tabella appartiene in base alla posizione X,
+  // e a quale GIORNO appartiene in base alla posizione Y (riga più vicina che
+  // contiene una data riconosciuta). Le colonne vengono dedotte clusterizzando
+  // le X di TUTTE le parole della pagina (non solo "stella"): si assume che le
+  // colonne siano bande verticali con poco spazio vuoto tra il testo di una
+  // banda e l'altra, separate da vuoti più ampi (i bordi della tabella).
+  // Le colonne trovate vengono poi assegnate ai modelli del calendario in
+  // ordine di posizione sinistra->destra = ordine di orario di inizio crescente
+  // (assunzione: nelle tabelle Stella le fasce orarie procedono così, come
+  // osservato negli screenshot forniti).
+  // LIMITE NOTO: dipende dalla qualità delle coordinate restituite da Tesseract,
+  // che su foto storte/sfocate/a bassa risoluzione possono essere imprecise.
+  // Verificare sempre il risultato dopo l'import su foto nuove.
+  function trovaRigheStellaPerPosizione(words, numeroGiorniRigheData){
+    if(!words || words.length===0) return [];
+
+    // 1) Clusterizza le X di tutte le parole per dedurre i confini delle colonne.
+    //    Ordina i centri X, poi taglia dove c'è un salto ampio rispetto alla
+    //    larghezza media delle parole (gap = probabile bordo di colonna).
+    const centriX = words.map(w=>(w.bbox.x0+w.bbox.x1)/2).sort((a,b)=>a-b);
+    const larghezzaMediaParola = words.reduce((acc,w)=>acc+(w.bbox.x1-w.bbox.x0),0)/words.length;
+    const sogliaSalto = larghezzaMediaParola*3; // gap oltre 3x la larghezza media parola = nuova colonna
+    const confiniColonne = [];
+    for(let i=1;i<centriX.length;i++){
+      if(centriX[i]-centriX[i-1] > sogliaSalto){
+        confiniColonne.push((centriX[i]+centriX[i-1])/2);
+      }
+    }
+    // Le colonne sono gli intervalli tra i confini trovati (+ i due estremi).
+    const bordi = [-Infinity, ...confiniColonne, Infinity];
+    const numColonne = bordi.length-1;
+    const colonnaDiX = (x)=>{
+      for(let c=0;c<numColonne;c++){ if(x>=bordi[c] && x<bordi[c+1]) return c; }
+      return numColonne-1;
+    };
+
+    // 2) Modelli ordinati per orario di inizio crescente, assunti corrispondere
+    //    da sinistra a destra alle colonne trovate.
+    const modelliOrdinati = [...modelli]
+      .filter(m=>m.inizio)
+      .sort((a,b)=>(oraInMinuti(a.inizio)??0) - (oraInMinuti(b.inizio)??0));
+
+    // 3) Per ogni parola "stella" trovata, determina colonna (-> modello) e riga
+    //    (-> giorno, tramite la Y della parola più vicina a una riga-data nota).
+    const risultati = [];
+    const paroleStella = words.filter(w=>/stella/i.test(w.text));
+    for(const w of paroleStella){
+      const centroX = (w.bbox.x0+w.bbox.x1)/2;
+      const centroY = (w.bbox.y0+w.bbox.y1)/2;
+      const colonna = colonnaDiX(centroX);
+      const mod = modelliOrdinati[colonna];
+      if(!mod) continue;
+      // trova la riga-data (numeroGiorno) la cui Y è più vicina al centroY di "stella"
+      let giornoVicino = null, distanzaY = Infinity;
+      for(const [numGiorno, yRiga] of numeroGiorniRigheData){
+        const d = Math.abs(yRiga-centroY);
+        if(d<distanzaY){ distanzaY = d; giornoVicino = numGiorno; }
+      }
+      if(giornoVicino==null) continue;
+      risultati.push({ numGiorno: giornoVicino, modelloId: mod.id });
+    }
+    return risultati;
+  }
+
+
   async function handleImportaJsonIncollato(){
     setErrore("");
-    let turniTrovati;
+    let parsed;
     try{
-      turniTrovati = JSON.parse(testoJsonIncollato.trim());
+      parsed = JSON.parse(testoJsonIncollato.trim());
     }catch(err){
-      setErrore("Il testo incollato non è un JSON valido. Controlla di aver copiato tutto, comprese le parentesi quadre [ ].");
-      return;
-    }
-    if(!Array.isArray(turniTrovati)){
-      setErrore("Il JSON deve essere un array, es: [{\"data\":\"2026-07-01\",\"turno\":\"Primo\"}]");
+      setErrore("Il testo incollato non è un JSON valido. Controlla di aver copiato tutto, comprese le parentesi { } o [ ].");
       return;
     }
 
     const righeElaborate = [];
-    for(const t of turniTrovati){
-      if(!t || typeof t.data!=="string" || typeof t.turno!=="string") continue;
-      if(!/^\d{4}-\d{2}-\d{2}$/.test(t.data)) continue;
-      const mod = trovaModelloPerTesto(t.turno);
-      if(!mod) continue;
-      righeElaborate.push({ dateKey: t.data, modelloId: mod.id });
+
+    if(Array.isArray(parsed)){
+      // Formato "piatto": [{"data":"2026-07-01","turno":"Primo"}, ...]
+      for(const t of parsed){
+        if(!t || typeof t.data!=="string" || typeof t.turno!=="string") continue;
+        if(!/^\d{4}-\d{2}-\d{2}$/.test(t.data)) continue;
+        const mod = trovaModelloPerTesto(t.turno);
+        if(!mod) continue;
+        righeElaborate.push({ dateKey: t.data, modelloId: mod.id });
+      }
+    }else if(parsed && typeof parsed==="object"){
+      // Formato "raggruppato per fascia oraria": un oggetto con un livello di
+      // annidamento arbitrario (es. {"turni_stella": {"00.00_06.30": [date...]}})
+      // dove le foglie sono array di date testuali italiane. Si scende
+      // ricorsivamente finché non si trova un array: la CHIAVE che contiene
+      // quell'array è trattata come fascia oraria da matchare per orario.
+      const visita = (nodo)=>{
+        if(Array.isArray(nodo)) return; // gestito dal chiamante tramite Object.entries
+        if(nodo && typeof nodo==="object"){
+          for(const [chiave, valore] of Object.entries(nodo)){
+            if(Array.isArray(valore)){
+              const minutiInizio = estraiMinutiInizioFascia(chiave);
+              const mod = trovaModelloPerOrarioInizio(minutiInizio);
+              if(!mod) continue;
+              for(const dataTesto of valore){
+                const iso = dataItalianaToISO(dataTesto);
+                if(!iso) continue;
+                righeElaborate.push({ dateKey: iso, modelloId: mod.id });
+              }
+            }else{
+              visita(valore);
+            }
+          }
+        }
+      };
+      visita(parsed);
+    }else{
+      setErrore("Formato JSON non riconosciuto.");
+      return;
     }
 
     if(righeElaborate.length===0){
-      setErrore("Nessun turno riconosciuto in questo JSON (controlla il formato di data e nomi turno).");
+      setErrore("Nessun turno riconosciuto in questo JSON (controlla formato date, nomi turno, o orari delle fasce).");
       return;
     }
-    await onConfirm(righeElaborate);
+    const n = await onConfirm(righeElaborate);
+    setNRigheAggiunte(n||0);
+    setStep("riepilogo");
   }
 
 
@@ -6078,6 +6262,26 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
         </div>
 
         <div style={{flex:1,overflowY:"auto",padding:16}}>
+
+          {step==="scegli-tipo"&&(
+            <div>
+              <div style={{fontSize:13,color:"#1a1a1a",fontWeight:700,marginBottom:14}}>
+                Che tipo di tabella stai importando?
+              </div>
+              <button onClick={()=>{ setTipoTabella("personale"); setStep("upload"); }}
+                style={{display:"block",width:"100%",border:`2px dashed ${accent}`,borderRadius:12,
+                  padding:"16px",textAlign:"center",cursor:"pointer",color:accent,fontSize:13,fontWeight:700,
+                  background:"transparent",marginBottom:10}}>
+                👤 Turni personali (Primo, Secondo, Terzo, Notte)
+              </button>
+              <button onClick={()=>{ setTipoTabella("stella"); setStep("upload"); }}
+                style={{display:"block",width:"100%",border:`2px dashed ${accent}`,borderRadius:12,
+                  padding:"16px",textAlign:"center",cursor:"pointer",color:accent,fontSize:13,fontWeight:700,
+                  background:"transparent"}}>
+                ⭐ Turni Stella (per fasce orarie)
+              </button>
+            </div>
+          )}
 
           {step==="upload"&&(
             <>
@@ -6141,6 +6345,27 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
                   Importa
                 </button>
               </div>
+            </div>
+          )}
+
+          {step==="riepilogo"&&(
+            <div style={{textAlign:"center",padding:"30px 8px"}}>
+              <div style={{fontSize:36,marginBottom:12}}>✅</div>
+              <div style={{fontSize:15,color:"#1a1a1a",fontWeight:800,marginBottom:8}}>
+                {nRigheAggiunte>0
+                  ? `${nRigheAggiunte} turno${nRigheAggiunte===1?"":"i"} aggiunto${nRigheAggiunte===1?"":"i"} al calendario`
+                  : "Nessun turno nuovo aggiunto"}
+              </div>
+              {nRigheAggiunte===0&&(
+                <div style={{fontSize:12,color:"#1a1a1a",marginBottom:8}}>
+                  I turni trovati erano probabilmente già presenti nel calendario.
+                </div>
+              )}
+              <button onClick={()=>{ onClose(); }}
+                style={{width:"100%",marginTop:16,background:accent,border:"none",borderRadius:10,
+                  color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:700,fontSize:13}}>
+                Fatto
+              </button>
             </div>
           )}
 
