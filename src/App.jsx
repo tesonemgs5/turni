@@ -5819,6 +5819,7 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
   const [nessunTurnoRilevato, setNessunTurnoRilevato] = useState(false); // true se l'OCR non ha trovato nessuna parola simile a un turno noto
   const [testoJsonIncollato, setTestoJsonIncollato] = useState("");
   const [nRigheAggiunte, setNRigheAggiunte] = useState(0);
+  const [importando, setImportando] = useState(false); // true durante l'elaborazione del JSON incollato, per disabilitare il pulsante e mostrare feedback visivo
   const pendingFile = useRef(null);
 
   // Radici testo-foto -> titolo modello reale. Basta trovare la radice (2-3 lettere)
@@ -6185,12 +6186,15 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
 
 
   async function handleImportaJsonIncollato(){
+    if(importando) return; // guardia esplicita: ignora click ripetuti mentre un'importazione è già in corso
+    setImportando(true);
     setErrore("");
     let parsed;
     try{
       parsed = JSON.parse(testoJsonIncollato.trim());
     }catch(err){
       setErrore("Il testo incollato non è un JSON valido. Controlla di aver copiato tutto, comprese le parentesi { } o [ ].");
+      setImportando(false);
       return;
     }
 
@@ -6233,15 +6237,18 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
       visita(parsed);
     }else{
       setErrore("Formato JSON non riconosciuto.");
+      setImportando(false);
       return;
     }
 
     if(righeElaborate.length===0){
       setErrore("Nessun turno riconosciuto in questo JSON (controlla formato date, nomi turno, o orari delle fasce).");
+      setImportando(false);
       return;
     }
     const n = await onConfirm(righeElaborate);
     setNRigheAggiunte(n||0);
+    setImportando(false);
     setStep("riepilogo");
   }
 
@@ -6333,16 +6340,18 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
               />
               <div style={{display:"flex",gap:8,marginTop:12}}>
                 <button onClick={()=>{ setStep("upload"); setErrore(""); }}
+                  disabled={importando}
                   style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
-                    color:T.sub,padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
+                    color:importando?T.border:T.sub,padding:"10px 0",
+                    cursor:importando?"not-allowed":"pointer",fontWeight:700,fontSize:12}}>
                   Annulla
                 </button>
                 <button onClick={handleImportaJsonIncollato}
-                  disabled={!testoJsonIncollato.trim()}
-                  style={{flex:1,background:testoJsonIncollato.trim()?accent:T.s2,border:"none",borderRadius:10,
-                    color:testoJsonIncollato.trim()?"#fff":T.sub,padding:"10px 0",
-                    cursor:testoJsonIncollato.trim()?"pointer":"not-allowed",fontWeight:700,fontSize:12}}>
-                  Importa
+                  disabled={!testoJsonIncollato.trim()||importando}
+                  style={{flex:1,background:importando?T.border:(testoJsonIncollato.trim()?accent:T.s2),border:"none",borderRadius:10,
+                    color:importando?T.sub:(testoJsonIncollato.trim()?"#fff":T.sub),padding:"10px 0",
+                    cursor:(testoJsonIncollato.trim()&&!importando)?"pointer":"not-allowed",fontWeight:700,fontSize:12}}>
+                  {importando?"⏳ Importazione in corso…":"Importa"}
                 </button>
               </div>
             </div>
