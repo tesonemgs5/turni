@@ -107,6 +107,12 @@ function clearLocalStorageCache(){
   localStorage.removeItem('cache_timestamp');
   localStorage.removeItem('cache_calId');
 }
+// Confronto "sono uguali questi dati?" usato per evitare un re-render visibile
+// quando la risposta di Supabase coincide con quanto già mostrato dalla cache.
+function sameData(a, b){
+  try { return JSON.stringify(a) === JSON.stringify(b); }
+  catch(e){ return false; }
+}
 // ── Helper immutabili per lo store eventi. Al posto del deep-clone completo
 // (JSON.parse(JSON.stringify(prev))) che ricopia TUTTO lo storico ad ogni
 // singola modifica, questi toccano solo il giorno/calendario interessato:
@@ -447,6 +453,9 @@ export default function App({ session }){
           setCalId(calIdValido ? cached.calId : (cached.calendars[0]?.id||null));
           setLoading(false);
         }
+        const calIdDaCache = (cached?.calId && cached.calendars.some(c=>c.id===cached.calId))
+          ? cached.calId
+          : (cached?.calendars?.[0]?.id || null);
 
         // Una sola chiamata al database: la funzione get_user_data (creata su
         // Supabase) legge le 6 tabelle internamente e restituisce tutto insieme.
@@ -508,8 +517,18 @@ export default function App({ session }){
 
         // Applico TUTTO insieme, in un solo giro di render: niente più
         // calendario che appare prima e modelli/colori che arrivano dopo.
-        setStore({ calendars, events, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings, fasceAutomatiche: savedFasce });
-        setModelli(modelliMappati);
+        const calendariUguali = cached && sameData(cached.calendars, calendars);
+        const eventiUguali = cached && sameData(cached.events, events);
+        const modelliUguali = cached && sameData(cached.modelli, modelliMappati);
+
+        if(!(calendariUguali && eventiUguali)){
+          setStore(s=>({ ...s, calendars, events, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings, fasceAutomatiche: savedFasce }));
+        } else {
+          setStore(s=>({ ...s, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings, fasceAutomatiche: savedFasce }));
+        }
+        if(!modelliUguali){
+          setModelli(modelliMappati);
+        }
         setColoriExtra((coloriDb||[]).map(c=>c.hex));
         setRotazioni(rotazioniMappate);
         setSheetsUrl(sUrl);
@@ -518,7 +537,7 @@ export default function App({ session }){
         setConteggioConfigs(savedConteggioConfigs);
         setCalId(prevCalId => {
           if(prevCalId && calendars.some(c=>c.id===prevCalId)) return prevCalId;
-          const daCache = cached?.calId && calendars.some(c=>c.id===cached.calId) ? cached.calId : null;
+          const daCache = calIdDaCache && calendars.some(c=>c.id===calIdDaCache) ? calIdDaCache : null;
           return daCache || calendars[0]?.id || null;
         });
         saveToLocalStorage(events, calendars, modelliMappati, cached?.calId);
