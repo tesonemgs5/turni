@@ -2745,7 +2745,10 @@ const modelliOrdinati = useMemo(()=>{
               <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
                 {rotazioni.map((r,i,arr)=>(
                   <div key={r.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
-                    <RotazioneCard r={r} T={T} accent={accent} modelli={modelli}
+                    <RotazioneCard r={r} T={T} accent={accent} modelli={(()=>{
+                        const mainCalId6 = store.calendars.find(c=>c.isMain)?.id||null;
+                        return modelli.filter(m=>(m.calendarId||mainCalId6)===calId);
+                      })()}
                       onOpen={()=>setShowRotDetail(r.id)}
                       onEdit={()=>{ setEditRotazione(r); setRotForm({
                         tipo:r.tipo, titolo:r.titolo||"", dataInizio:r.dataInizio||"",
@@ -2930,8 +2933,14 @@ const modelliOrdinati = useMemo(()=>{
               </div>
               <div style={{width:32}}/>
             </div>
-            <RotazioneForm T={T} form={rotForm} setForm={setRotForm} accent={accent} modelli={modelli}
-              sortedModelli={modelliOrdinati}
+            <RotazioneForm T={T} form={rotForm} setForm={setRotForm} accent={accent} modelli={(()=>{
+                const mainCalId7 = store.calendars.find(c=>c.isMain)?.id||null;
+                return modelli.filter(m=>(m.calendarId||mainCalId7)===calId);
+              })()}
+              sortedModelli={(()=>{
+                const mainCalId8 = store.calendars.find(c=>c.isMain)?.id||null;
+                return modelliOrdinati.filter(m=>(m.calendarId||mainCalId8)===calId);
+              })()}
               onSave={()=>{ saveRotazione({...rotForm,id:editRotazione?.id}); setShowRotForm(false); }}/>
           </div>
         </div>
@@ -2973,20 +2982,26 @@ const modelliOrdinati = useMemo(()=>{
                   padding:"6px 14px",fontSize:13,fontWeight:800,cursor:"pointer"}}>Fatto</button>
             </div>
             <div style={{flex:1,overflow:"hidden"}}>
+              {(()=>{
+                const mainCalId5 = store.calendars.find(c=>c.isMain)?.id||null;
+                const modelliDelCalRot = modelli.filter(m=>(m.calendarId||mainCalId5)===calId);
+                return (<>
               {rot.tipo==="personalizzata"&&(
-                <GrigliaRotazione rot={rot} T={T} accent={accent} modelli={modelli} fasceAutomatiche={fasceAutomatiche}
+                <GrigliaRotazione rot={rot} T={T} accent={accent} modelli={modelliDelCalRot} fasceAutomatiche={fasceAutomatiche}
                   onUpdate={griglia=>setRotazioni(prev=>prev.map(r=>r.id===rot.id?{...r,griglia}:r))}/>
               )}
               {rot.tipo==="domeniche"&&(
-                <DomenicheView rot={rot} T={T} accent={accent} modelli={modelli} fasceAutomatiche={fasceAutomatiche}
+                <DomenicheView rot={rot} T={T} accent={accent} modelli={modelliDelCalRot} fasceAutomatiche={fasceAutomatiche}
                   onUpdate={griglia=>setRotazioni(prev=>prev.map(r=>r.id===rot.id?{...r,griglia}:r))}/>
               )}
               {rot.tipo==="nlrs"&&(
-                <NLRSView rot={rot} T={T} accent={accent} modelli={modelli}/>
+                <NLRSView rot={rot} T={T} accent={accent} modelli={modelliDelCalRot}/>
               )}
               {rot.tipo==="nlrs_scalante"&&(
-                <NLRSScalanteView rot={rot} T={T} accent={accent} modelli={modelli}/>
+                <NLRSScalanteView rot={rot} T={T} accent={accent} modelli={modelliDelCalRot}/>
               )}
+                </>);
+              })()}
             </div>
           </div>
         );
@@ -4043,18 +4058,24 @@ const modelliOrdinati = useMemo(()=>{
                 </button>
               </div>
               <div style={{flex:1,overflowY:"auto",background:T.bg}}>
+                {(()=>{
+                  const mainCalId9 = store.calendars.find(c=>c.isMain)?.id||null;
+                  const modelliDelCalRot2 = modelli.filter(m=>(m.calendarId||mainCalId9)===calId);
+                  return (<>
                 {showRotDetail.tipo==="domeniche"&&(
-                  <DomenicheView rot={showRotDetail} T={T} accent={accent} modelli={modelli} fasceAutomatiche={fasceAutomatiche} onUpdate={()=>{}}/>
+                  <DomenicheView rot={showRotDetail} T={T} accent={accent} modelli={modelliDelCalRot2} fasceAutomatiche={fasceAutomatiche} onUpdate={()=>{}}/>
                 )}
                 {showRotDetail.tipo==="nlrs"&&(
-                  <NLRSView rot={showRotDetail} T={T} accent={accent} modelli={modelli}/>
+                  <NLRSView rot={showRotDetail} T={T} accent={accent} modelli={modelliDelCalRot2}/>
                 )}
                 {showRotDetail.tipo==="nlrs_scalante"&&(
-                  <NLRSScalanteView rot={showRotDetail} T={T} accent={accent} modelli={modelli}/>
+                  <NLRSScalanteView rot={showRotDetail} T={T} accent={accent} modelli={modelliDelCalRot2}/>
                 )}
                 {showRotDetail.tipo==="personalizzata"&&(
-                  <GrigliaRotazione rot={showRotDetail} T={T} accent={accent} modelli={modelli} fasceAutomatiche={fasceAutomatiche} onUpdate={()=>{}}/>
+                  <GrigliaRotazione rot={showRotDetail} T={T} accent={accent} modelli={modelliDelCalRot2} fasceAutomatiche={fasceAutomatiche} onUpdate={()=>{}}/>
                 )}
+                  </>);
+                })()}
               </div>
             </>
           )}
@@ -5707,8 +5728,8 @@ function GrigliaRotazione({rot, T, accent, modelli, fasceAutomatiche, onUpdate})
   const weeks=[];
   for(let i=0;i<days.length;i+=7) weeks.push(days.slice(i,i+7));
   return (
-    <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
-      <div style={{flex:1,overflowY:"auto",padding:"8px 8px 0"}}>
+    <div style={{display:"flex",flexDirection:"column",flex:1,minHeight:0}}>
+      <div style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch",padding:"8px 8px 0"}}>
         <div style={{display:"grid",gridTemplateColumns:"repeat(8,1fr)",gap:2}}>
           <div style={{gridColumn:"1",display:"flex",flexDirection:"column",gap:2,paddingTop:20}}>
             {weeks.map((_,wi)=>(
