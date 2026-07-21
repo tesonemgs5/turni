@@ -605,6 +605,7 @@ export default function App({ session }){
 
   const activeCal = store.calendars.find(c=>c.id===calId)||null;
   const mainCal   = store.calendars.find(c=>c.isMain)||null;
+  const mainCalId = mainCal?.id||null; // calendario principale: usato come fallback per i modelli/rotazioni senza calendarId esplicito
   const accent    = activeCal?.color||"#3b82f6";
   const hols      = italianHols(year);
   const fasceAutomatiche = store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT;
@@ -1370,8 +1371,7 @@ const modelliOrdinati = useMemo(()=>{
   async function saveModello(data){
     if(!userId) return;
     const coloreEff=data.coloreCustom||(data.tempo==="h24"?"#64748b":colByTime(data.inizio));
-    const mainCalId2 = store.calendars.find(c=>c.isMain)?.id||null;
-    const targetCalId = data.calendarId||calId||mainCalId2;
+    const targetCalId = data.calendarId||calId||mainCalId;
     const payload={
       user_id:userId, titolo:(data.titolo||"").toUpperCase(), label:(data.label||"").toUpperCase(), tempo:data.tempo,
       inizio:data.inizio||null, fine:data.fine||null,
@@ -2602,7 +2602,6 @@ const modelliOrdinati = useMemo(()=>{
 
       <div style={{flex:1,overflowY:"auto",padding:"0 12px 80px"}}>
         {modelliTab==="turni"&&(()=>{
-          const mainCalId = store.calendars.find(c=>c.isMain)?.id||null;
           const modelliVisibili = calId===null
             ? modelliOrdinati
             : modelliOrdinati.filter(m=>{
@@ -2745,10 +2744,9 @@ const modelliOrdinati = useMemo(()=>{
               <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
                 {rotazioni.map((r,i,arr)=>(
                   <div key={r.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
-                    <RotazioneCard r={r} T={T} accent={accent} modelli={(()=>{
-                        const mainCalId6 = store.calendars.find(c=>c.isMain)?.id||null;
-                        return modelli.filter(m=>(m.calendarId||mainCalId6)===calId);
-                      })()}
+                    <RotazioneCard r={r} T={T} accent={accent} modelli={
+                        modelli.filter(m=>(m.calendarId||mainCalId)===calId)
+                      }
                       onOpen={()=>setShowRotDetail(r.id)}
                       onEdit={()=>{ setEditRotazione(r); setRotForm({
                         tipo:r.tipo, titolo:r.titolo||"", dataInizio:r.dataInizio||"",
@@ -2933,14 +2931,12 @@ const modelliOrdinati = useMemo(()=>{
               </div>
               <div style={{width:32}}/>
             </div>
-            <RotazioneForm T={T} form={rotForm} setForm={setRotForm} accent={accent} modelli={(()=>{
-                const mainCalId7 = store.calendars.find(c=>c.isMain)?.id||null;
-                return modelli.filter(m=>(m.calendarId||mainCalId7)===calId);
-              })()}
-              sortedModelli={(()=>{
-                const mainCalId8 = store.calendars.find(c=>c.isMain)?.id||null;
-                return modelliOrdinati.filter(m=>(m.calendarId||mainCalId8)===calId);
-              })()}
+            <RotazioneForm T={T} form={rotForm} setForm={setRotForm} accent={accent} modelli={
+                modelli.filter(m=>(m.calendarId||mainCalId)===calId)
+              }
+              sortedModelli={
+                modelliOrdinati.filter(m=>(m.calendarId||mainCalId)===calId)
+              }
               onSave={()=>{ saveRotazione({...rotForm,id:editRotazione?.id}); setShowRotForm(false); }}/>
           </div>
         </div>
@@ -2981,10 +2977,9 @@ const modelliOrdinati = useMemo(()=>{
                 style={{background:accent,border:"none",borderRadius:8,color:"#fff",
                   padding:"6px 14px",fontSize:13,fontWeight:800,cursor:"pointer"}}>Fatto</button>
             </div>
-            <div style={{flex:1,overflow:"hidden"}}>
+            <div style={{flex:1,minHeight:0,display:"flex",flexDirection:"column"}}>
               {(()=>{
-                const mainCalId5 = store.calendars.find(c=>c.isMain)?.id||null;
-                const modelliDelCalRot = modelli.filter(m=>(m.calendarId||mainCalId5)===calId);
+                const modelliDelCalRot = modelli.filter(m=>(m.calendarId||mainCalId)===calId);
                 return (<>
               {rot.tipo==="personalizzata"&&(
                 <GrigliaRotazione rot={rot} T={T} accent={accent} modelli={modelliDelCalRot} fasceAutomatiche={fasceAutomatiche}
@@ -3572,10 +3567,9 @@ const modelliOrdinati = useMemo(()=>{
               <div style={{fontSize:24,color:T.text,fontWeight:900,marginBottom:12,letterSpacing:1}}>{(form.label||"EVENTO").toUpperCase()}</div>
             )}
             {modelli.length>0&&!form.editId&&(()=>{
-              const mainCalId3 = store.calendars.find(c=>c.isMain)?.id||null;
               const modelliDelCal = modelli.filter(m=>{
                 if(!calId) return true;
-                const mcid = m.calendarId||mainCalId3;
+                const mcid = m.calendarId||mainCalId;
                 return mcid===calId;
               });
               if(modelliDelCal.length===0) return null;
@@ -4057,10 +4051,9 @@ const modelliOrdinati = useMemo(()=>{
                   Fatto
                 </button>
               </div>
-              <div style={{flex:1,overflowY:"auto",background:T.bg}}>
+              <div style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch",background:T.bg,display:"flex",flexDirection:"column"}}>
                 {(()=>{
-                  const mainCalId9 = store.calendars.find(c=>c.isMain)?.id||null;
-                  const modelliDelCalRot2 = modelli.filter(m=>(m.calendarId||mainCalId9)===calId);
+                  const modelliDelCalRot2 = modelli.filter(m=>(m.calendarId||mainCalId)===calId);
                   return (<>
                 {showRotDetail.tipo==="domeniche"&&(
                   <DomenicheView rot={showRotDetail} T={T} accent={accent} modelli={modelliDelCalRot2} fasceAutomatiche={fasceAutomatiche} onUpdate={()=>{}}/>
@@ -4072,7 +4065,9 @@ const modelliOrdinati = useMemo(()=>{
                   <NLRSScalanteView rot={showRotDetail} T={T} accent={accent} modelli={modelliDelCalRot2}/>
                 )}
                 {showRotDetail.tipo==="personalizzata"&&(
-                  <GrigliaRotazione rot={showRotDetail} T={T} accent={accent} modelli={modelliDelCalRot2} fasceAutomatiche={fasceAutomatiche} onUpdate={()=>{}}/>
+                  <div style={{flex:1,minHeight:500}}>
+                    <GrigliaRotazione rot={showRotDetail} T={T} accent={accent} modelli={modelliDelCalRot2} fasceAutomatiche={fasceAutomatiche} onUpdate={()=>{}}/>
+                  </div>
                 )}
                   </>);
                 })()}
@@ -4124,9 +4119,8 @@ const modelliOrdinati = useMemo(()=>{
               </div>
             )}
             {(()=>{
-              const mainCalId4 = store.calendars.find(c=>c.isMain)?.id||null;
               const modelliPicker = modelliOrdinati.filter(m=>{
-                const mcid = m.calendarId||mainCalId4;
+                const mcid = m.calendarId||mainCalId;
                 return !calId || mcid===calId;
               });
               if(modelliPicker.length===0) return null;
