@@ -346,8 +346,7 @@ export default function App({ session }){
     if(calId){ try{ localStorage.setItem('cache_calId', calId); }catch(e){} }
   }, [calId]);
   const [editMode, setEditMode] = useState(false); // "M" — ON = modifica singola, OFF = selezione multipla
-  const [selectedCalIds, setSelectedCalIds] = useState([]); // selezione multipla calendari (editMode OFF)
-  const [candidatiCalIds, setCandidatiCalIds] = useState([]); // candidati in attesa di scelta esplicita dopo M (quando erano selezionati >1 calendari)
+  const [selectedCalIds, setSelectedCalIds] = useState([]); // selezione multipla calendari — determina anche cosa resta visibile in editMode
   const [reportCalIds, setReportCalIds] = useState([]); // selezione calendari per il Report (vuoto = tutti)
   const [selectedModelloIds, setSelectedModelloIds] = useState([]); // selezione multipla modelli (editMode OFF)
   const [screen, setScreen] = useState("cal");
@@ -639,7 +638,7 @@ export default function App({ session }){
   function getEvts(key,cid){ return store.events?.[key]?.[cid]||[]; }
   function allEvts(key){
     const res=[];
-    const soloCal = editMode ? (calId?[calId]:null) : (selectedCalIds.length>0 ? selectedCalIds : null);
+    const soloCal = selectedCalIds.length>0 ? selectedCalIds : null; // visibilità eventi: sempre tutti i calendari selezionati, editMode o no
     if(mainCal && (!soloCal||soloCal.includes(mainCal.id))) getEvts(key,mainCal.id).forEach(e=>res.push({...e,_cid:mainCal.id}));
     store.calendars.filter(c=>!c.isMain && (!soloCal||soloCal.includes(c.id))).forEach(c=>
       getEvts(key,c.id).forEach(e=>res.push({...e,_cid:c.id})));
@@ -2030,25 +2029,17 @@ const modelliOrdinati = useMemo(()=>{
         <button onClick={()=>{
             setEditMode(em=>{
               const next=!em;
-              if(next){ // entro in modifica singola
-                if(selectedCalIds.length>1){
-                  // più calendari erano selezionati: non scegliere automaticamente,
-                  // resta in attesa che l'utente tocchi quale dei candidati vuole editare
-                  setCalId(null);
-                  setCandidatiCalIds(selectedCalIds);
-                } else {
-                  const keep = selectedCalIds[0]||calId||null;
-                  setCalId(keep);
-                  setSelectedCalIds(keep?[keep]:[]);
-                  setCandidatiCalIds([]);
-                }
-              } else {
-                setCandidatiCalIds([]);
+              if(next){ // entro in modifica: tutti i calendari selezionati restano visibili,
+                        // scelgo come "attivo per l'editing" quello già attivo se è tra i selezionati, altrimenti il primo
+                const attivoValido = calId && selectedCalIds.includes(calId);
+                const scelto = attivoValido ? calId : (selectedCalIds[0]||calId||null);
+                setCalId(scelto);
+                if(scelto && !selectedCalIds.includes(scelto)) setSelectedCalIds(prev=>[...prev, scelto]);
               }
               return next;
             });
           }}
-          title={editMode?"Modifica singola attiva — tocca per passare a selezione multipla":"Selezione multipla attiva — tocca per modificare un solo calendario"}
+          title={editMode?"Modifica attiva — tocca per tornare alla sola consultazione":"Consultazione multipla — tocca per modificare (gli altri calendari restano visibili)"}
           style={{background:editMode?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.1)",
             border:`1.5px solid ${editMode?"rgba(255,255,255,0.85)":"transparent"}`,
             borderRadius:20,padding:"2px 10px",cursor:"pointer",flexShrink:0}}>
@@ -2086,41 +2077,32 @@ const modelliOrdinati = useMemo(()=>{
           {syncMode==='on'?(isOnline?'🟢 SYNC':'🔴 OFFLINE'):'⏸️ SYNC OFF'}
         </button>
       </div>
-      {editMode&&candidatiCalIds.length>0&&(
-        <div style={{background:accent,padding:"3px 10px",fontSize:11,color:"rgba(255,255,255,0.9)",
-          fontWeight:700,borderTop:"1px solid rgba(255,255,255,0.15)"}}>
-          👆 Scegli su quale calendario aggiungere il modello
-        </div>
-      )}
-      <style>{`@keyframes pulseCandidato{0%,100%{opacity:1}50%{opacity:0.55}}`}</style>
       <div style={{background:accent,display:"flex",alignItems:"center",
         gap:5,padding:"4px 8px",overflowX:"auto",scrollbarWidth:"none",flexShrink:0,
         borderTop:"1px solid rgba(255,255,255,0.2)"}}>
         {store.calendars.length===0
           ? <span style={{color:"rgba(255,255,255,0.6)",fontSize:10,fontStyle:"italic"}}>→ Impostazioni</span>
-          : store.calendars
-              .filter(c=> !(editMode && candidatiCalIds.length>0) || candidatiCalIds.includes(c.id))
-              .map(c=>{
-            const inAttesaScelta = editMode && candidatiCalIds.length>0;
-            const attivo = editMode ? (inAttesaScelta ? false : calId===c.id) : selectedCalIds.includes(c.id);
+          : store.calendars.map(c=>{
+            const visibile = selectedCalIds.includes(c.id);
+            const attivoEdit = editMode && calId===c.id;
             return (
             <button key={c.id} onClick={()=>{
                 if(editMode){
                   setCalId(c.id);
-                  setSelectedCalIds([c.id]);
-                  setCandidatiCalIds([]);
+                  setSelectedCalIds(prev=> prev.includes(c.id) ? prev : [...prev, c.id]); // resta visibile, non toglie gli altri
                   return;
                 }
                 setSelectedCalIds(prev=> prev.includes(c.id) ? prev.filter(id=>id!==c.id) : [...prev, c.id]);
               }}
-              title={inAttesaScelta?`Tocca per usare "${c.name}" come calendario di modifica`:undefined}
+              title={editMode?`Tocca per rendere "${c.name}" il calendario attivo per la modifica`:undefined}
               style={{display:"flex",alignItems:"center",gap:3,flexShrink:0,cursor:"pointer",
-                background:attivo?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.1)",
-                border:`1.5px solid ${attivo?"rgba(255,255,255,0.85)":(inAttesaScelta?"rgba(255,255,255,0.55)":"transparent")}`,
-                borderRadius:20,padding:"2px 8px 2px 5px",
-                animation:inAttesaScelta?"pulseCandidato 1.4s ease-in-out infinite":"none"}}>
+                background:visibile?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.1)",
+                border:`1.5px solid ${attivoEdit?"#ffffff":(visibile?"rgba(255,255,255,0.85)":"transparent")}`,
+                boxShadow:attivoEdit?"0 0 0 2px rgba(255,255,255,0.35)":"none",
+                borderRadius:20,padding:"2px 8px 2px 5px"}}>
               <div style={{width:8,height:8,borderRadius:"50%",background:c.color,border:"1px solid rgba(255,255,255,0.5)"}}/>
-              <span style={{color:"#fff",fontSize:12,fontWeight:700}}>{c.name}</span>
+              <span style={{color:"#fff",fontSize:12,fontWeight:attivoEdit?900:700}}>{c.name}</span>
+              {attivoEdit&&<span style={{color:"#fff",fontSize:9}}>✏️</span>}
               {c.isMain&&<span style={{color:"rgba(255,255,255,0.6)",fontSize:8}}>★</span>}
             </button>
             );})
@@ -2188,7 +2170,6 @@ const modelliOrdinati = useMemo(()=>{
           return (
             <div key={i} onClick={()=>{
                 if(!editMode && selectedCalIds.length>1){ setDayKey(key); setForm(null); setPal(null); return; } // sola consultazione, niente form
-                if(editMode && candidatiCalIds.length>0){ return; } // in attesa: prima scegli il calendario dai badge in alto
                 if(quickModeModello){ applyQuickModello(key); return; }
                 setDayKey(key); setForm(null); setPal(null);
               }}
