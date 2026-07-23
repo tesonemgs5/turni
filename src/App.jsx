@@ -414,6 +414,7 @@ export default function App({ session }){
   const [quickModeModello, setQuickModeModello] = useState(null);
   const [showRotazionePicker, setShowRotazionePicker] = useState(false);
   const dragSrcId = useRef(null);
+  const dragTargetId = useRef(null); // target reale del drag col mouse, calcolato con elementFromPoint (non l'id della card che riceve l'evento onDrop, inaffidabile su liste lunghe)
   const touchSrcId = useRef(null);
   const touchTargetId = useRef(null);
   const touchStartX = useRef(null);
@@ -2785,6 +2786,11 @@ const modelliOrdinati = useMemo(()=>{
               {modelliVisibili.map((m,i,arr)=>(
                 <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                   <ModelloCard m={m} T={T} accent={accent} fasceAutomatiche={fasceAutomatiche}
+                    // La modalità selezione multipla (checkbox) resta legata a editMode
+                    // (serve per azioni di gruppo, es. eliminazione multipla), ma le
+                    // frecce ▲▼ e il drag & drop per il riordino devono essere SEMPRE
+                    // disponibili nella lista Modelli, indipendentemente da editMode:
+                    // prima erano condizionate allo stesso flag e sparivano di default.
                     selectMode={!editMode}
                     selected={selectedModelloIds.includes(m.id)}
                     onToggleSelect={()=>setSelectedModelloIds(prev=>prev.includes(m.id)?prev.filter(id=>id!==m.id):[...prev,m.id])}
@@ -2796,25 +2802,23 @@ const modelliOrdinati = useMemo(()=>{
                       appAutoVuoto: !!m.categoria_app_auto_vuoto
                     }); setShowModelForm(true); }}
                     onDelete={()=>deleteModello(m.id)}
-                    // Frecce ▲▼: alternativa sempre disponibile per spostare di UNA posizione.
+                    // Frecce ▲▼: sempre disponibili, spostano di UNA posizione.
                     onMoveUp={i>0?()=>moveH24(m.id,"up"):null}
                     onMoveDown={i<arr.length-1?()=>moveH24(m.id,"down"):null}
-                    // Drag & drop: alternativa sempre disponibile per spostamenti più ampi.
+                    // Drag & drop: sempre disponibile, per spostamenti più ampi.
                     isDragging={draggingId===m.id}
                     isDropTarget={dragOverId===m.id && draggingId!==m.id}
                     onTouchStart={()=>{ touchSrcId.current=m.id; setDraggingId(m.id); }}
                     onTouchMove={(e)=>{
                       e.preventDefault();
                       const t=e.touches[0];
-                      // Stessa funzione di autoscroll usata dal mouse: garantisce
-                      // comportamento identico anche col dito su Android/iOS.
                       updateAutoScroll(t.clientY);
                       const el=document.elementFromPoint(t.clientX,t.clientY);
                       const card=el?.closest("[data-modello-id]");
                       if(card){
                         const id=card.getAttribute("data-modello-id");
                         touchTargetId.current=id;
-                        setDragOverId(id);
+                        if(dragOverId!==id) setDragOverId(id);
                       }
                     }}
                     onTouchEnd={async()=>{
@@ -2823,25 +2827,46 @@ const modelliOrdinati = useMemo(()=>{
                       touchSrcId.current=null; touchTargetId.current=null;
                       setDraggingId(null); setDragOverId(null);
                     }}
-                    onDragStart={()=>{ dragSrcId.current=m.id; setDraggingId(m.id); }}
+                    // Il drag col mouse (HTML5 drag&drop nativo) è notoriamente
+                    // inaffidabile nel calcolare "su quale card sto passando" quando
+                    // si aggiorna lo state ad ogni dragover su liste con molte righe:
+                    // gli eventi possono arrivare fuori ordine o essere persi durante
+                    // i re-render, causando drop sulla card sbagliata ("a casaccio").
+                    // Soluzione: uso la stessa tecnica del touch — leggo le coordinate
+                    // del cursore e trovo la card realmente sotto il puntatore con
+                    // elementFromPoint, invece di fidarmi di quale card ha generato
+                    // l'evento onDragOver/onDrop. Così mouse e touch condividono
+                    // esattamente la stessa logica di targeting, niente più divergenze.
+                    onDragStart={(e)=>{
+                      dragSrcId.current=m.id;
+                      dragTargetId.current=m.id;
+                      setDraggingId(m.id);
+                      if(e?.dataTransfer){ e.dataTransfer.effectAllowed="move"; try{e.dataTransfer.setData("text/plain",m.id);}catch(_){} }
+                    }}
                     onDragOver={(e)=>{
                       e.preventDefault();
-                      // Autoscroll: attivo solo entro la fascia vicino ai bordi
-                      // alto/basso, velocità proporzionale alla distanza dal bordo.
                       updateAutoScroll(e.clientY);
-                      if(dragOverId!==m.id) setDragOverId(m.id);
+                      const el=document.elementFromPoint(e.clientX,e.clientY);
+                      const card=el?.closest("[data-modello-id]");
+                      const id=card?card.getAttribute("data-modello-id"):m.id;
+                      dragTargetId.current=id;
+                      if(dragOverId!==id) setDragOverId(id);
                     }}
-                    onDrop={async()=>{
+                    onDrop={async(e)=>{
                       stopAutoScroll();
-                      await reorderModelli(dragSrcId.current, m.id);
-                      dragSrcId.current=null;
+                      // Uso sempre dragTargetId (calcolato via elementFromPoint),
+                      // MAI l'id della card che ha ricevuto l'evento onDrop: quella
+                      // può non coincidere con la posizione reale del cursore quando
+                      // il drag nativo perde precisione su liste lunghe.
+                      await reorderModelli(dragSrcId.current, dragTargetId.current);
+                      dragSrcId.current=null; dragTargetId.current=null;
                       setDraggingId(null); setDragOverId(null);
                     }}
                     onDragEnd={()=>{
                       // Copre il caso di drag rilasciato fuori da una card valida
                       // (es. fuori dalla lista): ripulisce comunque lo stato visivo.
                       stopAutoScroll();
-                      dragSrcId.current=null;
+                      dragSrcId.current=null; dragTargetId.current=null;
                       setDraggingId(null); setDragOverId(null);
                     }}/>
                 </div>
