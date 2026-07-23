@@ -427,6 +427,11 @@ export default function App({ session }){
   const autoScrollSpeed = useRef(0);
   const [dragOverId, setDragOverId] = useState(null); // id della card su cui si sta trascinando ora (per preview)
   const [draggingId, setDraggingId] = useState(null); // id della card attualmente trascinata
+  // Su telefono, touchstart/touchmove sulla card altrimenti intercettano SEMPRE
+  // il dito per il drag, impedendo lo scroll verticale normale della lista.
+  // Questo toggle esplicito distingue i due gesti: OFF (default) = il dito
+  // scorre la pagina come sempre; ON = il tocco sulle card trascina per riordinare.
+  const [modalitaSpostamento, setModalitaSpostamento] = useState(false);
 
   const [reportInterval, setReportInterval] = useState("mese");
   const [reportDateFrom, setReportDateFrom] = useState("");
@@ -1344,8 +1349,12 @@ const modelliOrdinati = useMemo(()=>{
   });
 
   // Mappa: id del modello "sotto" -> lista di modelli pinnati che vanno
-  // appena sopra di lui (in genere uno solo, ma gestiamo anche il caso di
-  // più modelli agganciati allo stesso riferimento, in ordine di sortOrder).
+  // appena sopra di lui. Un pinnato può essere agganciato sia a un modello
+  // automatico sia a un altro modello a sua volta pinnato (catena di pin):
+  // per questo l'inserimento va fatto in modo RICORSIVO, non solo un livello
+  // sopra gli automatici — altrimenti un pin agganciato a un altro pin
+  // (invece che a un automatico) sparisce dal punto giusto e finisce "in
+  // fondo" tra gli orfani: era esattamente il bug degli spostamenti "a caso".
   const pinnedSopra = new Map();
   for(const m of modelli){
     if(isPinned(m)){
@@ -1356,14 +1365,31 @@ const modelliOrdinati = useMemo(()=>{
   }
   for(const arr of pinnedSopra.values()) arr.sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
 
+  // Inserisce ricorsivamente tutti i pinnati agganciati a un dato id, e a
+  // loro volta i pinnati agganciati a QUEI pinnati, ecc. Con protezione
+  // anti-ciclo (visitati) nel caso — teoricamente impossibile ma non si sa
+  // mai — un pin punti a se stesso o formi un anello.
+  function inserisciPinnatiSopra(id, risultato, visitati){
+    const agganciati = pinnedSopra.get(id);
+    if(!agganciati) return;
+    for(const pinnato of agganciati){
+      if(visitati.has(pinnato.id)) continue;
+      visitati.add(pinnato.id);
+      inserisciPinnatiSopra(pinnato.id, risultato, visitati); // eventuali pin sopra QUESTO pin
+      risultato.push(pinnato);
+    }
+  }
+
   const risultato = [];
+  const visitati = new Set();
   for(const m of automatici){
-    const agganciati = pinnedSopra.get(m.id);
-    if(agganciati) risultato.push(...agganciati);
+    inserisciPinnatiSopra(m.id, risultato, visitati);
     risultato.push(m);
   }
-  // Pinnati "orfani" (agganciati a un id che non è tra gli automatici, es.
-  // perché anche quel modello era pinnato): li accodo in fondo per non perderli.
+  // Pinnati "orfani" residui: casi limite come un ciclo di riferimenti o un
+  // pin il cui riferimento è stato eliminato senza passare dal riaggancio
+  // automatico gestito in deleteModello. Li accodo in fondo per non perderli
+  // silenziosamente, piuttosto che farli sparire dalla lista.
   const inseriti = new Set(risultato.map(m=>m.id));
   for(const m of modelli){
     if(!inseriti.has(m.id)){ risultato.push(m); inseriti.add(m.id); }
@@ -1397,6 +1423,17 @@ const modelliOrdinati = useMemo(()=>{
       setModelli(prev=>prev.map(m=>m.id===modelloId?{...m,posizione:""}:m));
       await supabase.from("modelli").update({posizione:""}).eq("id",modelloId).eq("user_id",userId);
       return;
+    }
+    // Protezione anti-ciclo: se "sotto" è a sua volta (direttamente o tramite
+    // una catena) pinnato sopra il modello che sto spostando, agganciarmi a
+    // lui creerebbe un ciclo (A sopra B, B sopra A). In quel caso l'aggancio
+    // non ha senso: il modello resta dov'era, non applico la modifica.
+    let cursore = sotto;
+    let passi = 0;
+    while(cursore && cursore.posizione && passi<1000){
+      if(cursore.posizione===modelloId) return; // ciclo rilevato, annullo l'operazione
+      cursore = modelli.find(m=>m.id===cursore.posizione);
+      passi++;
     }
     // sortOrder progressivo tra eventuali più pinnati sullo stesso riferimento:
     // prendo il minimo tra i pinnati già agganciati a "sotto" e mi metto appena prima.
@@ -2714,6 +2751,19 @@ const modelliOrdinati = useMemo(()=>{
                 updateCalendar={updateCalendar} accent={accent} setCalId={setCalId}/>
             </div>
             <div style={{display:"flex",gap:8,alignItems:"center",position:"relative"}}>
+              {modelliTab==="turni"&&(
+              <button onClick={()=>setModalitaSpostamento(s=>!s)}
+                title={modalitaSpostamento?"Spostamento attivo — tocca per tornare a scorrere normalmente":"Attiva per trascinare e riordinare i modelli col dito"}
+                style={{background:modalitaSpostamento?accent:T.s2,
+                  border:`1.5px solid ${modalitaSpostamento?accent:T.border}`,borderRadius:8,
+                  padding:"6px 12px",fontSize:16,fontWeight:800,cursor:"pointer",
+                  color:modalitaSpostamento?"#fff":T.sub,
+                  display:"flex",alignItems:"center",gap:5,
+                  transition:"background 0.12s ease, border-color 0.12s ease"}}>
+                <span style={{fontSize:15}}>✥</span>
+                {modalitaSpostamento?"Fatto":"Sposta"}
+              </button>
+              )}
               {modelliTab!=="colori"&&(
               <button onClick={()=>{
                 if(modelliTab==="turni"){
@@ -2808,8 +2858,8 @@ const modelliOrdinati = useMemo(()=>{
                     // Drag & drop: sempre disponibile, per spostamenti più ampi.
                     isDragging={draggingId===m.id}
                     isDropTarget={dragOverId===m.id && draggingId!==m.id}
-                    onTouchStart={()=>{ touchSrcId.current=m.id; setDraggingId(m.id); }}
-                    onTouchMove={(e)=>{
+                    onTouchStart={modalitaSpostamento?()=>{ touchSrcId.current=m.id; setDraggingId(m.id); }:null}
+                    onTouchMove={modalitaSpostamento?(e)=>{
                       e.preventDefault();
                       const t=e.touches[0];
                       updateAutoScroll(t.clientY);
@@ -2820,13 +2870,13 @@ const modelliOrdinati = useMemo(()=>{
                         touchTargetId.current=id;
                         if(dragOverId!==id) setDragOverId(id);
                       }
-                    }}
-                    onTouchEnd={async()=>{
+                    }:null}
+                    onTouchEnd={modalitaSpostamento?async()=>{
                       stopAutoScroll();
                       await reorderModelli(touchSrcId.current, touchTargetId.current);
                       touchSrcId.current=null; touchTargetId.current=null;
                       setDraggingId(null); setDragOverId(null);
-                    }}
+                    }:null}
                     // Il drag col mouse (HTML5 drag&drop nativo) è notoriamente
                     // inaffidabile nel calcolare "su quale card sto passando" quando
                     // si aggiorna lo state ad ogni dragover su liste con molte righe:
