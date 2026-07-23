@@ -1147,13 +1147,24 @@ export default function App({ session }){
         if(data) calIdMap[c.id] = data.id;
       }
       const modIdMap = {};
+      const posizioniDaRimappare = []; // {nuovoId, vecchiaPosizione} da sistemare dopo aver mappato tutti gli id
       for(const m of (backup.modelli||[])){
         const {data} = await supabase.from("modelli").insert({
           user_id:userId, titolo:m.titolo, tempo:m.tempo, inizio:m.inizio, fine:m.fine,
-          colore:m.colore, colore_custom:m.colore_custom, posizione:m.posizione,
+          colore:m.colore, colore_custom:m.colore_custom, posizione:"", // sistemato sotto, dopo il rimapping id
           sort_order:m.sort_order, calendar_id: calIdMap[m.calendar_id]||null,
         }).select().maybeSingle();
-        if(data) modIdMap[m.id] = data.id;
+        if(data){
+          modIdMap[m.id] = data.id;
+          if(m.posizione) posizioniDaRimappare.push({nuovoId:data.id, vecchiaPosizione:m.posizione});
+        }
+      }
+      // Il campo "posizione" salva l'id del modello a cui si è agganciati
+      // (spostamento manuale via frecce/drag): và tradotto dai vecchi id del
+      // backup ai nuovi id appena generati, altrimenti i pin puntano al nulla.
+      for(const {nuovoId, vecchiaPosizione} of posizioniDaRimappare){
+        const nuovaPosizione = modIdMap[vecchiaPosizione] || "";
+        await supabase.from("modelli").update({posizione:nuovaPosizione}).eq("id",nuovoId).eq("user_id",userId);
       }
       for(const e of (backup.events||[])){
         await supabase.from("events").insert({
@@ -1296,6 +1307,13 @@ export default function App({ session }){
 // Memoizzato: prima veniva ricalcolato (sort completo) ad ogni singolo
 // render dell'app, anche quando i modelli non erano cambiati.
 const modelliOrdinati = useMemo(()=>{
+  // ── Ordinamento ibrido:
+  // • Modelli "automatici" (posizione vuota): ordinati per orario di inizio,
+  //   come sempre — un nuovo modello con orario si inserisce qui da solo.
+  // • Modelli "pinnati" (posizione = id di un altro modello): l'utente li ha
+  //   spostati a mano (frecce o drag) e vanno intercalati subito SOPRA il
+  //   modello a cui sono agganciati, in quella posizione fissa, qualunque
+  //   cosa succeda intorno. Non partecipano all'ordinamento per orario.
   const toMins=t=>oraInMinuti(t);
   const INTESTAZIONI={
     "NOTTE":     -1,
@@ -1314,12 +1332,42 @@ const modelliOrdinati = useMemo(()=>{
     }
     return 99999;
   }
-  return [...modelli].sort((a,b)=>{
-    const vA=getSortValue(a);
-    const vB=getSortValue(b);
+
+  const tuttiById = new Map(modelli.map(m=>[m.id,m]));
+  const isPinned = m => !!m.posizione && tuttiById.has(m.posizione);
+
+  const automatici = modelli.filter(m=>!isPinned(m)).sort((a,b)=>{
+    const vA=getSortValue(a), vB=getSortValue(b);
     if(vA!==vB) return vA-vB;
     return (a.sortOrder||0)-(b.sortOrder||0);
   });
+
+  // Mappa: id del modello "sotto" -> lista di modelli pinnati che vanno
+  // appena sopra di lui (in genere uno solo, ma gestiamo anche il caso di
+  // più modelli agganciati allo stesso riferimento, in ordine di sortOrder).
+  const pinnedSopra = new Map();
+  for(const m of modelli){
+    if(isPinned(m)){
+      const arr = pinnedSopra.get(m.posizione) || [];
+      arr.push(m);
+      pinnedSopra.set(m.posizione, arr);
+    }
+  }
+  for(const arr of pinnedSopra.values()) arr.sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
+
+  const risultato = [];
+  for(const m of automatici){
+    const agganciati = pinnedSopra.get(m.id);
+    if(agganciati) risultato.push(...agganciati);
+    risultato.push(m);
+  }
+  // Pinnati "orfani" (agganciati a un id che non è tra gli automatici, es.
+  // perché anche quel modello era pinnato): li accodo in fondo per non perderli.
+  const inseriti = new Set(risultato.map(m=>m.id));
+  for(const m of modelli){
+    if(!inseriti.has(m.id)){ risultato.push(m); inseriti.add(m.id); }
+  }
+  return risultato;
 }, [modelli]);
 
   function getFasciaModello(m){
@@ -1334,28 +1382,46 @@ const modelliOrdinati = useMemo(()=>{
     return "notte";
   }
 
-  async function moveH24(id, dir){
-    const sorted=[...modelli].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
-    const idx=sorted.findIndex(m=>m.id===id);
-    if(idx===-1) return;
-    const swapIdx=dir==="up"?idx-1:idx+1;
-    if(swapIdx<0||swapIdx>=sorted.length) return;
-    const liberoCorrente = sorted[idx].tempo==="h24"||!sorted[idx].inizio;
-    const liberoTarget = sorted[swapIdx].tempo==="h24"||!sorted[swapIdx].inizio;
-    if(!liberoCorrente && !liberoTarget){
-      const fasciaCorrente = getFasciaModello(sorted[idx]);
-      const fasciaTarget = getFasciaModello(sorted[swapIdx]);
-      if(fasciaCorrente!==fasciaTarget) return;
+  // Pinna un modello: lo aggancia "sopra" il modello che si trova alla
+  // posizione newIdx nell'elenco visivo corrente (già senza il modello
+  // stesso). Se newIdx è oltre la fine della lista (va portato in fondo),
+  // lo spinna senza riferimento (torna automatico, va in fondo per orario
+  // di default 99999 se non ha inizio, altrimenti resta comunque ultimo tra
+  // i pari-orario) — nel nostro caso pratico c'è sempre un vicino di sotto
+  // perché non permettiamo di superare i confini della lista.
+  async function pinnaSopra(modelloId, elencoSenzaModello, newIdx){
+    const sotto = elencoSenzaModello[newIdx]; // modello che deve restare subito sotto
+    if(!sotto){
+      // Portato in fondo a tutto: nessun vicino sotto -> torna automatico.
+      setModelli(prev=>prev.map(m=>m.id===modelloId?{...m,posizione:""}:m));
+      await supabase.from("modelli").update({posizione:""}).eq("id",modelloId).eq("user_id",userId);
+      return;
     }
-    const reordered=[...sorted];
-    const [moved]=reordered.splice(idx,1);
-    reordered.splice(swapIdx,0,moved);
-    const withNewOrder=reordered.map((m,i)=>({...m,sortOrder:i*10}));
-    setModelli(withNewOrder);
-    for(const m of withNewOrder){
-      supabase.from("modelli").update({sort_order:m.sortOrder}).eq("id",m.id).eq("user_id",userId);
-    }
+    // sortOrder progressivo tra eventuali più pinnati sullo stesso riferimento:
+    // prendo il minimo tra i pinnati già agganciati a "sotto" e mi metto appena prima.
+    const giaAgganciati = modelli.filter(m=>m.posizione===sotto.id && m.id!==modelloId);
+    const minSort = giaAgganciati.length ? Math.min(...giaAgganciati.map(m=>m.sortOrder||0)) : 0;
+    const nuovoSort = minSort - 10;
+    setModelli(prev=>prev.map(m=>m.id===modelloId?{...m,posizione:sotto.id,sortOrder:nuovoSort}:m));
+    await supabase.from("modelli").update({posizione:sotto.id, sort_order:nuovoSort}).eq("id",modelloId).eq("user_id",userId);
   }
+
+  async function moveH24(id, dir){
+    // Lavoro sull'elenco visivo reale (automatici + pinnati intercalati),
+    // così la freccia sposta esattamente ciò che l'utente vede in lista.
+    const visivo = modelliOrdinati;
+    const idx = visivo.findIndex(m=>m.id===id);
+    if(idx===-1) return;
+    const newIdx = dir==="up" ? idx-1 : idx+1;
+    if(newIdx<0 || newIdx>=visivo.length) return;
+    const senzaModello = visivo.filter(m=>m.id!==id);
+    // Dopo aver tolto il modello dall'elenco, il "vicino di sotto" desiderato
+    // si trova esattamente all'indice newIdx nell'elenco privato (verificato
+    // per entrambe le direzioni: rimuovendo l'elemento gli indici successivi
+    // scalano di uno, e l'aritmetica coincide sia salendo che scendendo).
+    await pinnaSopra(id, senzaModello, newIdx);
+  }
+
 
   // ── Autoscroll a velocità variabile per drag & drop modelli.
   // Zona "morta" al centro del container: nessuno scroll. Avvicinandosi ai
@@ -1400,18 +1466,14 @@ const modelliOrdinati = useMemo(()=>{
 
   async function reorderModelli(srcId, dstId){
     if(!srcId||!dstId||srcId===dstId) return;
-    const sorted=[...modelli].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
-    const srcIdx=sorted.findIndex(x=>x.id===srcId);
-    const dstIdx=sorted.findIndex(x=>x.id===dstId);
-    if(srcIdx===-1||dstIdx===-1) return;
-    const reordered=[...sorted];
-    const [moved]=reordered.splice(srcIdx,1);
-    reordered.splice(dstIdx,0,moved);
-    const withNewOrder=reordered.map((x,i)=>({...x,sortOrder:i*10}));
-    setModelli(withNewOrder);
-    for(const x of withNewOrder){
-      supabase.from("modelli").update({sort_order:x.sortOrder}).eq("id",x.id).eq("user_id",userId);
-    }
+    // Il modello trascinato (srcId) va agganciato subito SOPRA la card su
+    // cui è stato rilasciato (dstId), stessa semantica delle frecce ▲▼.
+    const visivo = modelliOrdinati;
+    if(!visivo.some(m=>m.id===srcId) || !visivo.some(m=>m.id===dstId)) return;
+    const senzaModello = visivo.filter(m=>m.id!==srcId);
+    const dstIdx = senzaModello.findIndex(m=>m.id===dstId);
+    if(dstIdx===-1) return;
+    await pinnaSopra(srcId, senzaModello, dstIdx);
   }
 
   // ── FIX: quando un modello riceve un coloreCustom, quel colore viene
@@ -1458,7 +1520,7 @@ const modelliOrdinati = useMemo(()=>{
       user_id:userId, titolo:(data.titolo||"").toUpperCase(), label:(data.label||"").toUpperCase(), tempo:data.tempo,
       inizio:data.inizio||null, fine:data.fine||null,
       colore:coloreEff, colore_custom:data.coloreCustom||null,
-      posizione:(data.posizione||"").toUpperCase()||null,
+      posizione:data.posizione||null,
       sort_order:data.sortOrder||modelli.length,
       calendar_id: targetCalId,
       categoria: (data.categoria==="primo"||data.categoria==="secondo") ? data.categoria : null,
@@ -1526,6 +1588,24 @@ const modelliOrdinati = useMemo(()=>{
   }
 
   async function deleteModello(id){
+    // Se qualche modello pinnato era agganciato "sopra" questo (posizione===id),
+    // prima di eliminarlo lo riaggancio al modello che nell'elenco visivo si
+    // trova subito SOTTO quello che sto per eliminare — così non perde la sua
+    // posizione relativa e non torna all'ordine automatico per orario.
+    const visivo = modelliOrdinati;
+    const idxEliminato = visivo.findIndex(m=>m.id===id);
+    const nuovoSotto = idxEliminato!==-1 ? visivo[idxEliminato+1] : null; // può essere undefined se era l'ultimo
+    const orfani = modelli.filter(m=>m.posizione===id);
+    for(const orfano of orfani){
+      if(nuovoSotto){
+        setModelli(prev=>prev.map(m=>m.id===orfano.id?{...m,posizione:nuovoSotto.id}:m));
+        await supabase.from("modelli").update({posizione:nuovoSotto.id}).eq("id",orfano.id).eq("user_id",userId);
+      } else {
+        // Non c'era nessuno sotto: torna automatico (ordinato per orario).
+        setModelli(prev=>prev.map(m=>m.id===orfano.id?{...m,posizione:""}:m));
+        await supabase.from("modelli").update({posizione:""}).eq("id",orfano.id).eq("user_id",userId);
+      }
+    }
     await supabase.from("modelli").delete().eq("id",id).eq("user_id",userId);
     setModelli(prev=>{
       const updated=prev.filter(m=>m.id!==id);
