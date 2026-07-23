@@ -391,7 +391,6 @@ export default function App({ session }){
   const [modelliTab, setModelliTab] = useState("turni");
   const [modelli, setModelli] = useState([]);
   const [modelliSort, setModelliSort] = useState("orario");
-  const [showMoveMode, setShowMoveMode] = useState(false);
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [showModelForm, setShowModelForm] = useState(false);
   const [editModello, setEditModello] = useState(null);
@@ -420,6 +419,13 @@ export default function App({ session }){
   const touchStartX = useRef(null);
   const touchStartY = useRef(null);
   const [prevGrid, setPrevGrid] = useState(null);
+
+  // ── Drag & drop modelli: scroll container + autoscroll a velocità variabile + preview ordine live
+  const modelliScrollRef = useRef(null);
+  const autoScrollRAF = useRef(null);
+  const autoScrollSpeed = useRef(0);
+  const [dragOverId, setDragOverId] = useState(null); // id della card su cui si sta trascinando ora (per preview)
+  const [draggingId, setDraggingId] = useState(null); // id della card attualmente trascinata
 
   const [reportInterval, setReportInterval] = useState("mese");
   const [reportDateFrom, setReportDateFrom] = useState("");
@@ -1348,6 +1354,63 @@ const modelliOrdinati = useMemo(()=>{
     setModelli(withNewOrder);
     for(const m of withNewOrder){
       supabase.from("modelli").update({sort_order:m.sortOrder}).eq("id",m.id).eq("user_id",userId);
+    }
+  }
+
+  // ── Autoscroll a velocità variabile per drag & drop modelli.
+  // Zona "morta" al centro del container: nessuno scroll. Avvicinandosi ai
+  // bordi (alto/basso) lo scroll parte e accelera in modo proporzionale
+  // alla distanza dal bordo (più vicino al bordo = più veloce).
+  // clientY: coordinata Y del puntatore (mouse o dito) in coordinate viewport.
+  function updateAutoScroll(clientY){
+    const el=modelliScrollRef.current;
+    if(!el) return;
+    const rect=el.getBoundingClientRect();
+    const EDGE_ZONE=90;        // px dal bordo entro cui parte lo scroll
+    const MAX_SPEED=22;        // px per frame al massimo (vicinissimo al bordo)
+    const MIN_SPEED=3;         // px per frame al minimo (appena entrato nella zona)
+    let speed=0;
+    const distFromTop=clientY-rect.top;
+    const distFromBottom=rect.bottom-clientY;
+    if(distFromTop<EDGE_ZONE && distFromTop>=-40){
+      const t=1-Math.max(0,distFromTop)/EDGE_ZONE; // 0 al bordo della zona, 1 al bordo del container
+      speed=-(MIN_SPEED+(MAX_SPEED-MIN_SPEED)*t*t);
+    } else if(distFromBottom<EDGE_ZONE && distFromBottom>=-40){
+      const t=1-Math.max(0,distFromBottom)/EDGE_ZONE;
+      speed=(MIN_SPEED+(MAX_SPEED-MIN_SPEED)*t*t);
+    }
+    autoScrollSpeed.current=speed;
+    if(speed!==0 && !autoScrollRAF.current){
+      const step=()=>{
+        const scroller=modelliScrollRef.current;
+        if(!scroller||autoScrollSpeed.current===0){
+          autoScrollRAF.current=null;
+          return;
+        }
+        scroller.scrollTop+=autoScrollSpeed.current;
+        autoScrollRAF.current=requestAnimationFrame(step);
+      };
+      autoScrollRAF.current=requestAnimationFrame(step);
+    }
+  }
+  function stopAutoScroll(){
+    autoScrollSpeed.current=0;
+    if(autoScrollRAF.current){ cancelAnimationFrame(autoScrollRAF.current); autoScrollRAF.current=null; }
+  }
+
+  async function reorderModelli(srcId, dstId){
+    if(!srcId||!dstId||srcId===dstId) return;
+    const sorted=[...modelli].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
+    const srcIdx=sorted.findIndex(x=>x.id===srcId);
+    const dstIdx=sorted.findIndex(x=>x.id===dstId);
+    if(srcIdx===-1||dstIdx===-1) return;
+    const reordered=[...sorted];
+    const [moved]=reordered.splice(srcIdx,1);
+    reordered.splice(dstIdx,0,moved);
+    const withNewOrder=reordered.map((x,i)=>({...x,sortOrder:i*10}));
+    setModelli(withNewOrder);
+    for(const x of withNewOrder){
+      supabase.from("modelli").update({sort_order:x.sortOrder}).eq("id",x.id).eq("user_id",userId);
     }
   }
 
@@ -2570,12 +2633,6 @@ const modelliOrdinati = useMemo(()=>{
                 updateCalendar={updateCalendar} accent={accent} setCalId={setCalId}/>
             </div>
             <div style={{display:"flex",gap:8,alignItems:"center",position:"relative"}}>
-              <button onClick={()=>setShowMoveMode(s=>!s)}
-                title={showMoveMode?"Spostamento attivo — clicca per bloccare":"Attiva spostamento"}
-                style={{background:showMoveMode?accent:T.s2,
-                  border:`1px solid ${showMoveMode?accent:T.border}`,borderRadius:8,
-                  padding:"6px 10px",fontSize:18,fontWeight:700,cursor:"pointer",
-                  color:showMoveMode?"#fff":T.sub}}>↑↓</button>
               {modelliTab!=="colori"&&(
               <button onClick={()=>{
                 if(modelliTab==="turni"){
@@ -2629,7 +2686,7 @@ const modelliOrdinati = useMemo(()=>{
         </div>
       )}
 
-      <div style={{flex:1,overflowY:"auto",padding:"0 12px 80px"}}>
+      <div ref={modelliScrollRef} style={{flex:1,overflowY:"auto",padding:"0 12px 80px"}}>
         {modelliTab==="turni"&&(()=>{
           const modelliVisibili = calId===null
             ? modelliOrdinati
@@ -2651,58 +2708,62 @@ const modelliOrdinati = useMemo(()=>{
                     selectMode={!editMode}
                     selected={selectedModelloIds.includes(m.id)}
                     onToggleSelect={()=>setSelectedModelloIds(prev=>prev.includes(m.id)?prev.filter(id=>id!==m.id):[...prev,m.id])}
-                    onEdit={()=>{ if(!showMoveMode){ setEditModello(m); setModelForm({
+                    onEdit={()=>{ setEditModello(m); setModelForm({
                       ...m,
                       categoria:(m.categoria==="primo"||m.categoria==="secondo")?m.categoria:"",
                       categoriaAppAuto:(m.categoria_app_auto==="app"||m.categoria_app_auto==="auto")?m.categoria_app_auto:((m.categoria==="app"||m.categoria==="auto")?m.categoria:""),
                       turnoVuoto: !!m.categoria_turno_vuoto,
                       appAutoVuoto: !!m.categoria_app_auto_vuoto
-                    }); setShowModelForm(true); } }}
+                    }); setShowModelForm(true); }}
                     onDelete={()=>deleteModello(m.id)}
-                    onMoveUp={showMoveMode?()=>moveH24(m.id,"up"):null}
-                    onMoveDown={showMoveMode?()=>moveH24(m.id,"down"):null}
-                    onTouchStart={showMoveMode?()=>{touchSrcId.current=m.id;}:null}
-                    onTouchMove={showMoveMode?(e)=>{
+                    // Frecce ▲▼: alternativa sempre disponibile per spostare di UNA posizione.
+                    onMoveUp={i>0?()=>moveH24(m.id,"up"):null}
+                    onMoveDown={i<arr.length-1?()=>moveH24(m.id,"down"):null}
+                    // Drag & drop: alternativa sempre disponibile per spostamenti più ampi.
+                    isDragging={draggingId===m.id}
+                    isDropTarget={dragOverId===m.id && draggingId!==m.id}
+                    onTouchStart={()=>{ touchSrcId.current=m.id; setDraggingId(m.id); }}
+                    onTouchMove={(e)=>{
                       e.preventDefault();
                       const t=e.touches[0];
+                      // Stessa funzione di autoscroll usata dal mouse: garantisce
+                      // comportamento identico anche col dito su Android/iOS.
+                      updateAutoScroll(t.clientY);
                       const el=document.elementFromPoint(t.clientX,t.clientY);
                       const card=el?.closest("[data-modello-id]");
-                      if(card) touchTargetId.current=card.getAttribute("data-modello-id");
-                    }:null}
-                    onTouchEnd={showMoveMode?async()=>{
-                      if(!touchSrcId.current||!touchTargetId.current||touchSrcId.current===touchTargetId.current){touchSrcId.current=null;touchTargetId.current=null;return;}
-                      const sorted=[...modelli].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
-                      const srcIdx=sorted.findIndex(x=>x.id===touchSrcId.current);
-                      const dstIdx=sorted.findIndex(x=>x.id===touchTargetId.current);
-                      if(srcIdx===-1||dstIdx===-1){touchSrcId.current=null;touchTargetId.current=null;return;}
-                      const reordered=[...sorted];
-                      const [moved]=reordered.splice(srcIdx,1);
-                      reordered.splice(dstIdx,0,moved);
-                      const withNewOrder=reordered.map((x,i)=>({...x,sortOrder:i*10}));
-                      setModelli(withNewOrder);
-                      for(const x of withNewOrder){
-                        supabase.from("modelli").update({sort_order:x.sortOrder}).eq("id",x.id).eq("user_id",userId);
+                      if(card){
+                        const id=card.getAttribute("data-modello-id");
+                        touchTargetId.current=id;
+                        setDragOverId(id);
                       }
-                      touchSrcId.current=null;touchTargetId.current=null;
-                    }:null}
-                    onDragStart={showMoveMode?()=>{dragSrcId.current=m.id;}:null}
-                    onDragOver={showMoveMode?(e)=>{e.preventDefault();}:null}
-                    onDrop={showMoveMode?async()=>{
-                      if(!dragSrcId.current||dragSrcId.current===m.id) return;
-                      const sorted=[...modelli].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
-                      const srcIdx=sorted.findIndex(x=>x.id===dragSrcId.current);
-                      const dstIdx=sorted.findIndex(x=>x.id===m.id);
-                      if(srcIdx===-1||dstIdx===-1) return;
-                      const reordered=[...sorted];
-                      const [moved]=reordered.splice(srcIdx,1);
-                      reordered.splice(dstIdx,0,moved);
-                      const withNewOrder=reordered.map((x,i)=>({...x,sortOrder:i*10}));
-                      setModelli(withNewOrder);
-                      for(const x of withNewOrder){
-                        supabase.from("modelli").update({sort_order:x.sortOrder}).eq("id",x.id).eq("user_id",userId);
-                      }
+                    }}
+                    onTouchEnd={async()=>{
+                      stopAutoScroll();
+                      await reorderModelli(touchSrcId.current, touchTargetId.current);
+                      touchSrcId.current=null; touchTargetId.current=null;
+                      setDraggingId(null); setDragOverId(null);
+                    }}
+                    onDragStart={()=>{ dragSrcId.current=m.id; setDraggingId(m.id); }}
+                    onDragOver={(e)=>{
+                      e.preventDefault();
+                      // Autoscroll: attivo solo entro la fascia vicino ai bordi
+                      // alto/basso, velocità proporzionale alla distanza dal bordo.
+                      updateAutoScroll(e.clientY);
+                      if(dragOverId!==m.id) setDragOverId(m.id);
+                    }}
+                    onDrop={async()=>{
+                      stopAutoScroll();
+                      await reorderModelli(dragSrcId.current, m.id);
                       dragSrcId.current=null;
-                    }:null}/>
+                      setDraggingId(null); setDragOverId(null);
+                    }}
+                    onDragEnd={()=>{
+                      // Copre il caso di drag rilasciato fuori da una card valida
+                      // (es. fuori dalla lista): ripulisce comunque lo stato visivo.
+                      stopAutoScroll();
+                      dragSrcId.current=null;
+                      setDraggingId(null); setDragOverId(null);
+                    }}/>
                 </div>
               ))}
             </div>
@@ -5384,7 +5445,43 @@ function Sec({label,children,T}){
 
 // #region SEZIONE 25: MODELLO CARD & FORM (fix: colore libero via palette condivisa)
 // ═══════════════════════════════════════════════════════════════
-function ModelloCard({m, T, accent, fasceAutomatiche, onEdit, onDelete, onMoveUp, onMoveDown, onDragStart, onDragOver, onDrop, onTouchStart, onTouchMove, onTouchEnd, selectMode, selected, onToggleSelect}){
+// Pulsante freccia con feedback "pressed": si schiaccia leggermente e cambia
+// colore/ombra appena riceve il tap/click, così l'utente capisce subito che
+// l'input è stato ricevuto anche prima che la lista si riordini.
+function PressableArrow({ onClick, accent, children, disabled, title }){
+  const [pressed, setPressed] = useState(false);
+  return (
+    <button
+      title={title}
+      disabled={disabled}
+      onClick={e=>{ e.stopPropagation(); if(!disabled) onClick(); }}
+      onMouseDown={()=>!disabled&&setPressed(true)}
+      onMouseUp={()=>setPressed(false)}
+      onMouseLeave={()=>setPressed(false)}
+      onTouchStart={()=>!disabled&&setPressed(true)}
+      onTouchEnd={()=>setPressed(false)}
+      onTouchCancel={()=>setPressed(false)}
+      style={{
+        background:disabled?"#f8fafc":(pressed?accent:"#f1f5f9"),
+        border:`1px solid ${disabled?"#e2e8f0":(pressed?accent:"#e2e8f0")}`,
+        borderRadius:8,
+        color:disabled?"#cbd5e1":(pressed?"#fff":"#475569"),
+        cursor:disabled?"default":"pointer",
+        fontSize:20,
+        padding:"6px 10px",
+        minWidth:36,minHeight:36,
+        display:"flex",alignItems:"center",justifyContent:"center",
+        marginRight:2,
+        transform:pressed?"scale(0.88)":"scale(1)",
+        boxShadow:pressed?"inset 0 2px 4px rgba(0,0,0,0.18)":"0 1px 2px rgba(0,0,0,0.04)",
+        transition:"transform 0.08s ease, background 0.08s ease, box-shadow 0.08s ease, border-color 0.08s ease"
+      }}>
+      {children}
+    </button>
+  );
+}
+
+function ModelloCard({m, T, accent, fasceAutomatiche, onEdit, onDelete, onMoveUp, onMoveDown, onDragStart, onDragOver, onDrop, onDragEnd, onTouchStart, onTouchMove, onTouchEnd, selectMode, selected, onToggleSelect, isDragging, isDropTarget}){
   const colore=m.coloreCustom||(m.tempo==="h24"?"#64748b":getColorByTime(m.inizio, fasceAutomatiche));
   const durata=m.tempo==="h24"?"Tutto il giorno"
     :m.tempo==="6h15"&&m.inizio?`${m.inizio} - ${calcFine6h15(m.inizio)} • 6h 15m`
@@ -5396,11 +5493,23 @@ function ModelloCard({m, T, accent, fasceAutomatiche, onEdit, onDelete, onMoveUp
       onDragStart={onDragStart}
       onDragOver={e=>{e.preventDefault();if(onDragOver)onDragOver(e);}}
       onDrop={e=>{e.preventDefault();if(onDrop)onDrop(e);}}
+      onDragEnd={onDragEnd}
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
       data-modello-id={m.id}
-      style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:selectMode?"pointer":(onDragStart?"grab":"pointer"),touchAction:onTouchStart?"none":"auto"}}
+      style={{display:"flex",alignItems:"center",padding:"12px 14px",
+        cursor:selectMode?"pointer":(onDragStart?"grab":"pointer"),
+        touchAction:onTouchStart?"none":"auto",
+        // Il modello trascinato appare più trasparente: segnala che è "in volo".
+        opacity:isDragging?0.35:1,
+        // Quando la card è il bersaglio corrente del trascinamento, la si mostra
+        // già come se il modello trascinato fosse stato lasciato lì (anteprima
+        // della posizione finale), con un bordo tratteggiato leggero.
+        background:isDropTarget?(accent+"14"):"transparent",
+        outline:isDropTarget?`2px dashed ${accent}88`:"none",
+        outlineOffset:isDropTarget?"-2px":"0",
+        transition:"opacity 0.15s ease, background 0.15s ease, outline-color 0.15s ease"}}
       onClick={selectMode?onToggleSelect:onEdit}>
       {selectMode&&(
         <div style={{width:20,height:20,borderRadius:6,marginRight:10,flexShrink:0,
@@ -5420,14 +5529,8 @@ function ModelloCard({m, T, accent, fasceAutomatiche, onEdit, onDelete, onMoveUp
           textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.titolo||"Senza nome"}</div>
         <div style={{fontSize:16,color:T.sub,marginTop:1}}>{durata}</div>
       </div>
-      {!selectMode&&onMoveUp&&<button onClick={e=>{e.stopPropagation();onMoveUp();}}
-        style={{background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:8,color:"#475569",
-          cursor:"pointer",fontSize:20,padding:"6px 10px",minWidth:36,minHeight:36,
-          display:"flex",alignItems:"center",justifyContent:"center",marginRight:2}}>▲</button>}
-      {!selectMode&&onMoveDown&&<button onClick={e=>{e.stopPropagation();onMoveDown();}}
-        style={{background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:8,color:"#475569",
-          cursor:"pointer",fontSize:20,padding:"6px 10px",minWidth:36,minHeight:36,
-          display:"flex",alignItems:"center",justifyContent:"center",marginRight:4}}>▼</button>}
+      {!selectMode&&onMoveUp&&<PressableArrow accent={accent} onClick={onMoveUp} title="Sposta su">▲</PressableArrow>}
+      {!selectMode&&onMoveDown&&<PressableArrow accent={accent} onClick={onMoveDown} title="Sposta giù">▼</PressableArrow>}
       {!selectMode&&<button onClick={e=>{e.stopPropagation();if(window.confirm("Eliminare questo modello?"))onDelete();}}
         style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:18,
           padding:"0 4px",marginRight:4}}>×</button>}
@@ -5435,6 +5538,7 @@ function ModelloCard({m, T, accent, fasceAutomatiche, onEdit, onDelete, onMoveUp
     </div>
   );
 }
+
 
 function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[], onSave}){
   const autoColore=form.tempo==="h24"?"#64748b":getColorByTime(form.inizio, fasceAutomatiche);
