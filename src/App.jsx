@@ -1444,10 +1444,13 @@ const modelliOrdinati = useMemo(()=>{
     await supabase.from("modelli").update({posizione:sotto.id, sort_order:nuovoSort}).eq("id",modelloId).eq("user_id",userId);
   }
 
-  async function moveH24(id, dir){
-    // Lavoro sull'elenco visivo reale (automatici + pinnati intercalati),
-    // così la freccia sposta esattamente ciò che l'utente vede in lista.
-    const visivo = modelliOrdinati;
+  async function moveH24(id, dir, elencoVisibile){
+    // Lavoro sull'elenco REALMENTE VISIBILE all'utente in quel momento (che
+    // può essere filtrato per calendario), non su modelliOrdinati completo:
+    // altrimenti la freccia poteva agganciare il modello a un vicino
+    // invisibile nel filtro attivo (di un altro calendario), e lo spostamento
+    // sembrava "non avere effetto" nella vista che l'utente vedeva.
+    const visivo = elencoVisibile || modelliOrdinati;
     const idx = visivo.findIndex(m=>m.id===id);
     if(idx===-1) return;
     const newIdx = dir==="up" ? idx-1 : idx+1;
@@ -1502,11 +1505,13 @@ const modelliOrdinati = useMemo(()=>{
     if(autoScrollRAF.current){ cancelAnimationFrame(autoScrollRAF.current); autoScrollRAF.current=null; }
   }
 
-  async function reorderModelli(srcId, dstId){
+  async function reorderModelli(srcId, dstId, elencoVisibile){
     if(!srcId||!dstId||srcId===dstId) return;
     // Il modello trascinato (srcId) va agganciato subito SOPRA la card su
     // cui è stato rilasciato (dstId), stessa semantica delle frecce ▲▼.
-    const visivo = modelliOrdinati;
+    // Uso l'elenco REALMENTE VISIBILE (filtrato per calendario se attivo),
+    // stessa correzione applicata a moveH24.
+    const visivo = elencoVisibile || modelliOrdinati;
     if(!visivo.some(m=>m.id===srcId) || !visivo.some(m=>m.id===dstId)) return;
     const senzaModello = visivo.filter(m=>m.id!==srcId);
     const dstIdx = senzaModello.findIndex(m=>m.id===dstId);
@@ -2756,13 +2761,9 @@ const modelliOrdinati = useMemo(()=>{
                 title={modalitaSpostamento?"Spostamento attivo — tocca per tornare a scorrere normalmente":"Attiva per trascinare e riordinare i modelli col dito"}
                 style={{background:modalitaSpostamento?accent:T.s2,
                   border:`1.5px solid ${modalitaSpostamento?accent:T.border}`,borderRadius:8,
-                  padding:"6px 12px",fontSize:16,fontWeight:800,cursor:"pointer",
+                  padding:"6px 10px",fontSize:18,fontWeight:700,cursor:"pointer",
                   color:modalitaSpostamento?"#fff":T.sub,
-                  display:"flex",alignItems:"center",gap:5,
-                  transition:"background 0.12s ease, border-color 0.12s ease"}}>
-                <span style={{fontSize:15}}>✥</span>
-                {modalitaSpostamento?"Fatto":"Sposta"}
-              </button>
+                  transition:"background 0.12s ease, border-color 0.12s ease"}}>↑↓</button>
               )}
               {modelliTab!=="colori"&&(
               <button onClick={()=>{
@@ -2852,9 +2853,11 @@ const modelliOrdinati = useMemo(()=>{
                       appAutoVuoto: !!m.categoria_app_auto_vuoto
                     }); setShowModelForm(true); }}
                     onDelete={()=>deleteModello(m.id)}
-                    // Frecce ▲▼: sempre disponibili, spostano di UNA posizione.
-                    onMoveUp={i>0?()=>moveH24(m.id,"up"):null}
-                    onMoveDown={i<arr.length-1?()=>moveH24(m.id,"down"):null}
+                    // Frecce ▲▼: sempre disponibili, spostano di UNA posizione
+                    // nell'elenco realmente visibile (modelliVisibili, filtrato
+                    // per calendario se un calendario specifico è selezionato).
+                    onMoveUp={i>0?()=>moveH24(m.id,"up",modelliVisibili):null}
+                    onMoveDown={i<arr.length-1?()=>moveH24(m.id,"down",modelliVisibili):null}
                     // Drag & drop: sempre disponibile, per spostamenti più ampi.
                     isDragging={draggingId===m.id}
                     isDropTarget={dragOverId===m.id && draggingId!==m.id}
@@ -2873,7 +2876,7 @@ const modelliOrdinati = useMemo(()=>{
                     }:null}
                     onTouchEnd={modalitaSpostamento?async()=>{
                       stopAutoScroll();
-                      await reorderModelli(touchSrcId.current, touchTargetId.current);
+                      await reorderModelli(touchSrcId.current, touchTargetId.current, modelliVisibili);
                       touchSrcId.current=null; touchTargetId.current=null;
                       setDraggingId(null); setDragOverId(null);
                     }:null}
@@ -2908,7 +2911,7 @@ const modelliOrdinati = useMemo(()=>{
                       // MAI l'id della card che ha ricevuto l'evento onDrop: quella
                       // può non coincidere con la posizione reale del cursore quando
                       // il drag nativo perde precisione su liste lunghe.
-                      await reorderModelli(dragSrcId.current, dragTargetId.current);
+                      await reorderModelli(dragSrcId.current, dragTargetId.current, modelliVisibili);
                       dragSrcId.current=null; dragTargetId.current=null;
                       setDraggingId(null); setDragOverId(null);
                     }}
@@ -5684,8 +5687,8 @@ function ModelloCard({m, T, accent, fasceAutomatiche, onEdit, onDelete, onMoveUp
           textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.titolo||"Senza nome"}</div>
         <div style={{fontSize:16,color:T.sub,marginTop:1}}>{durata}</div>
       </div>
-      {!selectMode&&onMoveUp&&<PressableArrow accent={accent} onClick={onMoveUp} title="Sposta su">▲</PressableArrow>}
-      {!selectMode&&onMoveDown&&<PressableArrow accent={accent} onClick={onMoveDown} title="Sposta giù">▼</PressableArrow>}
+      {onMoveUp&&<PressableArrow accent={accent} onClick={onMoveUp} title="Sposta su">▲</PressableArrow>}
+      {onMoveDown&&<PressableArrow accent={accent} onClick={onMoveDown} title="Sposta giù">▼</PressableArrow>}
       {!selectMode&&<button onClick={e=>{e.stopPropagation();if(window.confirm("Eliminare questo modello?"))onDelete();}}
         style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:18,
           padding:"0 4px",marginRight:4}}>×</button>}
