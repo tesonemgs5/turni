@@ -1312,51 +1312,55 @@ export default function App({ session }){
 // ═══════════════════════════════════════════════════════════════
 // Memoizzato: prima veniva ricalcolato (sort completo) ad ogni singolo
 // render dell'app, anche quando i modelli non erano cambiati.
-const modelliOrdinati = useMemo(()=>{
-  // ── Ordinamento ibrido:
-  // • Modelli "automatici" (posizione vuota): ordinati per orario di inizio,
-  //   come sempre — un nuovo modello con orario si inserisce qui da solo.
-  // • Modelli "pinnati" (posizione = id di un altro modello): l'utente li ha
-  //   spostati a mano (frecce o drag) e vanno intercalati subito SOPRA il
-  //   modello a cui sono agganciati, in quella posizione fissa, qualunque
-  //   cosa succeda intorno. Non partecipano all'ordinamento per orario.
-  const toMins=t=>oraInMinuti(t);
-  const INTESTAZIONI={
-    "NOTTE":     -1,
-    "PRIMO":     6*60-1,
-    "MATTINA":   6*60-1,
-    "SECONDO":   12*60-1,
-    "POMERIGGIO":12*60-1,
-    "3° TURNO":  16*60-1,
-  };
+// Sentinella usata nel campo "posizione" per indicare "questo modello va
+// sempre per ULTIMO, dopo tutti gli altri" — caso che il normale pin
+// "sopra X" non può esprimere quando X (il vicino sotto) non esiste perché
+// il modello è già l'ultimo elemento della lista. Senza questa sentinella,
+// un modello spinto in fondo tornava "automatico" e — se h24/senza orario —
+// saltava impropriamente in CIMA invece di restare in fondo.
+const PIN_FINE_LISTA = "__FINE__";
+
+// ── Calcola l'ordine dei modelli PER UN DATO SOTTOINSIEME (tipicamente già
+// filtrato per calendario). Prima il filtro per calendario veniva applicato
+// DOPO aver calcolato l'ordine sull'elenco completo di tutti i calendari
+// insieme: questo creava un doppio livello (elenco completo vs elenco
+// visibile) che poteva disallinearsi — un modello poteva agganciarsi "sopra"
+// un vicino che nella vista filtrata non esisteva, dando risultati instabili
+// (blocchi, salti) a seconda di quali altri modelli erano presenti negli
+// altri calendari. Ora il calcolo avviene SEMPRE sull'insieme che sarà
+// davvero mostrato, un'unica fonte di verità, niente riconciliazione a valle.
+function calcolaOrdineModelli(sottoinsieme){
+  // Ordinamento automatico basato solo su dati strutturati (tempo/inizio),
+  // mai sul titolo testuale del modello: usare il titolo (es. riconoscere
+  // "NOTTE" o "MATTINA" per nome) rendeva l'ordine dipendente da come
+  // l'utente aveva chiamato il modello, un'altra fonte di comportamento
+  // imprevedibile. h24/senza orario vanno sempre in cima (slot -1), gli
+  // altri per orario di inizio.
   function getSortValue(m){
-    if((m.tempo==="h24"||!m.inizio) && INTESTAZIONI.hasOwnProperty(m.titolo)){
-      return INTESTAZIONI[m.titolo];
-    }
-    if(m.tempo!=="h24" && m.inizio){
-      return toMins(m.inizio);
-    }
-    return 99999;
+    if(m.tempo==="h24" || !m.inizio) return -1;
+    const mins = oraInMinuti(m.inizio);
+    return mins===null ? 99999 : mins;
   }
 
-  const tuttiById = new Map(modelli.map(m=>[m.id,m]));
-  const isPinned = m => !!m.posizione && tuttiById.has(m.posizione);
+  const tuttiById = new Map(sottoinsieme.map(m=>[m.id,m]));
+  // Un modello è "pinnato in senso normale" solo se posizione punta a un ID
+  // REALE presente nel sottoinsieme. La sentinella PIN_FINE_LISTA è un caso
+  // a parte, gestito subito dopo.
+  const isPinned = m => !!m.posizione && m.posizione!==PIN_FINE_LISTA && tuttiById.has(m.posizione);
+  const isFineLista = m => m.posizione===PIN_FINE_LISTA;
 
-  const automatici = modelli.filter(m=>!isPinned(m)).sort((a,b)=>{
+  const automatici = sottoinsieme.filter(m=>!isPinned(m) && !isFineLista(m)).sort((a,b)=>{
     const vA=getSortValue(a), vB=getSortValue(b);
     if(vA!==vB) return vA-vB;
     return (a.sortOrder||0)-(b.sortOrder||0);
   });
 
-  // Mappa: id del modello "sotto" -> lista di modelli pinnati che vanno
+  // Mappa: id del modello "sotto" -> lista di modelli pinnati agganciati
   // appena sopra di lui. Un pinnato può essere agganciato sia a un modello
   // automatico sia a un altro modello a sua volta pinnato (catena di pin):
-  // per questo l'inserimento va fatto in modo RICORSIVO, non solo un livello
-  // sopra gli automatici — altrimenti un pin agganciato a un altro pin
-  // (invece che a un automatico) sparisce dal punto giusto e finisce "in
-  // fondo" tra gli orfani: era esattamente il bug degli spostamenti "a caso".
+  // l'inserimento è ricorsivo per gestire catene a qualsiasi profondità.
   const pinnedSopra = new Map();
-  for(const m of modelli){
+  for(const m of sottoinsieme){
     if(isPinned(m)){
       const arr = pinnedSopra.get(m.posizione) || [];
       arr.push(m);
@@ -1365,17 +1369,13 @@ const modelliOrdinati = useMemo(()=>{
   }
   for(const arr of pinnedSopra.values()) arr.sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
 
-  // Inserisce ricorsivamente tutti i pinnati agganciati a un dato id, e a
-  // loro volta i pinnati agganciati a QUEI pinnati, ecc. Con protezione
-  // anti-ciclo (visitati) nel caso — teoricamente impossibile ma non si sa
-  // mai — un pin punti a se stesso o formi un anello.
   function inserisciPinnatiSopra(id, risultato, visitati){
     const agganciati = pinnedSopra.get(id);
     if(!agganciati) return;
     for(const pinnato of agganciati){
       if(visitati.has(pinnato.id)) continue;
       visitati.add(pinnato.id);
-      inserisciPinnatiSopra(pinnato.id, risultato, visitati); // eventuali pin sopra QUESTO pin
+      inserisciPinnatiSopra(pinnato.id, risultato, visitati);
       risultato.push(pinnato);
     }
   }
@@ -1386,16 +1386,29 @@ const modelliOrdinati = useMemo(()=>{
     inserisciPinnatiSopra(m.id, risultato, visitati);
     risultato.push(m);
   }
-  // Pinnati "orfani" residui: casi limite come un ciclo di riferimenti o un
-  // pin il cui riferimento è stato eliminato senza passare dal riaggancio
-  // automatico gestito in deleteModello. Li accodo in fondo per non perderli
-  // silenziosamente, piuttosto che farli sparire dalla lista.
+  // Modelli "pinnati in fondo" (posizione===PIN_FINE_LISTA): sempre dopo
+  // tutto il resto, in ordine tra loro secondo sortOrder (più recente lo
+  // spostamento in fondo, più avanti nel gruppo dei fine-lista).
+  const fineLista = sottoinsieme.filter(m=>isFineLista(m) && !visitati.has(m.id))
+    .sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
+  for(const m of fineLista){
+    inserisciPinnatiSopra(m.id, risultato, visitati); // eventuali pin sopra un fine-lista
+    risultato.push(m);
+    visitati.add(m.id);
+  }
+  // Pinnati "orfani" residui (riferimento fuori dal sottoinsieme, es. il
+  // modello a cui erano agganciati è di un altro calendario, oppure un
+  // ciclo): li accodo in fondo per non perderli silenziosamente.
   const inseriti = new Set(risultato.map(m=>m.id));
-  for(const m of modelli){
+  for(const m of sottoinsieme){
     if(!inseriti.has(m.id)){ risultato.push(m); inseriti.add(m.id); }
   }
   return risultato;
-}, [modelli]);
+}
+
+// Elenco completo (tutti i calendari insieme), usato dove serve una vista
+// globale — es. il ripristino da backup, o quando calId===null ("tutti").
+const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
 
   function getFasciaModello(m){
     if(m.tempo==="h24") return "libero";
@@ -1416,51 +1429,124 @@ const modelliOrdinati = useMemo(()=>{
   // di default 99999 se non ha inizio, altrimenti resta comunque ultimo tra
   // i pari-orario) — nel nostro caso pratico c'è sempre un vicino di sotto
   // perché non permettiamo di superare i confini della lista.
-  async function pinnaSopra(modelloId, elencoSenzaModello, newIdx){
-    const sotto = elencoSenzaModello[newIdx]; // modello che deve restare subito sotto
-    if(!sotto){
-      // Portato in fondo a tutto: nessun vicino sotto -> torna automatico.
-      setModelli(prev=>prev.map(m=>m.id===modelloId?{...m,posizione:""}:m));
-      await supabase.from("modelli").update({posizione:""}).eq("id",modelloId).eq("user_id",userId);
-      return;
+  // ── pinnaSoprapPuro: funzione PURA (nessuna lettura di state esterno, nessun
+  // side-effect) che calcola il nuovo elenco modelli dato lo stato attuale
+  // (prev). Prima questa logica leggeva "modelli" (lo state catturato al
+  // momento della creazione della funzione) invece di "prev": con click
+  // ravvicinati sulle frecce, la seconda chiamata poteva ancora vedere lo
+  // stato PRIMA del primo spostamento, calcolando sortOrder e controllo
+  // anti-ciclo su dati superati — causa architetturale dei blocchi e salti
+  // imprevedibili. Ora tutto il calcolo avviene sullo stato più recente,
+  // dentro un'unica operazione atomica di setModelli.
+  function pinnaSopraPuro(prev, modelloId, sottoId){
+    if(!sottoId){
+      // Nessun riferimento fornito (caso limite/difensivo): il modello torna
+      // completamente automatico (ordinato per orario). In condizioni
+      // normali moveH24/reorderModelli passano sempre un id reale o la
+      // sentinella PIN_FINE_LISTA, mai un valore vuoto.
+      return prev.map(m=>m.id===modelloId?{...m,posizione:""}:m);
     }
-    // Protezione anti-ciclo: se "sotto" è a sua volta (direttamente o tramite
-    // una catena) pinnato sopra il modello che sto spostando, agganciarmi a
-    // lui creerebbe un ciclo (A sopra B, B sopra A). In quel caso l'aggancio
-    // non ha senso: il modello resta dov'era, non applico la modifica.
-    let cursore = sotto;
-    let passi = 0;
-    while(cursore && cursore.posizione && passi<1000){
-      if(cursore.posizione===modelloId) return; // ciclo rilevato, annullo l'operazione
-      cursore = modelli.find(m=>m.id===cursore.posizione);
-      passi++;
+    if(sottoId===PIN_FINE_LISTA){
+      // Il modello diventa l'ultimo della lista: si aggancia "in coda al
+      // gruppo dei fine-lista", non a un modello specifico. Il sortOrder
+      // determina la sua posizione relativa rispetto agli altri modelli
+      // già spinti in fondo (va DOPO l'ultimo di loro).
+      const giaInFondo = prev.filter(m=>m.posizione===PIN_FINE_LISTA && m.id!==modelloId);
+      const maxSort = giaInFondo.length ? Math.max(...giaInFondo.map(m=>m.sortOrder||0)) : 0;
+      const nuovoSort = maxSort + 10;
+      return prev.map(m=>m.id===modelloId?{...m,posizione:PIN_FINE_LISTA,sortOrder:nuovoSort}:m);
     }
-    // sortOrder progressivo tra eventuali più pinnati sullo stesso riferimento:
-    // prendo il minimo tra i pinnati già agganciati a "sotto" e mi metto appena prima.
-    const giaAgganciati = modelli.filter(m=>m.posizione===sotto.id && m.id!==modelloId);
+    const byId = new Map(prev.map(m=>[m.id,m]));
+    const sotto = byId.get(sottoId);
+
+    // Caso SWAP ADIACENTE: sottoId è DIRETTAMENTE pinnato sopra modelloId
+    // (es. "sposta su" quando il vicino sopra si era pinnato su di me al
+    // giro precedente — normalissimo scambiare avanti e indietro due
+    // elementi adiacenti). Prima liberavo questo caso come "ciclo, operazione
+    // rifiutata", ma è un'operazione legittima e frequentissima: bloccarla
+    // rendeva "sposta su" seguito da "sposta giù" non sempre reversibile,
+    // uno dei sintomi dell'instabilità architetturale segnalata. La si
+    // risolve staccando prima il vecchio aggancio di "sotto" (che torna a
+    // puntare a ciò che stava sotto modelloId prima, o automatico se
+    // modelloId era esso stesso automatico), poi applicando normalmente il
+    // nuovo pin richiesto.
+    let base = prev;
+    if(sotto && sotto.posizione===modelloId){
+      const modelloAttuale = byId.get(modelloId);
+      const nuovaPosizioneSotto = modelloAttuale ? modelloAttuale.posizione : "";
+      base = prev.map(m=>m.id===sottoId?{...m,posizione:nuovaPosizioneSotto}:m);
+    } else {
+      // Protezione anti-ciclo per catene INDIRETTE più lunghe (es. A sopra B,
+      // B sopra C, e ora si tenta di mettere C sopra A): questi casi restano
+      // patologici e non hanno un modo ovvio di essere risolti automaticamente,
+      // quindi l'operazione viene semplicemente rifiutata (nessuna modifica).
+      let cursore = sotto;
+      let passi = 0;
+      while(cursore && cursore.posizione && cursore.posizione!==PIN_FINE_LISTA && passi<1000){
+        if(cursore.posizione===modelloId) return prev; // ciclo indiretto, nessuna modifica
+        cursore = byId.get(cursore.posizione);
+        passi++;
+      }
+    }
+
+    const giaAgganciati = base.filter(m=>m.posizione===sottoId && m.id!==modelloId);
     const minSort = giaAgganciati.length ? Math.min(...giaAgganciati.map(m=>m.sortOrder||0)) : 0;
     const nuovoSort = minSort - 10;
-    setModelli(prev=>prev.map(m=>m.id===modelloId?{...m,posizione:sotto.id,sortOrder:nuovoSort}:m));
-    await supabase.from("modelli").update({posizione:sotto.id, sort_order:nuovoSort}).eq("id",modelloId).eq("user_id",userId);
+    return base.map(m=>m.id===modelloId?{...m,posizione:sottoId,sortOrder:nuovoSort}:m);
   }
 
-  async function moveH24(id, dir, elencoVisibile){
-    // Lavoro sull'elenco REALMENTE VISIBILE all'utente in quel momento (che
-    // può essere filtrato per calendario), non su modelliOrdinati completo:
-    // altrimenti la freccia poteva agganciare il modello a un vicino
-    // invisibile nel filtro attivo (di un altro calendario), e lo spostamento
-    // sembrava "non avere effetto" nella vista che l'utente vedeva.
-    const visivo = elencoVisibile || modelliOrdinati;
-    const idx = visivo.findIndex(m=>m.id===id);
-    if(idx===-1) return;
-    const newIdx = dir==="up" ? idx-1 : idx+1;
-    if(newIdx<0 || newIdx>=visivo.length) return;
-    const senzaModello = visivo.filter(m=>m.id!==id);
-    // Dopo aver tolto il modello dall'elenco, il "vicino di sotto" desiderato
-    // si trova esattamente all'indice newIdx nell'elenco privato (verificato
-    // per entrambe le direzioni: rimuovendo l'elemento gli indici successivi
-    // scalano di uno, e l'aritmetica coincide sia salendo che scendendo).
-    await pinnaSopra(id, senzaModello, newIdx);
+  // Salva su Supabase lo stato di un modello dopo un pin (posizione/sortOrder
+  // aggiornati). Chiamata DOPO che setModelli ha già applicato la modifica
+  // localmente, leggendo i valori dal nuovo elenco calcolato (non da uno
+  // stato esterno potenzialmente non sincronizzato).
+  async function salvaPin(nuovoElenco, modelloId){
+    const m = nuovoElenco.find(x=>x.id===modelloId);
+    if(!m) return;
+    await supabase.from("modelli").update({posizione:m.posizione||"", sort_order:m.sortOrder}).eq("id",modelloId).eq("user_id",userId);
+  }
+
+
+  async function moveH24(id, dir, calIdFiltro){
+    // Tutta l'operazione (ricalcolo elenco visibile, indice, vicino target,
+    // pin) avviene DENTRO il callback funzionale di setModelli: così lavora
+    // sempre sullo stato più recente anche con click ravvicinati sulle
+    // frecce, invece che su uno snapshot del render in cui il pulsante è
+    // stato creato — era la causa architetturale di blocchi e salti.
+    let nuovoElenco = null;
+    setModelli(prev=>{
+      const sottoinsieme = (calIdFiltro==null) ? prev : prev.filter(m=>(m.calendarId||mainCalId)===calIdFiltro);
+      const visivo = calcolaOrdineModelli(sottoinsieme);
+      const idx = visivo.findIndex(m=>m.id===id);
+      if(idx===-1){ nuovoElenco=prev; return prev; }
+      const senzaModello = visivo.filter(m=>m.id!==id);
+      let sottoId;
+      if(dir==="up"){
+        if(idx-1<0){ nuovoElenco=prev; return prev; } // già in cima, niente da fare
+        // Il vicino sopra, in senzaModello, resta allo stesso indice idx-1
+        // (rimuovere l'elemento a idx non altera gli indici di ciò che lo precede).
+        sottoId = senzaModello[idx-1].id;
+      } else {
+        if(idx+1>=visivo.length){
+          // Il modello è già l'ultimo: non c'è un vicino sotto reale.
+          // Usiamo la sentinella "fine lista" invece di tornare automatico,
+          // altrimenti un modello h24/senza orario spinto in fondo saltava
+          // impropriamente in cima al prossimo ricalcolo dell'ordine.
+          sottoId = PIN_FINE_LISTA;
+        } else {
+          // Il vicino sotto desiderato era a idx+1 in "visivo": dopo aver
+          // rimosso l'elemento a idx, tutto ciò che stava dopo scala
+          // indietro di uno, quindi in "senzaModello" si trova a idx (non
+          // idx+1). Era qui l'errore di indice originale.
+          sottoId = senzaModello[idx].id;
+        }
+      }
+      const risultato = pinnaSopraPuro(prev, id, sottoId);
+      nuovoElenco = risultato;
+      return risultato;
+    });
+    // Il salvataggio su Supabase avviene dopo, leggendo il risultato appena
+    // calcolato (nuovoElenco), non uno stato esterno potenzialmente stantio.
+    if(nuovoElenco) await salvaPin(nuovoElenco, id);
   }
 
 
@@ -1505,18 +1591,23 @@ const modelliOrdinati = useMemo(()=>{
     if(autoScrollRAF.current){ cancelAnimationFrame(autoScrollRAF.current); autoScrollRAF.current=null; }
   }
 
-  async function reorderModelli(srcId, dstId, elencoVisibile){
+  async function reorderModelli(srcId, dstId, calIdFiltro){
     if(!srcId||!dstId||srcId===dstId) return;
     // Il modello trascinato (srcId) va agganciato subito SOPRA la card su
     // cui è stato rilasciato (dstId), stessa semantica delle frecce ▲▼.
-    // Uso l'elenco REALMENTE VISIBILE (filtrato per calendario se attivo),
-    // stessa correzione applicata a moveH24.
-    const visivo = elencoVisibile || modelliOrdinati;
-    if(!visivo.some(m=>m.id===srcId) || !visivo.some(m=>m.id===dstId)) return;
-    const senzaModello = visivo.filter(m=>m.id!==srcId);
-    const dstIdx = senzaModello.findIndex(m=>m.id===dstId);
-    if(dstIdx===-1) return;
-    await pinnaSopra(srcId, senzaModello, dstIdx);
+    // Tutto dentro un unico setModelli(prev=>...) per la stessa ragione di
+    // atomicità spiegata in moveH24.
+    let nuovoElenco = null;
+    setModelli(prev=>{
+      const appartieneAlFiltro = m => calIdFiltro==null || (m.calendarId||mainCalId)===calIdFiltro;
+      const src = prev.find(m=>m.id===srcId);
+      const dst = prev.find(m=>m.id===dstId);
+      if(!src || !dst || !appartieneAlFiltro(src) || !appartieneAlFiltro(dst)){ nuovoElenco=prev; return prev; }
+      const risultato = pinnaSopraPuro(prev, srcId, dstId);
+      nuovoElenco = risultato;
+      return risultato;
+    });
+    if(nuovoElenco) await salvaPin(nuovoElenco, srcId);
   }
 
   // ── FIX: quando un modello riceve un coloreCustom, quel colore viene
@@ -1638,16 +1729,14 @@ const modelliOrdinati = useMemo(()=>{
     const visivo = modelliOrdinati;
     const idxEliminato = visivo.findIndex(m=>m.id===id);
     const nuovoSotto = idxEliminato!==-1 ? visivo[idxEliminato+1] : null; // può essere undefined se era l'ultimo
+    const nuovaPosizioneOrfani = nuovoSotto ? nuovoSotto.id : PIN_FINE_LISTA;
+    // Il modello eliminato era l'ultimo: chi era agganciato a lui deve
+    // diventare l'ultimo a sua volta (sentinella), non tornare "automatico"
+    // (che per un h24/senza orario avrebbe causato un salto in cima).
+    setModelli(prev=>prev.map(m=>m.posizione===id?{...m,posizione:nuovaPosizioneOrfani}:m));
     const orfani = modelli.filter(m=>m.posizione===id);
     for(const orfano of orfani){
-      if(nuovoSotto){
-        setModelli(prev=>prev.map(m=>m.id===orfano.id?{...m,posizione:nuovoSotto.id}:m));
-        await supabase.from("modelli").update({posizione:nuovoSotto.id}).eq("id",orfano.id).eq("user_id",userId);
-      } else {
-        // Non c'era nessuno sotto: torna automatico (ordinato per orario).
-        setModelli(prev=>prev.map(m=>m.id===orfano.id?{...m,posizione:""}:m));
-        await supabase.from("modelli").update({posizione:""}).eq("id",orfano.id).eq("user_id",userId);
-      }
+      await supabase.from("modelli").update({posizione:nuovaPosizioneOrfani}).eq("id",orfano.id).eq("user_id",userId);
     }
     await supabase.from("modelli").delete().eq("id",id).eq("user_id",userId);
     setModelli(prev=>{
@@ -2822,10 +2911,10 @@ const modelliOrdinati = useMemo(()=>{
         {modelliTab==="turni"&&(()=>{
           const modelliVisibili = calId===null
             ? modelliOrdinati
-            : modelliOrdinati.filter(m=>{
+            : calcolaOrdineModelli(modelli.filter(m=>{
                 const mcid = m.calendarId||mainCalId;
                 return mcid===calId;
-              });
+              }));
           return modelliVisibili.length===0?(
             <div style={{textAlign:"center",padding:"40px 24px",color:T.sub}}>
               <div style={{fontSize:36,marginBottom:10}}>📋</div>
@@ -2856,8 +2945,8 @@ const modelliOrdinati = useMemo(()=>{
                     // Frecce ▲▼: sempre disponibili, spostano di UNA posizione
                     // nell'elenco realmente visibile (modelliVisibili, filtrato
                     // per calendario se un calendario specifico è selezionato).
-                    onMoveUp={i>0?()=>moveH24(m.id,"up",modelliVisibili):null}
-                    onMoveDown={i<arr.length-1?()=>moveH24(m.id,"down",modelliVisibili):null}
+                    onMoveUp={i>0?()=>moveH24(m.id,"up",calId):null}
+                    onMoveDown={i<arr.length-1?()=>moveH24(m.id,"down",calId):null}
                     // Drag & drop: sempre disponibile, per spostamenti più ampi.
                     isDragging={draggingId===m.id}
                     isDropTarget={dragOverId===m.id && draggingId!==m.id}
@@ -2876,7 +2965,7 @@ const modelliOrdinati = useMemo(()=>{
                     }:null}
                     onTouchEnd={modalitaSpostamento?async()=>{
                       stopAutoScroll();
-                      await reorderModelli(touchSrcId.current, touchTargetId.current, modelliVisibili);
+                      await reorderModelli(touchSrcId.current, touchTargetId.current, calId);
                       touchSrcId.current=null; touchTargetId.current=null;
                       setDraggingId(null); setDragOverId(null);
                     }:null}
@@ -2911,7 +3000,7 @@ const modelliOrdinati = useMemo(()=>{
                       // MAI l'id della card che ha ricevuto l'evento onDrop: quella
                       // può non coincidere con la posizione reale del cursore quando
                       // il drag nativo perde precisione su liste lunghe.
-                      await reorderModelli(dragSrcId.current, dragTargetId.current, modelliVisibili);
+                      await reorderModelli(dragSrcId.current, dragTargetId.current, calId);
                       dragSrcId.current=null; dragTargetId.current=null;
                       setDraggingId(null); setDragOverId(null);
                     }}
