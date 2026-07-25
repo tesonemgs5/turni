@@ -2804,7 +2804,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
             </div>
             <div style={{display:"flex",gap:8,alignItems:"center",position:"relative"}}>
               {modelliTab==="turni"&&(
-              <button onClick={()=>setModalitaSpostamento(s=>!s)}
+              <button onClick={()=>{ setModalitaSpostamento(s=>!s); setSelectedModelloIds([]); }}
                 title={modalitaSpostamento?"Spostamento attivo — tocca per tornare a scorrere normalmente":"Attiva per trascinare e riordinare i modelli col dito"}
                 style={{background:modalitaSpostamento?accent:T.s2,
                   border:`1.5px solid ${modalitaSpostamento?accent:T.border}`,borderRadius:8,
@@ -2889,16 +2889,16 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                     // frecce ▲▼ e il drag & drop per il riordino devono essere SEMPRE
                     // disponibili nella lista Modelli, indipendentemente da editMode:
                     // prima erano condizionate allo stesso flag e sparivano di default.
-                    selectMode={!editMode}
+                    selectMode={!editMode&&!modalitaSpostamento}
                     selected={selectedModelloIds.includes(m.id)}
                     onToggleSelect={()=>setSelectedModelloIds(prev=>prev.includes(m.id)?prev.filter(id=>id!==m.id):[...prev,m.id])}
-                    onEdit={()=>{ setEditModello(m); setModelForm({
+                    onEdit={modalitaSpostamento?(()=>{}):(()=>{ setEditModello(m); setModelForm({
                       ...m,
                       categoria:(m.categoria==="primo"||m.categoria==="secondo")?m.categoria:"",
                       categoriaAppAuto:(m.categoria_app_auto==="app"||m.categoria_app_auto==="auto")?m.categoria_app_auto:((m.categoria==="app"||m.categoria==="auto")?m.categoria:""),
                       turnoVuoto: !!m.categoria_turno_vuoto,
                       appAutoVuoto: !!m.categoria_app_auto_vuoto
-                    }); setShowModelForm(true); }}
+                    }); setShowModelForm(true); })}
                     onDelete={()=>deleteModello(m.id)}
                     // Frecce ▲▼: sempre disponibili, spostano di UNA posizione
                     // nell'elenco realmente visibile (modelliVisibili, filtrato
@@ -2974,7 +2974,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
             </div>
           );
         })()}
-        {modelliTab==="turni"&&!editMode&&selectedModelloIds.length>0&&(
+        {modelliTab==="turni"&&!editMode&&!modalitaSpostamento&&selectedModelloIds.length>0&&(
           <div style={{position:"sticky",bottom:0,background:T.surface,border:`1px solid ${T.border}`,
             borderRadius:14,padding:"10px 14px",marginTop:10,display:"flex",alignItems:"center",
             justifyContent:"space-between",boxShadow:"0 -4px 16px rgba(0,0,0,0.08)"}}>
