@@ -587,10 +587,37 @@ export default function App({ session }){
 
           // Inizializza sortOrder per modelli H24 che hanno tutti 0
           try {
-            const h24senza = (modelliDb||[]).filter(m=>(m.tempo==="h24"||!m.inizio)&&(m.sort_order||0)===0);
-            if(h24senza.length>1){
-              await Promise.all(h24senza.map((m, i) =>
-                supabase.from("modelli").update({sort_order:i*10}).eq("id",m.id).eq("user_id",userId)
+            // Fix "una tantum": normalizza i sort_order duplicati ALL'INTERNO
+            // DI OGNI SINGOLO CALENDARIO. Con più modelli che condividono lo
+            // stesso sort_order (es. mai assegnato correttamente in passato,
+            // o residuo di versioni precedenti dell'app), l'ordinamento
+            // diventa ambiguo: la posizione calcolata di un modello può non
+            // corrispondere a quella reale, con l'effetto pratico di frecce
+            // che sembrano disabilitate o spostamenti che non hanno effetto
+            // visibile. Il fix raggruppa i modelli per calendario e, solo
+            // dove trova sort_order ripetuti, li rinumera in modo univoco
+            // preservando l'ordine relativo con cui sono arrivati dal DB.
+            const perCalendario = new Map();
+            for(const m of (modelliDb||[])){
+              const cid = m.calendar_id || "null";
+              if(!perCalendario.has(cid)) perCalendario.set(cid, []);
+              perCalendario.get(cid).push(m);
+            }
+            const daCorreggere = [];
+            for(const [, gruppo] of perCalendario){
+              const valori = gruppo.map(m=>m.sort_order||0);
+              const haDuplicati = new Set(valori).size !== valori.length;
+              if(haDuplicati){
+                const ordinatoPerArrivo = [...gruppo].sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
+                ordinatoPerArrivo.forEach((m,i)=>{
+                  const nuovoVal = i*10;
+                  if(nuovoVal!==(m.sort_order||0)) daCorreggere.push({id:m.id, nuovoVal});
+                });
+              }
+            }
+            if(daCorreggere.length>0){
+              await Promise.all(daCorreggere.map(({id,nuovoVal}) =>
+                supabase.from("modelli").update({sort_order:nuovoVal}).eq("id",id).eq("user_id",userId)
               ));
               const {data:modelliDb2}=await supabase.from("modelli").select("*").eq("user_id",userId).order("sort_order");
               setModelli((modelliDb2||[]).map(m=>({
@@ -2855,8 +2882,8 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                     // Frecce ▲▼: sempre disponibili, spostano di UNA posizione
                     // nell'elenco realmente visibile (modelliVisibili, filtrato
                     // per calendario se un calendario specifico è selezionato).
-                    onMoveUp={i>0?()=>moveH24(m.id,"up",calId):null}
-                    onMoveDown={i<arr.length-1?()=>moveH24(m.id,"down",calId):null}
+                    onMoveUp={modalitaSpostamento&&i>0?()=>moveH24(m.id,"up",calId):null}
+                    onMoveDown={modalitaSpostamento&&i<arr.length-1?()=>moveH24(m.id,"down",calId):null}
                     // Drag & drop: sempre disponibile, per spostamenti più ampi.
                     isDragging={draggingId===m.id}
                     isDropTarget={dragOverId===m.id && draggingId!==m.id}
