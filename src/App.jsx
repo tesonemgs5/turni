@@ -5659,7 +5659,7 @@ function PressableArrow({ onClick, accent, children, disabled, title }){
     <button
       title={title}
       disabled={disabled}
-      onClick={e=>{ e.stopPropagation(); if(!disabled) onClick(); }}
+      onClick={e=>{ e.stopPropagation(); if(!disabled){ onClick(); } setPressed(false); }}
       onMouseDown={()=>!disabled&&setPressed(true)}
       onMouseUp={()=>setPressed(false)}
       onMouseLeave={()=>setPressed(false)}
@@ -5692,15 +5692,30 @@ function ModelloCard({m, T, accent, fasceAutomatiche, onEdit, onDelete, onMoveUp
     :m.tempo==="6h15"&&m.inizio?`${m.inizio} - ${calcFine6h15(m.inizio)} • 6h 15m`
     :m.inizio&&m.fine?`${m.inizio} - ${m.fine} • ${calcDurata(m.inizio,m.fine)}`
     :m.inizio?m.inizio:"";
+  const cardRef = useRef(null);
+  // React attacca onTouchMove come "passive" in molte versioni (ottimizzazione
+  // per lo scroll): quando è passive, preventDefault() al suo interno viene
+  // IGNORATO silenziosamente dal browser — lo scroll nativo vince sempre e il
+  // drag non parte mai, pur girando comunque tutta la logica JS in background
+  // (motivo per cui sembrava "non rispondere per niente"). Per garantire che
+  // preventDefault funzioni sempre, il listener va attaccato manualmente sul
+  // nodo DOM con {passive:false} esplicito, non tramite la prop JSX.
+  useEffect(()=>{
+    const el = cardRef.current;
+    if(!el || !onTouchMove) return;
+    const handler = (e)=>onTouchMove(e);
+    el.addEventListener("touchmove", handler, {passive:false});
+    return ()=>el.removeEventListener("touchmove", handler);
+  }, [onTouchMove]);
   return (
     <div
+      ref={cardRef}
       draggable={!!(onDragStart)}
       onDragStart={onDragStart}
       onDragOver={e=>{e.preventDefault();if(onDragOver)onDragOver(e);}}
       onDrop={e=>{e.preventDefault();if(onDrop)onDrop(e);}}
       onDragEnd={onDragEnd}
       onTouchStart={onTouchStart}
-      onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
       data-modello-id={m.id}
       style={{display:"flex",alignItems:"center",padding:"12px 14px",
