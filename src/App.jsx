@@ -433,6 +433,41 @@ export default function App({ session }){
   // scorre la pagina come sempre; ON = il tocco sulle card trascina per riordinare.
   const [modalitaSpostamento, setModalitaSpostamento] = useState(false);
 
+  // Autoscroll della lista modelli durante il trascinamento: quando il dito
+  // (o il cursore) si avvicina al bordo superiore o inferiore del contenitore
+  // scrollabile, la lista scorre automaticamente, a velocità proporzionale
+  // alla vicinanza al bordo. clientY è la coordinata verticale del dito/mouse
+  // nella viewport (non relativa al contenitore).
+  function updateAutoScroll(clientY){
+    const container = modelliScrollRef.current;
+    if(!container) return;
+    const rect = container.getBoundingClientRect();
+    const ZONA = 60; // px dal bordo entro cui parte l'autoscroll
+    const VELOCITA_MAX = 14; // px per frame, alla massima vicinanza al bordo
+    let velocita = 0;
+    if(clientY < rect.top + ZONA){
+      const distanza = Math.max(0, clientY - rect.top);
+      velocita = -VELOCITA_MAX * (1 - distanza/ZONA);
+    } else if(clientY > rect.bottom - ZONA){
+      const distanza = Math.max(0, rect.bottom - clientY);
+      velocita = VELOCITA_MAX * (1 - distanza/ZONA);
+    }
+    autoScrollSpeed.current = velocita;
+    if(velocita!==0 && !autoScrollRAF.current){
+      const step = ()=>{
+        const c = modelliScrollRef.current;
+        if(!c || autoScrollSpeed.current===0){ autoScrollRAF.current=null; return; }
+        c.scrollTop += autoScrollSpeed.current;
+        autoScrollRAF.current = requestAnimationFrame(step);
+      };
+      autoScrollRAF.current = requestAnimationFrame(step);
+    }
+  }
+  function stopAutoScroll(){
+    autoScrollSpeed.current = 0;
+    if(autoScrollRAF.current){ cancelAnimationFrame(autoScrollRAF.current); autoScrollRAF.current=null; }
+  }
+
   const [reportInterval, setReportInterval] = useState("mese");
   const [reportDateFrom, setReportDateFrom] = useState("");
   const [reportDateTo, setReportDateTo] = useState("");
@@ -5718,19 +5753,25 @@ function ModelloCard({m, T, accent, fasceAutomatiche, onEdit, onDelete, onMoveUp
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
       data-modello-id={m.id}
-      style={{display:"flex",alignItems:"center",padding:"12px 14px",
+      style={{display:"flex",alignItems:"center",padding:"12px 14px",position:"relative",
         cursor:selectMode?"pointer":(onDragStart?"grab":"pointer"),
         touchAction:onTouchStart?"none":"auto",
         // Il modello trascinato appare più trasparente: segnala che è "in volo".
         opacity:isDragging?0.35:1,
-        // Quando la card è il bersaglio corrente del trascinamento, la si mostra
-        // già come se il modello trascinato fosse stato lasciato lì (anteprima
-        // della posizione finale), con un bordo tratteggiato leggero.
+        // Quando la card è il bersaglio corrente del trascinamento, uno
+        // sfondo leggero la evidenzia (il modello lasciato qui finirà
+        // esattamente in questa posizione, spostando questa card e le
+        // successive più in basso).
         background:isDropTarget?(accent+"14"):"transparent",
-        outline:isDropTarget?`2px dashed ${accent}88`:"none",
-        outlineOffset:isDropTarget?"-2px":"0",
-        transition:"opacity 0.15s ease, background 0.15s ease, outline-color 0.15s ease"}}
+        transition:"opacity 0.15s ease, background 0.15s ease"}}
       onClick={selectMode?onToggleSelect:onEdit}>
+      {isDropTarget&&(
+        // Riga netta e colorata sopra la card: indica con precisione dove
+        // finirà il modello trascinato una volta rilasciato, più chiara del
+        // semplice sfondo per capire "sopra o sotto" a colpo d'occhio.
+        <div style={{position:"absolute",top:0,left:8,right:8,height:3,
+          borderRadius:2,background:accent,boxShadow:`0 0 6px ${accent}99`}}/>
+      )}
       {selectMode&&(
         <div style={{width:20,height:20,borderRadius:6,marginRight:10,flexShrink:0,
           border:`2px solid ${selected?accent:T.border}`,
