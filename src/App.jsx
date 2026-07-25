@@ -6126,6 +6126,12 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
   const [testoJsonIncollato, setTestoJsonIncollato] = useState("");
   const [nRigheAggiunte, setNRigheAggiunte] = useState(0);
   const [importando, setImportando] = useState(false); // true durante l'elaborazione del JSON incollato, per disabilitare il pulsante e mostrare feedback visivo
+  // --- Verifica incrociata OCR (backend Render) sul JSON incollato ---
+  const [fotoVerifica, setFotoVerifica] = useState(null); // File della foto per il doppio controllo
+  const [verificandoOcr, setVerificandoOcr] = useState(false);
+  const [risultatoVerifica, setRisultatoVerifica] = useState(null); // {totale_controllati, numero_gruppi_rilevati, disaccordi[]} oppure null
+  const [erroreVerifica, setErroreVerifica] = useState("");
+  const [indiceGruppoVerifica, setIndiceGruppoVerifica] = useState(0); // quale fascia oraria (0-based) si sta controllando ora
   const pendingFile = useRef(null);
 
   // Radici testo-foto -> titolo modello reale. Basta trovare la radice (2-3 lettere)
@@ -6558,6 +6564,66 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
     setStep("riepilogo");
   }
 
+  // URL del backend di doppio controllo OCR (Tesseract + confronto),
+  // ospitato separatamente su Render. Se in futuro cambia dominio o si
+  // sposta, va aggiornato solo qui.
+  const URL_BACKEND_OCR = "https://ocr-mqup.onrender.com";
+
+  async function handleVerificaConFoto(){
+    if(verificandoOcr) return;
+    if(!fotoVerifica){
+      setErroreVerifica("Carica prima una foto della tabella turni.");
+      return;
+    }
+    let parsed;
+    try{
+      parsed = JSON.parse(testoJsonIncollato.trim());
+    }catch(err){
+      setErroreVerifica("Il JSON incollato sopra non è valido: correggilo prima di verificare con la foto.");
+      return;
+    }
+    if(!Array.isArray(parsed)){
+      setErroreVerifica("La verifica con foto funziona solo con il formato JSON \"piatto\" (un array di {data, turno}), non con quello raggruppato per fascia.");
+      return;
+    }
+
+    setVerificandoOcr(true);
+    setErroreVerifica("");
+    setRisultatoVerifica(null);
+    try{
+      const formData = new FormData();
+      formData.append("foto", fotoVerifica);
+      formData.append("json_gemini", JSON.stringify(parsed));
+      formData.append("anno", String(year));
+      formData.append("mese", String(month+1)); // month è 0-based in JS, il backend vuole 1-12
+      formData.append("indice_gruppo_atteso", String(indiceGruppoVerifica));
+
+      // Nota: il backend Render (piano gratuito) va in sleep dopo un
+      // periodo di inattività — la prima chiamata dopo una pausa può
+      // impiegare 30-60 secondi in più per "svegliarsi". Non è un errore,
+      // solo un'attesa più lunga del solito.
+      const resp = await fetch(`${URL_BACKEND_OCR}/confronta`, {
+        method: "POST",
+        body: formData
+      });
+      if(!resp.ok){
+        const testoErrore = await resp.text().catch(()=>null);
+        throw new Error(testoErrore || `Il backend ha risposto con errore (${resp.status})`);
+      }
+      const risultato = await resp.json();
+      setRisultatoVerifica(risultato);
+    }catch(err){
+      console.error("Errore verifica OCR:", err);
+      setErroreVerifica(
+        "Non sono riuscito a completare la verifica. Se il backend era inattivo da un po', "+
+        "potrebbe aver bisogno di 30-60 secondi per svegliarsi: riprova tra poco. "+
+        "Dettaglio tecnico: "+(err&&err.message?err.message:"errore sconosciuto")
+      );
+    }finally{
+      setVerificandoOcr(false);
+    }
+  }
+
 
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:700,
@@ -6659,6 +6725,70 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
                     cursor:(testoJsonIncollato.trim()&&!importando)?"pointer":"not-allowed",fontWeight:700,fontSize:12}}>
                   {importando?"⏳ Importazione in corso…":"Importa"}
                 </button>
+              </div>
+
+              {/* --- Doppio controllo OCR opzionale, prima dell'import --- */}
+              <div style={{marginTop:20,paddingTop:16,borderTop:`1px solid ${T.border}`}}>
+                <div style={{fontSize:12,color:T.sub,marginBottom:8,fontWeight:700}}>
+                  Verifica facoltativa: confronta questo JSON con una foto della tabella
+                </div>
+                <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
+                  Carica la foto originale: un secondo motore (Tesseract, indipendente da Gemini)
+                  rilegge la tabella e segnala le celle dove non è d'accordo, da controllare a mano.
+                </div>
+
+                <input type="file" accept="image/*"
+                  onChange={e=>{ setFotoVerifica(e.target.files?.[0]||null); setRisultatoVerifica(null); setErroreVerifica(""); }}
+                  style={{fontSize:12,marginBottom:10,width:"100%"}}
+                />
+
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+                  <label style={{fontSize:12,color:T.sub}}>Fascia oraria da controllare:</label>
+                  <input type="number" min={0} value={indiceGruppoVerifica}
+                    onChange={e=>setIndiceGruppoVerifica(Math.max(0, parseInt(e.target.value)||0))}
+                    style={{width:50,padding:"4px 6px",borderRadius:6,border:`1px solid ${T.border}`,
+                      background:T.s2,color:T.text,fontSize:12}}
+                  />
+                  <span style={{fontSize:11,color:T.sub}}>(0 = prima fascia da sinistra, 1 = seconda, ecc.)</span>
+                </div>
+
+                {erroreVerifica&&(
+                  <div style={{background:"#ef444422",border:"1px solid #ef4444",borderRadius:8,
+                    padding:"8px 10px",fontSize:12,color:"#ef4444",marginBottom:10}}>
+                    {erroreVerifica}
+                  </div>
+                )}
+
+                <button onClick={handleVerificaConFoto}
+                  disabled={verificandoOcr||!fotoVerifica}
+                  style={{width:"100%",background:verificandoOcr?T.border:(fotoVerifica?T.s2:T.s2),
+                    border:`1px solid ${T.border}`,borderRadius:10,
+                    color:T.sub,padding:"10px 0",
+                    cursor:(fotoVerifica&&!verificandoOcr)?"pointer":"not-allowed",fontWeight:700,fontSize:12,marginBottom:10}}>
+                  {verificandoOcr?"⏳ Verifica in corso… (può richiedere fino a 1 minuto se il servizio era inattivo)":"🔍 Verifica con foto"}
+                </button>
+
+                {risultatoVerifica&&(
+                  <div style={{background:risultatoVerifica.disaccordi.length===0?"#22c55e22":"#f59e0b22",
+                    border:`1px solid ${risultatoVerifica.disaccordi.length===0?"#22c55e":"#f59e0b"}`,
+                    borderRadius:8,padding:"10px",fontSize:12}}>
+                    <div style={{fontWeight:700,marginBottom:6}}>
+                      {risultatoVerifica.disaccordi.length===0
+                        ? `✅ Nessun disaccordo su ${risultatoVerifica.totale_controllati} date controllate`
+                        : `⚠️ ${risultatoVerifica.disaccordi.length} disaccordo${risultatoVerifica.disaccordi.length===1?"":"i"} su ${risultatoVerifica.totale_controllati} date controllate`}
+                    </div>
+                    <div style={{fontSize:11,color:T.sub,marginBottom:8}}>
+                      Fasce orarie rilevate nella foto: {risultatoVerifica.numero_gruppi_rilevati}
+                    </div>
+                    {risultatoVerifica.disaccordi.map((d,i)=>(
+                      <div key={i} style={{marginBottom:6,paddingBottom:6,
+                        borderBottom:i<risultatoVerifica.disaccordi.length-1?`1px solid ${T.border}`:"none"}}>
+                        <div style={{fontWeight:700}}>{d.data}</div>
+                        <div style={{color:T.sub}}>{d.dettaglio}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}
