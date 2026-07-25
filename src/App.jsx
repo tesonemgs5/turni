@@ -471,8 +471,29 @@ export default function App({ session }){
 
         // Una sola chiamata al database: la funzione get_user_data (creata su
         // Supabase) legge le 6 tabelle internamente e restituisce tutto insieme.
-        const { data: all, error: rpcErr } = await supabase.rpc("get_user_data", { p_user_id: userId });
-        if(rpcErr) throw rpcErr;
+        // Se fallisce (rete instabile, timeout), NON ci si arrende subito:
+        // prima si prova un piccolo numero di retry, perché un fallimento
+        // silenzioso qui lasciava l'utente con la cache locale mostrata in
+        // precedenza — che può essere vuota (es. subito dopo "svuota cache")
+        // dando la falsa impressione che i modelli/dati siano stati persi,
+        // quando in realtà sono ancora sul server e il problema era solo di
+        // rete/caricamento.
+        let all, rpcErr;
+        for(let tentativo=0; tentativo<3; tentativo++){
+          const risultato = await supabase.rpc("get_user_data", { p_user_id: userId });
+          all = risultato.data; rpcErr = risultato.error;
+          if(!rpcErr) break;
+          if(tentativo<2) await new Promise(r=>setTimeout(r, 800*(tentativo+1)));
+        }
+        if(rpcErr){
+          // Tutti i tentativi falliti: avviso VISIBILE invece di lasciare la
+          // UI silenziosamente con la cache (che potrebbe sembrare "dati
+          // spariti" mentre sono solo non ancora ricaricati).
+          setBanner("⚠️ Impossibile caricare i dati dal server. Controlla la connessione e riprova (i tuoi dati sono al sicuro, non sono stati toccati).");
+          setTimeout(()=>setBanner(null), 8000);
+          setLoading(false);
+          return;
+        }
 
         const cals = all?.calendars || [];
         const evts = all?.events || [];
