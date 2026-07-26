@@ -6776,7 +6776,7 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
 
         <div style={{padding:"18px 20px 12px",borderBottom:`1px solid ${T.border}`}}>
           <div style={{fontSize:16,fontWeight:900,color:T.text}}>📷 Importa da foto</div>
-          <div style={{fontSize:12,color:T.sub,marginTop:2}}>
+          <div style={{fontSize:12,color:"#444444",marginTop:2}}>
             Mese in corso: {NOMI_MESI_IT[month]} {year}. Per ora vengono importati solo Primo, Secondo, Terzo e Notturno.
           </div>
         </div>
@@ -6812,7 +6812,7 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
                 </div>
               )}
               <label style={{display:"block",border:`2px dashed ${T.border}`,borderRadius:12,
-                padding:"32px 16px",textAlign:"center",cursor:"pointer",color:T.sub,fontSize:13}}>
+                padding:"32px 16px",textAlign:"center",cursor:"pointer",color:"#1a1a1a",fontSize:13,fontWeight:700}}>
                 Tocca per scegliere la foto della tabella
                 <input type="file" accept="image/*" style={{display:"none"}}
                   onChange={e=>{ const f=e.target.files?.[0]; if(f) handleFile(f); }}/>
@@ -6824,8 +6824,8 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
                   onChange={e=>{ const f=e.target.files?.[0]; if(f){ pendingFile.current=f; setImgPreviewUrl(f.type.startsWith("image")?URL.createObjectURL(f):null); handleFileConGemini(f); } }}/>
               </label>
               <button onClick={()=>{ setErrore(""); setStep("incolla-json"); }}
-                style={{display:"block",width:"100%",marginTop:10,border:`2px dashed ${T.sub}`,borderRadius:12,
-                  padding:"14px 16px",textAlign:"center",cursor:"pointer",color:T.sub,fontSize:13,fontWeight:700,
+                style={{display:"block",width:"100%",marginTop:10,border:`2px dashed #666`,borderRadius:12,
+                  padding:"14px 16px",textAlign:"center",cursor:"pointer",color:"#1a1a1a",fontSize:13,fontWeight:700,
                   background:"transparent"}}>
                 📋 Incolla un JSON già pronto
               </button>
@@ -6840,7 +6840,7 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
                   {errore}
                 </div>
               )}
-              <div style={{fontSize:12,color:T.sub,marginBottom:8}}>
+              <div style={{fontSize:12,color:"#444444",marginBottom:8}}>
                 Incolla qui l'array JSON con i turni, es: <code>[{"{"}"data":"2026-07-01","turno":"Primo"{"}"}]</code>
               </div>
               <textarea
@@ -6870,10 +6870,10 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
 
               {/* --- Doppio controllo OCR opzionale, prima dell'import --- */}
               <div style={{marginTop:20,paddingTop:16,borderTop:`1px solid ${T.border}`}}>
-                <div style={{fontSize:12,color:T.sub,marginBottom:8,fontWeight:700}}>
+                <div style={{fontSize:12,color:"#444444",marginBottom:8,fontWeight:700}}>
                   Verifica facoltativa: confronta questo JSON con una foto della tabella
                 </div>
-                <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
+                <div style={{fontSize:11,color:"#444444",marginBottom:10}}>
                   Carica la foto originale: un secondo motore (Tesseract, indipendente da Gemini)
                   rilegge la tabella e segnala le celle dove non è d'accordo, da controllare a mano.
                 </div>
@@ -6904,13 +6904,13 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
                 />
 
                 <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-                  <label style={{fontSize:12,color:T.sub}}>Fascia oraria da controllare:</label>
+                  <label style={{fontSize:12,color:"#444444"}}>Fascia oraria da controllare:</label>
                   <input type="number" min={0} value={indiceGruppoVerifica}
                     onChange={e=>setIndiceGruppoVerifica(Math.max(0, parseInt(e.target.value)||0))}
                     style={{width:50,padding:"4px 6px",borderRadius:6,border:`1px solid ${T.border}`,
                       background:T.s2,color:T.text,fontSize:12}}
                   />
-                  <span style={{fontSize:11,color:T.sub}}>(0 = prima fascia da sinistra, 1 = seconda, ecc.)</span>
+                  <span style={{fontSize:11,color:"#444444"}}>(0 = prima fascia da sinistra, 1 = seconda, ecc.)</span>
                 </div>
 
                 {erroreVerifica&&(
@@ -6924,7 +6924,7 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
                   disabled={verificandoOcr||!fotoVerifica}
                   style={{width:"100%",background:verificandoOcr?T.border:(fotoVerifica?T.s2:T.s2),
                     border:`1px solid ${T.border}`,borderRadius:10,
-                    color:T.sub,padding:"10px 0",
+                    color:"#444444",padding:"10px 0",
                     cursor:(fotoVerifica&&!verificandoOcr)?"pointer":"not-allowed",fontWeight:700,fontSize:12,marginBottom:10}}>
                   {verificandoOcr?"⏳ Verifica in corso… (può richiedere fino a 1 minuto se il servizio era inattivo)":"🔍 Verifica con foto"}
                 </button>
@@ -6938,14 +6938,14 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
                         ? `✅ Nessun disaccordo su ${risultatoVerifica.totale_controllati} date controllate`
                         : `⚠️ ${risultatoVerifica.disaccordi.length} disaccordo${risultatoVerifica.disaccordi.length===1?"":"i"} su ${risultatoVerifica.totale_controllati} date controllate`}
                     </div>
-                    <div style={{fontSize:11,color:T.sub,marginBottom:8}}>
+                    <div style={{fontSize:11,color:"#444444",marginBottom:8}}>
                       Fasce orarie rilevate nella foto: {risultatoVerifica.numero_gruppi_rilevati}
                     </div>
                     {risultatoVerifica.disaccordi.map((d,i)=>(
                       <div key={i} style={{marginBottom:6,paddingBottom:6,
                         borderBottom:i<risultatoVerifica.disaccordi.length-1?`1px solid ${T.border}`:"none"}}>
                         <div style={{fontWeight:700}}>{d.data}</div>
-                        <div style={{color:T.sub}}>{d.dettaglio}</div>
+                        <div style={{color:"#444444"}}>{d.dettaglio}</div>
                       </div>
                     ))}
                   </div>
@@ -6978,7 +6978,7 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
           {step==="ocr"&&(
             <div style={{textAlign:"center",padding:"40px 16px"}}>
               {imgPreviewUrl&&<img src={imgPreviewUrl} alt="" style={{maxWidth:"100%",maxHeight:140,borderRadius:8,marginBottom:16}}/>}
-              <div style={{fontSize:13,color:T.sub,marginBottom:10}}>Lettura della foto in corso… {progresso}%</div>
+              <div style={{fontSize:13,color:"#444444",marginBottom:10}}>Lettura della foto in corso… {progresso}%</div>
               <div style={{height:6,background:T.s2,borderRadius:3,overflow:"hidden"}}>
                 <div style={{height:"100%",width:`${progresso}%`,background:accent,transition:"width 0.2s"}}/>
               </div>
@@ -7000,7 +7000,7 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
               <div style={{display:"flex",gap:8}}>
                 <button onClick={()=>{ setStep("upload"); setErrore(""); }}
                   style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
-                    color:T.sub,padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
+                    color:"#444444",padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
                   No, riprovo la foto
                 </button>
                 <button onClick={()=>handleFileConGemini(pendingFile.current)}
@@ -7011,7 +7011,7 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
               </div>
               <button onClick={()=>{ setErrore(""); setStep("incolla-json"); }}
                 style={{width:"100%",marginTop:8,background:"transparent",border:`1px solid ${T.border}`,
-                  borderRadius:10,color:T.sub,padding:"9px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
+                  borderRadius:10,color:"#444444",padding:"9px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
                 📋 Oppure incolla un JSON già pronto
               </button>
             </div>
@@ -7020,7 +7020,7 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
           {step==="gemini-ocr"&&(
             <div style={{textAlign:"center",padding:"40px 16px"}}>
               {imgPreviewUrl&&<img src={imgPreviewUrl} alt="" style={{maxWidth:"100%",maxHeight:140,borderRadius:8,marginBottom:16}}/>}
-              <div style={{fontSize:13,color:T.sub}}>Lettura del file con l'AI in corso…</div>
+              <div style={{fontSize:13,color:"#444444"}}>Lettura del file con l'AI in corso…</div>
             </div>
           )}
         </div>
@@ -7028,7 +7028,7 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
         <div style={{display:"flex",gap:8,padding:16,borderTop:`1px solid ${T.border}`}}>
           <button onClick={onClose}
             style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
-              color:T.sub,padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
+              color:"#444444",padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
             Annulla
           </button>
         </div>
