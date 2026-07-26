@@ -64,11 +64,11 @@ export function getContrastTextColor(hex){
     // restituendo bianco su sfondi già abbastanza chiari da richiedere
     // testo nero per essere leggibili bene.
     const yiq = (r*299 + g*587 + b*114) / 1000;
-    // Soglia 130, verificata sui colori REALI usati da questa app
-    // (non colori generici): con 150 l'arancione di "POMERIGGIO/SECONDO"
-    // (#f97316) restava sotto soglia e risultava ancora bianco su
-    // sfondo già abbastanza chiaro da richiedere testo nero.
-    return yiq >= 130 ? "#0f172a" : "#ffffff";
+    // Soglia 140: testo nero su tutti gli sfondi chiari usati nell'app
+    // (giallo, arancione incluso #f97316 "SECONDO", bianco, pastelli),
+    // testo bianco sugli sfondi scuri/saturi (viola, blu notte, verde,
+    // blu, rosso, grigio).
+    return yiq >= 140 ? "#0f172a" : "#ffffff";
   } catch(e){ return "#ffffff"; }
 }
 // #endregion
@@ -729,6 +729,7 @@ export default function App({ session }){
   const mainCal   = store.calendars.find(c=>c.isMain)||null;
   const mainCalId = mainCal?.id||null; // calendario principale: usato come fallback per i modelli/rotazioni senza calendarId esplicito
   const accent    = activeCal?.color||"#3b82f6";
+  const accentText = getContrastTextColor(accent);
   const hols      = italianHols(year);
   const fasceAutomatiche = store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT;
   const colByTime = (tIn)=>getColorByTime(tIn, fasceAutomatiche);
@@ -2244,8 +2245,8 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
 
   const selectStyle = {
     background:"rgba(255,255,255,0.15)",
-    border:"1px solid rgba(255,255,255,0.4)",
-    borderRadius:8, color:"#fff", fontSize:12, fontWeight:900,
+    border:`1px solid ${accentText==="#ffffff"?"rgba(255,255,255,0.4)":"rgba(15,23,42,0.35)"}`,
+    borderRadius:8, color:accentText, fontSize:12, fontWeight:900,
     fontFamily:"Georgia,serif", padding:"2px 0px", cursor:"pointer",
     outline:"none", flexShrink:0,
     appearance:"none", WebkitAppearance:"none",
@@ -2277,7 +2278,8 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
       style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden",position:"relative"}}>
       <div style={{background:accent,display:"flex",alignItems:"center",
         gap:5,padding:"6px 8px",overflowX:"auto",scrollbarWidth:"none",flexShrink:0}}>
-        <button onClick={()=>month===0?(setYear(y=>y-1),setMonth(11)):setMonth(m=>m-1)} style={NB}>‹</button>
+        <button onClick={()=>month===0?(setYear(y=>y-1),setMonth(11)):setMonth(m=>m-1)}
+          style={{...NB, color:accentText==="#ffffff"?"rgba(255,255,255,0.8)":"rgba(15,23,42,0.8)"}}>‹</button>
         <select value={month} onChange={e=>setMonth(Number(e.target.value))}
           style={{...selectStyle, maxWidth:80}}>
           {MONTHS.map((mn,i)=>(
@@ -2292,13 +2294,14 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
             <option key={y} value={y} style={{background:"#1e293b",color:"#fff"}}>{y}</option>
           ))}
         </select>
-        {bgSyncing&&<span style={{color:"rgba(255,255,255,0.7)",fontSize:11}}>🔄</span>}
-        <button onClick={()=>month===11?(setYear(y=>y+1),setMonth(0)):setMonth(m=>m+1)} style={NB}>›</button>
+        {bgSyncing&&<span style={{color:accentText==="#ffffff"?"rgba(255,255,255,0.7)":"rgba(15,23,42,0.7)",fontSize:11}}>🔄</span>}
+        <button onClick={()=>month===11?(setYear(y=>y+1),setMonth(0)):setMonth(m=>m+1)}
+          style={{...NB, color:accentText==="#ffffff"?"rgba(255,255,255,0.8)":"rgba(15,23,42,0.8)"}}>›</button>
         <div style={{flex:1}}/>
         <button onClick={()=>setShowModelloPicker("quick")}
           title="Applica un modello a più giorni"
-          style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.4)",
-            borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:"#fff",flexShrink:0}}>
+          style={{background:"rgba(255,255,255,0.15)",border:`1px solid ${accentText==="#ffffff"?"rgba(255,255,255,0.4)":"rgba(15,23,42,0.35)"}`,
+            borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:accentText,flexShrink:0}}>
           ✏️
         </button>
         
@@ -2317,9 +2320,9 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
           }}
           title={editMode?"Modifica attiva — tocca per tornare alla sola consultazione":"Consultazione multipla — tocca per modificare (gli altri calendari restano visibili)"}
           style={{background:editMode?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.1)",
-            border:`1.5px solid ${editMode?"rgba(255,255,255,0.85)":"transparent"}`,
+            border:`1.5px solid ${editMode?(accentText==="#ffffff"?"rgba(255,255,255,0.85)":"rgba(15,23,42,0.6)"):"transparent"}`,
             borderRadius:20,padding:"2px 10px",cursor:"pointer",flexShrink:0}}>
-          <span style={{color:"#fff",fontSize:11,fontWeight:800}}>M</span>
+          <span style={{color:accentText,fontSize:11,fontWeight:800}}>M</span>
         </button>
         <button onClick={async()=>{
           setBanner("⏳ Svuotamento cache...");
@@ -2339,8 +2342,8 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
           window.location.href = window.location.href.split('?')[0] + '?v=' + Date.now();
         }}
           title="Svuota cache e ricarica tutto"
-          style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.4)",
-            borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:"#fff",flexShrink:0}}>
+          style={{background:"rgba(255,255,255,0.15)",border:`1px solid ${accentText==="#ffffff"?"rgba(255,255,255,0.4)":"rgba(15,23,42,0.35)"}`,
+            borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:accentText,flexShrink:0}}>
           🔄
         </button>
 
@@ -2348,8 +2351,8 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
           const next = syncMode==='on'?'off':'on';
           setSyncMode(next);
           localStorage.setItem('syncMode', next);
-        }} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.4)",
-          borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:10,fontWeight:800,color:"#fff",flexShrink:0}}>
+        }} style={{background:"rgba(255,255,255,0.15)",border:`1px solid ${accentText==="#ffffff"?"rgba(255,255,255,0.4)":"rgba(15,23,42,0.35)"}`,
+          borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:10,fontWeight:800,color:accentText,flexShrink:0}}>
           {syncMode==='on'?(isOnline?'🟢 SYNC':'🔴 OFFLINE'):'⏸️ SYNC OFF'}
         </button>
       </div>
@@ -2357,7 +2360,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
         gap:5,padding:"4px 8px",overflowX:"auto",scrollbarWidth:"none",flexShrink:0,
         borderTop:"1px solid rgba(255,255,255,0.2)"}}>
         {store.calendars.length===0
-          ? <span style={{color:"rgba(255,255,255,0.6)",fontSize:10,fontStyle:"italic"}}>→ Impostazioni</span>
+          ? <span style={{color:accentText==="#ffffff"?"rgba(255,255,255,0.6)":"rgba(15,23,42,0.6)",fontSize:10,fontStyle:"italic"}}>→ Impostazioni</span>
           : store.calendars.map(c=>{
             const visibile = selectedCalIds.includes(c.id);
             const attivoEdit = editMode && calId===c.id;
@@ -2373,13 +2376,13 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
               title={editMode?`Tocca per rendere "${c.name}" il calendario attivo per la modifica`:undefined}
               style={{display:"flex",alignItems:"center",gap:3,flexShrink:0,cursor:"pointer",
                 background:visibile?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.1)",
-                border:`1.5px solid ${attivoEdit?"#ffffff":(visibile?"rgba(255,255,255,0.85)":"transparent")}`,
-                boxShadow:attivoEdit?"0 0 0 2px rgba(255,255,255,0.35)":"none",
+                border:`1.5px solid ${attivoEdit?(accentText==="#ffffff"?"#ffffff":"#0f172a"):(visibile?(accentText==="#ffffff"?"rgba(255,255,255,0.85)":"rgba(15,23,42,0.6)"):"transparent")}`,
+                boxShadow:attivoEdit?(accentText==="#ffffff"?"0 0 0 2px rgba(255,255,255,0.35)":"0 0 0 2px rgba(15,23,42,0.25)"):"none",
                 borderRadius:20,padding:"2px 8px 2px 5px"}}>
               <div style={{width:8,height:8,borderRadius:"50%",background:c.color,border:"1px solid rgba(255,255,255,0.5)"}}/>
-              <span style={{color:"#fff",fontSize:12,fontWeight:attivoEdit?900:700}}>{c.name}</span>
-              {attivoEdit&&<span style={{color:"#fff",fontSize:9}}>✏️</span>}
-              {c.isMain&&<span style={{color:"rgba(255,255,255,0.6)",fontSize:8}}>★</span>}
+              <span style={{color:accentText,fontSize:12,fontWeight:attivoEdit?900:700}}>{c.name}</span>
+              {attivoEdit&&<span style={{color:accentText,fontSize:9}}>✏️</span>}
+              {c.isMain&&<span style={{color:accentText==="#ffffff"?"rgba(255,255,255,0.6)":"rgba(15,23,42,0.6)",fontSize:8}}>★</span>}
             </button>
             );})
         }
