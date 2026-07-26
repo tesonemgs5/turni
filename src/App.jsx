@@ -6672,6 +6672,44 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
   // sposta, va aggiornato solo qui.
   const URL_BACKEND_OCR = "https://ocr-mqup.onrender.com";
 
+  // Stato del backend Render: "verificando" | "pronto" | "risveglio" | "assente"
+  // Serve solo per informare l'utente PRIMA che clicchi "Verifica con
+  // foto", così sa se aspettarsi una risposta rapida o un'attesa fino a
+  // un minuto (il piano gratuito di Render va in sleep se inattivo).
+  const [statoBackendOcr, setStatoBackendOcr] = useState("verificando");
+
+  useEffect(()=>{
+    if(step!=="incolla-json") return;
+    let annullato = false;
+    setStatoBackendOcr("verificando");
+
+    // Primo tentativo: se risponde entro ~4 secondi, il backend era già
+    // sveglio. Se non risponde in tempo, mostriamo "risveglio in corso" e
+    // continuiamo ad aspettare la risposta reale (fino al timeout lungo),
+    // senza far ripartire una seconda richiesta.
+    const timerRisveglio = setTimeout(()=>{
+      if(!annullato) setStatoBackendOcr("risveglio");
+    }, 4000);
+
+    const controller = new AbortController();
+    const timeoutAssente = setTimeout(()=>controller.abort(), 70000); // 70s: oltre il tempo massimo plausibile di risveglio
+
+    fetch(URL_BACKEND_OCR+"/", { signal: controller.signal })
+      .then(resp=>{
+        if(annullato) return;
+        clearTimeout(timerRisveglio);
+        setStatoBackendOcr(resp.ok ? "pronto" : "assente");
+      })
+      .catch(()=>{
+        if(annullato) return;
+        clearTimeout(timerRisveglio);
+        setStatoBackendOcr("assente");
+      })
+      .finally(()=>clearTimeout(timeoutAssente));
+
+    return ()=>{ annullato=true; clearTimeout(timerRisveglio); clearTimeout(timeoutAssente); controller.abort(); };
+  }, [step]);
+
   async function handleVerificaConFoto(){
     if(verificandoOcr) return;
     if(!fotoVerifica){
@@ -6838,6 +6876,26 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
                 <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
                   Carica la foto originale: un secondo motore (Tesseract, indipendente da Gemini)
                   rilegge la tabella e segnala le celle dove non è d'accordo, da controllare a mano.
+                </div>
+
+                {/* Indicatore di stato del backend Render: informa l'utente
+                    se aspettarsi una risposta rapida o un risveglio lento,
+                    PRIMA che clicchi "Verifica con foto" */}
+                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10,
+                  fontSize:11,padding:"6px 10px",borderRadius:8,
+                  background:
+                    statoBackendOcr==="pronto" ? "#22c55e22" :
+                    statoBackendOcr==="risveglio" ? "#f59e0b22" :
+                    statoBackendOcr==="assente" ? "#ef444422" : T.s2,
+                  border:`1px solid ${
+                    statoBackendOcr==="pronto" ? "#22c55e" :
+                    statoBackendOcr==="risveglio" ? "#f59e0b" :
+                    statoBackendOcr==="assente" ? "#ef4444" : T.border
+                  }`}}>
+                  {statoBackendOcr==="verificando" && "⏳ Controllo se il backend di verifica è raggiungibile…"}
+                  {statoBackendOcr==="pronto" && "🟢 Backend di verifica pronto — risposta rapida attesa"}
+                  {statoBackendOcr==="risveglio" && "🟡 Il backend era inattivo e si sta risvegliando — la verifica può impiegare fino a 1 minuto"}
+                  {statoBackendOcr==="assente" && "🔴 Backend di verifica non raggiungibile al momento — puoi comunque procedere solo con Gemini/Tesseract.js"}
                 </div>
 
                 <input type="file" accept="image/*"
