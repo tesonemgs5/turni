@@ -2859,7 +2859,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                   setShowRotForm(true);
                 }
               }} style={{background:accent,border:"none",borderRadius:8,padding:"6px 16px",
-                fontSize:20,fontWeight:800,cursor:"pointer",color:"#fff"}}>+</button>
+                fontSize:20,fontWeight:800,cursor:"pointer",color:"#1a1a1a"}}>+</button>
               )}
               {showSortMenu&&(
                 <div style={{position:"absolute",top:40,right:0,background:T.surface,
