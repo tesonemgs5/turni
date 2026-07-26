@@ -64,7 +64,11 @@ export function getContrastTextColor(hex){
     // restituendo bianco su sfondi già abbastanza chiari da richiedere
     // testo nero per essere leggibili bene.
     const yiq = (r*299 + g*587 + b*114) / 1000;
-    return yiq >= 150 ? "#0f172a" : "#ffffff";
+    // Soglia 130, verificata sui colori REALI usati da questa app
+    // (non colori generici): con 150 l'arancione di "POMERIGGIO/SECONDO"
+    // (#f97316) restava sotto soglia e risultava ancora bianco su
+    // sfondo già abbastanza chiaro da richiedere testo nero.
+    return yiq >= 130 ? "#0f172a" : "#ffffff";
   } catch(e){ return "#ffffff"; }
 }
 // #endregion
