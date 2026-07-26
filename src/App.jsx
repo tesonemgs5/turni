@@ -58,9 +58,13 @@ export function getContrastTextColor(hex){
   try {
     const h=hex.replace("#","");
     const r=parseInt(h.substring(0,2),16), g=parseInt(h.substring(2,4),16), b=parseInt(h.substring(4,6),16);
-    const a=[r,g,b].map(v=>{ v/=255; return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4); });
-    const lum=0.2126*a[0]+0.7152*a[1]+0.0722*a[2];
-    return lum < 0.5 ? "#ffffff" : "#0f172a";
+    // Formula YIQ (invece della luminanza percepita pesata sul canale
+    // verde): quella precedente sottostimava il contrasto necessario sui
+    // gialli/arancioni saturi usati in questa app (es. #eab308, #f59e0b),
+    // restituendo bianco su sfondi già abbastanza chiari da richiedere
+    // testo nero per essere leggibili bene.
+    const yiq = (r*299 + g*587 + b*114) / 1000;
+    return yiq >= 150 ? "#0f172a" : "#ffffff";
   } catch(e){ return "#ffffff"; }
 }
 // #endregion
