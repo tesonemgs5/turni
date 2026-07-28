@@ -2388,10 +2388,11 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
         }
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",
-        background:T.s2,borderBottom:`1px solid ${T.border}`,flexShrink:0}}>
+        background:editMode?T.s2:"#ffffff",borderBottom:`1px solid ${editMode?T.border:"#000000"}`,flexShrink:0}}>
         {DAYS.map((d,i)=>(
           <div key={i} style={{textAlign:"center",fontSize:9,fontWeight:800,
-            padding:"3px 0",color:i===6?"#ef4444":T.sub}}>{d}</div>
+            padding:"3px 0",color:i===6?"#ef4444":(editMode?T.sub:"#0f172a"),
+            borderRight:!editMode&&i<6?"1px solid #000000":"none"}}>{d}</div>
         ))}
       </div>
       <div style={{position:"relative",flex:1,overflow:"hidden",minHeight:0}}>
@@ -2726,6 +2727,29 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
         const inclusi = isTurnazione
           ? [...modelli.filter(m=>isModelloTurnazioneDefault(m)&&!esclusi.includes(m.id)).map(m=>m.id), ...aggiunti]
           : (cfg.modelliInclusi||[]);
+        // Calendari da mostrare nel picker: quelli già selezionati per il report,
+        // più eventuali calendari extra scelti manualmente qui (cfg.calendariExtra)
+        const calendariExtra = cfg.calendariExtra||[];
+        const calendariBase = reportCalIds.length>0 ? reportCalIds : store.calendars.map(c=>c.id);
+        const calendariAttivi = [...new Set([...calendariBase, ...calendariExtra])];
+        function toggleCalendarioExtra(cid){
+          const inBase = calendariBase.includes(cid);
+          if(inBase){
+            // è già incluso dal filtro report principale: non si può togliere da qui
+            return;
+          }
+          const next = calendariExtra.includes(cid)
+            ? calendariExtra.filter(id=>id!==cid)
+            : [...calendariExtra, cid];
+          updateConteggioConfig(reportId, {...cfg, calendariExtra: next});
+        }
+        const gruppiPerCalendario = store.calendars
+          .filter(c=>calendariAttivi.includes(c.id))
+          .map(c=>({
+            cal: c,
+            modelli: modelliOrdinati.filter(m=>(m.calendarId||mainCalId)===c.id),
+          }))
+          .filter(g=>g.modelli.length>0);
         function toggleModello(m){
           if(!isTurnazione){
             const selezionato = (cfg.modelliInclusi||[]).includes(m.id);
@@ -2756,48 +2780,84 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
             <div style={{padding:"10px 16px",fontSize:12,color:T.sub,background:T.s2}}>
               Nessuna selezione = tutti i modelli inclusi nel calcolo di questo report.
             </div>
+            {store.calendars.length>1&&(
+              <div style={{padding:"10px 16px",background:T.bg,borderBottom:`1px solid ${T.border}`}}>
+                <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>
+                  CALENDARI INCLUSI (aggiungine altri oltre a quelli già selezionati nel Report)
+                </div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                  {store.calendars.map(c=>{
+                    const inBase = calendariBase.includes(c.id);
+                    const attivo = calendariAttivi.includes(c.id);
+                    return (
+                      <button key={c.id} onClick={()=>toggleCalendarioExtra(c.id)}
+                        title={inBase?"Già incluso dal filtro calendari del Report":"Tocca per includere/escludere solo in questo filtro"}
+                        style={{display:"flex",alignItems:"center",gap:5,cursor:inBase?"default":"pointer",
+                          background:attivo?"#eab308":T.s2,
+                          border:`1.5px solid ${attivo?"#eab308":T.border}`,
+                          borderRadius:20,padding:"4px 10px 4px 6px",opacity:inBase?0.85:1}}>
+                        <div style={{width:8,height:8,borderRadius:"50%",background:c.color}}/>
+                        <span style={{color:attivo?"#0f172a":T.text,fontSize:12,fontWeight:700}}>{c.name}</span>
+                        {inBase&&<span style={{color:"#0f172a",fontSize:9}}>★</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <div style={{flex:1,overflowY:"auto",padding:12,background:T.bg}}>
               {modelli.length===0?(
                 <div style={{textAlign:"center",padding:"40px 24px",color:T.sub}}>Nessun modello creato ancora.</div>
               ):(
-                <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+                <div style={{display:"flex",flexDirection:"column",gap:14}}>
                   {!isTurnazione&&(
-                    <div onClick={()=>updateConteggioConfig(reportId, {...cfg, modelliInclusi:[]})}
-                      style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer",
-                        borderBottom:`1px solid ${T.border}`}}>
-                      <div style={{width:20,height:20,borderRadius:6,marginRight:12,flexShrink:0,
-                        border:`2px solid ${inclusi.length===0?accent:T.border}`,
-                        background:inclusi.length===0?accent:"transparent",
-                        display:"flex",alignItems:"center",justifyContent:"center"}}>
-                        {inclusi.length===0&&<span style={{color:"#fff",fontSize:13,fontWeight:900}}>✓</span>}
+                    <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+                      <div onClick={()=>updateConteggioConfig(reportId, {...cfg, modelliInclusi:[]})}
+                        style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}>
+                        <div style={{width:20,height:20,borderRadius:6,marginRight:12,flexShrink:0,
+                          border:`2px solid ${inclusi.length===0?accent:T.border}`,
+                          background:inclusi.length===0?accent:"transparent",
+                          display:"flex",alignItems:"center",justifyContent:"center"}}>
+                          {inclusi.length===0&&<span style={{color:"#fff",fontSize:13,fontWeight:900}}>✓</span>}
+                        </div>
+                        <span style={{fontSize:15,fontWeight:700,color:T.text}}>Tutti i modelli</span>
                       </div>
-                      <span style={{fontSize:15,fontWeight:700,color:T.text}}>Tutti i modelli</span>
                     </div>
                   )}
-                  {modelliOrdinati.map((m,i,arr)=>{
-                    const selezionato = inclusi.includes(m.id);
-                    const colore = m.coloreCustom||colByTime(m.inizio);
-                    return (
-                      <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
-                        <div onClick={()=>toggleModello(m)}
-                          style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}>
-                          <div style={{width:20,height:20,borderRadius:6,marginRight:12,flexShrink:0,
-                            border:`2px solid ${selezionato?colore:T.border}`,
-                            background:selezionato?colore:"transparent",
-                            display:"flex",alignItems:"center",justifyContent:"center"}}>
-                            {selezionato&&<span style={{color:"#fff",fontSize:13,fontWeight:900}}>✓</span>}
-                          </div>
-                          <div style={{width:10,height:10,borderRadius:"50%",background:colore,marginRight:10,flexShrink:0}}/>
-                          <div style={{flex:1,minWidth:0}}>
-                            <div style={{fontSize:15,fontWeight:700,color:T.text}}>{m.titolo||"Senza nome"}</div>
-                            <div style={{fontSize:11,color:T.sub}}>
-                              {m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${m.fine?` - ${m.fine}`:""}`:""}
-                            </div>
-                          </div>
-                        </div>
+                  {gruppiPerCalendario.map(({cal, modelli:modelliCal})=>(
+                    <div key={cal.id}>
+                      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6,paddingLeft:2}}>
+                        <div style={{width:8,height:8,borderRadius:"50%",background:cal.color}}/>
+                        <span style={{fontSize:12,fontWeight:800,color:T.sub,textTransform:"uppercase"}}>{cal.name}</span>
                       </div>
-                    );
-                  })}
+                      <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+                        {modelliCal.map((m,i,arr)=>{
+                          const selezionato = inclusi.includes(m.id);
+                          const colore = m.coloreCustom||colByTime(m.inizio);
+                          return (
+                            <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
+                              <div onClick={()=>toggleModello(m)}
+                                style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}>
+                                <div style={{width:20,height:20,borderRadius:6,marginRight:12,flexShrink:0,
+                                  border:`2px solid ${selezionato?colore:T.border}`,
+                                  background:selezionato?colore:"transparent",
+                                  display:"flex",alignItems:"center",justifyContent:"center"}}>
+                                  {selezionato&&<span style={{color:"#fff",fontSize:13,fontWeight:900}}>✓</span>}
+                                </div>
+                                <div style={{width:10,height:10,borderRadius:"50%",background:colore,marginRight:10,flexShrink:0}}/>
+                                <div style={{flex:1,minWidth:0}}>
+                                  <div style={{fontSize:15,fontWeight:700,color:T.text}}>{m.titolo||"Senza nome"}</div>
+                                  <div style={{fontSize:11,color:T.sub}}>
+                                    {m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${m.fine?` - ${m.fine}`:""}`:""}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -4870,13 +4930,13 @@ function FasceExpand({data, pct1, pct2, T, modelli, accent, cfg}){
             style={{display:"flex",justifyContent:"space-between",alignItems:"center",
               padding:"8px 10px",background:f.color+"22",borderRadius:openFascia===f.key?"8px 8px 0 0":8,
               border:`1px solid ${f.color}44`,cursor:"pointer"}}>
-            <span style={{fontSize:13,fontWeight:800,color:f.color}}>
+            <span style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>
               {f.label} {openFascia===f.key?"▲":"▼"}
             </span>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <span style={{fontSize:12,fontWeight:700,color:f.color,background:f.color+"22",
+              <span style={{fontSize:12,fontWeight:700,color:"#0f172a",background:f.color+"33",
                 borderRadius:6,padding:"2px 7px"}}>{f.pct}%</span>
-              <span style={{fontSize:16,fontWeight:900,color:T.text}}>{f.count}</span>
+              <span style={{fontSize:16,fontWeight:900,color:"#0f172a"}}>{f.count}</span>
             </div>
           </div>
           {openFascia===f.key&&(
@@ -5033,8 +5093,8 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, fas
           ].map(g=>(
             <div key={g.key} style={{display:"flex",justifyContent:"space-between",alignItems:"center",
               padding:"8px 10px",background:g.color+"22",borderRadius:8,border:`1px solid ${g.color}44`}}>
-              <span style={{fontSize:13,fontWeight:800,color:g.color}}>{g.label}</span>
-              <span style={{fontSize:16,fontWeight:900,color:T.text}}>{g.count}</span>
+              <span style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>{g.label}</span>
+              <span style={{fontSize:16,fontWeight:900,color:"#0f172a"}}>{g.count}</span>
             </div>
           ))}
         </div>
@@ -5144,11 +5204,11 @@ function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati, accent
               style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",
                 padding:"8px 10px",background:f.color+"22",borderRadius:isOpen?"8px 8px 0 0":8,
                 border:`1px solid ${f.color}44`}}>
-              <span style={{fontSize:13,fontWeight:800,color:f.color}}>{f.label} {isOpen?"▲":"▼"}</span>
+              <span style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>{f.label} {isOpen?"▲":"▼"}</span>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <span style={{fontSize:12,fontWeight:700,color:f.color,background:f.color+"22",
+                <span style={{fontSize:12,fontWeight:700,color:"#0f172a",background:f.color+"33",
                   borderRadius:6,padding:"2px 7px"}}>{f.pct}%</span>
-                <span style={{fontSize:16,fontWeight:900,color:T.text}}>{f.count}</span>
+                <span style={{fontSize:16,fontWeight:900,color:"#0f172a"}}>{f.count}</span>
               </div>
             </div>
             {isOpen&&(
