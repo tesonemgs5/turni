@@ -2276,12 +2276,13 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
         touchStartX.current=null; touchStartY.current=null;
       }}
       style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden",position:"relative"}}>
-      <div style={{background:accent,display:"flex",alignItems:"center",
-        gap:5,padding:"6px 8px",overflowX:"auto",scrollbarWidth:"none",flexShrink:0}}>
+      <div style={{background:"#ffffff",display:"flex",alignItems:"center",
+        gap:5,padding:"6px 8px",overflowX:"auto",scrollbarWidth:"none",flexShrink:0,
+        borderBottom:"1px solid #e2e8f0"}}>
         <button onClick={()=>month===0?(setYear(y=>y-1),setMonth(11)):setMonth(m=>m-1)}
-          style={{...NB, color:accentText==="#ffffff"?"rgba(255,255,255,0.8)":"rgba(15,23,42,0.8)"}}>‹</button>
+          style={{...NB, color:"rgba(15,23,42,0.8)"}}>‹</button>
         <select value={month} onChange={e=>setMonth(Number(e.target.value))}
-          style={{...selectStyle, maxWidth:80}}>
+          style={{...selectStyle, maxWidth:80, background:"#f1f5f9", color:"#0f172a", border:"1px solid #e2e8f0"}}>
           {MONTHS.map((mn,i)=>(
             <option key={i} value={i} style={{background:"#1e293b",color:"#fff"}}>
               {mn.toUpperCase()}
@@ -2289,19 +2290,19 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
           ))}
         </select>
         <select value={year} onChange={e=>setYear(Number(e.target.value))}
-          style={{...selectStyle, maxWidth:50}}>
+          style={{...selectStyle, maxWidth:50, background:"#f1f5f9", color:"#0f172a", border:"1px solid #e2e8f0"}}>
           {Array.from({length:21},(_,i)=>2023+i).map(y=>(
             <option key={y} value={y} style={{background:"#1e293b",color:"#fff"}}>{y}</option>
           ))}
         </select>
-        {bgSyncing&&<span style={{color:accentText==="#ffffff"?"rgba(255,255,255,0.7)":"rgba(15,23,42,0.7)",fontSize:11}}>🔄</span>}
+        {bgSyncing&&<span style={{color:"rgba(15,23,42,0.7)",fontSize:11}}>🔄</span>}
         <button onClick={()=>month===11?(setYear(y=>y+1),setMonth(0)):setMonth(m=>m+1)}
-          style={{...NB, color:accentText==="#ffffff"?"rgba(255,255,255,0.8)":"rgba(15,23,42,0.8)"}}>›</button>
+          style={{...NB, color:"rgba(15,23,42,0.8)"}}>›</button>
         <div style={{flex:1}}/>
         <button onClick={()=>setShowModelloPicker("quick")}
           title="Applica un modello a più giorni"
-          style={{background:"rgba(255,255,255,0.15)",border:`1px solid ${accentText==="#ffffff"?"rgba(255,255,255,0.4)":"rgba(15,23,42,0.35)"}`,
-            borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:accentText,flexShrink:0}}>
+          style={{background:"#f1f5f9",border:"1px solid #e2e8f0",
+            borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:"#0f172a",flexShrink:0}}>
           ✏️
         </button>
         
@@ -2319,10 +2320,10 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
             });
           }}
           title={editMode?"Modifica attiva — tocca per tornare alla sola consultazione":"Consultazione multipla — tocca per modificare (gli altri calendari restano visibili)"}
-          style={{background:editMode?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.1)",
-            border:`1.5px solid ${editMode?(accentText==="#ffffff"?"rgba(255,255,255,0.85)":"rgba(15,23,42,0.6)"):"transparent"}`,
+          style={{background:editMode?"#0f172a":"#f1f5f9",
+            border:`1.5px solid ${editMode?"#0f172a":"#e2e8f0"}`,
             borderRadius:20,padding:"2px 10px",cursor:"pointer",flexShrink:0}}>
-          <span style={{color:accentText,fontSize:11,fontWeight:800}}>M</span>
+          <span style={{color:editMode?"#ffffff":"#0f172a",fontSize:11,fontWeight:800}}>M</span>
         </button>
         <button onClick={async()=>{
           setBanner("⏳ Svuotamento cache...");
@@ -2342,8 +2343,8 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
           window.location.href = window.location.href.split('?')[0] + '?v=' + Date.now();
         }}
           title="Svuota cache e ricarica tutto"
-          style={{background:"rgba(255,255,255,0.15)",border:`1px solid ${accentText==="#ffffff"?"rgba(255,255,255,0.4)":"rgba(15,23,42,0.35)"}`,
-            borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:accentText,flexShrink:0}}>
+          style={{background:"#f1f5f9",border:"1px solid #e2e8f0",
+            borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:"#0f172a",flexShrink:0}}>
           🔄
         </button>
 
@@ -2351,16 +2352,16 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
           const next = syncMode==='on'?'off':'on';
           setSyncMode(next);
           localStorage.setItem('syncMode', next);
-        }} style={{background:"rgba(255,255,255,0.15)",border:`1px solid ${accentText==="#ffffff"?"rgba(255,255,255,0.4)":"rgba(15,23,42,0.35)"}`,
-          borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:10,fontWeight:800,color:accentText,flexShrink:0}}>
+        }} style={{background:"#f1f5f9",border:"1px solid #e2e8f0",
+          borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:10,fontWeight:800,color:"#0f172a",flexShrink:0}}>
           {syncMode==='on'?(isOnline?'🟢 SYNC':'🔴 OFFLINE'):'⏸️ SYNC OFF'}
         </button>
       </div>
-      <div style={{background:accent,display:"flex",alignItems:"center",
+      <div style={{background:"#ffffff",display:"flex",alignItems:"center",
         gap:5,padding:"4px 8px",overflowX:"auto",scrollbarWidth:"none",flexShrink:0,
-        borderTop:"1px solid rgba(255,255,255,0.2)"}}>
+        borderBottom:"1px solid #e2e8f0"}}>
         {store.calendars.length===0
-          ? <span style={{color:accentText==="#ffffff"?"rgba(255,255,255,0.6)":"rgba(15,23,42,0.6)",fontSize:10,fontStyle:"italic"}}>→ Impostazioni</span>
+          ? <span style={{color:"rgba(15,23,42,0.6)",fontSize:10,fontStyle:"italic"}}>→ Impostazioni</span>
           : store.calendars.map(c=>{
             const visibile = selectedCalIds.includes(c.id);
             const attivoEdit = editMode && calId===c.id;
@@ -2375,14 +2376,14 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
               }}
               title={editMode?`Tocca per rendere "${c.name}" il calendario attivo per la modifica`:undefined}
               style={{display:"flex",alignItems:"center",gap:3,flexShrink:0,cursor:"pointer",
-                background:visibile?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.1)",
-                border:`1.5px solid ${attivoEdit?(accentText==="#ffffff"?"#ffffff":"#0f172a"):(visibile?(accentText==="#ffffff"?"rgba(255,255,255,0.85)":"rgba(15,23,42,0.6)"):"transparent")}`,
-                boxShadow:attivoEdit?(accentText==="#ffffff"?"0 0 0 2px rgba(255,255,255,0.35)":"0 0 0 2px rgba(15,23,42,0.25)"):"none",
+                background:visibile?"#f1f5f9":"#ffffff",
+                border:`1.5px solid ${attivoEdit?"#0f172a":(visibile?"#94a3b8":"#e2e8f0")}`,
+                boxShadow:attivoEdit?"0 0 0 2px rgba(15,23,42,0.15)":"none",
                 borderRadius:20,padding:"2px 8px 2px 5px"}}>
-              <div style={{width:8,height:8,borderRadius:"50%",background:c.color,border:"1px solid rgba(255,255,255,0.5)"}}/>
-              <span style={{color:accentText,fontSize:12,fontWeight:attivoEdit?900:700}}>{c.name}</span>
-              {attivoEdit&&<span style={{color:accentText,fontSize:9}}>✏️</span>}
-              {c.isMain&&<span style={{color:accentText==="#ffffff"?"rgba(255,255,255,0.6)":"rgba(15,23,42,0.6)",fontSize:8}}>★</span>}
+              <div style={{width:8,height:8,borderRadius:"50%",background:c.color,border:"1px solid rgba(15,23,42,0.15)"}}/>
+              <span style={{color:"#0f172a",fontSize:12,fontWeight:attivoEdit?900:700}}>{c.name}</span>
+              {attivoEdit&&<span style={{color:"#0f172a",fontSize:9}}>✏️</span>}
+              {c.isMain&&<span style={{color:"rgba(15,23,42,0.6)",fontSize:8}}>★</span>}
             </button>
             );})
         }
@@ -2559,7 +2560,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                     ? [...modelli.filter(m=>isModelloTurnazioneDefault(m)&&!(cfg.modelliEsclusi||[]).includes(m.id)).map(m=>m.id), ...(cfg.modelliAggiunti||[])].length
                     : (cfg.modelliInclusi||[]).length;
                   return count>0&&(
-                    <span style={{background:accent,color:"#fff",borderRadius:10,
+                    <span style={{background:accent,color:accentText,borderRadius:10,
                       padding:"1px 7px",fontSize:11,fontWeight:800}}>{count}</span>
                   );
                 })()}
@@ -2710,7 +2711,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
             {reportInterval==="custom"&&reportDateFrom&&reportDateTo&&(
               <button onClick={()=>setShowIntervalPicker(false)}
                 style={{width:"100%",marginTop:12,background:accent,border:"none",borderRadius:10,
-                  color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:13}}>
+                  color:getContrastTextColor(accent),padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:13}}>
                 Conferma
               </button>
             )}
@@ -2864,7 +2865,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
             <div style={{padding:12,borderTop:`1px solid ${T.border}`,background:T.surface}}>
               <button onClick={()=>setShowReportModelliPicker(null)}
                 style={{width:"100%",background:accent,border:"none",borderRadius:10,
-                  color:"#fff",padding:"12px 0",cursor:"pointer",fontWeight:800,fontSize:14}}>
+                  color:getContrastTextColor(accent),padding:"12px 0",cursor:"pointer",fontWeight:800,fontSize:14}}>
                 Fatto
               </button>
             </div>
@@ -3103,7 +3104,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                     }); setShowModelForm(true); setSelectedModelloIds([]); }
                   }}
                   style={{background:accent,border:"none",borderRadius:8,
-                    color:"#fff",padding:"7px 14px",cursor:"pointer",fontWeight:800,fontSize:12}}>
+                    color:getContrastTextColor(accent),padding:"7px 14px",cursor:"pointer",fontWeight:800,fontSize:12}}>
                   ✏️ Modifica
                 </button>
               )}
@@ -3201,7 +3202,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                 <div style={{fontSize:11,color:T.sub,fontWeight:700}}>COLORI PERSONALIZZATI</div>
                 <button onClick={()=>setShowAddColorPicker(true)}
                   style={{background:accent,border:"none",borderRadius:8,padding:"4px 12px",
-                    fontSize:16,fontWeight:800,cursor:"pointer",color:"#fff"}}>+</button>
+                    fontSize:16,fontWeight:800,cursor:"pointer",color:getContrastTextColor(accent)}}>+</button>
               </div>
               {coloriManuali.length===0?(
                 <div style={{textAlign:"center",padding:"24px",color:T.sub,fontSize:13}}>
@@ -3298,7 +3299,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
             <div style={{padding:12,borderTop:`1px solid ${T.border}`,background:T.surface}}>
               <button onClick={()=>setShowColorAssignPicker(null)}
                 style={{width:"100%",background:accent,border:"none",borderRadius:10,
-                  color:"#fff",padding:"12px 0",cursor:"pointer",fontWeight:800,fontSize:14}}>
+                  color:getContrastTextColor(accent),padding:"12px 0",cursor:"pointer",fontWeight:800,fontSize:14}}>
                 Fatto
               </button>
             </div>
@@ -3375,7 +3376,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                 updateGrigliaRotazione(rot.id, grigliaFinale);
                 setShowRotDetail(null);
               }}
-                style={{background:accent,border:"none",borderRadius:8,color:"#fff",
+                style={{background:accent,border:"none",borderRadius:8,color:accentText,
                   padding:"6px 14px",fontSize:13,fontWeight:800,cursor:"pointer"}}>Fatto</button>
             </div>
             <div style={{flex:1,minHeight:0,display:"flex",flexDirection:"column"}}>
@@ -3643,7 +3644,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
             borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,outline:"none",marginBottom:8,boxSizing:"border-box"}}/>
         <button onClick={handleSaveSheetsConfig} disabled={syncing}
           style={{width:"100%",background:accent,border:"none",borderRadius:10,
-            color:"#fff",padding:"9px 0",cursor:"pointer",fontWeight:800,fontSize:12,marginBottom:8}}>
+            color:getContrastTextColor(accent),padding:"9px 0",cursor:"pointer",fontWeight:800,fontSize:12,marginBottom:8}}>
           {syncing?"⏳ Salvataggio...":"💾 Salva Configurazione Sheets"}
         </button>
         <div style={{display:"flex",gap:8,marginBottom:8}}>
@@ -3853,7 +3854,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
               <div style={{display:"flex",gap:6}}>
                 <button onClick={()=>setShowModelloPicker(true)}
                   style={{background:accent,border:"none",borderRadius:8,
-                    color:"#fff",fontSize:16,fontWeight:800,padding:"8px 17px",cursor:"pointer"}}>
+                    color:getContrastTextColor(accent),fontSize:16,fontWeight:800,padding:"8px 17px",cursor:"pointer"}}>
                   + Modello
                 </button>
                 <button onClick={()=>setShowRotazionePicker(true)}
@@ -4183,7 +4184,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
               </button>
               <button onClick={form.editId?updateEvt:saveEvt}
                 style={{flex:2,background:accent,border:"none",borderRadius:10,
-                  color:"#fff",padding:"13px 0",cursor:"pointer",fontSize:16,fontWeight:800}}>
+                  color:getContrastTextColor(accent),padding:"13px 0",cursor:"pointer",fontSize:16,fontWeight:800}}>
                 💾 Salva
               </button>
             </div>
@@ -4448,7 +4449,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                   setShowRotDetail(null);
                   setShowRotazionePicker(false);
                 }} style={{background:accent,border:"none",borderRadius:8,
-                  color:"#fff",fontSize:13,fontWeight:800,padding:"6px 14px",cursor:"pointer"}}>
+                  color:getContrastTextColor(accent),fontSize:13,fontWeight:800,padding:"6px 14px",cursor:"pointer"}}>
                   Fatto
                 </button>
               </div>
@@ -4601,7 +4602,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                   setShowModelForm(true);
                   setShowModelloPicker(false);
                 }} style={{width:"100%",background:accent,border:"none",borderRadius:14,
-                  color:"#fff",padding:"14px 0",cursor:"pointer",fontWeight:800,fontSize:15}}>
+                  color:getContrastTextColor(accent),padding:"14px 0",cursor:"pointer",fontWeight:800,fontSize:15}}>
                   + Nuovo modello
                 </button>
               </>
@@ -4732,7 +4733,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                 await applyRotazione(showApplyRotDialog.id, dayKey, inputVal, modPartenza);
               }}
                 style={{flex:2,background:accent,border:"none",borderRadius:10,
-                  color:"#fff",padding:"10px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
+                  color:getContrastTextColor(accent),padding:"10px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
                 Conferma
               </button>
             </div>
@@ -4984,7 +4985,7 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, fas
               style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"6px 10px",color:T.text,fontSize:13,outline:"none"}}/>
             <button onClick={()=>{onRename(tmpName);setEditingName(false);}}
-              style={{background:accent,border:"none",borderRadius:8,color:"#fff",
+              style={{background:accent,border:"none",borderRadius:8,color:getContrastTextColor(accent),
                 padding:"6px 12px",cursor:"pointer",fontWeight:800,fontSize:12}}>✓</button>
           </div>
         ):(
@@ -5026,7 +5027,7 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, fas
           onUpdateCfg({...cfg,fasceManuali:next});
         }}
         style={{fontSize:10,fontWeight:800,padding:"4px 8px",borderRadius:6,cursor:"pointer",
-          background:accent,color:"#fff",border:"none"}}>
+          background:accent,color:getContrastTextColor(accent),border:"none"}}>
         Assegna automaticamente
       </button>
     </div>
@@ -5177,7 +5178,7 @@ function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati, accent
               style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"6px 10px",color:T.text,fontSize:13,outline:"none"}}/>
             <button onClick={()=>{onRename(tmpName);setEditingName(false);}}
-              style={{background:accent,border:"none",borderRadius:8,color:"#fff",
+              style={{background:accent,border:"none",borderRadius:8,color:getContrastTextColor(accent),
                 padding:"6px 12px",cursor:"pointer",fontWeight:800,fontSize:12}}>✓</button>
           </div>
         ):(
@@ -6005,7 +6006,7 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[]
 
       <button onClick={onSave}
         style={{width:"100%",background:accent,border:"none",borderRadius:14,
-          color:"#fff",padding:"14px 0",cursor:"pointer",fontWeight:800,fontSize:15}}>
+          color:getContrastTextColor(accent),padding:"14px 0",cursor:"pointer",fontWeight:800,fontSize:15}}>
         💾 Salva modello
       </button>
     </div>
@@ -6108,7 +6109,7 @@ function RotazioneForm({T, form, setForm, accent, modelli, onSave, sortedModelli
       )}
       <button onClick={onSave}
         style={{width:"100%",background:accent,border:"none",borderRadius:14,
-          color:"#fff",padding:"14px 0",cursor:"pointer",fontWeight:800,fontSize:15}}>
+          color:getContrastTextColor(accent),padding:"14px 0",cursor:"pointer",fontWeight:800,fontSize:15}}>
         💾 Salva rotazione
       </button>
     </div>
@@ -7041,7 +7042,7 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
               )}
               <button onClick={()=>{ onClose(); }}
                 style={{width:"100%",marginTop:16,background:accent,border:"none",borderRadius:10,
-                  color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:700,fontSize:13}}>
+                  color:getContrastTextColor(accent),padding:"11px 0",cursor:"pointer",fontWeight:700,fontSize:13}}>
                 Fatto
               </button>
             </div>
@@ -7077,7 +7078,7 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
                 </button>
                 <button onClick={()=>handleFileConGemini(pendingFile.current)}
                   style={{flex:1,background:accent,border:"none",borderRadius:10,
-                    color:"#fff",padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
+                    color:getContrastTextColor(accent),padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
                   🤖 Sì, usa l'AI
                 </button>
               </div>
@@ -7350,4 +7351,5 @@ function NLRSView({rot, T, accent, modelli}){
   );
 }
 // #endregion
+
 
