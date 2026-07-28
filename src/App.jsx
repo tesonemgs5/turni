@@ -728,7 +728,10 @@ export default function App({ session }){
   const activeCal = store.calendars.find(c=>c.id===calId)||null;
   const mainCal   = store.calendars.find(c=>c.isMain)||null;
   const mainCalId = mainCal?.id||null; // calendario principale: usato come fallback per i modelli/rotazioni senza calendarId esplicito
-  const accent    = activeCal?.color||"#3b82f6";
+  // Colore dell'interfaccia (pulsanti, badge, evidenziazioni di selezione): FISSO e indipendente
+  // dal colore scelto per i calendari, così i colori dei calendari/modelli (es. giallo) restano
+  // solo lì dove servono a identificarli, senza "colorare" tutti i menu dell'app.
+  const accent    = "#2563eb";
   const accentText = getContrastTextColor(accent);
   const hols      = italianHols(year);
   const fasceAutomatiche = store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT;
