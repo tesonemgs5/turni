@@ -2554,17 +2554,17 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
           <div style={{background:T.s2,padding:14,borderBottom:`1px solid ${T.border}`}}>
             <div style={{display:"flex",justifyContent:"flex-end",marginBottom:10}}>
               <button onClick={()=>setShowReportModelliPicker(r.id)}
-                style={{display:"flex",alignItems:"center",gap:6,background:T.surface,
+                style={{display:"flex",alignItems:"center",gap:6,background:"#ffffff",
                   border:`1px solid ${T.border}`,borderRadius:20,padding:"6px 12px",
-                  fontSize:12,fontWeight:700,color:T.text,cursor:"pointer"}}>
+                  fontSize:14,fontWeight:700,color:"#0f172a",cursor:"pointer"}}>
                 📋 Filtra modelli
                 {(()=>{
                   const count = r.type==="turnazione"
                     ? [...modelli.filter(m=>isModelloTurnazioneDefault(m)&&!(cfg.modelliEsclusi||[]).includes(m.id)).map(m=>m.id), ...(cfg.modelliAggiunti||[])].length
                     : (cfg.modelliInclusi||[]).length;
                   return count>0&&(
-                    <span style={{background:accent,color:accentText,borderRadius:10,
-                      padding:"1px 7px",fontSize:11,fontWeight:800}}>{count}</span>
+                    <span style={{background:"#ffffff",color:"#0f172a",border:"1px solid #cbd5e1",borderRadius:10,
+                      padding:"1px 7px",fontSize:13,fontWeight:800}}>{count}</span>
                   );
                 })()}
               </button>
@@ -2604,7 +2604,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
         <div style={{fontSize:22,fontWeight:900,fontFamily:"Georgia,serif"}}>Report</div>
         <button onClick={()=>setShowIntervalPicker(true)}
           style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:20,
-            padding:"5px 14px",fontSize:12,fontWeight:700,color:T.sub,cursor:"pointer"}}>
+            padding:"5px 14px",fontSize:14,fontWeight:700,color:"#0f172a",cursor:"pointer"}}>
           {range.label} ▾
         </button>
       </div>
@@ -2636,7 +2636,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
 
       {activeReports.length>0 && (
         <div style={{margin:"8px 12px"}}>
-          <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:6,paddingLeft:4}}>Report attivi</div>
+          <div style={{fontSize:13,color:"#0f172a",fontWeight:700,marginBottom:6,paddingLeft:4}}>Report attivi</div>
           <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
             {activeReports.map(r=>renderReportCard(r))}
           </div>
@@ -2650,7 +2650,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
               marginBottom:6,paddingLeft:4,cursor:"pointer"}}
               onClick={()=>setOpenReportConfig(isAddOpen?null:'__add__')}>
-              <div style={{fontSize:11,color:T.sub,fontWeight:700}}>Aggiungi report</div>
+              <div style={{fontSize:13,color:"#0f172a",fontWeight:700}}>Aggiungi report</div>
               <span style={{color:T.sub,fontSize:12}}>{isAddOpen?"▲":"▼"}</span>
             </div>
             {isAddOpen&&(
@@ -2698,13 +2698,13 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
             {reportInterval==="custom" && (
               <div style={{display:"flex",gap:10,marginTop:12}}>
                 <div style={{flex:1}}>
-                  <div style={{fontSize:10,color:T.sub,marginBottom:4}}>DA</div>
+                  <div style={{fontSize:12,color:"#0f172a",marginBottom:4}}>DA</div>
                   <input type="date" value={reportDateFrom} onChange={e=>setReportDateFrom(e.target.value)}
                     style={{width:"100%",background:T.s2,border:`1px solid ${T.border}`,
                       borderRadius:8,padding:"8px 10px",color:T.text,fontSize:13,outline:"none",boxSizing:"border-box"}}/>
                 </div>
                 <div style={{flex:1}}>
-                  <div style={{fontSize:10,color:T.sub,marginBottom:4}}>A</div>
+                  <div style={{fontSize:12,color:"#0f172a",marginBottom:4}}>A</div>
                   <input type="date" value={reportDateTo} onChange={e=>setReportDateTo(e.target.value)}
                     style={{width:"100%",background:T.s2,border:`1px solid ${T.border}`,
                       borderRadius:8,padding:"8px 10px",color:T.text,fontSize:13,outline:"none",boxSizing:"border-box"}}/>
@@ -4981,7 +4981,7 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, fas
   return (
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
       <div style={{background:T.surface,borderRadius:10,padding:"10px 12px"}}>
-        <div style={{fontSize:10,color:T.sub,marginBottom:4}}>NOME REPORT</div>
+        <div style={{fontSize:12,color:"#0f172a",marginBottom:4}}>NOME REPORT</div>
         {editingName?(
           <div style={{display:"flex",gap:6}}>
             <input value={tmpName} onChange={e=>setTmpName(e.target.value)}
@@ -5003,7 +5003,7 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, fas
       <div style={{background:T.surface,borderRadius:10,padding:"10px 12px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
           <div onClick={()=>setShowTurniList(s=>!s)}
-  style={{fontSize:10,color:T.sub,fontWeight:700,cursor:"pointer",
+  style={{fontSize:12,color:"#0f172a",fontWeight:700,cursor:"pointer",
     display:"flex",alignItems:"center",gap:4}}>
   TOTALE TURNI {showTurniList?"▲":"▼"}
 </div>
@@ -5174,7 +5174,7 @@ function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati, accent
   return (
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
       <div style={{background:T.surface,borderRadius:10,padding:"10px 12px"}}>
-        <div style={{fontSize:10,color:T.sub,marginBottom:4}}>NOME REPORT</div>
+        <div style={{fontSize:12,color:"#0f172a",marginBottom:4}}>NOME REPORT</div>
         {editingName?(
           <div style={{display:"flex",gap:6}}>
             <input value={tmpName} onChange={e=>setTmpName(e.target.value)}
@@ -5195,7 +5195,7 @@ function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati, accent
 
       <div style={{background:T.surface,borderRadius:10,padding:"10px 12px",
         display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <span style={{fontSize:10,color:T.sub,fontWeight:700}}>TOTALE TURNI</span>
+        <span style={{fontSize:12,color:"#0f172a",fontWeight:700}}>TOTALE TURNI</span>
         <span style={{fontSize:20,fontWeight:900,color:T.text}}>{data.totale}</span>
       </div>
 
