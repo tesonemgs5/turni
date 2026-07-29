@@ -768,14 +768,7 @@ export default function App({ session }){
       if(ca!==cb) return ca-cb;
       const ma = a.modelloId && modOrderIdx.has(a.modelloId) ? modOrderIdx.get(a.modelloId) : 9999;
       const mb = b.modelloId && modOrderIdx.has(b.modelloId) ? modOrderIdx.get(b.modelloId) : 9999;
-      if(ma!==mb) return ma-mb;
-      // stesso calendario e stesso modello (o entrambi senza modello): tra questi,
-      // un H24/tutto-il-giorno va prima di uno con orario specifico
-      if(a.allDay && b.allDay) return 0;
-      if(a.allDay) return -1; if(b.allDay) return 1;
-      const ta=a.tIn||"", tb=b.tIn||"";
-      if(ta===tb) return 0; if(!ta) return 1; if(!tb) return -1;
-      return ta.localeCompare(tb);
+      return ma-mb;
     });
   }
   function dots(key){ return store.calendars.filter(c=>getEvts(key,c.id).length>0); }
