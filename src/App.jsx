@@ -2444,8 +2444,8 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                   <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",gap:"1px",padding:"0 1px 1px"}}>
                     {evts.slice(0,5).map((e,ei)=>(
                       <div key={e.id+ei} style={{background:e.color,borderRadius:3,padding:"1px 4px",
-                        fontSize:12,fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
-                        whiteSpace:"nowrap",height:13,minHeight:13,display:"flex",alignItems:"center",flexShrink:0,
+                        fontSize:"clamp(8px,1.6vw,12px)",fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
+                        whiteSpace:"nowrap",flex:"1 1 0",minHeight:9,display:"flex",alignItems:"center",
                         textShadow:getContrastTextColor(e.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>{e.label}</div>
                     ))}
                   </div>
@@ -2493,15 +2493,15 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                   return (
                     <Fragment key={e.id+ei}>
                       <div style={{background:e.color,borderRadius:3,padding:"1px 4px",
-                        fontSize:12,fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
-                        whiteSpace:"nowrap",height:13,minHeight:13,display:"flex",alignItems:"center",flexShrink:0,
+                        fontSize:"clamp(8px,1.6vw,12px)",fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
+                        whiteSpace:"nowrap",flex:"1 1 0",minHeight:9,display:"flex",alignItems:"center",
                         textShadow:getContrastTextColor(e.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>
                         {e.label}
                       </div>
                       {nodes.map((n,ni)=>(
                         <div key={ni} style={{background:n.color,borderRadius:3,padding:"1px 4px",
-                          fontSize:12,fontWeight:800,color:getContrastTextColor(n.color),overflow:"hidden",textOverflow:"ellipsis",
-                          whiteSpace:"nowrap",height:13,minHeight:13,display:"flex",alignItems:"center",flexShrink:0,
+                          fontSize:"clamp(8px,1.6vw,12px)",fontWeight:800,color:getContrastTextColor(n.color),overflow:"hidden",textOverflow:"ellipsis",
+                          whiteSpace:"nowrap",flex:"1 1 0",minHeight:9,display:"flex",alignItems:"center",
                           textShadow:getContrastTextColor(n.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>
                           {n.label}
                         </div>
