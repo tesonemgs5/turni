@@ -406,6 +406,7 @@ export default function App({ session }){
 
   // ── Colori: popup assegnazione modelli + palette colori extra creati dall'utente
   const [showColorAssignPicker, setShowColorAssignPicker] = useState(null); // colore hex attualmente aperto nel popup
+  const [colorAssignCalFiltro, setColorAssignCalFiltro] = useState(null); // calendari selezionati per filtrare la lista modelli nel popup colore (null = tutti)
   const [showAddColorPicker, setShowAddColorPicker] = useState(false); // popup "+" per aggiungere un colore alla sezione
   const [coloriExtra, setColoriExtra] = useState([]); // colori aggiunti manualmente o generati da modelli
   const [showEditFasciaColor, setShowEditFasciaColor] = useState(null); // key della fascia automatica di cui si sta editando il colore
@@ -3262,7 +3263,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
             display:"flex",flexDirection:"column"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
               padding:"16px 16px 8px",background:T.surface,borderBottom:`1px solid ${T.border}`}}>
-              <button onClick={()=>setShowColorAssignPicker(null)}
+              <button onClick={()=>{setShowColorAssignPicker(null);setColorAssignCalFiltro(null);}}
                 style={{background:"none",border:"none",color:T.sub,fontSize:22,cursor:"pointer"}}>‹</button>
               <div style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}
                 onClick={()=>setShowEditFasciaColor(hex)}
@@ -3280,13 +3281,47 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                 (si aggiorna ovunque sia usato).
               </div>
             )}
+            {store.calendars.length>1&&(()=>{
+              const calSelezionati = colorAssignCalFiltro===null ? store.calendars.map(c=>c.id) : colorAssignCalFiltro;
+              function toggleCal(cid){
+                setColorAssignCalFiltro(prev=>{
+                  const base = prev===null ? store.calendars.map(c=>c.id) : prev;
+                  const next = base.includes(cid) ? base.filter(id=>id!==cid) : [...base, cid];
+                  return next;
+                });
+              }
+              return (
+                <div style={{padding:"10px 16px",background:T.bg,borderBottom:`1px solid ${T.border}`}}>
+                  <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>
+                    CALENDARI DA MOSTRARE
+                  </div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                    {store.calendars.map(c=>{
+                      const attivo = calSelezionati.includes(c.id);
+                      return (
+                        <button key={c.id} onClick={()=>toggleCal(c.id)}
+                          style={{display:"flex",alignItems:"center",gap:5,cursor:"pointer",
+                            background:attivo?"#eab308":T.s2,
+                            border:`1.5px solid ${attivo?"#eab308":T.border}`,
+                            borderRadius:20,padding:"4px 10px 4px 6px"}}>
+                          <div style={{width:8,height:8,borderRadius:"50%",background:c.color}}/>
+                          <span style={{color:attivo?"#0f172a":T.text,fontSize:12,fontWeight:700}}>{c.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
             <div style={{flex:1,overflowY:"auto",padding:12,background:T.bg}}>
               {modelli.length===0?(
                 <div style={{textAlign:"center",padding:"40px 24px",color:T.sub}}>
                   Nessun modello creato ancora.
                 </div>
               ):(()=>{
+                const calSelezionati = colorAssignCalFiltro===null ? store.calendars.map(c=>c.id) : colorAssignCalFiltro;
                 const gruppiColorePerCalendario = store.calendars
+                  .filter(c=>calSelezionati.includes(c.id))
                   .map(c=>({
                     cal: c,
                     modelli: modelliOrdinati.filter(m=>(m.calendarId||mainCalId)===c.id),
@@ -3339,7 +3374,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
               })()}
             </div>
             <div style={{padding:12,borderTop:`1px solid ${T.border}`,background:T.surface}}>
-              <button onClick={()=>setShowColorAssignPicker(null)}
+              <button onClick={()=>{setShowColorAssignPicker(null);setColorAssignCalFiltro(null);}}
                 style={{width:"100%",background:accent,border:"none",borderRadius:10,
                   color:getContrastTextColor(accent),padding:"12px 0",cursor:"pointer",fontWeight:800,fontSize:14}}>
                 Fatto
