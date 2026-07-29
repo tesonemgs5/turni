@@ -1550,8 +1550,17 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
       const prima = prevById.get(m.id);
       return !prima || prima.sortOrder!==m.sortOrder || prima.posizione!==m.posizione;
     });
+    let primoErrore = null;
     for(const m of daSalvare){
-      await supabase.from("modelli").update({sort_order:m.sortOrder, posizione:m.posizione||""}).eq("id",m.id).eq("user_id",userId);
+      const { error } = await supabase.from("modelli").update({sort_order:m.sortOrder, posizione:m.posizione||""}).eq("id",m.id).eq("user_id",userId);
+      if(error && !primoErrore) primoErrore = error;
+    }
+    if(primoErrore){
+      // Il salvataggio su Supabase è fallito: lo stato locale mostra il nuovo
+      // ordine, ma al prossimo caricamento dati tornerebbe quello vecchio
+      // (sort_order non aggiornato sul server). Avviso subito invece di
+      // lasciare che l'utente scopra il problema solo dopo un refresh.
+      segnalaErroreDb(primoErrore, "Salvataggio posizione modello");
     }
   }
 
