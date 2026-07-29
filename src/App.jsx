@@ -693,7 +693,7 @@ export default function App({ session }){
               await Promise.all(daCorreggere.map(({id,nuovoVal}) =>
                 supabase.from("modelli").update({sort_order:nuovoVal}).eq("id",id).eq("user_id",userId)
               ));
-              const {data:modelliDb2}=await supabase.from("modelli").select("*").eq("user_id",userId).order("sort_order");
+              const {data:modelliDb2}=await supabase.from("modelli").select("*").eq("user_id",userId).order("sort_order").order("id");
               setModelli((modelliDb2||[]).map(m=>({
                 id:m.id,titolo:m.titolo,label:m.label||"",tempo:m.tempo,
                 inizio:m.inizio||"",fine:m.fine||"",
@@ -1501,14 +1501,31 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
     if(idx===-1) return prev;
     const vicinoIdx = dir==="up" ? idx-1 : idx+1;
     if(vicinoIdx<0 || vicinoIdx>=sottoinsieme.length) return prev; // già al limite, nessun movimento
-    const modello = sottoinsieme[idx];
-    const vicino = sottoinsieme[vicinoIdx];
-    const sortModello = modello.sortOrder||0;
-    const sortVicino = vicino.sortOrder||0;
+    // Scambio le POSIZIONI nell'array ordinato (non i valori di sortOrder:
+    // se due o più modelli del sottoinsieme condividessero già lo stesso
+    // sortOrder — es. modelli automatici mai "toccati" prima, o dati
+    // storici da uno schema precedente — uno swap puntuale dei soli due
+    // valori coinvolti può lasciare duplicati residui altrove nella lista.
+    // Con duplicati, l'ordine risulta corretto solo finché resta in
+    // memoria: dopo un refresh, la query dal server (senza ORDER BY
+    // secondario) può restituire le righe pari-valore in un ordine diverso,
+    // facendo "saltare" il modello in una posizione inattesa. Rinumerando
+    // l'intero sottoinsieme con passo fisso ad ogni spostamento, come già
+    // fa trascinaModelloPuro, eliminiamo qui i duplicati alla fonte invece
+    // di limitarci a scambiare due numeri potenzialmente ambigui.
+    const riordinato = [...sottoinsieme];
+    [riordinato[idx], riordinato[vicinoIdx]] = [riordinato[vicinoIdx], riordinato[idx]];
+    const nuoviValori = new Map(riordinato.map((m,i)=>[m.id, i*10]));
+    const idModello = sottoinsieme[idx].id, idVicino = sottoinsieme[vicinoIdx].id;
     return prev.map(m=>{
-      if(m.id===modello.id) return {...m, sortOrder:sortVicino, posizione:FLAG_MANUALE};
-      if(m.id===vicino.id) return {...m, sortOrder:sortModello, posizione:FLAG_MANUALE};
-      return m;
+      if(!nuoviValori.has(m.id)) return m;
+      const nuovoSort = nuoviValori.get(m.id);
+      // Solo i due modelli effettivamente spostati dall'utente diventano
+      // "manuali": gli altri vengono solo rinumerati (stesso ordine
+      // relativo) per restare univoci, senza uscire dalla lista automatica
+      // per orario se non sono mai stati toccati direttamente.
+      const diventaManuale = m.id===idModello || m.id===idVicino;
+      return {...m, sortOrder:nuovoSort, posizione: diventaManuale ? FLAG_MANUALE : m.posizione};
     });
   }
 
