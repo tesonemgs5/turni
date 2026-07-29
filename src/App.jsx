@@ -2437,7 +2437,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:2,padding:"2px 3px 0",flexShrink:0}}>
                     <span style={{fontSize:20,fontWeight:500,lineHeight:1,color:red?"#ef4444":T.sub}}>{d}</span>
                     <div style={{display:"flex",alignItems:"center",gap:3,flexShrink:0}}>
-                      {ds.map(c=><div key={c.id} style={{width:5,height:5,borderRadius:"50%",background:c.color}}/>)}
+                      {ds.map(c=><div key={c.id} style={{width:7,height:7,borderRadius:"50%",background:c.color}}/>)}
                       {evts.length>5&&<span style={{fontSize:11,fontWeight:800,color:T.sub}}>+{evts.length-5}</span>}
                     </div>
                   </div>
@@ -2481,7 +2481,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                 <span style={{fontSize:20,fontWeight:isT?900:500,lineHeight:1,
                   color:isT?accent:red?"#ef4444":T.sub}}>{d}</span>
                 <div style={{display:"flex",alignItems:"center",gap:3,flexShrink:0}}>
-                  {ds.map(c=><div key={c.id} style={{width:5,height:5,borderRadius:"50%",background:c.color}}/>)}
+                  {ds.map(c=><div key={c.id} style={{width:7,height:7,borderRadius:"50%",background:c.color}}/>)}
                   {evts.length>5&&<span style={{fontSize:11,fontWeight:800,color:T.sub}}>+{evts.length-5}</span>}
                 </div>
               </div>
