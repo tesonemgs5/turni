@@ -13,6 +13,14 @@ export default function Auth({ onLogin }) {
       setMsg("❌ Per favore compila tutti i campi.");
       return;
     }
+    // Un dispositivo che non ha MAI fatto login prima (nessuna sessione salvata
+    // in locale) non può autenticarsi per la prima volta senza internet: serve
+    // per forza contattare il server. Lo spieghiamo subito, invece di far
+    // aspettare la persona per poi mostrare un errore di rete generico.
+    if (!navigator.onLine) {
+      setMsg("📡 Sei offline. Il primo accesso su un nuovo dispositivo richiede una connessione internet. Se hai già effettuato l'accesso su questo dispositivo in passato, chiudi e riapri l'app: dovrebbe entrare automaticamente senza chiedere il login.");
+      return;
+    }
     setLoading(true);
     setMsg("");
     try {
@@ -30,7 +38,11 @@ export default function Auth({ onLogin }) {
         }
       }
     } catch (err) {
-      setMsg("❌ Si è verificato un errore imprevisto.");
+      if (!navigator.onLine) {
+        setMsg("📡 Connessione assente: riprova quando torni online (necessario solo per il primo accesso su questo dispositivo).");
+      } else {
+        setMsg("❌ Si è verificato un errore imprevisto.");
+      }
       console.error(err);
     } finally {
       setLoading(false);
