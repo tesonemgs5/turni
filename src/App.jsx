@@ -763,15 +763,16 @@ export default function App({ session }){
     // Ordine modello: posizione del modello nella schermata Modelli
     const modOrderIdx = new Map(modelliOrdinati.map((m,i)=>[m.id,i]));
     return res.sort((a,b)=>{
-      if(a.allDay && b.allDay) return 0;
-      if(a.allDay) return -1; if(b.allDay) return 1;
       const ca = calOrderIdx.has(a._cid) ? calOrderIdx.get(a._cid) : 999;
       const cb = calOrderIdx.has(b._cid) ? calOrderIdx.get(b._cid) : 999;
       if(ca!==cb) return ca-cb;
       const ma = a.modelloId && modOrderIdx.has(a.modelloId) ? modOrderIdx.get(a.modelloId) : 9999;
       const mb = b.modelloId && modOrderIdx.has(b.modelloId) ? modOrderIdx.get(b.modelloId) : 9999;
       if(ma!==mb) return ma-mb;
-      // eventi senza modello (testo libero): ordino per orario come ultimo criterio
+      // stesso calendario e stesso modello (o entrambi senza modello): tra questi,
+      // un H24/tutto-il-giorno va prima di uno con orario specifico
+      if(a.allDay && b.allDay) return 0;
+      if(a.allDay) return -1; if(b.allDay) return 1;
       const ta=a.tIn||"", tb=b.tIn||"";
       if(ta===tb) return 0; if(!ta) return 1; if(!tb) return -1;
       return ta.localeCompare(tb);
