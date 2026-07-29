@@ -2441,11 +2441,11 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                       {evts.length>5&&<span style={{fontSize:11,fontWeight:800,color:T.sub}}>+{evts.length-5}</span>}
                     </div>
                   </div>
-                  <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",gap:"1px",padding:"0 1px 1px"}}>
+                  <div style={{flex:1,overflow:"hidden",display:"grid",gridTemplateRows:"repeat(5,1fr)",gap:"1px",padding:"0 1px 1px"}}>
                     {evts.slice(0,5).map((e,ei)=>(
                       <div key={e.id+ei} style={{background:e.color,borderRadius:3,padding:"1px 4px",
                         fontSize:"clamp(8px,1.6vw,12px)",fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
-                        whiteSpace:"nowrap",flex:"1 1 0",minHeight:9,display:"flex",alignItems:"center",
+                        whiteSpace:"nowrap",minHeight:0,display:"flex",alignItems:"center",
                         textShadow:getContrastTextColor(e.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>{e.label}</div>
                     ))}
                   </div>
@@ -2485,7 +2485,9 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                   {evts.length>5&&<span style={{fontSize:11,fontWeight:800,color:T.sub}}>+{evts.length-5}</span>}
                 </div>
               </div>
-              <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",gap:"1px",padding:"0 1px 1px"}}>
+              <div style={{flex:1,overflow:"hidden",display:"grid",
+                gridTemplateRows:`repeat(${Math.max(5,evts.slice(0,5).reduce((n,e)=>n+1+(e.protPagFine?1:0)+(e.protRecFine?1:0),0))},1fr)`,
+                gap:"1px",padding:"0 1px 1px"}}>
                 {evts.slice(0,5).map((e,ei)=>{
                   const nodes = [];
                   if(e.protPagFine) nodes.push({label:"PR PAG",color:"#8b5cf6"});
@@ -2494,14 +2496,14 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                     <Fragment key={e.id+ei}>
                       <div style={{background:e.color,borderRadius:3,padding:"1px 4px",
                         fontSize:"clamp(8px,1.6vw,12px)",fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
-                        whiteSpace:"nowrap",flex:"1 1 0",minHeight:9,display:"flex",alignItems:"center",
+                        whiteSpace:"nowrap",minHeight:0,display:"flex",alignItems:"center",
                         textShadow:getContrastTextColor(e.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>
                         {e.label}
                       </div>
                       {nodes.map((n,ni)=>(
                         <div key={ni} style={{background:n.color,borderRadius:3,padding:"1px 4px",
                           fontSize:"clamp(8px,1.6vw,12px)",fontWeight:800,color:getContrastTextColor(n.color),overflow:"hidden",textOverflow:"ellipsis",
-                          whiteSpace:"nowrap",flex:"1 1 0",minHeight:9,display:"flex",alignItems:"center",
+                          whiteSpace:"nowrap",minHeight:0,display:"flex",alignItems:"center",
                           textShadow:getContrastTextColor(n.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>
                           {n.label}
                         </div>
