@@ -3204,11 +3204,12 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
         )}
         {modelliTab==="colori"&&(()=>{
           const fasceColorSet = new Set([...fasceAutomatiche.map(f=>f.color), COLORE_H24]);
+          const coloriExtraFiltrati = coloriExtra.filter(c=>!fasceColorSet.has(c.hex));
           const coloriUsatiDaModelli = [...new Set(modelli.map(m=>m.coloreCustom).filter(Boolean))]
             .filter(h=>!fasceColorSet.has(h));
-          const hexUsatiDaExtra = new Set(coloriExtra.map(c=>c.hex));
+          const hexUsatiDaExtra = new Set(coloriExtraFiltrati.map(c=>c.hex));
           const coloriManualiOggetti = [
-            ...coloriExtra,
+            ...coloriExtraFiltrati,
             ...coloriUsatiDaModelli.filter(h=>!hexUsatiDaExtra.has(h)).map(h=>({hex:h,label:null})),
           ];
           function contaModelli(hex){ return modelli.filter(m=>m.coloreCustom===hex).length; }
