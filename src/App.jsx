@@ -2437,7 +2437,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:2,padding:"2px 3px 0",flexShrink:0}}>
                     <span style={{fontSize:20,fontWeight:500,lineHeight:1,color:red?"#ef4444":T.sub}}>{d}</span>
                     <div style={{display:"flex",alignItems:"center",gap:3,flexShrink:0}}>
-                      {ds.map(c=><div key={c.id} style={{width:7,height:7,borderRadius:"50%",background:c.color}}/>)}
+                      {ds.map(c=><div key={c.id} style={{width:5,height:5,borderRadius:"50%",background:c.color}}/>)}
                       {evts.length>5&&<span style={{fontSize:11,fontWeight:800,color:T.sub}}>+{evts.length-5}</span>}
                     </div>
                   </div>
@@ -2481,7 +2481,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                 <span style={{fontSize:20,fontWeight:isT?900:500,lineHeight:1,
                   color:isT?accent:red?"#ef4444":T.sub}}>{d}</span>
                 <div style={{display:"flex",alignItems:"center",gap:3,flexShrink:0}}>
-                  {ds.map(c=><div key={c.id} style={{width:7,height:7,borderRadius:"50%",background:c.color}}/>)}
+                  {ds.map(c=><div key={c.id} style={{width:5,height:5,borderRadius:"50%",background:c.color}}/>)}
                   {evts.length>5&&<span style={{fontSize:11,fontWeight:800,color:T.sub}}>+{evts.length-5}</span>}
                 </div>
               </div>
@@ -3285,40 +3285,58 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                 <div style={{textAlign:"center",padding:"40px 24px",color:T.sub}}>
                   Nessun modello creato ancora.
                 </div>
-              ):(
-                <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
-                  {modelliOrdinati.map((m,i,arr)=>{
-                    const matchAuto = !m.coloreCustom && (
-                      (m.tempo==="h24" && hex===COLORE_H24) ||
-                      (m.tempo!=="h24" && m.inizio && colByTime(m.inizio)===hex)
-                    );
-                    const selezionato = m.coloreCustom===hex || matchAuto;
-                    const coloreAttuale = m.coloreCustom||colByTime(m.inizio);
-                    return (
-                      <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
-                        <div onClick={()=>{
-                          saveModello({...m, coloreCustom: selezionato ? null : hex});
-                        }} style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}>
-                          <div style={{width:20,height:20,borderRadius:6,marginRight:12,flexShrink:0,
-                            border:`2px solid ${selezionato?hex:T.border}`,
-                            background:selezionato?hex:"transparent",
-                            display:"flex",alignItems:"center",justifyContent:"center"}}>
-                            {selezionato&&<span style={{color:"#fff",fontSize:13,fontWeight:900}}>✓</span>}
-                          </div>
-                          <div style={{width:10,height:10,borderRadius:"50%",background:coloreAttuale,marginRight:10,flexShrink:0}}/>
-                          <div style={{flex:1,minWidth:0}}>
-                            <div style={{fontSize:15,fontWeight:700,color:T.text}}>{m.titolo||"Senza nome"}</div>
-                            <div style={{fontSize:11,color:T.sub}}>
-                              {m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${m.fine?` - ${m.fine}`:""}`:""}
-                              {m.coloreCustom&&!selezionato?" · colore personalizzato diverso":""}
-                            </div>
-                          </div>
+              ):(()=>{
+                const gruppiColorePerCalendario = store.calendars
+                  .map(c=>({
+                    cal: c,
+                    modelli: modelliOrdinati.filter(m=>(m.calendarId||mainCalId)===c.id),
+                  }))
+                  .filter(g=>g.modelli.length>0);
+                return (
+                  <div style={{display:"flex",flexDirection:"column",gap:14}}>
+                    {gruppiColorePerCalendario.map(({cal, modelli:modelliCal})=>(
+                      <div key={cal.id}>
+                        <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6,paddingLeft:2}}>
+                          <div style={{width:8,height:8,borderRadius:"50%",background:cal.color}}/>
+                          <span style={{fontSize:12,fontWeight:800,color:T.sub,textTransform:"uppercase"}}>{cal.name}</span>
+                        </div>
+                        <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+                          {modelliCal.map((m,i,arr)=>{
+                            const matchAuto = !m.coloreCustom && (
+                              (m.tempo==="h24" && hex===COLORE_H24) ||
+                              (m.tempo!=="h24" && m.inizio && colByTime(m.inizio)===hex)
+                            );
+                            const selezionato = m.coloreCustom===hex || matchAuto;
+                            const coloreAttuale = m.coloreCustom||colByTime(m.inizio);
+                            return (
+                              <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
+                                <div onClick={()=>{
+                                  saveModello({...m, coloreCustom: selezionato ? null : hex});
+                                }} style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}>
+                                  <div style={{width:20,height:20,borderRadius:6,marginRight:12,flexShrink:0,
+                                    border:`2px solid ${selezionato?hex:T.border}`,
+                                    background:selezionato?hex:"transparent",
+                                    display:"flex",alignItems:"center",justifyContent:"center"}}>
+                                    {selezionato&&<span style={{color:"#fff",fontSize:13,fontWeight:900}}>✓</span>}
+                                  </div>
+                                  <div style={{width:10,height:10,borderRadius:"50%",background:coloreAttuale,marginRight:10,flexShrink:0}}/>
+                                  <div style={{flex:1,minWidth:0}}>
+                                    <div style={{fontSize:15,fontWeight:700,color:T.text}}>{m.titolo||"Senza nome"}</div>
+                                    <div style={{fontSize:11,color:T.sub}}>
+                                      {m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${m.fine?` - ${m.fine}`:""}`:""}
+                                      {m.coloreCustom&&!selezionato?" · colore personalizzato diverso":""}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
             <div style={{padding:12,borderTop:`1px solid ${T.border}`,background:T.surface}}>
               <button onClick={()=>setShowColorAssignPicker(null)}
