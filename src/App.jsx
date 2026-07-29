@@ -2434,15 +2434,18 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
               return (
                 <div key={i} style={{background:red?(dark?"#2d0a0a":"#fff5f5"):T.surface,
                   display:"flex",flexDirection:"column",overflow:"hidden"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:2,padding:"2px 3px 0",flexShrink:0}}>
-                    <span style={{fontSize:10,fontWeight:500,lineHeight:1,color:red?"#ef4444":T.sub}}>{d}</span>
-                    {ds.map(c=><div key={c.id} style={{width:5,height:5,borderRadius:"50%",background:c.color}}/>)}
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:2,padding:"2px 3px 0",flexShrink:0}}>
+                    <span style={{fontSize:40,fontWeight:500,lineHeight:1,color:red?"#ef4444":T.sub}}>{d}</span>
+                    <div style={{display:"flex",alignItems:"center",gap:3,flexShrink:0}}>
+                      {ds.map(c=><div key={c.id} style={{width:5,height:5,borderRadius:"50%",background:c.color}}/>)}
+                      {evts.length>5&&<span style={{fontSize:11,fontWeight:800,color:T.sub}}>+{evts.length-5}</span>}
+                    </div>
                   </div>
                   <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",gap:"1px",padding:"0 1px 1px"}}>
-                    {evts.slice(0,4).map((e,ei)=>(
-                      <div key={e.id+ei} style={{background:e.color,borderRadius:3,padding:"2px 4px",
-                        fontSize:14,fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
-                        whiteSpace:"nowrap",height:16,minHeight:16,display:"flex",alignItems:"center",flexShrink:0,
+                    {evts.slice(0,5).map((e,ei)=>(
+                      <div key={e.id+ei} style={{background:e.color,borderRadius:3,padding:"1px 4px",
+                        fontSize:12,fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
+                        whiteSpace:"nowrap",height:13,minHeight:13,display:"flex",alignItems:"center",flexShrink:0,
                         textShadow:getContrastTextColor(e.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>{e.label}</div>
                     ))}
                   </div>
@@ -2474,28 +2477,31 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
               style={{background:isT?(dark?"#1a2f50":"#dbeafe"):red?(dark?"#2d0a0a":"#fff5f5"):T.surface,
                 cursor:"pointer",display:"flex",flexDirection:"column",overflow:"hidden",
                 borderTop:"none"}}>
-              <div style={{display:"flex",alignItems:"center",gap:2,padding:"2px 3px 0",flexShrink:0}}>
-                <span style={{fontSize:10,fontWeight:isT?900:500,lineHeight:1,
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:2,padding:"2px 3px 0",flexShrink:0}}>
+                <span style={{fontSize:40,fontWeight:isT?900:500,lineHeight:1,
                   color:isT?accent:red?"#ef4444":T.sub}}>{d}</span>
-                {ds.map(c=><div key={c.id} style={{width:5,height:5,borderRadius:"50%",background:c.color}}/>)}
+                <div style={{display:"flex",alignItems:"center",gap:3,flexShrink:0}}>
+                  {ds.map(c=><div key={c.id} style={{width:5,height:5,borderRadius:"50%",background:c.color}}/>)}
+                  {evts.length>5&&<span style={{fontSize:11,fontWeight:800,color:T.sub}}>+{evts.length-5}</span>}
+                </div>
               </div>
               <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",gap:"1px",padding:"0 1px 1px"}}>
-                {evts.slice(0,4).map((e,ei)=>{
+                {evts.slice(0,5).map((e,ei)=>{
                   const nodes = [];
                   if(e.protPagFine) nodes.push({label:"PR PAG",color:"#8b5cf6"});
                   if(e.protRecFine) nodes.push({label:"PR REC",color:"#64748b"});
                   return (
                     <Fragment key={e.id+ei}>
-                      <div style={{background:e.color,borderRadius:3,padding:"2px 4px",
-                        fontSize:14,fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
-                        whiteSpace:"nowrap",height:16,minHeight:16,display:"flex",alignItems:"center",flexShrink:0,
+                      <div style={{background:e.color,borderRadius:3,padding:"1px 4px",
+                        fontSize:12,fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
+                        whiteSpace:"nowrap",height:13,minHeight:13,display:"flex",alignItems:"center",flexShrink:0,
                         textShadow:getContrastTextColor(e.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>
                         {e.label}
                       </div>
                       {nodes.map((n,ni)=>(
-                        <div key={ni} style={{background:n.color,borderRadius:3,padding:"2px 4px",
-                          fontSize:14,fontWeight:800,color:getContrastTextColor(n.color),overflow:"hidden",textOverflow:"ellipsis",
-                          whiteSpace:"nowrap",height:16,minHeight:16,display:"flex",alignItems:"center",flexShrink:0,
+                        <div key={ni} style={{background:n.color,borderRadius:3,padding:"1px 4px",
+                          fontSize:12,fontWeight:800,color:getContrastTextColor(n.color),overflow:"hidden",textOverflow:"ellipsis",
+                          whiteSpace:"nowrap",height:13,minHeight:13,display:"flex",alignItems:"center",flexShrink:0,
                           textShadow:getContrastTextColor(n.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>
                           {n.label}
                         </div>
@@ -2503,7 +2509,6 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                     </Fragment>
                   );
                 })}
-                {evts.length>4&&<div style={{fontSize:8,color:T.sub,padding:"0 2px",flexShrink:0}}>+{evts.length-4}</div>}
               </div>
             </div>
           );
