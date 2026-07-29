@@ -408,7 +408,7 @@ export default function App({ session }){
   const [showColorAssignPicker, setShowColorAssignPicker] = useState(null); // colore hex attualmente aperto nel popup
   const [colorAssignCalFiltro, setColorAssignCalFiltro] = useState(null); // calendari selezionati per filtrare la lista modelli nel popup colore (null = tutti)
   const [showAddColorPicker, setShowAddColorPicker] = useState(false); // popup "+" per aggiungere un colore alla sezione
-  const [coloriExtra, setColoriExtra] = useState([]); // colori aggiunti manualmente o generati da modelli
+  const [coloriExtra, setColoriExtra] = useState([]); // colori aggiunti manualmente o generati da modelli: array di {hex, label}
   const [showEditFasciaColor, setShowEditFasciaColor] = useState(null); // key della fascia automatica di cui si sta editando il colore
 
   const [rotazioni, setRotazioni] = useState([]);
@@ -615,7 +615,7 @@ export default function App({ session }){
         if(!modelliUguali){
           setModelli(modelliMappati);
         }
-        setColoriExtra((coloriDb||[]).map(c=>c.hex));
+        setColoriExtra((coloriDb||[]).map(c=>({hex:c.hex, label:c.label||null})));
         setRotazioni(rotazioniMappate);
         setSheetsUrl(sUrl);
         setSheetsSecret(sSec);
@@ -653,7 +653,7 @@ export default function App({ session }){
             if(nuoviColoriSalvati.length > 0) {
               setColoriExtra(prev => {
                 const aggiornato = [...prev];
-                nuoviColoriSalvati.forEach(hex => { if(!aggiornato.includes(hex)) aggiornato.push(hex); });
+                nuoviColoriSalvati.forEach(hex => { if(!aggiornato.some(c=>c.hex===hex)) aggiornato.push({hex, label:null}); });
                 return aggiornato;
               });
             }
@@ -1584,10 +1584,10 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
   // ricaricare l'app, e può essere associato ad altri modelli da lì.
   async function ensureColoreRegistrato(hex){
     if(!userId || !hex) return;
-    if(coloriExtra.includes(hex)) return;
+    if(coloriExtra.some(c=>c.hex===hex)) return;
     try {
       const { data, error } = await supabase.from("colori").insert({ user_id:userId, hex }).select().maybeSingle();
-      if(!error && data) setColoriExtra(prev=>prev.includes(hex)?prev:[...prev, hex]);
+      if(!error && data) setColoriExtra(prev=>prev.some(c=>c.hex===hex)?prev:[...prev, {hex, label:null}]);
     } catch(e){ console.warn("ensureColoreRegistrato:", e); }
   }
 
@@ -1768,22 +1768,36 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
 
   // ── COLORI: aggiunta/rimozione dalla sezione + assegnazione esclusiva ai modelli
   async function addColoreExtra(hex){
-    if(!userId || coloriExtra.includes(hex)) return;
+    if(!userId || coloriExtra.some(c=>c.hex===hex)) return;
     const { data, error } = await supabase.from("colori").insert({
       user_id: userId, hex,
     }).select().maybeSingle();
     if(error){ segnalaErroreDb(error, "Aggiunta colore"); return; }
-    setColoriExtra(prev=>[...prev, hex]);
+    setColoriExtra(prev=>[...prev, {hex, label:null}]);
   }
 
   async function removeColoreExtra(hex){
     if(!userId) return;
     await supabase.from("colori").delete().eq("user_id", userId).eq("hex", hex);
-    setColoriExtra(prev=>prev.filter(c=>c!==hex));
+    setColoriExtra(prev=>prev.filter(c=>c.hex!==hex));
     const daResettare = modelli.filter(m=>m.coloreCustom===hex);
     for(const m of daResettare){
       await saveModello({...m, coloreCustom:null});
     }
+  }
+
+  // Salva/aggiorna il nome (label) di un colore extra. Prova ad aggiornare la
+  // colonna "label" su Supabase; se la colonna non esiste ancora sullo schema
+  // (serve un ALTER TABLE colori ADD COLUMN label text;), fallisce in modo
+  // silenzioso lato server ma aggiorna comunque lo stato locale, così l'app
+  // resta utilizzabile nel frattempo.
+  async function updateColoreExtraLabel(hex, label){
+    setColoriExtra(prev=>prev.map(c=>c.hex===hex?{...c,label}:c));
+    if(!userId) return;
+    try {
+      const { error } = await supabase.from("colori").update({label}).eq("user_id",userId).eq("hex",hex);
+      if(error) console.warn("updateColoreExtraLabel: colonna 'label' forse assente su Supabase.", error.message);
+    } catch(e){ console.warn("updateColoreExtraLabel:", e); }
   }
 
   // ── FIX: sostituisce l'hex di un colore ovunque sia usato (modelli +
@@ -1800,10 +1814,11 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
     }
     setModelli(prev=>prev.map(m=>m.coloreCustom===oldHex?{...m,coloreCustom:newHex,colore:newHex}:m));
     // Aggiorna il registro colori extra
-    if(coloriExtra.includes(oldHex)){
+    if(coloriExtra.some(c=>c.hex===oldHex)){
+      const vecchiaLabel = coloriExtra.find(c=>c.hex===oldHex)?.label||null;
       await supabase.from("colori").delete().eq("user_id",userId).eq("hex",oldHex);
-      await supabase.from("colori").insert({ user_id:userId, hex:newHex });
-      setColoriExtra(prev=>[...prev.filter(c=>c!==oldHex), newHex]);
+      await supabase.from("colori").insert({ user_id:userId, hex:newHex, label:vecchiaLabel });
+      setColoriExtra(prev=>[...prev.filter(c=>c.hex!==oldHex), {hex:newHex, label:vecchiaLabel}]);
     } else {
       await ensureColoreRegistrato(newHex);
     }
@@ -3191,8 +3206,11 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
           const fasceColorSet = new Set([...fasceAutomatiche.map(f=>f.color), COLORE_H24]);
           const coloriUsatiDaModelli = [...new Set(modelli.map(m=>m.coloreCustom).filter(Boolean))]
             .filter(h=>!fasceColorSet.has(h));
-          const coloriManuali = [...new Set([...coloriExtra, ...coloriUsatiDaModelli])]
-            .filter(h=>!fasceColorSet.has(h));
+          const hexUsatiDaExtra = new Set(coloriExtra.map(c=>c.hex));
+          const coloriManualiOggetti = [
+            ...coloriExtra,
+            ...coloriUsatiDaModelli.filter(h=>!hexUsatiDaExtra.has(h)).map(h=>({hex:h,label:null})),
+          ];
           function contaModelli(hex){ return modelli.filter(m=>m.coloreCustom===hex).length; }
           function contaModelliFascia(fascia){
             return modelli.filter(m=>{
@@ -3202,48 +3220,39 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
             }).length;
           }
           const contaH24 = modelli.filter(m=>m.coloreCustom ? m.coloreCustom===COLORE_H24 : m.tempo==="h24").length;
+          // Un'unica lista con tutti i colori (fasce automatiche + H24 + personalizzati),
+          // nessuna sezione separata: tocca un colore per rinominarlo/gestirlo.
+          const righeTutteFasce = fasceAutomatiche.map(f=>({
+            key:f.key, hex:f.color, label:f.label, sub:"Automatico per orario",
+            count:contaModelliFascia(f), isFascia:true, fasciaKey:f.key,
+          }));
+          const rigaH24 = { key:"__h24", hex:COLORE_H24, label:"H24", sub:"Standard turni H24",
+            count:contaH24, isFascia:true, fasciaKey:null };
+          const righeExtra = coloriManualiOggetti.map(c=>({
+            key:c.hex, hex:c.hex, label:c.label||c.hex.toUpperCase(), sub:"Personalizzato",
+            count:contaModelli(c.hex), isFascia:false,
+          }));
+          const righeTutte = [...righeTutteFasce, rigaH24, ...righeExtra];
           return (
             <div style={{paddingBottom:80}}>
-              <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>
-                COLORI AUTOMATICI (per fascia oraria)
-              </div>
-              <div style={{fontSize:11,color:T.sub,marginBottom:8,paddingLeft:4}}>
-                Modifica orari e colori delle fasce da Impostazioni. Tocca un colore per riassegnarlo ai modelli.
-              </div>
-              <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:16}}>
-                {fasceAutomatiche.map((f,i,arr)=>(
-                  <div key={f.key} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
-                    <ColorRow T={T} hex={f.color} label={f.label} sub="Automatico per orario"
-                      count={contaModelliFascia(f)} onClick={()=>setShowColorAssignPicker(f.color)}/>
-                  </div>
-                ))}
-                <div style={{borderTop:`1px solid ${T.border}`}}>
-                  <ColorRow T={T} hex={COLORE_H24} label="H24" sub="Standard turni H24"
-                    count={contaH24} onClick={()=>setShowColorAssignPicker(COLORE_H24)}/>
-                </div>
-              </div>
-
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,paddingLeft:4}}>
-                <div style={{fontSize:11,color:T.sub,fontWeight:700}}>COLORI PERSONALIZZATI</div>
+                <div style={{fontSize:11,color:T.sub,fontWeight:700}}>COLORI</div>
                 <button onClick={()=>setShowAddColorPicker(true)}
                   style={{background:accent,border:"none",borderRadius:8,padding:"4px 12px",
                     fontSize:16,fontWeight:800,cursor:"pointer",color:getContrastTextColor(accent)}}>+</button>
               </div>
-              {coloriManuali.length===0?(
-                <div style={{textAlign:"center",padding:"24px",color:T.sub,fontSize:13}}>
-                  Nessun colore personalizzato. Premi + oppure crea un modello con colore custom.
-                </div>
-              ):(
-                <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
-                  {coloriManuali.map((hex,i,arr)=>(
-                    <div key={hex} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
-                      <ColorRow T={T} hex={hex} label={hex.toUpperCase()} sub="Personalizzato"
-                        count={contaModelli(hex)} onClick={()=>setShowColorAssignPicker(hex)}
-                        onRemove={contaModelli(hex)===0?()=>removeColoreExtra(hex):null}/>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <div style={{fontSize:11,color:T.sub,marginBottom:8,paddingLeft:4}}>
+                Tocca un colore per rinominarlo o per riassegnarlo ai modelli.
+              </div>
+              <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+                {righeTutte.map((r,i,arr)=>(
+                  <div key={r.key} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
+                    <ColorRow T={T} hex={r.hex} label={r.label} sub={r.sub}
+                      count={r.count} onClick={()=>setShowColorAssignPicker(r.hex)}
+                      onRemove={(!r.isFascia && r.count===0)?()=>removeColoreExtra(r.hex):null}/>
+                  </div>
+                ))}
+              </div>
             </div>
           );
         })()}
@@ -3257,7 +3266,11 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
 
       {showColorAssignPicker&&(()=>{
         const hex = showColorAssignPicker;
-        const isFascia = fasceAutomatiche.some(f=>f.color===hex) || hex===COLORE_H24;
+        const fasciaCorrente = fasceAutomatiche.find(f=>f.color===hex);
+        const isH24 = hex===COLORE_H24;
+        const isFascia = !!fasciaCorrente || isH24;
+        const coloreExtraCorrente = coloriExtra.find(c=>c.hex===hex);
+        const nomeAttuale = fasciaCorrente ? fasciaCorrente.label : isH24 ? "H24" : (coloreExtraCorrente?.label || "");
         return (
           <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:600,
             display:"flex",flexDirection:"column"}}>
@@ -3265,20 +3278,33 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
               padding:"16px 16px 8px",background:T.surface,borderBottom:`1px solid ${T.border}`}}>
               <button onClick={()=>{setShowColorAssignPicker(null);setColorAssignCalFiltro(null);}}
                 style={{background:"none",border:"none",color:T.sub,fontSize:22,cursor:"pointer"}}>‹</button>
-              <div style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}
-                onClick={()=>setShowEditFasciaColor(hex)}
-                title="Tocca per cambiare questo colore con la palette">
-                <div style={{width:18,height:18,borderRadius:"50%",background:hex,border:`1px solid ${T.border}`}}/>
-                <div style={{fontSize:16,fontWeight:900,color:T.text}}>{hex.toUpperCase()}</div>
-                <span style={{fontSize:12,color:accent}}>🎨</span>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <div style={{width:18,height:18,borderRadius:"50%",background:hex,border:`1px solid ${T.border}`,flexShrink:0}}/>
+                <div style={{fontSize:11,color:T.sub}}>{hex.toUpperCase()}</div>
               </div>
               <div style={{width:32}}/>
             </div>
+            {isH24?(
+              <div style={{padding:"10px 16px",fontSize:16,fontWeight:900,color:T.text,background:T.surface,borderBottom:`1px solid ${T.border}`}}>
+                H24
+              </div>
+            ):(
+              <div style={{padding:"10px 16px",background:T.surface,borderBottom:`1px solid ${T.border}`}}>
+                <input value={nomeAttuale}
+                  onChange={e=>{
+                    const v = e.target.value.toUpperCase();
+                    if(fasciaCorrente) updateFascia(fasciaCorrente.key, {label:v});
+                    else updateColoreExtraLabel(hex, v);
+                  }}
+                  placeholder="Nome di questo colore"
+                  style={{width:"100%",background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
+                    padding:"9px 12px",color:T.text,fontSize:16,fontWeight:900,outline:"none",boxSizing:"border-box"}}/>
+              </div>
+            )}
             {isFascia&&(
               <div style={{padding:"10px 16px",fontSize:12,color:T.sub,background:T.s2}}>
-                Colore automatico. Assegnando qui un modello, quel modello userà sempre questo
-                colore. Tocca l'hex in alto per cambiare il colore stesso con la palette condivisa
-                (si aggiorna ovunque sia usato).
+                Colore automatico. Assegnando qui un modello, quel modello userà sempre questo colore.
+                {fasciaCorrente&&" L'orario della fascia si modifica da Impostazioni."}
               </div>
             )}
             {store.calendars.length>1&&(()=>{
@@ -3528,20 +3554,9 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
         {fasceAutomatiche.map((f,fi)=>(
           <div key={f.key} style={{background:T.s2,borderRadius:10,padding:"10px 12px",marginBottom:8}}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-              <div style={{position:"relative",flexShrink:0}}>
-                <div onClick={()=>setShowFasciaColorPicker(showFasciaColorPicker===f.key?null:f.key)}
-                  style={{width:26,height:26,borderRadius:"50%",background:f.color,
-                    border:`2px solid ${T.border}`,cursor:"pointer"}}/>
-                {showFasciaColorPicker===f.key&&(
-                  <ColorPickerModal T={T} cur={f.color} title={`Colore ${f.label}`}
-                    coloriUsati={[...new Set(modelli.map(m=>m.coloreCustom||(m.tempo==="h24"?COLORE_H24:colByTime(m.inizio))).filter(Boolean))]}
-                    onPick={p=>{ updateFascia(f.key,{color:p}); }}
-                    onClose={()=>setShowFasciaColorPicker(null)}/>
-                )}
-              </div>
-              <input value={f.label} onChange={e=>updateFascia(f.key,{label:e.target.value.toUpperCase()})}
-                style={{flex:1,background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,
-                  padding:"7px 10px",color:T.text,fontSize:13,fontWeight:700,outline:"none"}}/>
+              <div style={{width:26,height:26,borderRadius:"50%",background:f.color,
+                border:`2px solid ${T.border}`,flexShrink:0}}/>
+              <div style={{flex:1,fontSize:13,fontWeight:700,color:T.text}}>{f.label}</div>
             </div>
             <div style={{display:"flex",gap:8,alignItems:"center"}}>
               <div style={{flex:1}}>
@@ -3561,6 +3576,9 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
             </div>
           </div>
         ))}
+        <div style={{fontSize:11,color:T.sub,marginBottom:8}}>
+          Nome e colore delle fasce si modificano da Modelli → Colori.
+        </div>
         <button onClick={()=>{
           setStore(s=>({...s, fasceAutomatiche:FASCE_AUTOMATICHE_DEFAULT}));
           saveSettings({fasce_automatiche:FASCE_AUTOMATICHE_DEFAULT});
