@@ -1568,9 +1568,21 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
       return !prima || prima.sortOrder!==m.sortOrder || prima.posizione!==m.posizione;
     });
     let primoErrore = null;
+    let bloccatoDaPolicy = false;
     for(const m of daSalvare){
-      const { error } = await supabase.from("modelli").update({sort_order:m.sortOrder, posizione:m.posizione||""}).eq("id",m.id).eq("user_id",userId);
+      // .select() dopo l'update: se Supabase risponde error:null ma restituisce
+      // un array VUOTO, significa che l'update ha toccato zero righe pur senza
+      // segnalare un errore esplicito — il sintomo tipico di una riga esclusa
+      // da una policy RLS di UPDATE (o USING/WITH CHECK troppo restrittiva).
+      // In quel caso l'ordine sembra salvato lato client, ma il server non ha
+      // scritto nulla: al refresh torna quello vecchio. Senza questo controllo
+      // il caso passava inosservato perché `error` da solo non lo rileva.
+      const { data, error } = await supabase.from("modelli")
+        .update({sort_order:m.sortOrder, posizione:m.posizione||""})
+        .eq("id",m.id).eq("user_id",userId)
+        .select();
       if(error && !primoErrore) primoErrore = error;
+      else if(!error && (!data || data.length===0)) bloccatoDaPolicy = true;
     }
     if(primoErrore){
       // Il salvataggio su Supabase è fallito: lo stato locale mostra il nuovo
@@ -1578,6 +1590,11 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
       // (sort_order non aggiornato sul server). Avviso subito invece di
       // lasciare che l'utente scopra il problema solo dopo un refresh.
       segnalaErroreDb(primoErrore, "Salvataggio posizione modello");
+    } else if(bloccatoDaPolicy){
+      segnalaErroreDb(
+        {message:"nessuna riga aggiornata sul server (probabile permesso RLS mancante sulla tabella modelli)"},
+        "Salvataggio posizione modello"
+      );
     }
   }
 
