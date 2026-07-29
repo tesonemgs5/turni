@@ -1567,6 +1567,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
       const prima = prevById.get(m.id);
       return !prima || prima.sortOrder!==m.sortOrder || prima.posizione!==m.posizione;
     });
+    console.log("[DEBUG salvaModifichePosizioni] daSalvare.length=", daSalvare.length, daSalvare.map(m=>({id:m.id,titolo:m.titolo,sortOrder:m.sortOrder})));
     let primoErrore = null;
     let bloccatoDaPolicy = false;
     for(const m of daSalvare){
@@ -1611,13 +1612,22 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
   }
 
   async function reorderModelli(srcId, dstId, calIdFiltro){
+    console.log("[DEBUG reorderModelli] chiamata con srcId=", srcId, "dstId=", dstId, "calIdFiltro=", calIdFiltro);
     let prevSnapshot = null, nuovoElenco = null;
     setModelli(prev=>{
       prevSnapshot = prev;
       nuovoElenco = trascinaModelloPuro(prev, srcId, dstId, calIdFiltro);
+      console.log("[DEBUG reorderModelli] prev===nuovoElenco?", prev===nuovoElenco, "prevSnapshot set?", !!prevSnapshot, "nuovoElenco set?", !!nuovoElenco);
       return nuovoElenco;
     });
-    if(prevSnapshot && nuovoElenco) await salvaModifichePosizioni(prevSnapshot, nuovoElenco);
+    console.log("[DEBUG reorderModelli] dopo setModelli, prevSnapshot?", !!prevSnapshot, "nuovoElenco?", !!nuovoElenco);
+    if(prevSnapshot && nuovoElenco){
+      console.log("[DEBUG reorderModelli] chiamo salvaModifichePosizioni...");
+      await salvaModifichePosizioni(prevSnapshot, nuovoElenco);
+      console.log("[DEBUG reorderModelli] salvaModifichePosizioni completata");
+    } else {
+      console.log("[DEBUG reorderModelli] SALTO il salvataggio: prevSnapshot o nuovoElenco sono null/falsy");
+    }
   }
 
 
