@@ -545,7 +545,16 @@ export default function App({ session }){
         const coloriDb = all?.colori || [];
         const rotazioniDb = all?.rotazioni || [];
 
-        const calendars = (cals||[]).map(c=>({
+        // Ordino i calendari secondo sort_order (posizione scelta in Impostazioni con ↑↓),
+        // così l'ordine con cui vengono mostrati gli eventi resta coerente anche dopo un refresh.
+        const calsOrdinati = [...cals].sort((a,b)=>{
+          const sa = a.sort_order, sb = b.sort_order;
+          if(sa==null && sb==null) return 0;
+          if(sa==null) return 1;
+          if(sb==null) return -1;
+          return sa-sb;
+        });
+        const calendars = calsOrdinati.map(c=>({
           id: c.id, name: c.name, color: c.color, isMain: c.is_main, shifts: c.shifts||[],
         }));
         const events = {};
@@ -728,7 +737,10 @@ export default function App({ session }){
   const activeCal = store.calendars.find(c=>c.id===calId)||null;
   const mainCal   = store.calendars.find(c=>c.isMain)||null;
   const mainCalId = mainCal?.id||null; // calendario principale: usato come fallback per i modelli/rotazioni senza calendarId esplicito
-  const accent    = activeCal?.color||"#3b82f6";
+  // Colore dell'interfaccia (pulsanti, badge, evidenziazioni di selezione): FISSO e indipendente
+  // dal colore scelto per i calendari, così i colori dei calendari/modelli (es. giallo) restano
+  // solo lì dove servono a identificarli, senza "colorare" tutti i menu dell'app.
+  const accent    = "#2563eb";
   const accentText = getContrastTextColor(accent);
   const hols      = italianHols(year);
   const fasceAutomatiche = store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT;
@@ -746,12 +758,17 @@ export default function App({ session }){
     if(mainCal && (!soloCal||soloCal.includes(mainCal.id))) getEvts(key,mainCal.id).forEach(e=>res.push({...e,_cid:mainCal.id}));
     store.calendars.filter(c=>!c.isMain && (!soloCal||soloCal.includes(c.id))).forEach(c=>
       getEvts(key,c.id).forEach(e=>res.push({...e,_cid:c.id})));
+    // Ordine calendario: posizione dell'evento nell'elenco calendari configurato in Impostazioni
+    const calOrderIdx = new Map(store.calendars.map((c,i)=>[c.id,i]));
+    // Ordine modello: posizione del modello nella schermata Modelli
+    const modOrderIdx = new Map(modelliOrdinati.map((m,i)=>[m.id,i]));
     return res.sort((a,b)=>{
-      if(a.allDay && b.allDay) return 0;
-      if(a.allDay) return -1; if(b.allDay) return 1;
-      const ta=a.tIn||"", tb=b.tIn||"";
-      if(ta===tb) return 0; if(!ta) return 1; if(!tb) return -1;
-      return ta.localeCompare(tb);
+      const ca = calOrderIdx.has(a._cid) ? calOrderIdx.get(a._cid) : 999;
+      const cb = calOrderIdx.has(b._cid) ? calOrderIdx.get(b._cid) : 999;
+      if(ca!==cb) return ca-cb;
+      const ma = a.modelloId && modOrderIdx.has(a.modelloId) ? modOrderIdx.get(a.modelloId) : 9999;
+      const mb = b.modelloId && modOrderIdx.has(b.modelloId) ? modOrderIdx.get(b.modelloId) : 9999;
+      return ma-mb;
     });
   }
   function dots(key){ return store.calendars.filter(c=>getEvts(key,c.id).length>0); }
@@ -2276,12 +2293,13 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
         touchStartX.current=null; touchStartY.current=null;
       }}
       style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden",position:"relative"}}>
-      <div style={{background:accent,display:"flex",alignItems:"center",
-        gap:5,padding:"6px 8px",overflowX:"auto",scrollbarWidth:"none",flexShrink:0}}>
+      <div style={{background:"#ffffff",display:"flex",alignItems:"center",
+        gap:5,padding:"6px 8px",overflowX:"auto",scrollbarWidth:"none",flexShrink:0,
+        borderBottom:"1px solid #e2e8f0"}}>
         <button onClick={()=>month===0?(setYear(y=>y-1),setMonth(11)):setMonth(m=>m-1)}
-          style={{...NB, color:accentText==="#ffffff"?"rgba(255,255,255,0.8)":"rgba(15,23,42,0.8)"}}>‹</button>
+          style={{...NB, color:"rgba(15,23,42,0.8)"}}>‹</button>
         <select value={month} onChange={e=>setMonth(Number(e.target.value))}
-          style={{...selectStyle, maxWidth:80}}>
+          style={{...selectStyle, maxWidth:80, background:"#f1f5f9", color:"#0f172a", border:"1px solid #e2e8f0"}}>
           {MONTHS.map((mn,i)=>(
             <option key={i} value={i} style={{background:"#1e293b",color:"#fff"}}>
               {mn.toUpperCase()}
@@ -2289,19 +2307,19 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
           ))}
         </select>
         <select value={year} onChange={e=>setYear(Number(e.target.value))}
-          style={{...selectStyle, maxWidth:50}}>
+          style={{...selectStyle, maxWidth:50, background:"#f1f5f9", color:"#0f172a", border:"1px solid #e2e8f0"}}>
           {Array.from({length:21},(_,i)=>2023+i).map(y=>(
             <option key={y} value={y} style={{background:"#1e293b",color:"#fff"}}>{y}</option>
           ))}
         </select>
-        {bgSyncing&&<span style={{color:accentText==="#ffffff"?"rgba(255,255,255,0.7)":"rgba(15,23,42,0.7)",fontSize:11}}>🔄</span>}
+        {bgSyncing&&<span style={{color:"rgba(15,23,42,0.7)",fontSize:11}}>🔄</span>}
         <button onClick={()=>month===11?(setYear(y=>y+1),setMonth(0)):setMonth(m=>m+1)}
-          style={{...NB, color:accentText==="#ffffff"?"rgba(255,255,255,0.8)":"rgba(15,23,42,0.8)"}}>›</button>
+          style={{...NB, color:"rgba(15,23,42,0.8)"}}>›</button>
         <div style={{flex:1}}/>
         <button onClick={()=>setShowModelloPicker("quick")}
           title="Applica un modello a più giorni"
-          style={{background:"rgba(255,255,255,0.15)",border:`1px solid ${accentText==="#ffffff"?"rgba(255,255,255,0.4)":"rgba(15,23,42,0.35)"}`,
-            borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:accentText,flexShrink:0}}>
+          style={{background:"#f1f5f9",border:"1px solid #e2e8f0",
+            borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:"#0f172a",flexShrink:0}}>
           ✏️
         </button>
         
@@ -2319,10 +2337,10 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
             });
           }}
           title={editMode?"Modifica attiva — tocca per tornare alla sola consultazione":"Consultazione multipla — tocca per modificare (gli altri calendari restano visibili)"}
-          style={{background:editMode?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.1)",
-            border:`1.5px solid ${editMode?(accentText==="#ffffff"?"rgba(255,255,255,0.85)":"rgba(15,23,42,0.6)"):"transparent"}`,
+          style={{background:editMode?"#0f172a":"#f1f5f9",
+            border:`1.5px solid ${editMode?"#0f172a":"#e2e8f0"}`,
             borderRadius:20,padding:"2px 10px",cursor:"pointer",flexShrink:0}}>
-          <span style={{color:accentText,fontSize:11,fontWeight:800}}>M</span>
+          <span style={{color:editMode?"#ffffff":"#0f172a",fontSize:11,fontWeight:800}}>M</span>
         </button>
         <button onClick={async()=>{
           setBanner("⏳ Svuotamento cache...");
@@ -2342,8 +2360,8 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
           window.location.href = window.location.href.split('?')[0] + '?v=' + Date.now();
         }}
           title="Svuota cache e ricarica tutto"
-          style={{background:"rgba(255,255,255,0.15)",border:`1px solid ${accentText==="#ffffff"?"rgba(255,255,255,0.4)":"rgba(15,23,42,0.35)"}`,
-            borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:accentText,flexShrink:0}}>
+          style={{background:"#f1f5f9",border:"1px solid #e2e8f0",
+            borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:"#0f172a",flexShrink:0}}>
           🔄
         </button>
 
@@ -2351,16 +2369,16 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
           const next = syncMode==='on'?'off':'on';
           setSyncMode(next);
           localStorage.setItem('syncMode', next);
-        }} style={{background:"rgba(255,255,255,0.15)",border:`1px solid ${accentText==="#ffffff"?"rgba(255,255,255,0.4)":"rgba(15,23,42,0.35)"}`,
-          borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:10,fontWeight:800,color:accentText,flexShrink:0}}>
+        }} style={{background:"#f1f5f9",border:"1px solid #e2e8f0",
+          borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:10,fontWeight:800,color:"#0f172a",flexShrink:0}}>
           {syncMode==='on'?(isOnline?'🟢 SYNC':'🔴 OFFLINE'):'⏸️ SYNC OFF'}
         </button>
       </div>
-      <div style={{background:accent,display:"flex",alignItems:"center",
+      <div style={{background:"#ffffff",display:"flex",alignItems:"center",
         gap:5,padding:"4px 8px",overflowX:"auto",scrollbarWidth:"none",flexShrink:0,
-        borderTop:"1px solid rgba(255,255,255,0.2)"}}>
+        borderBottom:"1px solid #e2e8f0"}}>
         {store.calendars.length===0
-          ? <span style={{color:accentText==="#ffffff"?"rgba(255,255,255,0.6)":"rgba(15,23,42,0.6)",fontSize:10,fontStyle:"italic"}}>→ Impostazioni</span>
+          ? <span style={{color:"rgba(15,23,42,0.6)",fontSize:10,fontStyle:"italic"}}>→ Impostazioni</span>
           : store.calendars.map(c=>{
             const visibile = selectedCalIds.includes(c.id);
             const attivoEdit = editMode && calId===c.id;
@@ -2375,14 +2393,14 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
               }}
               title={editMode?`Tocca per rendere "${c.name}" il calendario attivo per la modifica`:undefined}
               style={{display:"flex",alignItems:"center",gap:3,flexShrink:0,cursor:"pointer",
-                background:visibile?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.1)",
-                border:`1.5px solid ${attivoEdit?(accentText==="#ffffff"?"#ffffff":"#0f172a"):(visibile?(accentText==="#ffffff"?"rgba(255,255,255,0.85)":"rgba(15,23,42,0.6)"):"transparent")}`,
-                boxShadow:attivoEdit?(accentText==="#ffffff"?"0 0 0 2px rgba(255,255,255,0.35)":"0 0 0 2px rgba(15,23,42,0.25)"):"none",
+                background:visibile?"#f1f5f9":"#ffffff",
+                border:`1.5px solid ${attivoEdit?"#0f172a":(visibile?"#94a3b8":"#e2e8f0")}`,
+                boxShadow:attivoEdit?"0 0 0 2px rgba(15,23,42,0.15)":"none",
                 borderRadius:20,padding:"2px 8px 2px 5px"}}>
-              <div style={{width:8,height:8,borderRadius:"50%",background:c.color,border:"1px solid rgba(255,255,255,0.5)"}}/>
-              <span style={{color:accentText,fontSize:12,fontWeight:attivoEdit?900:700}}>{c.name}</span>
-              {attivoEdit&&<span style={{color:accentText,fontSize:9}}>✏️</span>}
-              {c.isMain&&<span style={{color:accentText==="#ffffff"?"rgba(255,255,255,0.6)":"rgba(15,23,42,0.6)",fontSize:8}}>★</span>}
+              <div style={{width:8,height:8,borderRadius:"50%",background:c.color,border:"1px solid rgba(15,23,42,0.15)"}}/>
+              <span style={{color:"#0f172a",fontSize:12,fontWeight:attivoEdit?900:700}}>{c.name}</span>
+              {attivoEdit&&<span style={{color:"#0f172a",fontSize:9}}>✏️</span>}
+              {c.isMain&&<span style={{color:"rgba(15,23,42,0.6)",fontSize:8}}>★</span>}
             </button>
             );})
         }
@@ -2416,15 +2434,18 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
               return (
                 <div key={i} style={{background:red?(dark?"#2d0a0a":"#fff5f5"):T.surface,
                   display:"flex",flexDirection:"column",overflow:"hidden"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:2,padding:"2px 3px 0",flexShrink:0}}>
-                    <span style={{fontSize:10,fontWeight:500,lineHeight:1,color:red?"#ef4444":T.sub}}>{d}</span>
-                    {ds.map(c=><div key={c.id} style={{width:5,height:5,borderRadius:"50%",background:c.color}}/>)}
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:2,padding:"2px 3px 0",flexShrink:0}}>
+                    <span style={{fontSize:20,fontWeight:500,lineHeight:1,color:red?"#ef4444":T.sub}}>{d}</span>
+                    <div style={{display:"flex",alignItems:"center",gap:3,flexShrink:0}}>
+                      {ds.map(c=><div key={c.id} style={{width:5,height:5,borderRadius:"50%",background:c.color}}/>)}
+                      {evts.length>5&&<span style={{fontSize:11,fontWeight:800,color:T.sub}}>+{evts.length-5}</span>}
+                    </div>
                   </div>
                   <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",gap:"1px",padding:"0 1px 1px"}}>
-                    {evts.slice(0,4).map((e,ei)=>(
-                      <div key={e.id+ei} style={{background:e.color,borderRadius:3,padding:"2px 4px",
-                        fontSize:14,fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
-                        whiteSpace:"nowrap",height:16,minHeight:16,display:"flex",alignItems:"center",flexShrink:0,
+                    {evts.slice(0,5).map((e,ei)=>(
+                      <div key={e.id+ei} style={{background:e.color,borderRadius:3,padding:"1px 4px",
+                        fontSize:12,fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
+                        whiteSpace:"nowrap",height:13,minHeight:13,display:"flex",alignItems:"center",flexShrink:0,
                         textShadow:getContrastTextColor(e.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>{e.label}</div>
                     ))}
                   </div>
@@ -2456,28 +2477,31 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
               style={{background:isT?(dark?"#1a2f50":"#dbeafe"):red?(dark?"#2d0a0a":"#fff5f5"):T.surface,
                 cursor:"pointer",display:"flex",flexDirection:"column",overflow:"hidden",
                 borderTop:"none"}}>
-              <div style={{display:"flex",alignItems:"center",gap:2,padding:"2px 3px 0",flexShrink:0}}>
-                <span style={{fontSize:10,fontWeight:isT?900:500,lineHeight:1,
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:2,padding:"2px 3px 0",flexShrink:0}}>
+                <span style={{fontSize:20,fontWeight:isT?900:500,lineHeight:1,
                   color:isT?accent:red?"#ef4444":T.sub}}>{d}</span>
-                {ds.map(c=><div key={c.id} style={{width:5,height:5,borderRadius:"50%",background:c.color}}/>)}
+                <div style={{display:"flex",alignItems:"center",gap:3,flexShrink:0}}>
+                  {ds.map(c=><div key={c.id} style={{width:5,height:5,borderRadius:"50%",background:c.color}}/>)}
+                  {evts.length>5&&<span style={{fontSize:11,fontWeight:800,color:T.sub}}>+{evts.length-5}</span>}
+                </div>
               </div>
               <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",gap:"1px",padding:"0 1px 1px"}}>
-                {evts.slice(0,4).map((e,ei)=>{
+                {evts.slice(0,5).map((e,ei)=>{
                   const nodes = [];
                   if(e.protPagFine) nodes.push({label:"PR PAG",color:"#8b5cf6"});
                   if(e.protRecFine) nodes.push({label:"PR REC",color:"#64748b"});
                   return (
                     <Fragment key={e.id+ei}>
-                      <div style={{background:e.color,borderRadius:3,padding:"2px 4px",
-                        fontSize:14,fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
-                        whiteSpace:"nowrap",height:16,minHeight:16,display:"flex",alignItems:"center",flexShrink:0,
+                      <div style={{background:e.color,borderRadius:3,padding:"1px 4px",
+                        fontSize:12,fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
+                        whiteSpace:"nowrap",height:13,minHeight:13,display:"flex",alignItems:"center",flexShrink:0,
                         textShadow:getContrastTextColor(e.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>
                         {e.label}
                       </div>
                       {nodes.map((n,ni)=>(
-                        <div key={ni} style={{background:n.color,borderRadius:3,padding:"2px 4px",
-                          fontSize:14,fontWeight:800,color:getContrastTextColor(n.color),overflow:"hidden",textOverflow:"ellipsis",
-                          whiteSpace:"nowrap",height:16,minHeight:16,display:"flex",alignItems:"center",flexShrink:0,
+                        <div key={ni} style={{background:n.color,borderRadius:3,padding:"1px 4px",
+                          fontSize:12,fontWeight:800,color:getContrastTextColor(n.color),overflow:"hidden",textOverflow:"ellipsis",
+                          whiteSpace:"nowrap",height:13,minHeight:13,display:"flex",alignItems:"center",flexShrink:0,
                           textShadow:getContrastTextColor(n.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>
                           {n.label}
                         </div>
@@ -2485,7 +2509,6 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                     </Fragment>
                   );
                 })}
-                {evts.length>4&&<div style={{fontSize:8,color:T.sub,padding:"0 2px",flexShrink:0}}>+{evts.length-4}</div>}
               </div>
             </div>
           );
@@ -2550,17 +2573,17 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
           <div style={{background:T.s2,padding:14,borderBottom:`1px solid ${T.border}`}}>
             <div style={{display:"flex",justifyContent:"flex-end",marginBottom:10}}>
               <button onClick={()=>setShowReportModelliPicker(r.id)}
-                style={{display:"flex",alignItems:"center",gap:6,background:T.surface,
+                style={{display:"flex",alignItems:"center",gap:6,background:"#ffffff",
                   border:`1px solid ${T.border}`,borderRadius:20,padding:"6px 12px",
-                  fontSize:12,fontWeight:700,color:T.text,cursor:"pointer"}}>
+                  fontSize:14,fontWeight:700,color:"#0f172a",cursor:"pointer"}}>
                 📋 Filtra modelli
                 {(()=>{
                   const count = r.type==="turnazione"
                     ? [...modelli.filter(m=>isModelloTurnazioneDefault(m)&&!(cfg.modelliEsclusi||[]).includes(m.id)).map(m=>m.id), ...(cfg.modelliAggiunti||[])].length
                     : (cfg.modelliInclusi||[]).length;
                   return count>0&&(
-                    <span style={{background:accent,color:"#fff",borderRadius:10,
-                      padding:"1px 7px",fontSize:11,fontWeight:800}}>{count}</span>
+                    <span style={{background:"#ffffff",color:"#0f172a",border:"1px solid #cbd5e1",borderRadius:10,
+                      padding:"1px 7px",fontSize:13,fontWeight:800}}>{count}</span>
                   );
                 })()}
               </button>
@@ -2600,7 +2623,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
         <div style={{fontSize:22,fontWeight:900,fontFamily:"Georgia,serif"}}>Report</div>
         <button onClick={()=>setShowIntervalPicker(true)}
           style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:20,
-            padding:"5px 14px",fontSize:12,fontWeight:700,color:T.sub,cursor:"pointer"}}>
+            padding:"5px 14px",fontSize:14,fontWeight:700,color:"#0f172a",cursor:"pointer"}}>
           {range.label} ▾
         </button>
       </div>
@@ -2632,7 +2655,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
 
       {activeReports.length>0 && (
         <div style={{margin:"8px 12px"}}>
-          <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:6,paddingLeft:4}}>Report attivi</div>
+          <div style={{fontSize:13,color:"#0f172a",fontWeight:700,marginBottom:6,paddingLeft:4}}>Report attivi</div>
           <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
             {activeReports.map(r=>renderReportCard(r))}
           </div>
@@ -2646,7 +2669,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
               marginBottom:6,paddingLeft:4,cursor:"pointer"}}
               onClick={()=>setOpenReportConfig(isAddOpen?null:'__add__')}>
-              <div style={{fontSize:11,color:T.sub,fontWeight:700}}>Aggiungi report</div>
+              <div style={{fontSize:13,color:"#0f172a",fontWeight:700}}>Aggiungi report</div>
               <span style={{color:T.sub,fontSize:12}}>{isAddOpen?"▲":"▼"}</span>
             </div>
             {isAddOpen&&(
@@ -2694,13 +2717,13 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
             {reportInterval==="custom" && (
               <div style={{display:"flex",gap:10,marginTop:12}}>
                 <div style={{flex:1}}>
-                  <div style={{fontSize:10,color:T.sub,marginBottom:4}}>DA</div>
+                  <div style={{fontSize:12,color:"#0f172a",marginBottom:4}}>DA</div>
                   <input type="date" value={reportDateFrom} onChange={e=>setReportDateFrom(e.target.value)}
                     style={{width:"100%",background:T.s2,border:`1px solid ${T.border}`,
                       borderRadius:8,padding:"8px 10px",color:T.text,fontSize:13,outline:"none",boxSizing:"border-box"}}/>
                 </div>
                 <div style={{flex:1}}>
-                  <div style={{fontSize:10,color:T.sub,marginBottom:4}}>A</div>
+                  <div style={{fontSize:12,color:"#0f172a",marginBottom:4}}>A</div>
                   <input type="date" value={reportDateTo} onChange={e=>setReportDateTo(e.target.value)}
                     style={{width:"100%",background:T.s2,border:`1px solid ${T.border}`,
                       borderRadius:8,padding:"8px 10px",color:T.text,fontSize:13,outline:"none",boxSizing:"border-box"}}/>
@@ -2710,7 +2733,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
             {reportInterval==="custom"&&reportDateFrom&&reportDateTo&&(
               <button onClick={()=>setShowIntervalPicker(false)}
                 style={{width:"100%",marginTop:12,background:accent,border:"none",borderRadius:10,
-                  color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:13}}>
+                  color:getContrastTextColor(accent),padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:13}}>
                 Conferma
               </button>
             )}
@@ -2864,7 +2887,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
             <div style={{padding:12,borderTop:`1px solid ${T.border}`,background:T.surface}}>
               <button onClick={()=>setShowReportModelliPicker(null)}
                 style={{width:"100%",background:accent,border:"none",borderRadius:10,
-                  color:"#fff",padding:"12px 0",cursor:"pointer",fontWeight:800,fontSize:14}}>
+                  color:getContrastTextColor(accent),padding:"12px 0",cursor:"pointer",fontWeight:800,fontSize:14}}>
                 Fatto
               </button>
             </div>
@@ -3103,7 +3126,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                     }); setShowModelForm(true); setSelectedModelloIds([]); }
                   }}
                   style={{background:accent,border:"none",borderRadius:8,
-                    color:"#fff",padding:"7px 14px",cursor:"pointer",fontWeight:800,fontSize:12}}>
+                    color:getContrastTextColor(accent),padding:"7px 14px",cursor:"pointer",fontWeight:800,fontSize:12}}>
                   ✏️ Modifica
                 </button>
               )}
@@ -3201,7 +3224,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                 <div style={{fontSize:11,color:T.sub,fontWeight:700}}>COLORI PERSONALIZZATI</div>
                 <button onClick={()=>setShowAddColorPicker(true)}
                   style={{background:accent,border:"none",borderRadius:8,padding:"4px 12px",
-                    fontSize:16,fontWeight:800,cursor:"pointer",color:"#fff"}}>+</button>
+                    fontSize:16,fontWeight:800,cursor:"pointer",color:getContrastTextColor(accent)}}>+</button>
               </div>
               {coloriManuali.length===0?(
                 <div style={{textAlign:"center",padding:"24px",color:T.sub,fontSize:13}}>
@@ -3298,7 +3321,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
             <div style={{padding:12,borderTop:`1px solid ${T.border}`,background:T.surface}}>
               <button onClick={()=>setShowColorAssignPicker(null)}
                 style={{width:"100%",background:accent,border:"none",borderRadius:10,
-                  color:"#fff",padding:"12px 0",cursor:"pointer",fontWeight:800,fontSize:14}}>
+                  color:getContrastTextColor(accent),padding:"12px 0",cursor:"pointer",fontWeight:800,fontSize:14}}>
                 Fatto
               </button>
             </div>
@@ -3375,7 +3398,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                 updateGrigliaRotazione(rot.id, grigliaFinale);
                 setShowRotDetail(null);
               }}
-                style={{background:accent,border:"none",borderRadius:8,color:"#fff",
+                style={{background:accent,border:"none",borderRadius:8,color:accentText,
                   padding:"6px 14px",fontSize:13,fontWeight:800,cursor:"pointer"}}>Fatto</button>
             </div>
             <div style={{flex:1,minHeight:0,display:"flex",flexDirection:"column"}}>
@@ -3643,7 +3666,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
             borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,outline:"none",marginBottom:8,boxSizing:"border-box"}}/>
         <button onClick={handleSaveSheetsConfig} disabled={syncing}
           style={{width:"100%",background:accent,border:"none",borderRadius:10,
-            color:"#fff",padding:"9px 0",cursor:"pointer",fontWeight:800,fontSize:12,marginBottom:8}}>
+            color:getContrastTextColor(accent),padding:"9px 0",cursor:"pointer",fontWeight:800,fontSize:12,marginBottom:8}}>
           {syncing?"⏳ Salvataggio...":"💾 Salva Configurazione Sheets"}
         </button>
         <div style={{display:"flex",gap:8,marginBottom:8}}>
@@ -3853,7 +3876,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
               <div style={{display:"flex",gap:6}}>
                 <button onClick={()=>setShowModelloPicker(true)}
                   style={{background:accent,border:"none",borderRadius:8,
-                    color:"#fff",fontSize:16,fontWeight:800,padding:"8px 17px",cursor:"pointer"}}>
+                    color:getContrastTextColor(accent),fontSize:16,fontWeight:800,padding:"8px 17px",cursor:"pointer"}}>
                   + Modello
                 </button>
                 <button onClick={()=>setShowRotazionePicker(true)}
@@ -4183,7 +4206,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
               </button>
               <button onClick={form.editId?updateEvt:saveEvt}
                 style={{flex:2,background:accent,border:"none",borderRadius:10,
-                  color:"#fff",padding:"13px 0",cursor:"pointer",fontSize:16,fontWeight:800}}>
+                  color:getContrastTextColor(accent),padding:"13px 0",cursor:"pointer",fontSize:16,fontWeight:800}}>
                 💾 Salva
               </button>
             </div>
@@ -4448,7 +4471,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                   setShowRotDetail(null);
                   setShowRotazionePicker(false);
                 }} style={{background:accent,border:"none",borderRadius:8,
-                  color:"#fff",fontSize:13,fontWeight:800,padding:"6px 14px",cursor:"pointer"}}>
+                  color:getContrastTextColor(accent),fontSize:13,fontWeight:800,padding:"6px 14px",cursor:"pointer"}}>
                   Fatto
                 </button>
               </div>
@@ -4601,7 +4624,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                   setShowModelForm(true);
                   setShowModelloPicker(false);
                 }} style={{width:"100%",background:accent,border:"none",borderRadius:14,
-                  color:"#fff",padding:"14px 0",cursor:"pointer",fontWeight:800,fontSize:15}}>
+                  color:getContrastTextColor(accent),padding:"14px 0",cursor:"pointer",fontWeight:800,fontSize:15}}>
                   + Nuovo modello
                 </button>
               </>
@@ -4732,7 +4755,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                 await applyRotazione(showApplyRotDialog.id, dayKey, inputVal, modPartenza);
               }}
                 style={{flex:2,background:accent,border:"none",borderRadius:10,
-                  color:"#fff",padding:"10px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
+                  color:getContrastTextColor(accent),padding:"10px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
                 Conferma
               </button>
             </div>
@@ -4977,14 +5000,14 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, fas
   return (
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
       <div style={{background:T.surface,borderRadius:10,padding:"10px 12px"}}>
-        <div style={{fontSize:10,color:T.sub,marginBottom:4}}>NOME REPORT</div>
+        <div style={{fontSize:12,color:"#0f172a",marginBottom:4}}>NOME REPORT</div>
         {editingName?(
           <div style={{display:"flex",gap:6}}>
             <input value={tmpName} onChange={e=>setTmpName(e.target.value)}
               style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"6px 10px",color:T.text,fontSize:13,outline:"none"}}/>
             <button onClick={()=>{onRename(tmpName);setEditingName(false);}}
-              style={{background:accent,border:"none",borderRadius:8,color:"#fff",
+              style={{background:accent,border:"none",borderRadius:8,color:getContrastTextColor(accent),
                 padding:"6px 12px",cursor:"pointer",fontWeight:800,fontSize:12}}>✓</button>
           </div>
         ):(
@@ -4999,7 +5022,7 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, fas
       <div style={{background:T.surface,borderRadius:10,padding:"10px 12px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
           <div onClick={()=>setShowTurniList(s=>!s)}
-  style={{fontSize:10,color:T.sub,fontWeight:700,cursor:"pointer",
+  style={{fontSize:12,color:"#0f172a",fontWeight:700,cursor:"pointer",
     display:"flex",alignItems:"center",gap:4}}>
   TOTALE TURNI {showTurniList?"▲":"▼"}
 </div>
@@ -5026,7 +5049,7 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, fas
           onUpdateCfg({...cfg,fasceManuali:next});
         }}
         style={{fontSize:10,fontWeight:800,padding:"4px 8px",borderRadius:6,cursor:"pointer",
-          background:accent,color:"#fff",border:"none"}}>
+          background:accent,color:getContrastTextColor(accent),border:"none"}}>
         Assegna automaticamente
       </button>
     </div>
@@ -5170,14 +5193,14 @@ function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati, accent
   return (
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
       <div style={{background:T.surface,borderRadius:10,padding:"10px 12px"}}>
-        <div style={{fontSize:10,color:T.sub,marginBottom:4}}>NOME REPORT</div>
+        <div style={{fontSize:12,color:"#0f172a",marginBottom:4}}>NOME REPORT</div>
         {editingName?(
           <div style={{display:"flex",gap:6}}>
             <input value={tmpName} onChange={e=>setTmpName(e.target.value)}
               style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"6px 10px",color:T.text,fontSize:13,outline:"none"}}/>
             <button onClick={()=>{onRename(tmpName);setEditingName(false);}}
-              style={{background:accent,border:"none",borderRadius:8,color:"#fff",
+              style={{background:accent,border:"none",borderRadius:8,color:getContrastTextColor(accent),
                 padding:"6px 12px",cursor:"pointer",fontWeight:800,fontSize:12}}>✓</button>
           </div>
         ):(
@@ -5191,7 +5214,7 @@ function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati, accent
 
       <div style={{background:T.surface,borderRadius:10,padding:"10px 12px",
         display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <span style={{fontSize:10,color:T.sub,fontWeight:700}}>TOTALE TURNI</span>
+        <span style={{fontSize:12,color:"#0f172a",fontWeight:700}}>TOTALE TURNI</span>
         <span style={{fontSize:20,fontWeight:900,color:T.text}}>{data.totale}</span>
       </div>
 
@@ -6005,7 +6028,7 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[]
 
       <button onClick={onSave}
         style={{width:"100%",background:accent,border:"none",borderRadius:14,
-          color:"#fff",padding:"14px 0",cursor:"pointer",fontWeight:800,fontSize:15}}>
+          color:getContrastTextColor(accent),padding:"14px 0",cursor:"pointer",fontWeight:800,fontSize:15}}>
         💾 Salva modello
       </button>
     </div>
@@ -6108,7 +6131,7 @@ function RotazioneForm({T, form, setForm, accent, modelli, onSave, sortedModelli
       )}
       <button onClick={onSave}
         style={{width:"100%",background:accent,border:"none",borderRadius:14,
-          color:"#fff",padding:"14px 0",cursor:"pointer",fontWeight:800,fontSize:15}}>
+          color:getContrastTextColor(accent),padding:"14px 0",cursor:"pointer",fontWeight:800,fontSize:15}}>
         💾 Salva rotazione
       </button>
     </div>
@@ -7041,7 +7064,7 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
               )}
               <button onClick={()=>{ onClose(); }}
                 style={{width:"100%",marginTop:16,background:accent,border:"none",borderRadius:10,
-                  color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:700,fontSize:13}}>
+                  color:getContrastTextColor(accent),padding:"11px 0",cursor:"pointer",fontWeight:700,fontSize:13}}>
                 Fatto
               </button>
             </div>
@@ -7077,7 +7100,7 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
                 </button>
                 <button onClick={()=>handleFileConGemini(pendingFile.current)}
                   style={{flex:1,background:accent,border:"none",borderRadius:10,
-                    color:"#fff",padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
+                    color:getContrastTextColor(accent),padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
                   🤖 Sì, usa l'AI
                 </button>
               </div>
