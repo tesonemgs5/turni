@@ -376,6 +376,13 @@ export default function App({ session }){
   const [nhM,     setNhM]     = useState("");
   const [bgSyncing, setBgSyncing] = useState(false);
   const [dbError, setDbError] = useState("");
+  const [isWideScreen, setIsWideScreen] = useState(typeof window!=="undefined"?window.innerWidth>900:false);
+  useEffect(()=>{
+    const onResize=()=>setIsWideScreen(window.innerWidth>900);
+    window.addEventListener("resize", onResize);
+    return ()=>window.removeEventListener("resize", onResize);
+  },[]);
+  const evtFontSize = isWideScreen ? "12px" : "clamp(12px,3.2vw,15px)";
   const dbErrorTimer = useRef(null);
   function segnalaErroreDb(error, contesto){
     console.error(`[${contesto}]`, error);
@@ -2513,7 +2520,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                   <div style={{flex:1,overflow:"hidden",display:"grid",gridTemplateRows:"repeat(5,1fr)",gap:"1px",padding:"0 1px 1px"}}>
                     {evts.slice(0,5).map((e,ei)=>(
                       <div key={e.id+ei} style={{background:e.color,borderRadius:3,padding:"1px 4px",
-                        fontSize:"clamp(12px,3.2vw,15px)",fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
+                        fontSize:evtFontSize,fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
                         whiteSpace:"nowrap",minHeight:0,display:"flex",alignItems:"center",
                         textShadow:getContrastTextColor(e.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>{e.label}</div>
                     ))}
@@ -2564,14 +2571,14 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                   return (
                     <Fragment key={e.id+ei}>
                       <div style={{background:e.color,borderRadius:3,padding:"1px 4px",
-                        fontSize:"clamp(12px,3.2vw,15px)",fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
+                        fontSize:evtFontSize,fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
                         whiteSpace:"nowrap",minHeight:0,display:"flex",alignItems:"center",
                         textShadow:getContrastTextColor(e.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>
                         {e.label}
                       </div>
                       {nodes.map((n,ni)=>(
                         <div key={ni} style={{background:n.color,borderRadius:3,padding:"1px 4px",
-                          fontSize:"clamp(12px,3.2vw,15px)",fontWeight:800,color:getContrastTextColor(n.color),overflow:"hidden",textOverflow:"ellipsis",
+                          fontSize:evtFontSize,fontWeight:800,color:getContrastTextColor(n.color),overflow:"hidden",textOverflow:"ellipsis",
                           whiteSpace:"nowrap",minHeight:0,display:"flex",alignItems:"center",
                           textShadow:getContrastTextColor(n.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>
                           {n.label}
