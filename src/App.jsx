@@ -2562,7 +2562,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                 </div>
               </div>
               <div style={{flex:1,overflow:"hidden",display:"grid",
-                gridTemplateRows:`repeat(${Math.max(5,evts.slice(0,5).reduce((n,e)=>n+1+(e.protPagFine?1:0)+(e.protRecFine?1:0),0))},1fr)`,
+                gridTemplateRows:`repeat(${Math.max(5,evts.slice(0,5).reduce((n,e)=>n+1+(e.protPagFine?1:0)+(e.protRecFine?1:0),0))},minmax(13px,1fr))`,
                 gap:"1px",padding:"0 1px 1px"}}>
                 {evts.slice(0,5).map((e,ei)=>{
                   const nodes = [];
@@ -2570,16 +2570,16 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                   if(e.protRecFine) nodes.push({label:"PR REC",color:"#64748b"});
                   return (
                     <Fragment key={e.id+ei}>
-                      <div style={{background:e.color,borderRadius:3,padding:"1px 4px",
+                      <div style={{background:e.color,borderRadius:3,padding:"0 4px",
                         fontSize:evtFontSize,fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
-                        whiteSpace:"nowrap",minHeight:0,display:"flex",alignItems:"center",
+                        whiteSpace:"nowrap",minHeight:0,display:"flex",alignItems:"center",lineHeight:1,
                         textShadow:getContrastTextColor(e.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>
                         {e.label}
                       </div>
                       {nodes.map((n,ni)=>(
-                        <div key={ni} style={{background:n.color,borderRadius:3,padding:"1px 4px",
+                        <div key={ni} style={{background:n.color,borderRadius:3,padding:"0 4px",
                           fontSize:evtFontSize,fontWeight:800,color:getContrastTextColor(n.color),overflow:"hidden",textOverflow:"ellipsis",
-                          whiteSpace:"nowrap",minHeight:0,display:"flex",alignItems:"center",
+                          whiteSpace:"nowrap",minHeight:0,display:"flex",alignItems:"center",lineHeight:1,
                           textShadow:getContrastTextColor(n.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>
                           {n.label}
                         </div>
