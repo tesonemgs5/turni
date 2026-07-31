@@ -2513,7 +2513,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                   <div style={{flex:1,overflow:"hidden",display:"grid",gridTemplateRows:"repeat(5,1fr)",gap:"1px",padding:"0 1px 1px"}}>
                     {evts.slice(0,5).map((e,ei)=>(
                       <div key={e.id+ei} style={{background:e.color,borderRadius:3,padding:"1px 4px",
-                        fontSize:"clamp(12px,2.8vw,18px)",fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
+                        fontSize:"clamp(12px,3.2vw,18px)",fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
                         whiteSpace:"nowrap",minHeight:0,display:"flex",alignItems:"center",
                         textShadow:getContrastTextColor(e.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>{e.label}</div>
                     ))}
@@ -2564,14 +2564,14 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                   return (
                     <Fragment key={e.id+ei}>
                       <div style={{background:e.color,borderRadius:3,padding:"1px 4px",
-                        fontSize:"clamp(12px,2.8vw,18px)",fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
+                        fontSize:"clamp(12px,3.2vw,18px)",fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
                         whiteSpace:"nowrap",minHeight:0,display:"flex",alignItems:"center",
                         textShadow:getContrastTextColor(e.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>
                         {e.label}
                       </div>
                       {nodes.map((n,ni)=>(
                         <div key={ni} style={{background:n.color,borderRadius:3,padding:"1px 4px",
-                          fontSize:"clamp(12px,2.8vw,18px)",fontWeight:800,color:getContrastTextColor(n.color),overflow:"hidden",textOverflow:"ellipsis",
+                          fontSize:"clamp(12px,3.2vw,18px)",fontWeight:800,color:getContrastTextColor(n.color),overflow:"hidden",textOverflow:"ellipsis",
                           whiteSpace:"nowrap",minHeight:0,display:"flex",alignItems:"center",
                           textShadow:getContrastTextColor(n.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>
                           {n.label}
