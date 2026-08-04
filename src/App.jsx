@@ -6484,7 +6484,7 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
     const match = MAPPING_TURNI.find(m=>t.includes(m.radice));
     if(!match) return null; // nessuna radice riconosciuta -> lasciato vuoto
     const titoloMod = (m)=>(m.titolo||"").toUpperCase();
-    const mod = modelli.find(m=>match.titoli.includes(titoloMod(m)));
+    const mod = modelli.find(m=>match.titoli.some(tit=>titoloMod(m).includes(tit)));
     return mod || null;
   }
 
