@@ -376,6 +376,13 @@ export default function App({ session }){
   const [nhM,     setNhM]     = useState("");
   const [bgSyncing, setBgSyncing] = useState(false);
   const [dbError, setDbError] = useState("");
+  const [isWideScreen, setIsWideScreen] = useState(typeof window!=="undefined"?window.innerWidth>900:false);
+  useEffect(()=>{
+    const onResize=()=>setIsWideScreen(window.innerWidth>900);
+    window.addEventListener("resize", onResize);
+    return ()=>window.removeEventListener("resize", onResize);
+  },[]);
+  const evtFontSize = isWideScreen ? "12px" : "clamp(12px,3.2vw,15px)";
   const dbErrorTimer = useRef(null);
   function segnalaErroreDb(error, contesto){
     console.error(`[${contesto}]`, error);
@@ -383,33 +390,6 @@ export default function App({ session }){
     setDbError(`⚠️ ${contesto}: ${msg}`);
     if(dbErrorTimer.current) clearTimeout(dbErrorTimer.current);
     dbErrorTimer.current = setTimeout(()=>setDbError(""), 6000);
-  }
-  // Normalizza un campo testo in maiuscolo, gestendo null/undefined.
-  // Usata al posto di ripetere ovunque (campo||"").toUpperCase().
-  const up = (v) => (v||"").toUpperCase();
-
-  // Crea un evento su Supabase con i 13 campi standard della tabella
-  // "events" e ne restituisce { data, error }, senza toccare lo stato
-  // locale (quello resta a carico del chiamante, che sa già come
-  // aggiornare la UI nel proprio contesto specifico).
-  // Accorpa in un solo punto i 3 inserimenti quasi identici che
-  // c'erano prima sparsi nel file (salvataggio da form, inserimento
-  // rapido da modello, inserimento generico da rotazione).
-  async function creaEventoSupabase({
-    userId, calId, dateKey, label, color,
-    allDay, tIn="", tOut="", place="", mapUrl="", note="",
-    modelloId=null, rotazioneId=null, collega="", auto="",
-    protPagFine=null, protRecFine=null,
-  }){
-    return await supabase.from("events").insert({
-      user_id: userId, calendar_id: calId, date_key: dateKey,
-      label, color, all_day: allDay,
-      time_in: tIn, time_out: tOut,
-      place: up(place), map_url: mapUrl, note: up(note),
-      modello_id: modelloId, rotazione_id: rotazioneId,
-      collega: up(collega), auto: up(auto),
-      prot_pag_fine: protPagFine, prot_rec_fine: protRecFine,
-    }).select().maybeSingle();
   }
   const [sheetsUrl, setSheetsUrl] = useState("");
   const [sheetsSecret, setSheetsSecret] = useState("");
@@ -433,8 +413,9 @@ export default function App({ session }){
 
   // ── Colori: popup assegnazione modelli + palette colori extra creati dall'utente
   const [showColorAssignPicker, setShowColorAssignPicker] = useState(null); // colore hex attualmente aperto nel popup
+  const [colorAssignCalFiltro, setColorAssignCalFiltro] = useState(null); // calendari selezionati per filtrare la lista modelli nel popup colore (null = tutti)
   const [showAddColorPicker, setShowAddColorPicker] = useState(false); // popup "+" per aggiungere un colore alla sezione
-  const [coloriExtra, setColoriExtra] = useState([]); // colori aggiunti manualmente o generati da modelli
+  const [coloriExtra, setColoriExtra] = useState([]); // colori aggiunti manualmente o generati da modelli: array di {hex, label}
   const [showEditFasciaColor, setShowEditFasciaColor] = useState(null); // key della fascia automatica di cui si sta editando il colore
 
   const [rotazioni, setRotazioni] = useState([]);
@@ -572,7 +553,16 @@ export default function App({ session }){
         const coloriDb = all?.colori || [];
         const rotazioniDb = all?.rotazioni || [];
 
-        const calendars = (cals||[]).map(c=>({
+        // Ordino i calendari secondo sort_order (posizione scelta in Impostazioni con ↑↓),
+        // così l'ordine con cui vengono mostrati gli eventi resta coerente anche dopo un refresh.
+        const calsOrdinati = [...cals].sort((a,b)=>{
+          const sa = a.sort_order, sb = b.sort_order;
+          if(sa==null && sb==null) return 0;
+          if(sa==null) return 1;
+          if(sb==null) return -1;
+          return sa-sb;
+        });
+        const calendars = calsOrdinati.map(c=>({
           id: c.id, name: c.name, color: c.color, isMain: c.is_main, shifts: c.shifts||[],
         }));
         const events = {};
@@ -632,7 +622,7 @@ export default function App({ session }){
         if(!modelliUguali){
           setModelli(modelliMappati);
         }
-        setColoriExtra((coloriDb||[]).map(c=>c.hex));
+        setColoriExtra((coloriDb||[]).map(c=>({hex:c.hex, label:c.label||null})));
         setRotazioni(rotazioniMappate);
         setSheetsUrl(sUrl);
         setSheetsSecret(sSec);
@@ -670,7 +660,7 @@ export default function App({ session }){
             if(nuoviColoriSalvati.length > 0) {
               setColoriExtra(prev => {
                 const aggiornato = [...prev];
-                nuoviColoriSalvati.forEach(hex => { if(!aggiornato.includes(hex)) aggiornato.push(hex); });
+                nuoviColoriSalvati.forEach(hex => { if(!aggiornato.some(c=>c.hex===hex)) aggiornato.push({hex, label:null}); });
                 return aggiornato;
               });
             }
@@ -710,7 +700,7 @@ export default function App({ session }){
               await Promise.all(daCorreggere.map(({id,nuovoVal}) =>
                 supabase.from("modelli").update({sort_order:nuovoVal}).eq("id",id).eq("user_id",userId)
               ));
-              const {data:modelliDb2}=await supabase.from("modelli").select("*").eq("user_id",userId).order("sort_order");
+              const {data:modelliDb2}=await supabase.from("modelli").select("*").eq("user_id",userId).order("sort_order").order("id");
               setModelli((modelliDb2||[]).map(m=>({
                 id:m.id,titolo:m.titolo,label:m.label||"",tempo:m.tempo,
                 inizio:m.inizio||"",fine:m.fine||"",
@@ -755,7 +745,10 @@ export default function App({ session }){
   const activeCal = store.calendars.find(c=>c.id===calId)||null;
   const mainCal   = store.calendars.find(c=>c.isMain)||null;
   const mainCalId = mainCal?.id||null; // calendario principale: usato come fallback per i modelli/rotazioni senza calendarId esplicito
-  const accent    = activeCal?.color||"#3b82f6";
+  // Colore dell'interfaccia (pulsanti, badge, evidenziazioni di selezione): FISSO e indipendente
+  // dal colore scelto per i calendari, così i colori dei calendari/modelli (es. giallo) restano
+  // solo lì dove servono a identificarli, senza "colorare" tutti i menu dell'app.
+  const accent    = "#2563eb";
   const accentText = getContrastTextColor(accent);
   const hols      = italianHols(year);
   const fasceAutomatiche = store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT;
@@ -773,12 +766,17 @@ export default function App({ session }){
     if(mainCal && (!soloCal||soloCal.includes(mainCal.id))) getEvts(key,mainCal.id).forEach(e=>res.push({...e,_cid:mainCal.id}));
     store.calendars.filter(c=>!c.isMain && (!soloCal||soloCal.includes(c.id))).forEach(c=>
       getEvts(key,c.id).forEach(e=>res.push({...e,_cid:c.id})));
+    // Ordine calendario: posizione dell'evento nell'elenco calendari configurato in Impostazioni
+    const calOrderIdx = new Map(store.calendars.map((c,i)=>[c.id,i]));
+    // Ordine modello: posizione del modello nella schermata Modelli
+    const modOrderIdx = new Map(modelliOrdinati.map((m,i)=>[m.id,i]));
     return res.sort((a,b)=>{
-      if(a.allDay && b.allDay) return 0;
-      if(a.allDay) return -1; if(b.allDay) return 1;
-      const ta=a.tIn||"", tb=b.tIn||"";
-      if(ta===tb) return 0; if(!ta) return 1; if(!tb) return -1;
-      return ta.localeCompare(tb);
+      const ca = calOrderIdx.has(a._cid) ? calOrderIdx.get(a._cid) : 999;
+      const cb = calOrderIdx.has(b._cid) ? calOrderIdx.get(b._cid) : 999;
+      if(ca!==cb) return ca-cb;
+      const ma = a.modelloId && modOrderIdx.has(a.modelloId) ? modOrderIdx.get(a.modelloId) : 9999;
+      const mb = b.modelloId && modOrderIdx.has(b.modelloId) ? modOrderIdx.get(b.modelloId) : 9999;
+      return ma-mb;
     });
   }
   function dots(key){ return store.calendars.filter(c=>getEvts(key,c.id).length>0); }
@@ -865,15 +863,20 @@ export default function App({ session }){
       }
     }
 
-    const { data, error } = await creaEventoSupabase({
-      userId, calId, dateKey: dayKey,
-      label, color, allDay: form.dur==="allday"&&!form.modelloId,
-      tIn: tInFinal, tOut: tOutFinal,
-      place: form.place, mapUrl: form.map||"", note: extraNote,
-      modelloId: form.modelloId||null, rotazioneId: form.rotazioneId||null,
-      collega: form.collega, auto: form.auto,
-      protPagFine: form.protPagFine||null, protRecFine: form.protRecFine||null,
-    });
+    const { data, error } = await supabase.from("events").insert({
+      user_id: userId, calendar_id: calId, date_key: dayKey,
+      label, color, all_day: form.dur==="allday"&&!form.modelloId,
+      time_in: tInFinal, time_out: tOutFinal,
+      place: (form.place||"").toUpperCase(),
+      map_url: form.map||"",
+      note: (extraNote||"").toUpperCase(),
+      modello_id: form.modelloId||null,
+      rotazione_id: form.rotazioneId||null,
+      collega: (form.collega||"").toUpperCase(),
+      auto: (form.auto||"").toUpperCase(),
+      prot_pag_fine: form.protPagFine||null,
+      prot_rec_fine: form.protRecFine||null,
+    }).select().maybeSingle();
     if(error){ segnalaErroreDb(error, "Salvataggio turno"); return; }
     const evt = {
       id: data.id, color, label, allDay: data.all_day,
@@ -964,13 +967,11 @@ export default function App({ session }){
       .eq("rotazione_id", rotazioneId).eq("user_id", userId)
       .gte("date_key", fromDateKey).order("date_key",{ascending:true});
     const { data: rows, error } = await query;
-    if(error){ segnalaErroreDb(error, "Eliminazione eventi rotazione da data"); return; }
-    if(!rows) return;
+    if(error || !rows) return;
     const toDelete = limit ? rows.slice(0, limit) : rows;
     const ids = toDelete.map(r=>r.id);
     if(ids.length===0) return;
-    const { error: delErr } = await supabase.from("events").delete().in("id", ids).eq("user_id", userId);
-    if(delErr){ segnalaErroreDb(delErr, "Eliminazione eventi rotazione da data"); return; }
+    await supabase.from("events").delete().in("id", ids).eq("user_id", userId);
     setStore(prev=>{
       const ns=JSON.parse(JSON.stringify(prev));
       const idSet = new Set(ids);
@@ -987,12 +988,10 @@ export default function App({ session }){
   async function delTutteEvtiRotazione(rotazioneId, cId){
     const { data: rows, error } = await supabase.from("events").select("id")
       .eq("rotazione_id", rotazioneId).eq("user_id", userId);
-    if(error){ segnalaErroreDb(error, "Eliminazione eventi rotazione"); return; }
-    if(!rows) return;
+    if(error || !rows) return;
     const ids = rows.map(r=>r.id);
     if(ids.length===0) return;
-    const { error: delErr } = await supabase.from("events").delete().in("id", ids).eq("user_id", userId);
-    if(delErr){ segnalaErroreDb(delErr, "Eliminazione eventi rotazione"); return; }
+    await supabase.from("events").delete().in("id", ids).eq("user_id", userId);
     setStore(prev=>{
       const ns=JSON.parse(JSON.stringify(prev));
       const idSet = new Set(ids);
@@ -1015,12 +1014,10 @@ export default function App({ session }){
     const { data: rows, error } = await supabase.from("events").select("id")
       .eq("user_id", userId).eq("calendar_id", cId)
       .gte("date_key", fromKey).lte("date_key", toKey);
-    if(error){ segnalaErroreDb(error, "Eliminazione eventi del mese"); return; }
-    if(!rows) return;
+    if(error || !rows) return;
     const ids = rows.map(r=>r.id);
     if(ids.length===0) return;
-    const { error: delErr } = await supabase.from("events").delete().in("id", ids).eq("user_id", userId);
-    if(delErr){ segnalaErroreDb(delErr, "Eliminazione eventi del mese"); return; }
+    await supabase.from("events").delete().in("id", ids).eq("user_id", userId);
     setStore(prev=>{
       const ns=JSON.parse(JSON.stringify(prev));
       for(const dKey of Object.keys(ns.events||{})){
@@ -1118,9 +1115,6 @@ export default function App({ session }){
 
       if(rowsToInsert.length > 0) {
         const { data: insertedEvts, error: insertErr } = await supabase.from("events").insert(rowsToInsert).select();
-        if(insertErr){
-          segnalaErroreDb(insertErr, `Importazione turni (${rowsToInsert.length} eventi)`);
-        }
         if(!insertErr && insertedEvts) {
           insertedEvts.forEach(dbEvt => {
             const dK = dbEvt.date_key;
@@ -1196,7 +1190,6 @@ export default function App({ session }){
       (async()=>{
         try {
           const {data,error}=await supabase.rpc('get_app_stats');
-          if(error){ console.error("Errore caricamento statistiche admin:", error); }
           if(!error&&data&&data.length>0) setStats(data[0]);
         } catch(e){ console.error(e); }
       })();
@@ -1515,14 +1508,31 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
     if(idx===-1) return prev;
     const vicinoIdx = dir==="up" ? idx-1 : idx+1;
     if(vicinoIdx<0 || vicinoIdx>=sottoinsieme.length) return prev; // già al limite, nessun movimento
-    const modello = sottoinsieme[idx];
-    const vicino = sottoinsieme[vicinoIdx];
-    const sortModello = modello.sortOrder||0;
-    const sortVicino = vicino.sortOrder||0;
+    // Scambio le POSIZIONI nell'array ordinato (non i valori di sortOrder:
+    // se due o più modelli del sottoinsieme condividessero già lo stesso
+    // sortOrder — es. modelli automatici mai "toccati" prima, o dati
+    // storici da uno schema precedente — uno swap puntuale dei soli due
+    // valori coinvolti può lasciare duplicati residui altrove nella lista.
+    // Con duplicati, l'ordine risulta corretto solo finché resta in
+    // memoria: dopo un refresh, la query dal server (senza ORDER BY
+    // secondario) può restituire le righe pari-valore in un ordine diverso,
+    // facendo "saltare" il modello in una posizione inattesa. Rinumerando
+    // l'intero sottoinsieme con passo fisso ad ogni spostamento, come già
+    // fa trascinaModelloPuro, eliminiamo qui i duplicati alla fonte invece
+    // di limitarci a scambiare due numeri potenzialmente ambigui.
+    const riordinato = [...sottoinsieme];
+    [riordinato[idx], riordinato[vicinoIdx]] = [riordinato[vicinoIdx], riordinato[idx]];
+    const nuoviValori = new Map(riordinato.map((m,i)=>[m.id, i*10]));
+    const idModello = sottoinsieme[idx].id, idVicino = sottoinsieme[vicinoIdx].id;
     return prev.map(m=>{
-      if(m.id===modello.id) return {...m, sortOrder:sortVicino, posizione:FLAG_MANUALE};
-      if(m.id===vicino.id) return {...m, sortOrder:sortModello, posizione:FLAG_MANUALE};
-      return m;
+      if(!nuoviValori.has(m.id)) return m;
+      const nuovoSort = nuoviValori.get(m.id);
+      // Solo i due modelli effettivamente spostati dall'utente diventano
+      // "manuali": gli altri vengono solo rinumerati (stesso ordine
+      // relativo) per restare univoci, senza uscire dalla lista automatica
+      // per orario se non sono mai stati toccati direttamente.
+      const diventaManuale = m.id===idModello || m.id===idVicino;
+      return {...m, sortOrder:nuovoSort, posizione: diventaManuale ? FLAG_MANUALE : m.posizione};
     });
   }
 
@@ -1564,8 +1574,35 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
       const prima = prevById.get(m.id);
       return !prima || prima.sortOrder!==m.sortOrder || prima.posizione!==m.posizione;
     });
+    console.log("[DEBUG salvaModifichePosizioni] daSalvare.length=", daSalvare.length, daSalvare.map(m=>({id:m.id,titolo:m.titolo,sortOrder:m.sortOrder})));
+    let primoErrore = null;
+    let bloccatoDaPolicy = false;
     for(const m of daSalvare){
-      await supabase.from("modelli").update({sort_order:m.sortOrder, posizione:m.posizione||""}).eq("id",m.id).eq("user_id",userId);
+      // .select() dopo l'update: se Supabase risponde error:null ma restituisce
+      // un array VUOTO, significa che l'update ha toccato zero righe pur senza
+      // segnalare un errore esplicito — il sintomo tipico di una riga esclusa
+      // da una policy RLS di UPDATE (o USING/WITH CHECK troppo restrittiva).
+      // In quel caso l'ordine sembra salvato lato client, ma il server non ha
+      // scritto nulla: al refresh torna quello vecchio. Senza questo controllo
+      // il caso passava inosservato perché `error` da solo non lo rileva.
+      const { data, error } = await supabase.from("modelli")
+        .update({sort_order:m.sortOrder, posizione:m.posizione||""})
+        .eq("id",m.id).eq("user_id",userId)
+        .select();
+      if(error && !primoErrore) primoErrore = error;
+      else if(!error && (!data || data.length===0)) bloccatoDaPolicy = true;
+    }
+    if(primoErrore){
+      // Il salvataggio su Supabase è fallito: lo stato locale mostra il nuovo
+      // ordine, ma al prossimo caricamento dati tornerebbe quello vecchio
+      // (sort_order non aggiornato sul server). Avviso subito invece di
+      // lasciare che l'utente scopra il problema solo dopo un refresh.
+      segnalaErroreDb(primoErrore, "Salvataggio posizione modello");
+    } else if(bloccatoDaPolicy){
+      segnalaErroreDb(
+        {message:"nessuna riga aggiornata sul server (probabile permesso RLS mancante sulla tabella modelli)"},
+        "Salvataggio posizione modello"
+      );
     }
   }
 
@@ -1582,13 +1619,22 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
   }
 
   async function reorderModelli(srcId, dstId, calIdFiltro){
+    console.log("[DEBUG reorderModelli] chiamata con srcId=", srcId, "dstId=", dstId, "calIdFiltro=", calIdFiltro);
     let prevSnapshot = null, nuovoElenco = null;
     setModelli(prev=>{
       prevSnapshot = prev;
       nuovoElenco = trascinaModelloPuro(prev, srcId, dstId, calIdFiltro);
+      console.log("[DEBUG reorderModelli] prev===nuovoElenco?", prev===nuovoElenco, "prevSnapshot set?", !!prevSnapshot, "nuovoElenco set?", !!nuovoElenco);
       return nuovoElenco;
     });
-    if(prevSnapshot && nuovoElenco) await salvaModifichePosizioni(prevSnapshot, nuovoElenco);
+    console.log("[DEBUG reorderModelli] dopo setModelli, prevSnapshot?", !!prevSnapshot, "nuovoElenco?", !!nuovoElenco);
+    if(prevSnapshot && nuovoElenco){
+      console.log("[DEBUG reorderModelli] chiamo salvaModifichePosizioni...");
+      await salvaModifichePosizioni(prevSnapshot, nuovoElenco);
+      console.log("[DEBUG reorderModelli] salvaModifichePosizioni completata");
+    } else {
+      console.log("[DEBUG reorderModelli] SALTO il salvataggio: prevSnapshot o nuovoElenco sono null/falsy");
+    }
   }
 
 
@@ -1598,11 +1644,10 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
   // ricaricare l'app, e può essere associato ad altri modelli da lì.
   async function ensureColoreRegistrato(hex){
     if(!userId || !hex) return;
-    if(coloriExtra.includes(hex)) return;
+    if(coloriExtra.some(c=>c.hex===hex)) return;
     try {
       const { data, error } = await supabase.from("colori").insert({ user_id:userId, hex }).select().maybeSingle();
-      if(error){ console.warn("Colore non registrato nel database:", error); }
-      if(!error && data) setColoriExtra(prev=>prev.includes(hex)?prev:[...prev, hex]);
+      if(!error && data) setColoriExtra(prev=>prev.some(c=>c.hex===hex)?prev:[...prev, {hex, label:null}]);
     } catch(e){ console.warn("ensureColoreRegistrato:", e); }
   }
 
@@ -1783,22 +1828,36 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
 
   // ── COLORI: aggiunta/rimozione dalla sezione + assegnazione esclusiva ai modelli
   async function addColoreExtra(hex){
-    if(!userId || coloriExtra.includes(hex)) return;
+    if(!userId || coloriExtra.some(c=>c.hex===hex)) return;
     const { data, error } = await supabase.from("colori").insert({
       user_id: userId, hex,
     }).select().maybeSingle();
     if(error){ segnalaErroreDb(error, "Aggiunta colore"); return; }
-    setColoriExtra(prev=>[...prev, hex]);
+    setColoriExtra(prev=>[...prev, {hex, label:null}]);
   }
 
   async function removeColoreExtra(hex){
     if(!userId) return;
     await supabase.from("colori").delete().eq("user_id", userId).eq("hex", hex);
-    setColoriExtra(prev=>prev.filter(c=>c!==hex));
+    setColoriExtra(prev=>prev.filter(c=>c.hex!==hex));
     const daResettare = modelli.filter(m=>m.coloreCustom===hex);
     for(const m of daResettare){
       await saveModello({...m, coloreCustom:null});
     }
+  }
+
+  // Salva/aggiorna il nome (label) di un colore extra. Prova ad aggiornare la
+  // colonna "label" su Supabase; se la colonna non esiste ancora sullo schema
+  // (serve un ALTER TABLE colori ADD COLUMN label text;), fallisce in modo
+  // silenzioso lato server ma aggiorna comunque lo stato locale, così l'app
+  // resta utilizzabile nel frattempo.
+  async function updateColoreExtraLabel(hex, label){
+    setColoriExtra(prev=>prev.map(c=>c.hex===hex?{...c,label}:c));
+    if(!userId) return;
+    try {
+      const { error } = await supabase.from("colori").update({label}).eq("user_id",userId).eq("hex",hex);
+      if(error) console.warn("updateColoreExtraLabel: colonna 'label' forse assente su Supabase.", error.message);
+    } catch(e){ console.warn("updateColoreExtraLabel:", e); }
   }
 
   // ── FIX: sostituisce l'hex di un colore ovunque sia usato (modelli +
@@ -1815,10 +1874,11 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
     }
     setModelli(prev=>prev.map(m=>m.coloreCustom===oldHex?{...m,coloreCustom:newHex,colore:newHex}:m));
     // Aggiorna il registro colori extra
-    if(coloriExtra.includes(oldHex)){
+    if(coloriExtra.some(c=>c.hex===oldHex)){
+      const vecchiaLabel = coloriExtra.find(c=>c.hex===oldHex)?.label||null;
       await supabase.from("colori").delete().eq("user_id",userId).eq("hex",oldHex);
-      await supabase.from("colori").insert({ user_id:userId, hex:newHex });
-      setColoriExtra(prev=>[...prev.filter(c=>c!==oldHex), newHex]);
+      await supabase.from("colori").insert({ user_id:userId, hex:newHex, label:vecchiaLabel });
+      setColoriExtra(prev=>[...prev.filter(c=>c.hex!==oldHex), {hex:newHex, label:vecchiaLabel}]);
     } else {
       await ensureColoreRegistrato(newHex);
     }
@@ -1870,13 +1930,28 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
     const tIn = (!mod || allDay) ? "" : (mod.inizio || "");
     const tOut = (!mod || allDay) ? "" : (mod.tempo==="6h15" ? calcFine6h15(mod.inizio) : (mod.fine || ""));
 
-    const { data, error } = await creaEventoSupabase({
-      userId, calId, dateKey, label, color, allDay,
-      tIn, tOut, modelloId: mod?.id || null, rotazioneId,
-    });
+    const { data, error } = await supabase.from("events").insert({
+      user_id: userId,
+      calendar_id: calId,
+      date_key: dateKey,
+      label,
+      color,
+      all_day: allDay,
+      time_in: tIn,
+      time_out: tOut,
+      place: "",
+      map_url: "",
+      note: "",
+      modello_id: mod?.id || null,
+      rotazione_id: rotazioneId,
+      collega: "",
+      auto: "",
+      prot_pag_fine: null,
+      prot_rec_fine: null,
+    }).select().maybeSingle();
 
     if(error) {
-      segnalaErroreDb(error, "Inserimento turno da modello");
+      console.error("Errore inserimento evento:", error);
       return;
     }
 
@@ -2235,10 +2310,11 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
     const allDay = mod.tempo==="h24";
     const tIn = allDay?"":(mod.inizio||"");
     const tOut = allDay?"":(mod.tempo==="6h15"?calcFine6h15(mod.inizio):(mod.fine||""));
-    const { data, error } = await creaEventoSupabase({
-      userId, calId, dateKey: key, label, color,
-      allDay, tIn, tOut, modelloId: mod.id,
-    });
+    const { data, error } = await supabase.from("events").insert({
+      user_id:userId, calendar_id:calId, date_key:key, label, color,
+      all_day:allDay, time_in:tIn, time_out:tOut, place:"", map_url:"", note:"",
+      modello_id:mod.id, collega:"", auto:"",
+    }).select().maybeSingle();
     if(error){ segnalaErroreDb(error, "Inserimento rapido turno"); return; }
     const evt = { id:data.id, color, label, allDay, tIn, tOut, place:"", map:"", note:"",
       modelloId:mod.id, collega:"", auto:"" };
@@ -2293,12 +2369,13 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
         touchStartX.current=null; touchStartY.current=null;
       }}
       style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden",position:"relative"}}>
-      <div style={{background:accent,display:"flex",alignItems:"center",
-        gap:5,padding:"6px 8px",overflowX:"auto",scrollbarWidth:"none",flexShrink:0}}>
+      <div style={{background:"#ffffff",display:"flex",alignItems:"center",
+        gap:5,padding:"6px 8px",overflowX:"auto",scrollbarWidth:"none",flexShrink:0,
+        borderBottom:"1px solid #e2e8f0"}}>
         <button onClick={()=>month===0?(setYear(y=>y-1),setMonth(11)):setMonth(m=>m-1)}
-          style={{...NB, color:accentText==="#ffffff"?"rgba(255,255,255,0.8)":"rgba(15,23,42,0.8)"}}>‹</button>
+          style={{...NB, color:"rgba(15,23,42,0.8)"}}>‹</button>
         <select value={month} onChange={e=>setMonth(Number(e.target.value))}
-          style={{...selectStyle, maxWidth:80}}>
+          style={{...selectStyle, maxWidth:80, background:"#f1f5f9", color:"#0f172a", border:"1px solid #e2e8f0"}}>
           {MONTHS.map((mn,i)=>(
             <option key={i} value={i} style={{background:"#1e293b",color:"#fff"}}>
               {mn.toUpperCase()}
@@ -2306,19 +2383,19 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
           ))}
         </select>
         <select value={year} onChange={e=>setYear(Number(e.target.value))}
-          style={{...selectStyle, maxWidth:50}}>
+          style={{...selectStyle, maxWidth:50, background:"#f1f5f9", color:"#0f172a", border:"1px solid #e2e8f0"}}>
           {Array.from({length:21},(_,i)=>2023+i).map(y=>(
             <option key={y} value={y} style={{background:"#1e293b",color:"#fff"}}>{y}</option>
           ))}
         </select>
-        {bgSyncing&&<span style={{color:accentText==="#ffffff"?"rgba(255,255,255,0.7)":"rgba(15,23,42,0.7)",fontSize:11}}>🔄</span>}
+        {bgSyncing&&<span style={{color:"rgba(15,23,42,0.7)",fontSize:11}}>🔄</span>}
         <button onClick={()=>month===11?(setYear(y=>y+1),setMonth(0)):setMonth(m=>m+1)}
-          style={{...NB, color:accentText==="#ffffff"?"rgba(255,255,255,0.8)":"rgba(15,23,42,0.8)"}}>›</button>
+          style={{...NB, color:"rgba(15,23,42,0.8)"}}>›</button>
         <div style={{flex:1}}/>
         <button onClick={()=>setShowModelloPicker("quick")}
           title="Applica un modello a più giorni"
-          style={{background:"rgba(255,255,255,0.15)",border:`1px solid ${accentText==="#ffffff"?"rgba(255,255,255,0.4)":"rgba(15,23,42,0.35)"}`,
-            borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:accentText,flexShrink:0}}>
+          style={{background:"#f1f5f9",border:"1px solid #e2e8f0",
+            borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:"#0f172a",flexShrink:0}}>
           ✏️
         </button>
         
@@ -2336,10 +2413,10 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
             });
           }}
           title={editMode?"Modifica attiva — tocca per tornare alla sola consultazione":"Consultazione multipla — tocca per modificare (gli altri calendari restano visibili)"}
-          style={{background:editMode?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.1)",
-            border:`1.5px solid ${editMode?(accentText==="#ffffff"?"rgba(255,255,255,0.85)":"rgba(15,23,42,0.6)"):"transparent"}`,
+          style={{background:editMode?"#0f172a":"#f1f5f9",
+            border:`1.5px solid ${editMode?"#0f172a":"#e2e8f0"}`,
             borderRadius:20,padding:"2px 10px",cursor:"pointer",flexShrink:0}}>
-          <span style={{color:accentText,fontSize:11,fontWeight:800}}>M</span>
+          <span style={{color:editMode?"#ffffff":"#0f172a",fontSize:11,fontWeight:800}}>M</span>
         </button>
         <button onClick={async()=>{
           setBanner("⏳ Svuotamento cache...");
@@ -2359,8 +2436,8 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
           window.location.href = window.location.href.split('?')[0] + '?v=' + Date.now();
         }}
           title="Svuota cache e ricarica tutto"
-          style={{background:"rgba(255,255,255,0.15)",border:`1px solid ${accentText==="#ffffff"?"rgba(255,255,255,0.4)":"rgba(15,23,42,0.35)"}`,
-            borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:accentText,flexShrink:0}}>
+          style={{background:"#f1f5f9",border:"1px solid #e2e8f0",
+            borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:"#0f172a",flexShrink:0}}>
           🔄
         </button>
 
@@ -2368,16 +2445,16 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
           const next = syncMode==='on'?'off':'on';
           setSyncMode(next);
           localStorage.setItem('syncMode', next);
-        }} style={{background:"rgba(255,255,255,0.15)",border:`1px solid ${accentText==="#ffffff"?"rgba(255,255,255,0.4)":"rgba(15,23,42,0.35)"}`,
-          borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:10,fontWeight:800,color:accentText,flexShrink:0}}>
+        }} style={{background:"#f1f5f9",border:"1px solid #e2e8f0",
+          borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:10,fontWeight:800,color:"#0f172a",flexShrink:0}}>
           {syncMode==='on'?(isOnline?'🟢 SYNC':'🔴 OFFLINE'):'⏸️ SYNC OFF'}
         </button>
       </div>
-      <div style={{background:accent,display:"flex",alignItems:"center",
+      <div style={{background:"#ffffff",display:"flex",alignItems:"center",
         gap:5,padding:"4px 8px",overflowX:"auto",scrollbarWidth:"none",flexShrink:0,
-        borderTop:"1px solid rgba(255,255,255,0.2)"}}>
+        borderBottom:"1px solid #e2e8f0"}}>
         {store.calendars.length===0
-          ? <span style={{color:accentText==="#ffffff"?"rgba(255,255,255,0.6)":"rgba(15,23,42,0.6)",fontSize:10,fontStyle:"italic"}}>→ Impostazioni</span>
+          ? <span style={{color:"rgba(15,23,42,0.6)",fontSize:10,fontStyle:"italic"}}>→ Impostazioni</span>
           : store.calendars.map(c=>{
             const visibile = selectedCalIds.includes(c.id);
             const attivoEdit = editMode && calId===c.id;
@@ -2392,23 +2469,23 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
               }}
               title={editMode?`Tocca per rendere "${c.name}" il calendario attivo per la modifica`:undefined}
               style={{display:"flex",alignItems:"center",gap:3,flexShrink:0,cursor:"pointer",
-                background:visibile?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.1)",
-                border:`1.5px solid ${attivoEdit?(accentText==="#ffffff"?"#ffffff":"#0f172a"):(visibile?(accentText==="#ffffff"?"rgba(255,255,255,0.85)":"rgba(15,23,42,0.6)"):"transparent")}`,
-                boxShadow:attivoEdit?(accentText==="#ffffff"?"0 0 0 2px rgba(255,255,255,0.35)":"0 0 0 2px rgba(15,23,42,0.25)"):"none",
+                background:visibile?"#f1f5f9":"#ffffff",
+                border:`1.5px solid ${attivoEdit?"#0f172a":(visibile?"#94a3b8":"#e2e8f0")}`,
+                boxShadow:attivoEdit?"0 0 0 2px rgba(15,23,42,0.15)":"none",
                 borderRadius:20,padding:"2px 8px 2px 5px"}}>
-              <div style={{width:8,height:8,borderRadius:"50%",background:c.color,border:"1px solid rgba(255,255,255,0.5)"}}/>
-              <span style={{color:accentText,fontSize:12,fontWeight:attivoEdit?900:700}}>{c.name}</span>
-              {attivoEdit&&<span style={{color:accentText,fontSize:9}}>✏️</span>}
-              {c.isMain&&<span style={{color:accentText==="#ffffff"?"rgba(255,255,255,0.6)":"rgba(15,23,42,0.6)",fontSize:8}}>★</span>}
+              <div style={{width:8,height:8,borderRadius:"50%",background:c.color,border:"1px solid rgba(15,23,42,0.15)"}}/>
+              <span style={{color:"#0f172a",fontSize:12,fontWeight:attivoEdit?900:700}}>{c.name}</span>
+              {attivoEdit&&<span style={{color:"#0f172a",fontSize:9}}>✏️</span>}
+              {c.isMain&&<span style={{color:"rgba(15,23,42,0.6)",fontSize:8}}>★</span>}
             </button>
             );})
         }
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",
-        background:T.s2,borderBottom:`1px solid ${T.border}`,flexShrink:0}}>
+        background:editMode?T.s2:"#ffffff",borderBottom:`1px solid ${editMode?T.border:"#000000"}`,flexShrink:0}}>
         {DAYS.map((d,i)=>(
           <div key={i} style={{textAlign:"center",fontSize:9,fontWeight:800,
-            padding:"3px 0",color:i===6?"#ef4444":T.sub}}>{d}</div>
+            padding:"3px 0",color:i===6?"#ef4444":(editMode?T.sub:"#0f172a")}}>{d}</div>
         ))}
       </div>
       <div style={{position:"relative",flex:1,overflow:"hidden",minHeight:0}}>
@@ -2432,15 +2509,17 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
               return (
                 <div key={i} style={{background:red?(dark?"#2d0a0a":"#fff5f5"):T.surface,
                   display:"flex",flexDirection:"column",overflow:"hidden"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:2,padding:"2px 3px 0",flexShrink:0}}>
-                    <span style={{fontSize:10,fontWeight:500,lineHeight:1,color:red?"#ef4444":T.sub}}>{d}</span>
-                    {ds.map(c=><div key={c.id} style={{width:5,height:5,borderRadius:"50%",background:c.color}}/>)}
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:2,padding:"2px 3px 0",flexShrink:0}}>
+                    <span style={{fontSize:20,fontWeight:500,lineHeight:1,color:red?"#ef4444":T.sub}}>{d}</span>
+                    <div style={{display:"flex",alignItems:"center",gap:3,flexShrink:0}}>
+                      {evts.length>5&&<span style={{fontSize:11,fontWeight:800,color:T.sub}}>+{evts.length-5}</span>}
+                    </div>
                   </div>
-                  <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",gap:"1px",padding:"0 1px 1px"}}>
-                    {evts.slice(0,4).map((e,ei)=>(
-                      <div key={e.id+ei} style={{background:e.color,borderRadius:3,padding:"2px 4px",
-                        fontSize:14,fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
-                        whiteSpace:"nowrap",height:16,minHeight:16,display:"flex",alignItems:"center",flexShrink:0,
+                  <div style={{flex:1,overflow:"hidden",display:"grid",gridTemplateRows:"repeat(5,1fr)",gap:"1px",padding:"0 1px 1px"}}>
+                    {evts.slice(0,5).map((e,ei)=>(
+                      <div key={e.id+ei} style={{background:e.color,borderRadius:3,padding:"1px 4px",
+                        fontSize:evtFontSize,fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
+                        whiteSpace:"nowrap",minHeight:0,display:"flex",alignItems:"center",
                         textShadow:getContrastTextColor(e.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>{e.label}</div>
                     ))}
                   </div>
@@ -2472,28 +2551,32 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
               style={{background:isT?(dark?"#1a2f50":"#dbeafe"):red?(dark?"#2d0a0a":"#fff5f5"):T.surface,
                 cursor:"pointer",display:"flex",flexDirection:"column",overflow:"hidden",
                 borderTop:"none"}}>
-              <div style={{display:"flex",alignItems:"center",gap:2,padding:"2px 3px 0",flexShrink:0}}>
-                <span style={{fontSize:10,fontWeight:isT?900:500,lineHeight:1,
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:2,padding:"2px 3px 0",flexShrink:0}}>
+                <span style={{fontSize:20,fontWeight:isT?900:500,lineHeight:1,
                   color:isT?accent:red?"#ef4444":T.sub}}>{d}</span>
-                {ds.map(c=><div key={c.id} style={{width:5,height:5,borderRadius:"50%",background:c.color}}/>)}
+                <div style={{display:"flex",alignItems:"center",gap:3,flexShrink:0}}>
+                  {evts.length>5&&<span style={{fontSize:11,fontWeight:800,color:T.sub}}>+{evts.length-5}</span>}
+                </div>
               </div>
-              <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",gap:"1px",padding:"0 1px 1px"}}>
-                {evts.slice(0,4).map((e,ei)=>{
+              <div style={{flex:1,overflow:"hidden",display:"grid",
+                gridTemplateRows:`repeat(${Math.max(5,evts.slice(0,5).reduce((n,e)=>n+1+(e.protPagFine?1:0)+(e.protRecFine?1:0),0))},minmax(13px,1fr))`,
+                gap:"1px",padding:"0 1px 1px"}}>
+                {evts.slice(0,5).map((e,ei)=>{
                   const nodes = [];
                   if(e.protPagFine) nodes.push({label:"PR PAG",color:"#8b5cf6"});
                   if(e.protRecFine) nodes.push({label:"PR REC",color:"#64748b"});
                   return (
                     <Fragment key={e.id+ei}>
-                      <div style={{background:e.color,borderRadius:3,padding:"2px 4px",
-                        fontSize:14,fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
-                        whiteSpace:"nowrap",height:16,minHeight:16,display:"flex",alignItems:"center",flexShrink:0,
+                      <div style={{background:e.color,borderRadius:3,padding:"0 4px",
+                        fontSize:evtFontSize,fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
+                        whiteSpace:"nowrap",minHeight:0,display:"flex",alignItems:"center",lineHeight:1,
                         textShadow:getContrastTextColor(e.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>
                         {e.label}
                       </div>
                       {nodes.map((n,ni)=>(
-                        <div key={ni} style={{background:n.color,borderRadius:3,padding:"2px 4px",
-                          fontSize:14,fontWeight:800,color:getContrastTextColor(n.color),overflow:"hidden",textOverflow:"ellipsis",
-                          whiteSpace:"nowrap",height:16,minHeight:16,display:"flex",alignItems:"center",flexShrink:0,
+                        <div key={ni} style={{background:n.color,borderRadius:3,padding:"0 4px",
+                          fontSize:evtFontSize,fontWeight:800,color:getContrastTextColor(n.color),overflow:"hidden",textOverflow:"ellipsis",
+                          whiteSpace:"nowrap",minHeight:0,display:"flex",alignItems:"center",lineHeight:1,
                           textShadow:getContrastTextColor(n.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>
                           {n.label}
                         </div>
@@ -2501,7 +2584,6 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                     </Fragment>
                   );
                 })}
-                {evts.length>4&&<div style={{fontSize:8,color:T.sub,padding:"0 2px",flexShrink:0}}>+{evts.length-4}</div>}
               </div>
             </div>
           );
@@ -2566,17 +2648,17 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
           <div style={{background:T.s2,padding:14,borderBottom:`1px solid ${T.border}`}}>
             <div style={{display:"flex",justifyContent:"flex-end",marginBottom:10}}>
               <button onClick={()=>setShowReportModelliPicker(r.id)}
-                style={{display:"flex",alignItems:"center",gap:6,background:T.surface,
+                style={{display:"flex",alignItems:"center",gap:6,background:"#ffffff",
                   border:`1px solid ${T.border}`,borderRadius:20,padding:"6px 12px",
-                  fontSize:12,fontWeight:700,color:T.text,cursor:"pointer"}}>
+                  fontSize:14,fontWeight:700,color:"#0f172a",cursor:"pointer"}}>
                 📋 Filtra modelli
                 {(()=>{
                   const count = r.type==="turnazione"
                     ? [...modelli.filter(m=>isModelloTurnazioneDefault(m)&&!(cfg.modelliEsclusi||[]).includes(m.id)).map(m=>m.id), ...(cfg.modelliAggiunti||[])].length
                     : (cfg.modelliInclusi||[]).length;
                   return count>0&&(
-                    <span style={{background:accent,color:"#fff",borderRadius:10,
-                      padding:"1px 7px",fontSize:11,fontWeight:800}}>{count}</span>
+                    <span style={{background:"#ffffff",color:"#0f172a",border:"1px solid #cbd5e1",borderRadius:10,
+                      padding:"1px 7px",fontSize:13,fontWeight:800}}>{count}</span>
                   );
                 })()}
               </button>
@@ -2616,7 +2698,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
         <div style={{fontSize:22,fontWeight:900,fontFamily:"Georgia,serif"}}>Report</div>
         <button onClick={()=>setShowIntervalPicker(true)}
           style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:20,
-            padding:"5px 14px",fontSize:12,fontWeight:700,color:T.sub,cursor:"pointer"}}>
+            padding:"5px 14px",fontSize:14,fontWeight:700,color:"#0f172a",cursor:"pointer"}}>
           {range.label} ▾
         </button>
       </div>
@@ -2648,7 +2730,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
 
       {activeReports.length>0 && (
         <div style={{margin:"8px 12px"}}>
-          <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:6,paddingLeft:4}}>Report attivi</div>
+          <div style={{fontSize:13,color:"#0f172a",fontWeight:700,marginBottom:6,paddingLeft:4}}>Report attivi</div>
           <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
             {activeReports.map(r=>renderReportCard(r))}
           </div>
@@ -2662,7 +2744,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
               marginBottom:6,paddingLeft:4,cursor:"pointer"}}
               onClick={()=>setOpenReportConfig(isAddOpen?null:'__add__')}>
-              <div style={{fontSize:11,color:T.sub,fontWeight:700}}>Aggiungi report</div>
+              <div style={{fontSize:13,color:"#0f172a",fontWeight:700}}>Aggiungi report</div>
               <span style={{color:T.sub,fontSize:12}}>{isAddOpen?"▲":"▼"}</span>
             </div>
             {isAddOpen&&(
@@ -2710,13 +2792,13 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
             {reportInterval==="custom" && (
               <div style={{display:"flex",gap:10,marginTop:12}}>
                 <div style={{flex:1}}>
-                  <div style={{fontSize:10,color:T.sub,marginBottom:4}}>DA</div>
+                  <div style={{fontSize:12,color:"#0f172a",marginBottom:4}}>DA</div>
                   <input type="date" value={reportDateFrom} onChange={e=>setReportDateFrom(e.target.value)}
                     style={{width:"100%",background:T.s2,border:`1px solid ${T.border}`,
                       borderRadius:8,padding:"8px 10px",color:T.text,fontSize:13,outline:"none",boxSizing:"border-box"}}/>
                 </div>
                 <div style={{flex:1}}>
-                  <div style={{fontSize:10,color:T.sub,marginBottom:4}}>A</div>
+                  <div style={{fontSize:12,color:"#0f172a",marginBottom:4}}>A</div>
                   <input type="date" value={reportDateTo} onChange={e=>setReportDateTo(e.target.value)}
                     style={{width:"100%",background:T.s2,border:`1px solid ${T.border}`,
                       borderRadius:8,padding:"8px 10px",color:T.text,fontSize:13,outline:"none",boxSizing:"border-box"}}/>
@@ -2726,7 +2808,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
             {reportInterval==="custom"&&reportDateFrom&&reportDateTo&&(
               <button onClick={()=>setShowIntervalPicker(false)}
                 style={{width:"100%",marginTop:12,background:accent,border:"none",borderRadius:10,
-                  color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:13}}>
+                  color:getContrastTextColor(accent),padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:13}}>
                 Conferma
               </button>
             )}
@@ -2743,6 +2825,29 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
         const inclusi = isTurnazione
           ? [...modelli.filter(m=>isModelloTurnazioneDefault(m)&&!esclusi.includes(m.id)).map(m=>m.id), ...aggiunti]
           : (cfg.modelliInclusi||[]);
+        // Calendari da mostrare nel picker: quelli già selezionati per il report,
+        // più eventuali calendari extra scelti manualmente qui (cfg.calendariExtra)
+        const calendariExtra = cfg.calendariExtra||[];
+        const calendariBase = reportCalIds.length>0 ? reportCalIds : store.calendars.map(c=>c.id);
+        const calendariAttivi = [...new Set([...calendariBase, ...calendariExtra])];
+        function toggleCalendarioExtra(cid){
+          const inBase = calendariBase.includes(cid);
+          if(inBase){
+            // è già incluso dal filtro report principale: non si può togliere da qui
+            return;
+          }
+          const next = calendariExtra.includes(cid)
+            ? calendariExtra.filter(id=>id!==cid)
+            : [...calendariExtra, cid];
+          updateConteggioConfig(reportId, {...cfg, calendariExtra: next});
+        }
+        const gruppiPerCalendario = store.calendars
+          .filter(c=>calendariAttivi.includes(c.id))
+          .map(c=>({
+            cal: c,
+            modelli: modelliOrdinati.filter(m=>(m.calendarId||mainCalId)===c.id),
+          }))
+          .filter(g=>g.modelli.length>0);
         function toggleModello(m){
           if(!isTurnazione){
             const selezionato = (cfg.modelliInclusi||[]).includes(m.id);
@@ -2773,55 +2878,91 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
             <div style={{padding:"10px 16px",fontSize:12,color:T.sub,background:T.s2}}>
               Nessuna selezione = tutti i modelli inclusi nel calcolo di questo report.
             </div>
+            {store.calendars.length>1&&(
+              <div style={{padding:"10px 16px",background:T.bg,borderBottom:`1px solid ${T.border}`}}>
+                <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>
+                  CALENDARI INCLUSI (aggiungine altri oltre a quelli già selezionati nel Report)
+                </div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                  {store.calendars.map(c=>{
+                    const inBase = calendariBase.includes(c.id);
+                    const attivo = calendariAttivi.includes(c.id);
+                    return (
+                      <button key={c.id} onClick={()=>toggleCalendarioExtra(c.id)}
+                        title={inBase?"Già incluso dal filtro calendari del Report":"Tocca per includere/escludere solo in questo filtro"}
+                        style={{display:"flex",alignItems:"center",gap:5,cursor:inBase?"default":"pointer",
+                          background:attivo?"#eab308":T.s2,
+                          border:`1.5px solid ${attivo?"#eab308":T.border}`,
+                          borderRadius:20,padding:"4px 10px 4px 6px",opacity:inBase?0.85:1}}>
+                        <div style={{width:8,height:8,borderRadius:"50%",background:c.color}}/>
+                        <span style={{color:attivo?"#0f172a":T.text,fontSize:12,fontWeight:700}}>{c.name}</span>
+                        {inBase&&<span style={{color:"#0f172a",fontSize:9}}>★</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <div style={{flex:1,overflowY:"auto",padding:12,background:T.bg}}>
               {modelli.length===0?(
                 <div style={{textAlign:"center",padding:"40px 24px",color:T.sub}}>Nessun modello creato ancora.</div>
               ):(
-                <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+                <div style={{display:"flex",flexDirection:"column",gap:14}}>
                   {!isTurnazione&&(
-                    <div onClick={()=>updateConteggioConfig(reportId, {...cfg, modelliInclusi:[]})}
-                      style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer",
-                        borderBottom:`1px solid ${T.border}`}}>
-                      <div style={{width:20,height:20,borderRadius:6,marginRight:12,flexShrink:0,
-                        border:`2px solid ${inclusi.length===0?accent:T.border}`,
-                        background:inclusi.length===0?accent:"transparent",
-                        display:"flex",alignItems:"center",justifyContent:"center"}}>
-                        {inclusi.length===0&&<span style={{color:"#fff",fontSize:13,fontWeight:900}}>✓</span>}
+                    <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+                      <div onClick={()=>updateConteggioConfig(reportId, {...cfg, modelliInclusi:[]})}
+                        style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}>
+                        <div style={{width:20,height:20,borderRadius:6,marginRight:12,flexShrink:0,
+                          border:`2px solid ${inclusi.length===0?accent:T.border}`,
+                          background:inclusi.length===0?accent:"transparent",
+                          display:"flex",alignItems:"center",justifyContent:"center"}}>
+                          {inclusi.length===0&&<span style={{color:"#fff",fontSize:13,fontWeight:900}}>✓</span>}
+                        </div>
+                        <span style={{fontSize:15,fontWeight:700,color:T.text}}>Tutti i modelli</span>
                       </div>
-                      <span style={{fontSize:15,fontWeight:700,color:T.text}}>Tutti i modelli</span>
                     </div>
                   )}
-                  {modelliOrdinati.map((m,i,arr)=>{
-                    const selezionato = inclusi.includes(m.id);
-                    const colore = m.coloreCustom||colByTime(m.inizio);
-                    return (
-                      <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
-                        <div onClick={()=>toggleModello(m)}
-                          style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}>
-                          <div style={{width:20,height:20,borderRadius:6,marginRight:12,flexShrink:0,
-                            border:`2px solid ${selezionato?colore:T.border}`,
-                            background:selezionato?colore:"transparent",
-                            display:"flex",alignItems:"center",justifyContent:"center"}}>
-                            {selezionato&&<span style={{color:"#fff",fontSize:13,fontWeight:900}}>✓</span>}
-                          </div>
-                          <div style={{width:10,height:10,borderRadius:"50%",background:colore,marginRight:10,flexShrink:0}}/>
-                          <div style={{flex:1,minWidth:0}}>
-                            <div style={{fontSize:15,fontWeight:700,color:T.text}}>{m.titolo||"Senza nome"}</div>
-                            <div style={{fontSize:11,color:T.sub}}>
-                              {m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${m.fine?` - ${m.fine}`:""}`:""}
-                            </div>
-                          </div>
-                        </div>
+                  {gruppiPerCalendario.map(({cal, modelli:modelliCal})=>(
+                    <div key={cal.id}>
+                      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6,paddingLeft:2}}>
+                        <div style={{width:8,height:8,borderRadius:"50%",background:cal.color}}/>
+                        <span style={{fontSize:12,fontWeight:800,color:T.sub,textTransform:"uppercase"}}>{cal.name}</span>
                       </div>
-                    );
-                  })}
+                      <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+                        {modelliCal.map((m,i,arr)=>{
+                          const selezionato = inclusi.includes(m.id);
+                          const colore = m.coloreCustom||colByTime(m.inizio);
+                          return (
+                            <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
+                              <div onClick={()=>toggleModello(m)}
+                                style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}>
+                                <div style={{width:20,height:20,borderRadius:6,marginRight:12,flexShrink:0,
+                                  border:`2px solid ${selezionato?colore:T.border}`,
+                                  background:selezionato?colore:"transparent",
+                                  display:"flex",alignItems:"center",justifyContent:"center"}}>
+                                  {selezionato&&<span style={{color:"#fff",fontSize:13,fontWeight:900}}>✓</span>}
+                                </div>
+                                <div style={{width:10,height:10,borderRadius:"50%",background:colore,marginRight:10,flexShrink:0}}/>
+                                <div style={{flex:1,minWidth:0}}>
+                                  <div style={{fontSize:15,fontWeight:700,color:T.text}}>{m.titolo||"Senza nome"}</div>
+                                  <div style={{fontSize:11,color:T.sub}}>
+                                    {m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${m.fine?` - ${m.fine}`:""}`:""}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
             <div style={{padding:12,borderTop:`1px solid ${T.border}`,background:T.surface}}>
               <button onClick={()=>setShowReportModelliPicker(null)}
                 style={{width:"100%",background:accent,border:"none",borderRadius:10,
-                  color:"#fff",padding:"12px 0",cursor:"pointer",fontWeight:800,fontSize:14}}>
+                  color:getContrastTextColor(accent),padding:"12px 0",cursor:"pointer",fontWeight:800,fontSize:14}}>
                 Fatto
               </button>
             </div>
@@ -3060,7 +3201,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                     }); setShowModelForm(true); setSelectedModelloIds([]); }
                   }}
                   style={{background:accent,border:"none",borderRadius:8,
-                    color:"#fff",padding:"7px 14px",cursor:"pointer",fontWeight:800,fontSize:12}}>
+                    color:getContrastTextColor(accent),padding:"7px 14px",cursor:"pointer",fontWeight:800,fontSize:12}}>
                   ✏️ Modifica
                 </button>
               )}
@@ -3120,10 +3261,14 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
         )}
         {modelliTab==="colori"&&(()=>{
           const fasceColorSet = new Set([...fasceAutomatiche.map(f=>f.color), COLORE_H24]);
+          const coloriExtraFiltrati = coloriExtra.filter(c=>!fasceColorSet.has(c.hex));
           const coloriUsatiDaModelli = [...new Set(modelli.map(m=>m.coloreCustom).filter(Boolean))]
             .filter(h=>!fasceColorSet.has(h));
-          const coloriManuali = [...new Set([...coloriExtra, ...coloriUsatiDaModelli])]
-            .filter(h=>!fasceColorSet.has(h));
+          const hexUsatiDaExtra = new Set(coloriExtraFiltrati.map(c=>c.hex));
+          const coloriManualiOggetti = [
+            ...coloriExtraFiltrati,
+            ...coloriUsatiDaModelli.filter(h=>!hexUsatiDaExtra.has(h)).map(h=>({hex:h,label:null})),
+          ];
           function contaModelli(hex){ return modelli.filter(m=>m.coloreCustom===hex).length; }
           function contaModelliFascia(fascia){
             return modelli.filter(m=>{
@@ -3133,48 +3278,39 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
             }).length;
           }
           const contaH24 = modelli.filter(m=>m.coloreCustom ? m.coloreCustom===COLORE_H24 : m.tempo==="h24").length;
+          // Un'unica lista con tutti i colori (fasce automatiche + H24 + personalizzati),
+          // nessuna sezione separata: tocca un colore per rinominarlo/gestirlo.
+          const righeTutteFasce = fasceAutomatiche.map(f=>({
+            key:f.key, hex:f.color, label:f.label, sub:"Automatico per orario",
+            count:contaModelliFascia(f), isFascia:true, fasciaKey:f.key,
+          }));
+          const rigaH24 = { key:"__h24", hex:COLORE_H24, label:"H24", sub:"Standard turni H24",
+            count:contaH24, isFascia:true, fasciaKey:null };
+          const righeExtra = coloriManualiOggetti.map(c=>({
+            key:c.hex, hex:c.hex, label:c.label||c.hex.toUpperCase(), sub:"Personalizzato",
+            count:contaModelli(c.hex), isFascia:false,
+          }));
+          const righeTutte = [...righeTutteFasce, rigaH24, ...righeExtra];
           return (
             <div style={{paddingBottom:80}}>
-              <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>
-                COLORI AUTOMATICI (per fascia oraria)
-              </div>
-              <div style={{fontSize:11,color:T.sub,marginBottom:8,paddingLeft:4}}>
-                Modifica orari e colori delle fasce da Impostazioni. Tocca un colore per riassegnarlo ai modelli.
-              </div>
-              <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:16}}>
-                {fasceAutomatiche.map((f,i,arr)=>(
-                  <div key={f.key} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
-                    <ColorRow T={T} hex={f.color} label={f.label} sub="Automatico per orario"
-                      count={contaModelliFascia(f)} onClick={()=>setShowColorAssignPicker(f.color)}/>
-                  </div>
-                ))}
-                <div style={{borderTop:`1px solid ${T.border}`}}>
-                  <ColorRow T={T} hex={COLORE_H24} label="H24" sub="Standard turni H24"
-                    count={contaH24} onClick={()=>setShowColorAssignPicker(COLORE_H24)}/>
-                </div>
-              </div>
-
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,paddingLeft:4}}>
-                <div style={{fontSize:11,color:T.sub,fontWeight:700}}>COLORI PERSONALIZZATI</div>
+                <div style={{fontSize:11,color:T.sub,fontWeight:700}}>COLORI</div>
                 <button onClick={()=>setShowAddColorPicker(true)}
                   style={{background:accent,border:"none",borderRadius:8,padding:"4px 12px",
-                    fontSize:16,fontWeight:800,cursor:"pointer",color:"#fff"}}>+</button>
+                    fontSize:16,fontWeight:800,cursor:"pointer",color:getContrastTextColor(accent)}}>+</button>
               </div>
-              {coloriManuali.length===0?(
-                <div style={{textAlign:"center",padding:"24px",color:T.sub,fontSize:13}}>
-                  Nessun colore personalizzato. Premi + oppure crea un modello con colore custom.
-                </div>
-              ):(
-                <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
-                  {coloriManuali.map((hex,i,arr)=>(
-                    <div key={hex} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
-                      <ColorRow T={T} hex={hex} label={hex.toUpperCase()} sub="Personalizzato"
-                        count={contaModelli(hex)} onClick={()=>setShowColorAssignPicker(hex)}
-                        onRemove={contaModelli(hex)===0?()=>removeColoreExtra(hex):null}/>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <div style={{fontSize:11,color:T.sub,marginBottom:8,paddingLeft:4}}>
+                Tocca un colore per rinominarlo o per riassegnarlo ai modelli.
+              </div>
+              <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+                {righeTutte.map((r,i,arr)=>(
+                  <div key={r.key} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
+                    <ColorRow T={T} hex={r.hex} label={r.label} sub={r.sub}
+                      count={r.count} onClick={()=>setShowColorAssignPicker(r.hex)}
+                      onRemove={(!r.isFascia && r.count===0)?()=>removeColoreExtra(r.hex):null}/>
+                  </div>
+                ))}
+              </div>
             </div>
           );
         })()}
@@ -3188,74 +3324,143 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
 
       {showColorAssignPicker&&(()=>{
         const hex = showColorAssignPicker;
-        const isFascia = fasceAutomatiche.some(f=>f.color===hex) || hex===COLORE_H24;
+        const fasciaCorrente = fasceAutomatiche.find(f=>f.color===hex);
+        const isH24 = hex===COLORE_H24;
+        const isFascia = !!fasciaCorrente || isH24;
+        const coloreExtraCorrente = coloriExtra.find(c=>c.hex===hex);
+        const nomeAttuale = fasciaCorrente ? fasciaCorrente.label : isH24 ? "H24" : (coloreExtraCorrente?.label || "");
         return (
           <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:600,
             display:"flex",flexDirection:"column"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
               padding:"16px 16px 8px",background:T.surface,borderBottom:`1px solid ${T.border}`}}>
-              <button onClick={()=>setShowColorAssignPicker(null)}
+              <button onClick={()=>{setShowColorAssignPicker(null);setColorAssignCalFiltro(null);}}
                 style={{background:"none",border:"none",color:T.sub,fontSize:22,cursor:"pointer"}}>‹</button>
-              <div style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}
-                onClick={()=>setShowEditFasciaColor(hex)}
-                title="Tocca per cambiare questo colore con la palette">
-                <div style={{width:18,height:18,borderRadius:"50%",background:hex,border:`1px solid ${T.border}`}}/>
-                <div style={{fontSize:16,fontWeight:900,color:T.text}}>{hex.toUpperCase()}</div>
-                <span style={{fontSize:12,color:accent}}>🎨</span>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <div style={{width:18,height:18,borderRadius:"50%",background:hex,border:`1px solid ${T.border}`,flexShrink:0}}/>
+                <div style={{fontSize:11,color:T.sub}}>{hex.toUpperCase()}</div>
               </div>
               <div style={{width:32}}/>
             </div>
-            {isFascia&&(
-              <div style={{padding:"10px 16px",fontSize:12,color:T.sub,background:T.s2}}>
-                Colore automatico. Assegnando qui un modello, quel modello userà sempre questo
-                colore. Tocca l'hex in alto per cambiare il colore stesso con la palette condivisa
-                (si aggiorna ovunque sia usato).
+            {isH24?(
+              <div style={{padding:"10px 16px",fontSize:16,fontWeight:900,color:T.text,background:T.surface,borderBottom:`1px solid ${T.border}`}}>
+                H24
+              </div>
+            ):(
+              <div style={{padding:"10px 16px",background:T.surface,borderBottom:`1px solid ${T.border}`}}>
+                <input value={nomeAttuale}
+                  onChange={e=>{
+                    const v = e.target.value.toUpperCase();
+                    if(fasciaCorrente) updateFascia(fasciaCorrente.key, {label:v});
+                    else updateColoreExtraLabel(hex, v);
+                  }}
+                  placeholder="Nome di questo colore"
+                  style={{width:"100%",background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
+                    padding:"9px 12px",color:T.text,fontSize:16,fontWeight:900,outline:"none",boxSizing:"border-box"}}/>
               </div>
             )}
+            {isFascia&&(
+              <div style={{padding:"10px 16px",fontSize:12,color:T.sub,background:T.s2}}>
+                Colore automatico. Assegnando qui un modello, quel modello userà sempre questo colore.
+                {fasciaCorrente&&" L'orario della fascia si modifica da Impostazioni."}
+              </div>
+            )}
+            {store.calendars.length>1&&(()=>{
+              const calSelezionati = colorAssignCalFiltro===null ? store.calendars.map(c=>c.id) : colorAssignCalFiltro;
+              function toggleCal(cid){
+                setColorAssignCalFiltro(prev=>{
+                  const base = prev===null ? store.calendars.map(c=>c.id) : prev;
+                  const next = base.includes(cid) ? base.filter(id=>id!==cid) : [...base, cid];
+                  return next;
+                });
+              }
+              return (
+                <div style={{padding:"10px 16px",background:T.bg,borderBottom:`1px solid ${T.border}`}}>
+                  <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>
+                    CALENDARI DA MOSTRARE
+                  </div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                    {store.calendars.map(c=>{
+                      const attivo = calSelezionati.includes(c.id);
+                      return (
+                        <button key={c.id} onClick={()=>toggleCal(c.id)}
+                          style={{display:"flex",alignItems:"center",gap:5,cursor:"pointer",
+                            background:attivo?"#eab308":T.s2,
+                            border:`1.5px solid ${attivo?"#eab308":T.border}`,
+                            borderRadius:20,padding:"4px 10px 4px 6px"}}>
+                          <div style={{width:8,height:8,borderRadius:"50%",background:c.color}}/>
+                          <span style={{color:attivo?"#0f172a":T.text,fontSize:12,fontWeight:700}}>{c.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
             <div style={{flex:1,overflowY:"auto",padding:12,background:T.bg}}>
               {modelli.length===0?(
                 <div style={{textAlign:"center",padding:"40px 24px",color:T.sub}}>
                   Nessun modello creato ancora.
                 </div>
-              ):(
-                <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
-                  {modelliOrdinati.map((m,i,arr)=>{
-                    const matchAuto = !m.coloreCustom && (
-                      (m.tempo==="h24" && hex===COLORE_H24) ||
-                      (m.tempo!=="h24" && m.inizio && colByTime(m.inizio)===hex)
-                    );
-                    const selezionato = m.coloreCustom===hex || matchAuto;
-                    const coloreAttuale = m.coloreCustom||colByTime(m.inizio);
-                    return (
-                      <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
-                        <div onClick={()=>{
-                          saveModello({...m, coloreCustom: selezionato ? null : hex});
-                        }} style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}>
-                          <div style={{width:20,height:20,borderRadius:6,marginRight:12,flexShrink:0,
-                            border:`2px solid ${selezionato?hex:T.border}`,
-                            background:selezionato?hex:"transparent",
-                            display:"flex",alignItems:"center",justifyContent:"center"}}>
-                            {selezionato&&<span style={{color:"#fff",fontSize:13,fontWeight:900}}>✓</span>}
-                          </div>
-                          <div style={{width:10,height:10,borderRadius:"50%",background:coloreAttuale,marginRight:10,flexShrink:0}}/>
-                          <div style={{flex:1,minWidth:0}}>
-                            <div style={{fontSize:15,fontWeight:700,color:T.text}}>{m.titolo||"Senza nome"}</div>
-                            <div style={{fontSize:11,color:T.sub}}>
-                              {m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${m.fine?` - ${m.fine}`:""}`:""}
-                              {m.coloreCustom&&!selezionato?" · colore personalizzato diverso":""}
-                            </div>
-                          </div>
+              ):(()=>{
+                const calSelezionati = colorAssignCalFiltro===null ? store.calendars.map(c=>c.id) : colorAssignCalFiltro;
+                const gruppiColorePerCalendario = store.calendars
+                  .filter(c=>calSelezionati.includes(c.id))
+                  .map(c=>({
+                    cal: c,
+                    modelli: modelliOrdinati.filter(m=>(m.calendarId||mainCalId)===c.id),
+                  }))
+                  .filter(g=>g.modelli.length>0);
+                return (
+                  <div style={{display:"flex",flexDirection:"column",gap:14}}>
+                    {gruppiColorePerCalendario.map(({cal, modelli:modelliCal})=>(
+                      <div key={cal.id}>
+                        <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6,paddingLeft:2}}>
+                          <div style={{width:8,height:8,borderRadius:"50%",background:cal.color}}/>
+                          <span style={{fontSize:12,fontWeight:800,color:T.sub,textTransform:"uppercase"}}>{cal.name}</span>
+                        </div>
+                        <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+                          {modelliCal.map((m,i,arr)=>{
+                            const matchAuto = !m.coloreCustom && (
+                              (m.tempo==="h24" && hex===COLORE_H24) ||
+                              (m.tempo!=="h24" && m.inizio && colByTime(m.inizio)===hex)
+                            );
+                            const selezionato = m.coloreCustom===hex || matchAuto;
+                            const coloreAttuale = m.coloreCustom||colByTime(m.inizio);
+                            return (
+                              <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
+                                <div onClick={()=>{
+                                  saveModello({...m, coloreCustom: selezionato ? null : hex});
+                                }} style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}>
+                                  <div style={{width:20,height:20,borderRadius:6,marginRight:12,flexShrink:0,
+                                    border:`2px solid ${selezionato?hex:T.border}`,
+                                    background:selezionato?hex:"transparent",
+                                    display:"flex",alignItems:"center",justifyContent:"center"}}>
+                                    {selezionato&&<span style={{color:"#fff",fontSize:13,fontWeight:900}}>✓</span>}
+                                  </div>
+                                  <div style={{width:10,height:10,borderRadius:"50%",background:coloreAttuale,marginRight:10,flexShrink:0}}/>
+                                  <div style={{flex:1,minWidth:0}}>
+                                    <div style={{fontSize:15,fontWeight:700,color:T.text}}>{m.titolo||"Senza nome"}</div>
+                                    <div style={{fontSize:11,color:T.sub}}>
+                                      {m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${m.fine?` - ${m.fine}`:""}`:""}
+                                      {m.coloreCustom&&!selezionato?" · colore personalizzato diverso":""}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
             <div style={{padding:12,borderTop:`1px solid ${T.border}`,background:T.surface}}>
-              <button onClick={()=>setShowColorAssignPicker(null)}
+              <button onClick={()=>{setShowColorAssignPicker(null);setColorAssignCalFiltro(null);}}
                 style={{width:"100%",background:accent,border:"none",borderRadius:10,
-                  color:"#fff",padding:"12px 0",cursor:"pointer",fontWeight:800,fontSize:14}}>
+                  color:getContrastTextColor(accent),padding:"12px 0",cursor:"pointer",fontWeight:800,fontSize:14}}>
                 Fatto
               </button>
             </div>
@@ -3332,7 +3537,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                 updateGrigliaRotazione(rot.id, grigliaFinale);
                 setShowRotDetail(null);
               }}
-                style={{background:accent,border:"none",borderRadius:8,color:"#fff",
+                style={{background:accent,border:"none",borderRadius:8,color:accentText,
                   padding:"6px 14px",fontSize:13,fontWeight:800,cursor:"pointer"}}>Fatto</button>
             </div>
             <div style={{flex:1,minHeight:0,display:"flex",flexDirection:"column"}}>
@@ -3407,20 +3612,9 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
         {fasceAutomatiche.map((f,fi)=>(
           <div key={f.key} style={{background:T.s2,borderRadius:10,padding:"10px 12px",marginBottom:8}}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-              <div style={{position:"relative",flexShrink:0}}>
-                <div onClick={()=>setShowFasciaColorPicker(showFasciaColorPicker===f.key?null:f.key)}
-                  style={{width:26,height:26,borderRadius:"50%",background:f.color,
-                    border:`2px solid ${T.border}`,cursor:"pointer"}}/>
-                {showFasciaColorPicker===f.key&&(
-                  <ColorPickerModal T={T} cur={f.color} title={`Colore ${f.label}`}
-                    coloriUsati={[...new Set(modelli.map(m=>m.coloreCustom||(m.tempo==="h24"?COLORE_H24:colByTime(m.inizio))).filter(Boolean))]}
-                    onPick={p=>{ updateFascia(f.key,{color:p}); }}
-                    onClose={()=>setShowFasciaColorPicker(null)}/>
-                )}
-              </div>
-              <input value={f.label} onChange={e=>updateFascia(f.key,{label:e.target.value.toUpperCase()})}
-                style={{flex:1,background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,
-                  padding:"7px 10px",color:T.text,fontSize:13,fontWeight:700,outline:"none"}}/>
+              <div style={{width:26,height:26,borderRadius:"50%",background:f.color,
+                border:`2px solid ${T.border}`,flexShrink:0}}/>
+              <div style={{flex:1,fontSize:13,fontWeight:700,color:T.text}}>{f.label}</div>
             </div>
             <div style={{display:"flex",gap:8,alignItems:"center"}}>
               <div style={{flex:1}}>
@@ -3440,6 +3634,9 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
             </div>
           </div>
         ))}
+        <div style={{fontSize:11,color:T.sub,marginBottom:8}}>
+          Nome e colore delle fasce si modificano da Modelli → Colori.
+        </div>
         <button onClick={()=>{
           setStore(s=>({...s, fasceAutomatiche:FASCE_AUTOMATICHE_DEFAULT}));
           saveSettings({fasce_automatiche:FASCE_AUTOMATICHE_DEFAULT});
@@ -3600,7 +3797,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
             borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,outline:"none",marginBottom:8,boxSizing:"border-box"}}/>
         <button onClick={handleSaveSheetsConfig} disabled={syncing}
           style={{width:"100%",background:accent,border:"none",borderRadius:10,
-            color:"#fff",padding:"9px 0",cursor:"pointer",fontWeight:800,fontSize:12,marginBottom:8}}>
+            color:getContrastTextColor(accent),padding:"9px 0",cursor:"pointer",fontWeight:800,fontSize:12,marginBottom:8}}>
           {syncing?"⏳ Salvataggio...":"💾 Salva Configurazione Sheets"}
         </button>
         <div style={{display:"flex",gap:8,marginBottom:8}}>
@@ -3810,7 +4007,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
               <div style={{display:"flex",gap:6}}>
                 <button onClick={()=>setShowModelloPicker(true)}
                   style={{background:accent,border:"none",borderRadius:8,
-                    color:"#fff",fontSize:16,fontWeight:800,padding:"8px 17px",cursor:"pointer"}}>
+                    color:getContrastTextColor(accent),fontSize:16,fontWeight:800,padding:"8px 17px",cursor:"pointer"}}>
                   + Modello
                 </button>
                 <button onClick={()=>setShowRotazionePicker(true)}
@@ -4140,7 +4337,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
               </button>
               <button onClick={form.editId?updateEvt:saveEvt}
                 style={{flex:2,background:accent,border:"none",borderRadius:10,
-                  color:"#fff",padding:"13px 0",cursor:"pointer",fontSize:16,fontWeight:800}}>
+                  color:getContrastTextColor(accent),padding:"13px 0",cursor:"pointer",fontSize:16,fontWeight:800}}>
                 💾 Salva
               </button>
             </div>
@@ -4405,7 +4602,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                   setShowRotDetail(null);
                   setShowRotazionePicker(false);
                 }} style={{background:accent,border:"none",borderRadius:8,
-                  color:"#fff",fontSize:13,fontWeight:800,padding:"6px 14px",cursor:"pointer"}}>
+                  color:getContrastTextColor(accent),fontSize:13,fontWeight:800,padding:"6px 14px",cursor:"pointer"}}>
                   Fatto
                 </button>
               </div>
@@ -4558,7 +4755,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                   setShowModelForm(true);
                   setShowModelloPicker(false);
                 }} style={{width:"100%",background:accent,border:"none",borderRadius:14,
-                  color:"#fff",padding:"14px 0",cursor:"pointer",fontWeight:800,fontSize:15}}>
+                  color:getContrastTextColor(accent),padding:"14px 0",cursor:"pointer",fontWeight:800,fontSize:15}}>
                   + Nuovo modello
                 </button>
               </>
@@ -4689,7 +4886,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
                 await applyRotazione(showApplyRotDialog.id, dayKey, inputVal, modPartenza);
               }}
                 style={{flex:2,background:accent,border:"none",borderRadius:10,
-                  color:"#fff",padding:"10px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
+                  color:getContrastTextColor(accent),padding:"10px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
                 Conferma
               </button>
             </div>
@@ -4887,13 +5084,13 @@ function FasceExpand({data, pct1, pct2, T, modelli, accent, cfg}){
             style={{display:"flex",justifyContent:"space-between",alignItems:"center",
               padding:"8px 10px",background:f.color+"22",borderRadius:openFascia===f.key?"8px 8px 0 0":8,
               border:`1px solid ${f.color}44`,cursor:"pointer"}}>
-            <span style={{fontSize:13,fontWeight:800,color:f.color}}>
+            <span style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>
               {f.label} {openFascia===f.key?"▲":"▼"}
             </span>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <span style={{fontSize:12,fontWeight:700,color:f.color,background:f.color+"22",
+              <span style={{fontSize:12,fontWeight:700,color:"#0f172a",background:f.color+"33",
                 borderRadius:6,padding:"2px 7px"}}>{f.pct}%</span>
-              <span style={{fontSize:16,fontWeight:900,color:T.text}}>{f.count}</span>
+              <span style={{fontSize:16,fontWeight:900,color:"#0f172a"}}>{f.count}</span>
             </div>
           </div>
           {openFascia===f.key&&(
@@ -4934,14 +5131,14 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, fas
   return (
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
       <div style={{background:T.surface,borderRadius:10,padding:"10px 12px"}}>
-        <div style={{fontSize:10,color:T.sub,marginBottom:4}}>NOME REPORT</div>
+        <div style={{fontSize:12,color:"#0f172a",marginBottom:4}}>NOME REPORT</div>
         {editingName?(
           <div style={{display:"flex",gap:6}}>
             <input value={tmpName} onChange={e=>setTmpName(e.target.value)}
               style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"6px 10px",color:T.text,fontSize:13,outline:"none"}}/>
             <button onClick={()=>{onRename(tmpName);setEditingName(false);}}
-              style={{background:accent,border:"none",borderRadius:8,color:"#fff",
+              style={{background:accent,border:"none",borderRadius:8,color:getContrastTextColor(accent),
                 padding:"6px 12px",cursor:"pointer",fontWeight:800,fontSize:12}}>✓</button>
           </div>
         ):(
@@ -4956,7 +5153,7 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, fas
       <div style={{background:T.surface,borderRadius:10,padding:"10px 12px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
           <div onClick={()=>setShowTurniList(s=>!s)}
-  style={{fontSize:10,color:T.sub,fontWeight:700,cursor:"pointer",
+  style={{fontSize:12,color:"#0f172a",fontWeight:700,cursor:"pointer",
     display:"flex",alignItems:"center",gap:4}}>
   TOTALE TURNI {showTurniList?"▲":"▼"}
 </div>
@@ -4983,7 +5180,7 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, fas
           onUpdateCfg({...cfg,fasceManuali:next});
         }}
         style={{fontSize:10,fontWeight:800,padding:"4px 8px",borderRadius:6,cursor:"pointer",
-          background:accent,color:"#fff",border:"none"}}>
+          background:accent,color:getContrastTextColor(accent),border:"none"}}>
         Assegna automaticamente
       </button>
     </div>
@@ -5050,8 +5247,8 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, fas
           ].map(g=>(
             <div key={g.key} style={{display:"flex",justifyContent:"space-between",alignItems:"center",
               padding:"8px 10px",background:g.color+"22",borderRadius:8,border:`1px solid ${g.color}44`}}>
-              <span style={{fontSize:13,fontWeight:800,color:g.color}}>{g.label}</span>
-              <span style={{fontSize:16,fontWeight:900,color:T.text}}>{g.count}</span>
+              <span style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>{g.label}</span>
+              <span style={{fontSize:16,fontWeight:900,color:"#0f172a"}}>{g.count}</span>
             </div>
           ))}
         </div>
@@ -5127,14 +5324,14 @@ function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati, accent
   return (
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
       <div style={{background:T.surface,borderRadius:10,padding:"10px 12px"}}>
-        <div style={{fontSize:10,color:T.sub,marginBottom:4}}>NOME REPORT</div>
+        <div style={{fontSize:12,color:"#0f172a",marginBottom:4}}>NOME REPORT</div>
         {editingName?(
           <div style={{display:"flex",gap:6}}>
             <input value={tmpName} onChange={e=>setTmpName(e.target.value)}
               style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"6px 10px",color:T.text,fontSize:13,outline:"none"}}/>
             <button onClick={()=>{onRename(tmpName);setEditingName(false);}}
-              style={{background:accent,border:"none",borderRadius:8,color:"#fff",
+              style={{background:accent,border:"none",borderRadius:8,color:getContrastTextColor(accent),
                 padding:"6px 12px",cursor:"pointer",fontWeight:800,fontSize:12}}>✓</button>
           </div>
         ):(
@@ -5148,7 +5345,7 @@ function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati, accent
 
       <div style={{background:T.surface,borderRadius:10,padding:"10px 12px",
         display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <span style={{fontSize:10,color:T.sub,fontWeight:700}}>TOTALE TURNI</span>
+        <span style={{fontSize:12,color:"#0f172a",fontWeight:700}}>TOTALE TURNI</span>
         <span style={{fontSize:20,fontWeight:900,color:T.text}}>{data.totale}</span>
       </div>
 
@@ -5161,11 +5358,11 @@ function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati, accent
               style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",
                 padding:"8px 10px",background:f.color+"22",borderRadius:isOpen?"8px 8px 0 0":8,
                 border:`1px solid ${f.color}44`}}>
-              <span style={{fontSize:13,fontWeight:800,color:f.color}}>{f.label} {isOpen?"▲":"▼"}</span>
+              <span style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>{f.label} {isOpen?"▲":"▼"}</span>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <span style={{fontSize:12,fontWeight:700,color:f.color,background:f.color+"22",
+                <span style={{fontSize:12,fontWeight:700,color:"#0f172a",background:f.color+"33",
                   borderRadius:6,padding:"2px 7px"}}>{f.pct}%</span>
-                <span style={{fontSize:16,fontWeight:900,color:T.text}}>{f.count}</span>
+                <span style={{fontSize:16,fontWeight:900,color:"#0f172a"}}>{f.count}</span>
               </div>
             </div>
             {isOpen&&(
@@ -5962,7 +6159,7 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[]
 
       <button onClick={onSave}
         style={{width:"100%",background:accent,border:"none",borderRadius:14,
-          color:"#fff",padding:"14px 0",cursor:"pointer",fontWeight:800,fontSize:15}}>
+          color:getContrastTextColor(accent),padding:"14px 0",cursor:"pointer",fontWeight:800,fontSize:15}}>
         💾 Salva modello
       </button>
     </div>
@@ -6065,7 +6262,7 @@ function RotazioneForm({T, form, setForm, accent, modelli, onSave, sortedModelli
       )}
       <button onClick={onSave}
         style={{width:"100%",background:accent,border:"none",borderRadius:14,
-          color:"#fff",padding:"14px 0",cursor:"pointer",fontWeight:800,fontSize:15}}>
+          color:getContrastTextColor(accent),padding:"14px 0",cursor:"pointer",fontWeight:800,fontSize:15}}>
         💾 Salva rotazione
       </button>
     </div>
@@ -6287,7 +6484,7 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
     const match = MAPPING_TURNI.find(m=>t.includes(m.radice));
     if(!match) return null; // nessuna radice riconosciuta -> lasciato vuoto
     const titoloMod = (m)=>(m.titolo||"").toUpperCase();
-    const mod = modelli.find(m=>match.titoli.includes(titoloMod(m)));
+    const mod = modelli.find(m=>match.titoli.some(tit=>titoloMod(m).includes(tit)));
     return mod || null;
   }
 
@@ -6998,7 +7195,7 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
               )}
               <button onClick={()=>{ onClose(); }}
                 style={{width:"100%",marginTop:16,background:accent,border:"none",borderRadius:10,
-                  color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:700,fontSize:13}}>
+                  color:getContrastTextColor(accent),padding:"11px 0",cursor:"pointer",fontWeight:700,fontSize:13}}>
                 Fatto
               </button>
             </div>
@@ -7034,7 +7231,7 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
                 </button>
                 <button onClick={()=>handleFileConGemini(pendingFile.current)}
                   style={{flex:1,background:accent,border:"none",borderRadius:10,
-                    color:"#fff",padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
+                    color:getContrastTextColor(accent),padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
                   🤖 Sì, usa l'AI
                 </button>
               </div>
@@ -7307,4 +7504,3 @@ function NLRSView({rot, T, accent, modelli}){
   );
 }
 // #endregion
-
