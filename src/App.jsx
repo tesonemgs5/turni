@@ -391,6 +391,33 @@ export default function App({ session }){
     if(dbErrorTimer.current) clearTimeout(dbErrorTimer.current);
     dbErrorTimer.current = setTimeout(()=>setDbError(""), 6000);
   }
+  // Normalizza un campo testo in maiuscolo, gestendo null/undefined.
+  // Usata al posto di ripetere ovunque (campo||"").toUpperCase().
+  const up = (v) => (v||"").toUpperCase();
+
+  // Crea un evento su Supabase con i 13 campi standard della tabella
+  // "events" e ne restituisce { data, error }, senza toccare lo stato
+  // locale (quello resta a carico del chiamante, che sa già come
+  // aggiornare la UI nel proprio contesto specifico).
+  // Accorpa in un solo punto i 3 inserimenti quasi identici che
+  // c'erano prima sparsi nel file (salvataggio da form, inserimento
+  // rapido da modello, inserimento generico da rotazione).
+  async function creaEventoSupabase({
+    userId, calId, dateKey, label, color,
+    allDay, tIn="", tOut="", place="", mapUrl="", note="",
+    modelloId=null, rotazioneId=null, collega="", auto="",
+    protPagFine=null, protRecFine=null,
+  }){
+    return await supabase.from("events").insert({
+      user_id: userId, calendar_id: calId, date_key: dateKey,
+      label, color, all_day: allDay,
+      time_in: tIn, time_out: tOut,
+      place: up(place), map_url: mapUrl, note: up(note),
+      modello_id: modelloId, rotazione_id: rotazioneId,
+      collega: up(collega), auto: up(auto),
+      prot_pag_fine: protPagFine, prot_rec_fine: protRecFine,
+    }).select().maybeSingle();
+  }
   const [sheetsUrl, setSheetsUrl] = useState("");
   const [sheetsSecret, setSheetsSecret] = useState("");
   const [stats, setStats] = useState(null);
@@ -863,20 +890,15 @@ export default function App({ session }){
       }
     }
 
-    const { data, error } = await supabase.from("events").insert({
-      user_id: userId, calendar_id: calId, date_key: dayKey,
-      label, color, all_day: form.dur==="allday"&&!form.modelloId,
-      time_in: tInFinal, time_out: tOutFinal,
-      place: (form.place||"").toUpperCase(),
-      map_url: form.map||"",
-      note: (extraNote||"").toUpperCase(),
-      modello_id: form.modelloId||null,
-      rotazione_id: form.rotazioneId||null,
-      collega: (form.collega||"").toUpperCase(),
-      auto: (form.auto||"").toUpperCase(),
-      prot_pag_fine: form.protPagFine||null,
-      prot_rec_fine: form.protRecFine||null,
-    }).select().maybeSingle();
+    const { data, error } = await creaEventoSupabase({
+      userId, calId, dateKey: dayKey,
+      label, color, allDay: form.dur==="allday"&&!form.modelloId,
+      tIn: tInFinal, tOut: tOutFinal,
+      place: form.place, mapUrl: form.map||"", note: extraNote,
+      modelloId: form.modelloId||null, rotazioneId: form.rotazioneId||null,
+      collega: form.collega, auto: form.auto,
+      protPagFine: form.protPagFine||null, protRecFine: form.protRecFine||null,
+    });
     if(error){ segnalaErroreDb(error, "Salvataggio turno"); return; }
     const evt = {
       id: data.id, color, label, allDay: data.all_day,
@@ -953,7 +975,8 @@ export default function App({ session }){
   }
 
   async function delEvt(dKey, cId, evtId){
-    await supabase.from("events").delete().eq("id", evtId).eq("user_id", userId);
+    const { error } = await supabase.from("events").delete().eq("id", evtId).eq("user_id", userId);
+    if(error){ segnalaErroreDb(error, "Eliminazione turno"); return; }
     setStore(prev=>{
       const ns = withEventoRimosso(prev, dKey, cId, evtId);
       saveToLocalStorage(ns.events, ns.calendars, modelli);
@@ -967,11 +990,13 @@ export default function App({ session }){
       .eq("rotazione_id", rotazioneId).eq("user_id", userId)
       .gte("date_key", fromDateKey).order("date_key",{ascending:true});
     const { data: rows, error } = await query;
-    if(error || !rows) return;
+    if(error){ segnalaErroreDb(error, "Eliminazione eventi rotazione da data"); return; }
+    if(!rows) return;
     const toDelete = limit ? rows.slice(0, limit) : rows;
     const ids = toDelete.map(r=>r.id);
     if(ids.length===0) return;
-    await supabase.from("events").delete().in("id", ids).eq("user_id", userId);
+    const { error: delErr } = await supabase.from("events").delete().in("id", ids).eq("user_id", userId);
+    if(delErr){ segnalaErroreDb(delErr, "Eliminazione eventi rotazione da data"); return; }
     setStore(prev=>{
       const ns=JSON.parse(JSON.stringify(prev));
       const idSet = new Set(ids);
@@ -988,10 +1013,12 @@ export default function App({ session }){
   async function delTutteEvtiRotazione(rotazioneId, cId){
     const { data: rows, error } = await supabase.from("events").select("id")
       .eq("rotazione_id", rotazioneId).eq("user_id", userId);
-    if(error || !rows) return;
+    if(error){ segnalaErroreDb(error, "Eliminazione eventi rotazione"); return; }
+    if(!rows) return;
     const ids = rows.map(r=>r.id);
     if(ids.length===0) return;
-    await supabase.from("events").delete().in("id", ids).eq("user_id", userId);
+    const { error: delErr } = await supabase.from("events").delete().in("id", ids).eq("user_id", userId);
+    if(delErr){ segnalaErroreDb(delErr, "Eliminazione eventi rotazione"); return; }
     setStore(prev=>{
       const ns=JSON.parse(JSON.stringify(prev));
       const idSet = new Set(ids);
@@ -1014,10 +1041,12 @@ export default function App({ session }){
     const { data: rows, error } = await supabase.from("events").select("id")
       .eq("user_id", userId).eq("calendar_id", cId)
       .gte("date_key", fromKey).lte("date_key", toKey);
-    if(error || !rows) return;
+    if(error){ segnalaErroreDb(error, "Eliminazione eventi del mese"); return; }
+    if(!rows) return;
     const ids = rows.map(r=>r.id);
     if(ids.length===0) return;
-    await supabase.from("events").delete().in("id", ids).eq("user_id", userId);
+    const { error: delErr } = await supabase.from("events").delete().in("id", ids).eq("user_id", userId);
+    if(delErr){ segnalaErroreDb(delErr, "Eliminazione eventi del mese"); return; }
     setStore(prev=>{
       const ns=JSON.parse(JSON.stringify(prev));
       for(const dKey of Object.keys(ns.events||{})){
@@ -1115,6 +1144,9 @@ export default function App({ session }){
 
       if(rowsToInsert.length > 0) {
         const { data: insertedEvts, error: insertErr } = await supabase.from("events").insert(rowsToInsert).select();
+        if(insertErr){
+          segnalaErroreDb(insertErr, `Importazione turni (${rowsToInsert.length} eventi)`);
+        }
         if(!insertErr && insertedEvts) {
           insertedEvts.forEach(dbEvt => {
             const dK = dbEvt.date_key;
@@ -1190,6 +1222,7 @@ export default function App({ session }){
       (async()=>{
         try {
           const {data,error}=await supabase.rpc('get_app_stats');
+          if(error){ console.error("Errore caricamento statistiche admin:", error); }
           if(!error&&data&&data.length>0) setStats(data[0]);
         } catch(e){ console.error(e); }
       })();
@@ -1647,6 +1680,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
     if(coloriExtra.some(c=>c.hex===hex)) return;
     try {
       const { data, error } = await supabase.from("colori").insert({ user_id:userId, hex }).select().maybeSingle();
+      if(error){ console.warn("Colore non registrato nel database:", error); }
       if(!error && data) setColoriExtra(prev=>prev.some(c=>c.hex===hex)?prev:[...prev, {hex, label:null}]);
     } catch(e){ console.warn("ensureColoreRegistrato:", e); }
   }
@@ -1930,28 +1964,13 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
     const tIn = (!mod || allDay) ? "" : (mod.inizio || "");
     const tOut = (!mod || allDay) ? "" : (mod.tempo==="6h15" ? calcFine6h15(mod.inizio) : (mod.fine || ""));
 
-    const { data, error } = await supabase.from("events").insert({
-      user_id: userId,
-      calendar_id: calId,
-      date_key: dateKey,
-      label,
-      color,
-      all_day: allDay,
-      time_in: tIn,
-      time_out: tOut,
-      place: "",
-      map_url: "",
-      note: "",
-      modello_id: mod?.id || null,
-      rotazione_id: rotazioneId,
-      collega: "",
-      auto: "",
-      prot_pag_fine: null,
-      prot_rec_fine: null,
-    }).select().maybeSingle();
+    const { data, error } = await creaEventoSupabase({
+      userId, calId, dateKey, label, color, allDay,
+      tIn, tOut, modelloId: mod?.id || null, rotazioneId,
+    });
 
     if(error) {
-      console.error("Errore inserimento evento:", error);
+      segnalaErroreDb(error, "Inserimento turno da modello");
       return;
     }
 
@@ -2310,11 +2329,10 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
     const allDay = mod.tempo==="h24";
     const tIn = allDay?"":(mod.inizio||"");
     const tOut = allDay?"":(mod.tempo==="6h15"?calcFine6h15(mod.inizio):(mod.fine||""));
-    const { data, error } = await supabase.from("events").insert({
-      user_id:userId, calendar_id:calId, date_key:key, label, color,
-      all_day:allDay, time_in:tIn, time_out:tOut, place:"", map_url:"", note:"",
-      modello_id:mod.id, collega:"", auto:"",
-    }).select().maybeSingle();
+    const { data, error } = await creaEventoSupabase({
+      userId, calId, dateKey: key, label, color,
+      allDay, tIn, tOut, modelloId: mod.id,
+    });
     if(error){ segnalaErroreDb(error, "Inserimento rapido turno"); return; }
     const evt = { id:data.id, color, label, allDay, tIn, tOut, place:"", map:"", note:"",
       modelloId:mod.id, collega:"", auto:"" };
