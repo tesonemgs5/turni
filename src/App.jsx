@@ -406,7 +406,7 @@ export default function App({ session }){
     userId, calId, dateKey, label, color,
     allDay, tIn="", tOut="", place="", mapUrl="", note="",
     modelloId=null, rotazioneId=null, collega="", auto="",
-    protPagFine=null, protRecFine=null,
+    protPagFine=null, protRecFine=null, importId=null,
   }){
     return await supabase.from("events").insert({
       user_id: userId, calendar_id: calId, date_key: dateKey,
@@ -416,6 +416,7 @@ export default function App({ session }){
       modello_id: modelloId, rotazione_id: rotazioneId,
       collega: up(collega), auto: up(auto),
       prot_pag_fine: protPagFine, prot_rec_fine: protRecFine,
+      import_id: importId,
     }).select().maybeSingle();
   }
   const [sheetsUrl, setSheetsUrl] = useState("");
@@ -453,6 +454,7 @@ export default function App({ session }){
   const [showApplyRotDialog, setShowApplyRotDialog] = useState(null);
   const [showDeleteRotEvtDialog, setShowDeleteRotEvtDialog] = useState(null);
   const [showImportaFotoDialog, setShowImportaFotoDialog] = useState(false);
+  const [showImportaTurniJsonDialog, setShowImportaTurniJsonDialog] = useState(false);
   const [showModelloPicker, setShowModelloPicker] = useState(false);
   const [quickModeModello, setQuickModeModello] = useState(null);
   const [showRotazionePicker, setShowRotazionePicker] = useState(false);
@@ -603,6 +605,7 @@ export default function App({ session }){
             modelloId: e.modello_id||null, rotazioneId: e.rotazione_id||null, collega: e.collega||null,
             auto: e.auto||"", parentId: e.parent_id||null,
             protPagFine: e.prot_pag_fine||"", protRecFine: e.prot_rec_fine||"",
+            importId: e.import_id||null,
           });
         });
 
@@ -1489,6 +1492,21 @@ function calcolaOrdineModelli(sottoinsieme){
 // globale — es. il ripristino da backup, o quando calId===null ("tutti").
 const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
 
+const importsRecenti = useMemo(()=>{
+  const gruppi = {};
+  for(const [dateKey, calMap] of Object.entries(store.events||{})){
+    const lista = calMap?.[calId] || [];
+    for(const ev of lista){
+      if(!ev.importId) continue;
+      if(!gruppi[ev.importId]) gruppi[ev.importId] = { importId: ev.importId, count:0, minDate:dateKey, maxDate:dateKey };
+      gruppi[ev.importId].count++;
+      if(dateKey < gruppi[ev.importId].minDate) gruppi[ev.importId].minDate = dateKey;
+      if(dateKey > gruppi[ev.importId].maxDate) gruppi[ev.importId].maxDate = dateKey;
+    }
+  }
+  return Object.values(gruppi).sort((a,b)=> (b.importId||"").localeCompare(a.importId||""));
+}, [store.events, calId]);
+
 
   function getFasciaModello(m){
     if(m.tempo==="h24") return "libero";
@@ -1955,8 +1973,9 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
     setRotazioni(prev=>prev.map(r=>r.id===rotId?{...r,griglia}:r));
   }
 
-  async function inserisciEventoGenerico(mod, dataEv, rotazioneId, nuoviEventiLocali, labelOverride=null){
+  async function inserisciEventoGenerico(mod, dataEv, rotazioneId, nuoviEventiLocali, labelOverride=null, extra={}){
     if(!mod && !labelOverride) return;
+    const { note="", collega="", auto="", importId=null } = extra;
     const dateKey = dkey(dataEv.getFullYear(), dataEv.getMonth(), dataEv.getDate());
     const color = mod ? (mod.coloreCustom || (mod.tempo==="h24" ? "#64748b" : colByTime(mod.inizio))) : "#94a3b8";
     const label = (labelOverride || mod?.label || mod?.titolo || "").toUpperCase();
@@ -1967,6 +1986,7 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
     const { data, error } = await creaEventoSupabase({
       userId, calId, dateKey, label, color, allDay,
       tIn, tOut, modelloId: mod?.id || null, rotazioneId,
+      note, collega, auto, importId,
     });
 
     if(error) {
@@ -1985,11 +2005,121 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
       tOut: data.time_out || "",
       place: "",
       map: "",
-      note: "",
+      note: data.note || "",
       modelloId: data.modello_id || null,
       rotazioneId: data.rotazione_id || null,
-      collega: "",
-      auto: "",
+      collega: data.collega || "",
+      auto: data.auto || "",
+      importId: data.import_id || null,
+    });
+  }
+
+  function normOrarioImport(t){
+    return (t||"").trim();
+  }
+
+  function trovaModelloPerTitoloOrario(titoloRaw, oraInizioRaw, oraFineRaw){
+    const titolo = (titoloRaw||"").trim().toLowerCase();
+    if(!titolo) return null;
+    const oraInizio = normOrarioImport(oraInizioRaw);
+    const oraFine = normOrarioImport(oraFineRaw);
+    const candidati = modelli.filter(m=>(m.titolo||"").trim().toLowerCase()===titolo);
+    if(candidati.length===0) return null;
+    return candidati.find(m=>normOrarioImport(m.inizio)===oraInizio && normOrarioImport(m.fine)===oraFine) || null;
+  }
+
+  async function importaTurniPdfJson(righeJson){
+    const risultatoVuoto = { nAggiunti:0, nSostituiti:0, nInvariati:0, mancanti:[], importId:null };
+    if(!userId || !calId || !righeJson?.length) return risultatoVuoto;
+
+    const importId = `imp_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+    const nuoviEventiLocali = {};
+    const idsDaCancellare = [];
+    const mancanti = [];
+    let nAggiunti=0, nSostituiti=0, nInvariati=0;
+
+    for(const r of righeJson){
+      const dateKey = (r.data||"").trim();
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) continue;
+      const mod = trovaModelloPerTitoloOrario(r.titolo, r.oraInizio, r.oraFine);
+      if(!mod){
+        mancanti.push({ data: dateKey, titolo: r.titolo||"", oraInizio: r.oraInizio||"", oraFine: r.oraFine||"" });
+        continue;
+      }
+      const note = (r.note||"").trim();
+      const collega = (r.collega||"").trim();
+      const auto = (r.auto||"").trim();
+
+      const eventiEsistenti = store.events?.[dateKey]?.[calId] || [];
+      const esistente = eventiEsistenti.find(ev=>ev.modelloId===mod.id);
+
+      if(esistente){
+        const invariato = up(esistente.note)===up(note) && up(esistente.collega)===up(collega) && up(esistente.auto)===up(auto);
+        if(invariato){ nInvariati++; continue; }
+        const [yy,mm,dd] = dateKey.split("-").map(Number);
+        const giornoSett = NOMI_GIORNI_IT[new Date(yy,mm-1,dd).getDay()];
+        alert(`Sostituito: ${giornoSett} ${fmtDataIT(dateKey)} — ${mod.titolo}`);
+        idsDaCancellare.push(esistente.id);
+        nSostituiti++;
+      } else {
+        nAggiunti++;
+      }
+
+      const [yy,mm,dd] = dateKey.split("-").map(Number);
+      const dataEv = new Date(yy, mm-1, dd);
+      await inserisciEventoGenerico(mod, dataEv, null, nuoviEventiLocali, null, { note, collega, auto, importId });
+    }
+
+    if(idsDaCancellare.length){
+      const { error: delErr } = await supabase.from("events").delete().in("id", idsDaCancellare).eq("user_id", userId);
+      if(delErr) segnalaErroreDb(delErr, "Sostituzione turni import");
+    }
+
+    setStore(prev=>{
+      const ns = JSON.parse(JSON.stringify(prev));
+      if(idsDaCancellare.length){
+        const idSet = new Set(idsDaCancellare);
+        for(const dKey of Object.keys(ns.events||{})){
+          if(ns.events[dKey]?.[calId]){
+            ns.events[dKey][calId] = ns.events[dKey][calId].filter(e=>!idSet.has(e.id));
+          }
+        }
+      }
+      for(const [dateKey, calMap] of Object.entries(nuoviEventiLocali)){
+        if(!ns.events[dateKey]) ns.events[dateKey] = {};
+        for(const [cid, evts] of Object.entries(calMap)){
+          if(!ns.events[dateKey][cid]) ns.events[dateKey][cid] = [];
+          ns.events[dateKey][cid].push(...evts);
+        }
+      }
+      saveToLocalStorage(ns.events, ns.calendars, modelli);
+      syncSeAttivo(ns.events, ns.calendars);
+      return ns;
+    });
+
+    return { nAggiunti, nSostituiti, nInvariati, mancanti, importId };
+  }
+
+  async function delTuttiEventiImport(importId, cId){
+    const { data: rows, error } = await supabase.from("events").select("id")
+      .eq("import_id", importId).eq("user_id", userId);
+    if(error){ segnalaErroreDb(error, "Eliminazione eventi importati"); return; }
+    if(!rows) return;
+    const ids = rows.map(r=>r.id);
+    if(ids.length===0) return;
+    const { error: delErr } = await supabase.from("events").delete().in("id", ids).eq("user_id", userId);
+    if(delErr){ segnalaErroreDb(delErr, "Eliminazione eventi importati"); return; }
+    setStore(prev=>{
+      const ns=JSON.parse(JSON.stringify(prev));
+      const idSet = new Set(ids);
+      for(const dKey of Object.keys(ns.events||{})){
+        if(ns.events[dKey]?.[cId]){
+          ns.events[dKey][cId] = ns.events[dKey][cId].filter(e=>!idSet.has(e.id));
+        }
+      }
+      saveToLocalStorage(ns.events, ns.calendars, modelli);
+      syncSeAttivo(ns.events, ns.calendars);
+      return ns;
     });
   }
 
@@ -4663,6 +4793,8 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
               <div style={{display:"flex",gap:6}}>
                 <button onClick={()=>setShowImportaFotoDialog(true)}
                   style={{background:"none",border:"none",color:accent,fontSize:20,cursor:"pointer",width:32}}>📷</button>
+                <button onClick={()=>setShowImportaTurniJsonDialog(true)}
+                  style={{background:"none",border:"none",color:accent,fontSize:20,cursor:"pointer",width:32}}>📋</button>
                 <button onClick={()=>{
                     if(confirm(`Cancellare TUTTI gli eventi di ${NOMI_MESI_IT[month]} ${year} su questo calendario? L'azione non è reversibile.`)){
                       cancellaTuttiEventiMese(year, month, calId);
@@ -4840,6 +4972,18 @@ const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
           onConfirm={async(righeValide)=>{
             const n = await importaEventiSingoli(righeValide);
             return n;
+          }}/>
+      )}
+      {showImportaTurniJsonDialog && (
+        <ImportaTurniJsonDialog T={T} accent={accent} dark={dark}
+          importsRecenti={importsRecenti}
+          onClose={()=>setShowImportaTurniJsonDialog(false)}
+          onConfirm={async(righeJson)=>{
+            const esito = await importaTurniPdfJson(righeJson);
+            return esito;
+          }}
+          onDeleteImport={async(importId)=>{
+            await delTuttiEventiImport(importId, calId);
           }}/>
       )}
       {showApplyRotDialog && (
@@ -6459,6 +6603,166 @@ async function preprocessaImmagine(file){
 
   const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
   return new File([blob], (file.name||"foto") + "-preproc.png", { type: "image/png" });
+}
+
+function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, onClose, onConfirm, onDeleteImport}){
+  const [step, setStep] = useState("menu"); // menu | incolla | riepilogo
+  const [testoJson, setTestoJson] = useState("");
+  const [importando, setImportando] = useState(false);
+  const [errore, setErrore] = useState("");
+  const [risultato, setRisultato] = useState(null);
+  const fileInputRef = useRef(null);
+
+  async function elabora(testo){
+    if(importando) return;
+    setImportando(true); setErrore("");
+    let parsed;
+    try{
+      parsed = JSON.parse((testo||"").trim());
+    }catch(err){
+      setErrore("Il contenuto non è un JSON valido. Controlla di aver incluso tutte le parentesi [ ] o { }.");
+      setImportando(false);
+      return;
+    }
+    if(!Array.isArray(parsed)){
+      setErrore("Il JSON deve essere un elenco (array) di righe turno.");
+      setImportando(false);
+      return;
+    }
+    const righeValide = parsed.filter(r=>r && typeof r.data==="string" && /^\d{4}-\d{2}-\d{2}$/.test(r.data) && typeof r.titolo==="string" && r.titolo.trim());
+    if(righeValide.length===0){
+      setErrore("Nessuna riga valida trovata (ogni riga richiede almeno 'data' in formato YYYY-MM-DD e 'titolo').");
+      setImportando(false);
+      return;
+    }
+    const esito = await onConfirm(righeValide);
+    setRisultato(esito);
+    setImportando(false);
+    setStep("riepilogo");
+  }
+
+  function handleFileChange(e){
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if(!file) return;
+    if(!/\.json$/i.test(file.name)){
+      setErrore("Seleziona un file .json.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev)=> elabora(String(ev.target?.result||""));
+    reader.onerror = ()=> setErrore("Impossibile leggere il file selezionato.");
+    reader.readAsText(file);
+  }
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:600,
+      display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
+      onClick={onClose}>
+      <div style={{background:T.surface,borderRadius:16,width:"100%",maxWidth:400,
+        maxHeight:"85vh",overflowY:"auto",boxShadow:"0 8px 32px rgba(0,0,0,0.3)"}}
+        onClick={e=>e.stopPropagation()}>
+
+        {step==="menu" && (
+          <div style={{padding:20}}>
+            <div style={{fontSize:16,fontWeight:900,color:T.text,marginBottom:14}}>Importa turni da JSON</div>
+
+            <input ref={fileInputRef} type="file" accept=".json,application/json"
+              onChange={handleFileChange} style={{display:"none"}}/>
+            <button onClick={()=>{setErrore("");fileInputRef.current?.click();}}
+              style={{width:"100%",background:accent,border:"none",borderRadius:10,color:"#fff",
+                padding:"12px 0",fontWeight:800,fontSize:14,cursor:"pointer",marginBottom:10}}>
+              📄 Carica file .json
+            </button>
+            <button onClick={()=>{setErrore("");setStep("incolla");}}
+              style={{width:"100%",background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,color:T.text,
+                padding:"12px 0",fontWeight:800,fontSize:14,cursor:"pointer",marginBottom:16}}>
+              📋 Incolla testo JSON
+            </button>
+
+            {errore && <div style={{color:"#ef4444",fontSize:12,marginBottom:14}}>{errore}</div>}
+
+            {importsRecenti?.length>0 && (
+              <div>
+                <div style={{fontSize:11,fontWeight:800,color:T.sub,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>
+                  Importazioni recenti
+                </div>
+                {importsRecenti.map(imp=>(
+                  <div key={imp.importId} style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+                    padding:"10px 0",borderBottom:`1px solid ${T.border}`}}>
+                    <div>
+                      <div style={{fontSize:13,color:T.text,fontWeight:700}}>{imp.count} eventi</div>
+                      <div style={{fontSize:11,color:T.sub}}>{fmtDataIT(imp.minDate)} → {fmtDataIT(imp.maxDate)}</div>
+                    </div>
+                    <button onClick={()=>{
+                        if(confirm(`Eliminare tutti i ${imp.count} eventi di questa importazione (dal ${fmtDataIT(imp.minDate)} al ${fmtDataIT(imp.maxDate)})? L'azione non è reversibile.`)){
+                          onDeleteImport(imp.importId);
+                        }
+                      }}
+                      style={{background:"none",border:"none",color:"#ef4444",fontSize:18,cursor:"pointer",padding:4}}>🗑️</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <button onClick={onClose}
+              style={{width:"100%",background:"none",border:"none",color:T.sub,
+                padding:"14px 0 0",fontWeight:700,fontSize:12,cursor:"pointer"}}>Chiudi</button>
+          </div>
+        )}
+
+        {step==="incolla" && (
+          <div style={{padding:20}}>
+            <div style={{fontSize:16,fontWeight:900,color:T.text,marginBottom:14}}>Incolla JSON</div>
+            <textarea value={testoJson} onChange={e=>setTestoJson(e.target.value)}
+              placeholder='[{"data":"2024-01-02","titolo":"T S","oraInizio":"07:45","oraFine":"14:00","auto":"","collega":"","note":""}]'
+              style={{width:"100%",minHeight:220,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
+                color:T.text,padding:10,fontSize:12,fontFamily:"monospace",boxSizing:"border-box",marginBottom:12}}/>
+            {errore && <div style={{color:"#ef4444",fontSize:12,marginBottom:12}}>{errore}</div>}
+            <button disabled={importando} onClick={()=>elabora(testoJson)}
+              style={{width:"100%",background:accent,border:"none",borderRadius:10,color:"#fff",
+                padding:"12px 0",fontWeight:800,fontSize:14,cursor:importando?"default":"pointer",
+                opacity:importando?0.6:1,marginBottom:10}}>
+              {importando?"Importazione in corso...":"Importa"}
+            </button>
+            <button onClick={()=>{setStep("menu");setErrore("");}}
+              style={{width:"100%",background:"none",border:"none",color:T.sub,
+                padding:"10px 0",fontWeight:700,fontSize:12,cursor:"pointer"}}>‹ Indietro</button>
+          </div>
+        )}
+
+        {step==="riepilogo" && risultato && (
+          <div style={{padding:20}}>
+            <div style={{fontSize:16,fontWeight:900,color:T.text,marginBottom:14}}>Importazione completata</div>
+            <div style={{fontSize:13,color:T.text,marginBottom:4}}>✅ Aggiunti: <strong>{risultato.nAggiunti}</strong></div>
+            <div style={{fontSize:13,color:T.text,marginBottom:4}}>♻️ Sostituiti: <strong>{risultato.nSostituiti}</strong></div>
+            <div style={{fontSize:13,color:T.text,marginBottom:14}}>⏸️ Invariati: <strong>{risultato.nInvariati}</strong></div>
+
+            {risultato.mancanti?.length>0 && (
+              <div>
+                <div style={{fontSize:12,fontWeight:800,color:"#ef4444",marginBottom:8}}>
+                  ⚠️ {risultato.mancanti.length} righe senza modello corrispondente:
+                </div>
+                <div style={{maxHeight:260,overflowY:"auto",background:T.s2,borderRadius:10,padding:10,marginBottom:14}}>
+                  {risultato.mancanti.map((m,i)=>(
+                    <div key={i} style={{fontSize:11,color:T.sub,padding:"5px 0",
+                      borderBottom: i<risultato.mancanti.length-1?`1px solid ${T.border}`:"none"}}>
+                      {fmtDataIT(m.data)} — {m.titolo} {m.oraInizio?`(${m.oraInizio}-${m.oraFine})`:"(tutto il giorno)"}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <button onClick={onClose}
+              style={{width:"100%",background:accent,border:"none",borderRadius:10,color:"#fff",
+                padding:"12px 0",fontWeight:800,fontSize:14,cursor:"pointer"}}>Chiudi</button>
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
 }
 
 function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onConfirm}){
