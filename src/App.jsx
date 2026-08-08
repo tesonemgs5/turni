@@ -5073,7 +5073,15 @@ const importsRecenti = useMemo(()=>{
                 setShowApplyRotDialog(null);
                 setShowRotazionePicker(false);
                 setDayKey(null);
-                await applyRotazione(showApplyRotDialog.id, dayKey, inputVal, modPartenza);
+                
+                try {
+                  const esito = await applyRotazione(showApplyRotDialog.id, dayKey, inputVal, modPartenza);
+                  if (esito && esito.ok === false) {
+                    alert("Errore nell'applicazione della rotazione: " + (esito.error || "errore sconosciuto") + "\n\nLa rotazione NON è stata applicata.");
+                  }
+                } catch (err) {
+                  alert("Errore imprevisto: " + (err.message || err) + "\n\nControlla la connessione o i dati inseriti.");
+                }
               }}
                 style={{flex:2,background:accent,border:"none",borderRadius:10,
                   color:getContrastTextColor(accent),padding:"10px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
