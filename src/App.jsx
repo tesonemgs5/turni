@@ -2020,30 +2020,58 @@ const importsRecenti = useMemo(()=>{
 
   function trovaModelloPerTitoloOrario(titoloRaw, oraInizioRaw, oraFineRaw){
     const titolo = (titoloRaw||"").trim().toLowerCase();
-    if(!titolo) return null;
-    const oraInizio = normOrarioImport(oraInizioRaw);
-    const oraFine = normOrarioImport(oraFineRaw);
-    const candidati = modelli.filter(m=>(m.titolo||"").trim().toLowerCase()===titolo);
-    if(candidati.length===0) return null;
-    return candidati.find(m=>normOrarioImport(m.inizio)===oraInizio && normOrarioImport(m.fine)===oraFine) || null;
+    if(!titolo) return { mod:null, esito:"vuoto" };
+    const oraInizioTxt = normOrarioImport(oraInizioRaw);
+    const oraFineTxt = normOrarioImport(oraFineRaw);
+    // FIX: solo modelli di QUESTO calendario. Prima si cercava fra i
+    // modelli di TUTTI i calendari (FURERIA, PROGRAMMAZIONE, COT, MARY
+    // inclusi): un modello omonimo H24 in un altro calendario vinceva il
+    // confronto su quello giusto in TURNI ogni volta che l'orario
+    // importato era vuoto (oraInizio/oraFine vuoti combaciano solo con un
+    // modello che ha anch'esso inizio/fine vuoti, cioè un H24).
+    const candidati = modelli.filter(m=>
+      (m.titolo||"").trim().toLowerCase()===titolo &&
+      (m.calendarId||mainCalId)===calId
+    );
+    if(candidati.length===0) return { mod:null, esito:"assente" };
+
+    const orarioFornito = !!(oraInizioTxt || oraFineTxt);
+    if(orarioFornito){
+      // minsOf tollera "6:15"/"06:15"/"6.15" invece del confronto rigido su stringa.
+      const esatto = candidati.find(m=>minsOf(m.inizio)===minsOf(oraInizioRaw) && minsOf(m.fine)===minsOf(oraFineRaw));
+      if(esatto) return { mod:esatto, esito:"esatto" };
+      // Titolo trovato in questo calendario ma con un orario diverso da
+      // quello nel file importato: è una discordanza da segnalare, non un
+      // modello mancante.
+      return { mod:null, esito:"orario_diverso" };
+    }
+    // Il file non porta un orario per questa riga (tipico se il PDF di
+    // origine indicava solo il codice turno). Se il titolo individua UN
+    // SOLO modello in questo calendario ci fidiamo del titolo; se ne
+    // individua più di uno non possiamo scegliere da soli.
+    if(candidati.length===1) return { mod:candidati[0], esito:"solo_titolo" };
+    return { mod:null, esito:"ambiguo" };
   }
 
   async function importaTurniPdfJson(righeJson){
-    const risultatoVuoto = { nAggiunti:0, nSostituiti:0, nInvariati:0, mancanti:[], importId:null };
+    const risultatoVuoto = { nAggiunti:0, nSostituiti:0, nInvariati:0, mancanti:[], sospetti:[], importId:null };
     if(!userId || !calId || !righeJson?.length) return risultatoVuoto;
 
     const importId = `imp_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
     const nuoviEventiLocali = {};
     const idsDaCancellare = [];
     const mancanti = [];
+    const sospetti = [];
     let nAggiunti=0, nSostituiti=0, nInvariati=0;
 
     for(const r of righeJson){
       const dateKey = (r.data||"").trim();
       if(!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) continue;
-      const mod = trovaModelloPerTitoloOrario(r.titolo, r.oraInizio, r.oraFine);
+      const { mod, esito } = trovaModelloPerTitoloOrario(r.titolo, r.oraInizio, r.oraFine);
       if(!mod){
-        mancanti.push({ data: dateKey, titolo: r.titolo||"", oraInizio: r.oraInizio||"", oraFine: r.oraFine||"" });
+        const riga = { data: dateKey, titolo: r.titolo||"", oraInizio: r.oraInizio||"", oraFine: r.oraFine||"" };
+        if(esito==="orario_diverso" || esito==="ambiguo") sospetti.push({ ...riga, motivo:esito });
+        else mancanti.push(riga);
         continue;
       }
       const note = (r.note||"").trim();
@@ -2097,7 +2125,7 @@ const importsRecenti = useMemo(()=>{
       return ns;
     });
 
-    return { nAggiunti, nSostituiti, nInvariati, mancanti, importId };
+    return { nAggiunti, nSostituiti, nInvariati, mancanti, sospetti, importId };
   }
 
   async function delTuttiEventiImport(importId, cId){
@@ -6748,6 +6776,23 @@ function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, onClose, onCon
                     <div key={i} style={{fontSize:11,color:T.sub,padding:"5px 0",
                       borderBottom: i<risultato.mancanti.length-1?`1px solid ${T.border}`:"none"}}>
                       {fmtDataIT(m.data)} — {m.titolo} {m.oraInizio?`(${m.oraInizio}-${m.oraFine})`:"(tutto il giorno)"}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {risultato.sospetti?.length>0 && (
+              <div>
+                <div style={{fontSize:12,fontWeight:800,color:"#f59e0b",marginBottom:8}}>
+                  🔶 {risultato.sospetti.length} righe con titolo trovato ma orario non corrispondente:
+                </div>
+                <div style={{maxHeight:260,overflowY:"auto",background:T.s2,borderRadius:10,padding:10,marginBottom:14}}>
+                  {risultato.sospetti.map((m,i)=>(
+                    <div key={i} style={{fontSize:11,color:T.sub,padding:"5px 0",
+                      borderBottom: i<risultato.sospetti.length-1?`1px solid ${T.border}`:"none"}}>
+                      {fmtDataIT(m.data)} — {m.titolo} {m.oraInizio?`(${m.oraInizio}-${m.oraFine})`:"(nessun orario nel file)"}
+                      {" — "}{m.motivo==="ambiguo"?"più modelli con questo titolo":"orario diverso dal modello salvato"}
                     </div>
                   ))}
                 </div>
