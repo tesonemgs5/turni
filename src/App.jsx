@@ -2041,23 +2041,24 @@ const importsRecenti = useMemo(()=>{
     for(const r of righeJson){
       const dateKey = (r.data||"").trim();
       if(!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) continue;
+      const mod = trovaModelloPerTitoloOrario(r.titolo, r.oraInizio, r.oraFine);
+      if(!mod){
+        mancanti.push({ data: dateKey, titolo: r.titolo||"", oraInizio: r.oraInizio||"", oraFine: r.oraFine||"" });
+        continue;
+      }
       const note = (r.note||"").trim();
       const collega = (r.collega||"").trim();
       const auto = (r.auto||"").trim();
-      const oraInizio = (r.oraInizio||"").trim();
-      const oraFine = (r.oraFine||"").trim();
-      const mod = trovaModelloPerTitoloOrario(r.titolo, oraInizio, oraFine);
 
       const eventiEsistenti = store.events?.[dateKey]?.[calId] || [];
-      const esistente = mod ? eventiEsistenti.find(ev=>ev.modelloId===mod.id)
-                             : eventiEsistenti.find(ev=>up(ev.label)===up(r.titolo)&&ev.tIn===oraInizio);
+      const esistente = eventiEsistenti.find(ev=>ev.modelloId===mod.id);
 
       if(esistente){
         const invariato = up(esistente.note)===up(note) && up(esistente.collega)===up(collega) && up(esistente.auto)===up(auto);
         if(invariato){ nInvariati++; continue; }
         const [yy,mm,dd] = dateKey.split("-").map(Number);
         const giornoSett = NOMI_GIORNI_IT[new Date(yy,mm-1,dd).getDay()];
-        alert(`Sostituito: ${giornoSett} ${fmtDataIT(dateKey)} — ${mod?.titolo||r.titolo}`);
+        alert(`Sostituito: ${giornoSett} ${fmtDataIT(dateKey)} — ${mod.titolo}`);
         idsDaCancellare.push(esistente.id);
         nSostituiti++;
       } else {
@@ -2066,28 +2067,7 @@ const importsRecenti = useMemo(()=>{
 
       const [yy,mm,dd] = dateKey.split("-").map(Number);
       const dataEv = new Date(yy, mm-1, dd);
-      if(mod){
-        await inserisciEventoGenerico(mod, dataEv, null, nuoviEventiLocali, null, { note, collega, auto, importId });
-      } else {
-        const allDay = !oraInizio;
-        const color = allDay ? "#94a3b8" : getColorByTime(oraInizio);
-        const { data, error } = await creaEventoSupabase({
-          userId, calId, dateKey, label:(r.titolo||"").toUpperCase(), color, allDay,
-          tIn: oraInizio, tOut: oraFine, modelloId: null, rotazioneId: null,
-          note, collega, auto, importId,
-        });
-        if(error){
-          segnalaErroreDb(error, "Inserimento turno da import JSON");
-          continue;
-        }
-        if(!nuoviEventiLocali[dateKey]) nuoviEventiLocali[dateKey] = {};
-        if(!nuoviEventiLocali[dateKey][calId]) nuoviEventiLocali[dateKey][calId] = [];
-        nuoviEventiLocali[dateKey][calId].push({
-          id: data.id, color, label:(r.titolo||"").toUpperCase(), allDay,
-          tIn: oraInizio, tOut: oraFine, place:"", map:"", note,
-          modelloId: null, rotazioneId: null, collega, auto, importId,
-        });
-      }
+      await inserisciEventoGenerico(mod, dataEv, null, nuoviEventiLocali, null, { note, collega, auto, importId });
     }
 
     if(idsDaCancellare.length){
