@@ -197,7 +197,12 @@ const NOMI_MESI_IT=["gennaio","febbraio","marzo","aprile","maggio","giugno","lug
 function dividiOrarioTesto(testoRaw){
   const s = (testoRaw||"").toString().trim();
   if(!s || /tutto il giorno/i.test(s)) return { inizio:"", fine:"" };
-  const parti = s.split(/\s*[-–—]\s*/);
+  let parti = s.split(/\s*[-–—]\s*/);
+  if(parti.length!==2){
+    // fallback: "07:30 13:45" (spazio invece di trattino fra le due ore)
+    const m = /^(\d{1,2}[:.]\d{2})\s+(\d{1,2}[:.]\d{2})$/.exec(s);
+    if(m) parti = [m[1], m[2]];
+  }
   if(parti.length===2 && parti[0] && parti[1]) return { inizio:parti[0].trim(), fine:parti[1].trim() };
   return { inizio:"", fine:"" };
 }
@@ -224,6 +229,17 @@ function dataItalianaEstesaToISO(testoRaw){
   return `${m[3]}-${String(idx+1).padStart(2,"0")}-${String(parseInt(m[1],10)).padStart(2,"0")}`;
 }
 
+// Converte "01/03/2026" o "01-03-2026" (giorno/mese/anno, convenzione
+// italiana) -> "2026-03-01". Restituisce null se non riconosciuta o se
+// mese/giorno non sono in un range plausibile.
+function dataSlashToISO(testoRaw){
+  const m = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/.exec((testoRaw||"").toString().trim());
+  if(!m) return null;
+  const giorno = parseInt(m[1],10), mese = parseInt(m[2],10), anno = parseInt(m[3],10);
+  if(mese<1||mese>12||giorno<1||giorno>31) return null;
+  return `${anno}-${String(mese).padStart(2,"0")}-${String(giorno).padStart(2,"0")}`;
+}
+
 // Toglie artefatti tipo "[span_114](start_span)[span_114](end_span)" che
 // alcuni OCR/AI esterni lasciano nel testo estratto (visti nei tentativi
 // con span citati nel testo), e rifila gli spazi. Applicato a OGNI valore
@@ -248,6 +264,33 @@ function campoCI(o, ...nomi){
     if(trovata!==undefined && o[trovata]!=null && o[trovata]!=="") return o[trovata];
   }
   return undefined;
+}
+
+// Estrae il JSON "vero" da un testo che può avere fence markdown
+// (```json ... ```) e/o artefatti appiccicati PRIMA o DOPO le parentesi,
+// es. "]```[span_0](start_span)[span_0](end_span)": JSON.parse fallisce su
+// tutto il blob anche se il JSON al suo interno è perfettamente valido.
+// Cerca la prima [ o { e segue la profondità delle parentesi (ignorando
+// quelle dentro alle stringhe) fino a quando torna a 0: quello è il vero
+// confine del JSON, tutto il resto attorno viene scartato.
+function estraiJsonDaTesto(testoRaw){
+  const s = (testoRaw||"").toString();
+  const inizio = s.search(/[\[{]/);
+  if(inizio===-1) return s.trim();
+  let profondita = 0, inStringa = false, escape = false;
+  for(let i=inizio; i<s.length; i++){
+    const c = s[i];
+    if(escape){ escape = false; continue; }
+    if(c==="\\"){ escape = true; continue; }
+    if(c==='"'){ inStringa = !inStringa; continue; }
+    if(inStringa) continue;
+    if(c==="["||c==="{") profondita++;
+    else if(c==="]"||c==="}"){
+      profondita--;
+      if(profondita===0) return s.slice(inizio, i+1);
+    }
+  }
+  return s.slice(inizio).trim();
 }
 
 // Adatta un JSON di forma ARBITRARIA — array piatto, oggetto con l'array
@@ -306,8 +349,10 @@ function normalizzaRigheImportGrezzo(input, annoDefault, meseDefault){
     if(dataRaw!=null){
       const d = pulisciTestoImport(dataRaw);
       if(/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
-      const iso = dataItalianaEstesaToISO(d);
-      if(iso) return iso;
+      const isoEstesa = dataItalianaEstesaToISO(d);
+      if(isoEstesa) return isoEstesa;
+      const isoSlash = dataSlashToISO(d);
+      if(isoSlash) return isoSlash;
     }
     const giornoNum = estraiGiornoNumero(o);
     if(giornoNum && ctx.anno && ctx.mese){
@@ -6875,7 +6920,10 @@ function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, month, o
     setImportando(true); setErrore("");
     let parsed;
     try{
-      parsed = JSON.parse((testo||"").trim());
+      // estraiJsonDaTesto toglie fence markdown e artefatti OCR appiccicati
+      // prima/dopo le parentesi, che altrimenti fanno fallire JSON.parse
+      // anche quando il JSON dentro è valido.
+      parsed = JSON.parse(estraiJsonDaTesto((testo||"").trim()));
     }catch(err){
       setErrore("Il contenuto non è un JSON valido. Controlla di aver incluso tutte le parentesi [ ] o { }.");
       setImportando(false);
