@@ -1975,6 +1975,15 @@ const importsRecenti = useMemo(()=>{
 
   async function inserisciEventoGenerico(mod, dataEv, rotazioneId, nuoviEventiLocali, labelOverride=null, extra={}){
     if(!mod && !labelOverride) return;
+    // Guardia esplicita per il percorso "import da JSON" (extra.importId
+    // valorizzato): un import non deve MAI scrivere un evento senza modello
+    // riconosciuto, nemmeno tramite labelOverride. Le righe senza match vanno
+    // sempre segnalate come "mancanti"/"sospetti" a monte (in
+    // importaTurniPdfJson), mai inserite qui con un colore grigio di fallback.
+    if(extra?.importId && !mod){
+      console.warn("inserisciEventoGenerico: bloccato inserimento senza modello durante un import", { dataEv, extra });
+      return;
+    }
     const { note="", collega="", auto="", importId=null } = extra;
     const dateKey = dkey(dataEv.getFullYear(), dataEv.getMonth(), dataEv.getDate());
     const color = mod ? (mod.coloreCustom || (mod.tempo==="h24" ? "#64748b" : colByTime(mod.inizio))) : "#94a3b8";
@@ -2018,6 +2027,44 @@ const importsRecenti = useMemo(()=>{
     return (t||"").trim();
   }
 
+  // Estrae l'orario di inizio (stringa "HH:MM") da un campo "orario" testuale
+  // unico come lo esporta il vecchio calendario, es. "13:30 - 20:45",
+  // "13.30-20.45", "13:30-20:45 CH10". "Tutto il giorno" (o assente/null)
+  // restituisce null: è un evento all-day, non ha un orario di inizio da matchare.
+  function estraiOraInizioDaStringaOrario(orarioRaw){
+    const s = (orarioRaw||"").trim();
+    if(!s) return null;
+    if(/tutto il giorno/i.test(s)) return null;
+    const m = /^(\d{1,2})[.:](\d{2})/.exec(s);
+    if(!m) return null;
+    return `${m[1].padStart(2,"0")}:${m[2]}`;
+  }
+
+  // Estrae la "parola-chiave" del turno dal titolo composto del vecchio
+  // calendario, es. "AUTO CH 10" -> "AUTO", "D FUORIGROTTA AUTO CH 30" -> "AUTO",
+  // "F COT CH 64" -> "F COT", "COT 17.45-00 CH 30" -> "COT". Si basa sui codici
+  // turno realmente presenti nei titoli dei modelli esistenti (non su una lista
+  // fissa scritta a mano): ogni parola/coppia di parole del titolo modello che
+  // compare per intero nel titolo importato è candidata; si preferisce il match
+  // più lungo (es. "F COT" batte "COT" se il titolo importato contiene "F COT").
+  function estraiParolaChiaveTitolo(titoloImportatoRaw, titoliModelliDisponibili){
+    const t = (titoloImportatoRaw||"").toUpperCase();
+    if(!t) return null;
+    let migliore = null;
+    for(const titModello of titoliModelliDisponibili){
+      const tm = (titModello||"").trim().toUpperCase();
+      if(!tm) continue;
+      // Confine di parola: il codice modello deve comparire come token intero
+      // nel titolo importato, non come sottostringa di un'altra parola
+      // (es. "COT" non deve matchare dentro "SCOTELLO").
+      const regex = new RegExp(`(^|[^A-Z0-9])${tm.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")}([^A-Z0-9]|$)`);
+      if(regex.test(t)){
+        if(!migliore || tm.length>migliore.length) migliore = tm;
+      }
+    }
+    return migliore;
+  }
+
   function trovaModelloPerTitoloOrario(titoloRaw, oraInizioRaw, oraFineRaw){
     const titolo = (titoloRaw||"").trim().toLowerCase();
     if(!titolo) return { mod:null, esito:"vuoto" };
@@ -2053,6 +2100,58 @@ const importsRecenti = useMemo(()=>{
     return { mod:null, esito:"ambiguo" };
   }
 
+  // Matching "flessibile": usato per JSON di vecchi calendari dove il titolo
+  // è composto/libero (es. "AUTO CH 10", "D FUORIGROTTA AUTO CH 30") e
+  // l'orario arriva come UNA stringa unica ("13:30 - 20:45") invece di due
+  // campi separati. Regola richiesta: parola-chiave del titolo + orario di
+  // inizio individuano un modello univoco (es. "APP 7.15" è un modello,
+  // "AUTO 7.15" è un altro modello diverso). Non crea MAI un modello: se non
+  // trova un candidato univoco, ritorna mod:null con l'esito del motivo,
+  // in modo che il chiamante scarti la riga e la segnali invece di importarla.
+  const TOLLERANZA_MINUTI_MATCH_FLESSIBILE = 10;
+  function trovaModelloFlessibile(titoloImportatoRaw, orarioStringaRaw){
+    const titoliModelliCalendario = modelli
+      .filter(m=>(m.calendarId||mainCalId)===calId)
+      .map(m=>m.titolo);
+    const parolaChiave = estraiParolaChiaveTitolo(titoloImportatoRaw, titoliModelliCalendario);
+    if(!parolaChiave) return { mod:null, esito:"titolo_non_riconosciuto" };
+
+    const oraInizio = estraiOraInizioDaStringaOrario(orarioStringaRaw);
+
+    // Candidati: modelli di questo calendario la cui parola-chiave (prima
+    // porzione del titolo, stesso criterio usato per estrarla) coincide.
+    const candidati = modelli.filter(m=>{
+      if((m.calendarId||mainCalId)!==calId) return false;
+      const tm = (m.titolo||"").trim().toUpperCase();
+      return tm===parolaChiave || tm.startsWith(parolaChiave+" ") || parolaChiave.startsWith(tm+" ");
+    });
+    if(candidati.length===0) return { mod:null, esito:"assente" };
+
+    if(oraInizio==null){
+      // Riga all-day (es. "Tutto il giorno", ferie, malattia...): se la
+      // parola-chiave individua UN SOLO modello ci fidiamo, altrimenti ambiguo.
+      if(candidati.length===1) return { mod:candidati[0], esito:"solo_titolo" };
+      const soloH24 = candidati.filter(m=>m.tempo==="h24"||!m.inizio);
+      if(soloH24.length===1) return { mod:soloH24[0], esito:"solo_titolo" };
+      return { mod:null, esito:"ambiguo" };
+    }
+
+    const minRichiesti = minsOf(oraInizio);
+    let migliore = null, distanzaMigliore = Infinity;
+    for(const m of candidati){
+      if(!m.inizio) continue;
+      const minMod = minsOf(m.inizio);
+      const distanza = Math.min(Math.abs(minMod-minRichiesti), 1440-Math.abs(minMod-minRichiesti));
+      if(distanza<distanzaMigliore){ distanzaMigliore=distanza; migliore=m; }
+    }
+    if(migliore && distanzaMigliore<=TOLLERANZA_MINUTI_MATCH_FLESSIBILE){
+      return { mod:migliore, esito:"orario_compatibile" };
+    }
+    // La parola-chiave esiste ma nessun modello ha un orario di inizio
+    // abbastanza vicino: discordanza da segnalare, non modello assente.
+    return { mod:null, esito:"orario_diverso" };
+  }
+
   async function importaTurniPdfJson(righeJson){
     const risultatoVuoto = { nAggiunti:0, nSostituiti:0, nInvariati:0, mancanti:[], sospetti:[], importId:null };
     if(!userId || !calId || !righeJson?.length) return risultatoVuoto;
@@ -2067,11 +2166,23 @@ const importsRecenti = useMemo(()=>{
     for(const r of righeJson){
       const dateKey = (r.data||"").trim();
       if(!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) continue;
-      const { mod, esito } = trovaModelloPerTitoloOrario(r.titolo, r.oraInizio, r.oraFine);
+
+      // Due formati di riga supportati:
+      // - "nuovo": oraInizio/oraFine già separati e titolo che combacia ESATTO
+      //   con un modello (import da OCR/foto strutturato).
+      // - "vecchio calendario": orario come stringa unica ("13:30 - 20:45")
+      //   e titolo composto/libero ("AUTO CH 10") -> matching flessibile per
+      //   parola-chiave + orario di inizio (mai crea un modello: se non trova
+      //   un candidato univoco, la riga finisce tra mancanti/sospetti).
+      const usaFormatoVecchio = (typeof r.orario==="string") && r.oraInizio==null && r.oraFine==null;
+      const { mod, esito } = usaFormatoVecchio
+        ? trovaModelloFlessibile(r.titolo, r.orario)
+        : trovaModelloPerTitoloOrario(r.titolo, r.oraInizio, r.oraFine);
+
       if(!mod){
-        const riga = { data: dateKey, titolo: r.titolo||"", oraInizio: r.oraInizio||"", oraFine: r.oraFine||"" };
+        const riga = { data: dateKey, titolo: r.titolo||"", oraInizio: r.oraInizio||"", oraFine: r.oraFine||"", orario: r.orario||"" };
         if(esito==="orario_diverso" || esito==="ambiguo") sospetti.push({ ...riga, motivo:esito });
-        else mancanti.push(riga);
+        else mancanti.push({ ...riga, motivo:esito });
         continue;
       }
       const note = (r.note||"").trim();
@@ -5073,15 +5184,7 @@ const importsRecenti = useMemo(()=>{
                 setShowApplyRotDialog(null);
                 setShowRotazionePicker(false);
                 setDayKey(null);
-                
-                try {
-                  const esito = await applyRotazione(showApplyRotDialog.id, dayKey, inputVal, modPartenza);
-                  if (esito && esito.ok === false) {
-                    alert("Errore nell'applicazione della rotazione: " + (esito.error || "errore sconosciuto") + "\n\nLa rotazione NON è stata applicata.");
-                  }
-                } catch (err) {
-                  alert("Errore imprevisto: " + (err.message || err) + "\n\nControlla la connessione o i dati inseriti.");
-                }
+                await applyRotazione(showApplyRotDialog.id, dayKey, inputVal, modPartenza);
               }}
                 style={{flex:2,background:accent,border:"none",borderRadius:10,
                   color:getContrastTextColor(accent),padding:"10px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
@@ -6641,6 +6744,39 @@ async function preprocessaImmagine(file){
   return new File([blob], (file.name||"foto") + "-preproc.png", { type: "image/png" });
 }
 
+// Normalizza una data letta da un JSON esterno (vecchio calendario) verso
+// "YYYY-MM-DD". Tollera i formati più comuni d'esportazione, non solo quello
+// già canonico: ISO con o senza zeri iniziali, "GG/MM/AAAA" e "GG-MM-AAAA"
+// (anche a 1 cifra), e ISO con orario/timestamp appiccicato (es. "2024-01-02T00:00:00").
+// Restituisce null se non riconosce nulla, MAI una data sbagliata per un formato ambiguo:
+// se sia giorno che mese sono <=12, si assume comunque GG/MM (convenzione italiana),
+// perché è il formato che quasi certamente arriva da un vecchio calendario italiano.
+function normalizzaDataImport(dataRaw){
+  const s = String(dataRaw||"").trim();
+  if(!s) return null;
+  // ISO, eventualmente con zeri mancanti o con timestamp/ora attaccata dopo la data
+  let m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(s);
+  if(m){
+    const [_, a, mm, gg] = m;
+    const meseN = parseInt(mm,10), giornoN = parseInt(gg,10);
+    if(meseN>=1 && meseN<=12 && giornoN>=1 && giornoN<=31){
+      return `${a}-${String(meseN).padStart(2,"0")}-${String(giornoN).padStart(2,"0")}`;
+    }
+    return null;
+  }
+  // GG/MM/AAAA o GG-MM-AAAA (anche a 1 cifra, separatore / o -)
+  m = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/.exec(s);
+  if(m){
+    const [_, gg, mm, a] = m;
+    const giornoN = parseInt(gg,10), meseN = parseInt(mm,10);
+    if(meseN>=1 && meseN<=12 && giornoN>=1 && giornoN<=31){
+      return `${a}-${String(meseN).padStart(2,"0")}-${String(giornoN).padStart(2,"0")}`;
+    }
+    return null;
+  }
+  return null;
+}
+
 function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, onClose, onConfirm, onDeleteImport}){
   const [step, setStep] = useState("menu"); // menu | incolla | riepilogo
   const [testoJson, setTestoJson] = useState("");
@@ -6665,13 +6801,49 @@ function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, onClose, onCon
       setImportando(false);
       return;
     }
-    const righeValide = parsed.filter(r=>r && typeof r.data==="string" && /^\d{4}-\d{2}-\d{2}$/.test(r.data) && typeof r.titolo==="string" && r.titolo.trim());
+    // Filtro d'ingresso reso tollerante: la data viene normalizzata (accetta
+    // anche GG/MM/AAAA, GG-MM-AAAA, ISO con timestamp attaccato) invece di
+    // pretendere solo "YYYY-MM-DD" esatto. Il titolo basta che non sia vuoto
+    // dopo il trim — il matching fine (titolo+orario, con gestione di
+    // "sospetti"/"mancanti"/"ambigui") avviene già più a valle in
+    // importaTurniPdfJson/trovaModelloPerTitoloOrario, quindi qui non serve
+    // essere più severi di così.
+    let scartiSenzaData = 0, scartiSenzaTitolo = 0;
+    const righeValide = [];
+    for(const r of parsed){
+      if(!r || typeof r!=="object") continue;
+      const dataNorm = normalizzaDataImport(r.data);
+      const titoloOk = typeof r.titolo==="string" && r.titolo.trim();
+      if(!dataNorm){ scartiSenzaData++; continue; }
+      if(!titoloOk){ scartiSenzaTitolo++; continue; }
+      righeValide.push({ ...r, data: dataNorm });
+    }
     if(righeValide.length===0){
-      setErrore("Nessuna riga valida trovata (ogni riga richiede almeno 'data' in formato YYYY-MM-DD e 'titolo').");
+      const dettagli = [];
+      if(scartiSenzaData>0) dettagli.push(`${scartiSenzaData} righe con data non riconosciuta (formati accettati: YYYY-MM-DD, GG/MM/AAAA, GG-MM-AAAA)`);
+      if(scartiSenzaTitolo>0) dettagli.push(`${scartiSenzaTitolo} righe senza 'titolo' valorizzato`);
+      setErrore(
+        dettagli.length>0
+          ? `Nessuna riga valida trovata. Dettaglio: ${dettagli.join("; ")}.`
+          : "Nessuna riga valida trovata (ogni riga richiede almeno 'data' e 'titolo')."
+      );
       setImportando(false);
       return;
     }
     const esito = await onConfirm(righeValide);
+    if(scartiSenzaData>0 || scartiSenzaTitolo>0){
+      const noteScarti = [];
+      if(scartiSenzaData>0) noteScarti.push(`${scartiSenzaData} senza data valida`);
+      if(scartiSenzaTitolo>0) noteScarti.push(`${scartiSenzaTitolo} senza titolo`);
+      esito.righeScartateInIngresso = noteScarti.join(", ");
+    }
+    // Alert immediato e bloccante se qualche riga non è stata abbinata a un
+    // modello: l'utente deve saperlo SUBITO, non scoprirlo scorrendo il
+    // riepilogo. Le righe elencate qui non sono state importate in nessun caso.
+    const nNonAbbinate = (esito.mancanti?.length||0) + (esito.sospetti?.length||0);
+    if(nNonAbbinate>0){
+      alert(`Attenzione: ${nNonAbbinate} righe su ${righeValide.length} NON sono state importate perché non è stato trovato un modello corrispondente (titolo + orario). Il dettaglio è nella schermata successiva.`);
+    }
     setRisultato(esito);
     setImportando(false);
     setStep("riepilogo");
@@ -6774,16 +6946,24 @@ function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, onClose, onCon
             <div style={{fontSize:13,color:T.text,marginBottom:4}}>♻️ Sostituiti: <strong>{risultato.nSostituiti}</strong></div>
             <div style={{fontSize:13,color:T.text,marginBottom:14}}>⏸️ Invariati: <strong>{risultato.nInvariati}</strong></div>
 
+            {risultato.righeScartateInIngresso && (
+              <div style={{fontSize:12,color:T.sub,marginBottom:14,padding:"8px 10px",
+                background:T.s2,borderRadius:8}}>
+                ℹ️ Scartate prima dell'import (dati mancanti nel JSON): {risultato.righeScartateInIngresso}
+              </div>
+            )}
+
             {risultato.mancanti?.length>0 && (
               <div>
                 <div style={{fontSize:12,fontWeight:800,color:"#ef4444",marginBottom:8}}>
-                  ⚠️ {risultato.mancanti.length} righe senza modello corrispondente:
+                  ⚠️ {risultato.mancanti.length} righe senza modello corrispondente (NON importate):
                 </div>
                 <div style={{maxHeight:260,overflowY:"auto",background:T.s2,borderRadius:10,padding:10,marginBottom:14}}>
                   {risultato.mancanti.map((m,i)=>(
                     <div key={i} style={{fontSize:11,color:T.sub,padding:"5px 0",
                       borderBottom: i<risultato.mancanti.length-1?`1px solid ${T.border}`:"none"}}>
-                      {fmtDataIT(m.data)} — {m.titolo} {m.oraInizio?`(${m.oraInizio}-${m.oraFine})`:"(tutto il giorno)"}
+                      {fmtDataIT(m.data)} — {m.titolo} {m.orario?`(${m.orario})`:(m.oraInizio?`(${m.oraInizio}-${m.oraFine})`:"(tutto il giorno)")}
+                      {m.motivo==="titolo_non_riconosciuto"?" — nessun codice turno riconosciuto nel titolo":""}
                     </div>
                   ))}
                 </div>
@@ -6793,14 +6973,14 @@ function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, onClose, onCon
             {risultato.sospetti?.length>0 && (
               <div>
                 <div style={{fontSize:12,fontWeight:800,color:"#f59e0b",marginBottom:8}}>
-                  🔶 {risultato.sospetti.length} righe con titolo trovato ma orario non corrispondente:
+                  🔶 {risultato.sospetti.length} righe con titolo trovato ma orario non corrispondente (NON importate):
                 </div>
                 <div style={{maxHeight:260,overflowY:"auto",background:T.s2,borderRadius:10,padding:10,marginBottom:14}}>
                   {risultato.sospetti.map((m,i)=>(
                     <div key={i} style={{fontSize:11,color:T.sub,padding:"5px 0",
                       borderBottom: i<risultato.sospetti.length-1?`1px solid ${T.border}`:"none"}}>
-                      {fmtDataIT(m.data)} — {m.titolo} {m.oraInizio?`(${m.oraInizio}-${m.oraFine})`:"(nessun orario nel file)"}
-                      {" — "}{m.motivo==="ambiguo"?"più modelli con questo titolo":"orario diverso dal modello salvato"}
+                      {fmtDataIT(m.data)} — {m.titolo} {m.orario?`(${m.orario})`:(m.oraInizio?`(${m.oraInizio}-${m.oraFine})`:"(nessun orario nel file)")}
+                      {" — "}{m.motivo==="ambiguo"?"più modelli con questo codice turno, orario servirebbe per distinguerli":"nessun modello con questo codice turno ha un orario di inizio abbastanza vicino"}
                     </div>
                   ))}
                 </div>
@@ -7214,17 +7394,35 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
     }
 
     const righeElaborate = [];
+    // Contatori diagnostici: per capire SUBITO perché una riga è stata
+    // scartata, invece del solo errore generico finale "nessun turno riconosciuto".
+    let scartiFormatoRiga = 0;   // riga non ha {data, turno} nel formato atteso
+    let scartiDataNonValida = 0; // data non in formato riconosciuto
+    let scartiModelloNonTrovato = 0; // turno/orario letto ma nessun modello corrispondente
 
-    if(Array.isArray(parsed)){
+    // tipoTabella arriva dalla scelta fatta in "scegli-tipo" (stesso stato
+    // usato da tentativoOCR per Tesseract/Render): qui decide quale ramo di
+    // parsing applicare, invece di indovinarlo dalla sola forma del JSON.
+    if(tipoTabella==="personale"){
+      if(!Array.isArray(parsed)){
+        setErrore("Hai scelto \"Turni personali\": serve un array JSON, es. [{\"data\":\"2026-07-01\",\"turno\":\"Primo\"}]. Il testo incollato è un oggetto, non un array.");
+        setImportando(false);
+        return;
+      }
       // Formato "piatto": [{"data":"2026-07-01","turno":"Primo"}, ...]
       for(const t of parsed){
-        if(!t || typeof t.data!=="string" || typeof t.turno!=="string") continue;
-        if(!/^\d{4}-\d{2}-\d{2}$/.test(t.data)) continue;
+        if(!t || typeof t.data!=="string" || typeof t.turno!=="string"){ scartiFormatoRiga++; continue; }
+        if(!/^\d{4}-\d{2}-\d{2}$/.test(t.data)){ scartiDataNonValida++; continue; }
         const mod = trovaModelloPerTesto(t.turno);
-        if(!mod) continue;
+        if(!mod){ scartiModelloNonTrovato++; continue; }
         righeElaborate.push({ dateKey: t.data, modelloId: mod.id });
       }
-    }else if(parsed && typeof parsed==="object"){
+    }else if(tipoTabella==="stella"){
+      if(Array.isArray(parsed) || !parsed || typeof parsed!=="object"){
+        setErrore("Hai scelto \"Turni Stella\": serve un oggetto JSON raggruppato per fascia oraria, es. {\"00.00_06.30\":[\"1 luglio 2026\"]}, non un array piatto.");
+        setImportando(false);
+        return;
+      }
       // Formato "raggruppato per fascia oraria": un oggetto con un livello di
       // annidamento arbitrario (es. {"turni_stella": {"00.00_06.30": [date...]}})
       // dove le foglie sono array di date testuali italiane. Si scende
@@ -7237,10 +7435,10 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
             if(Array.isArray(valore)){
               const minutiInizio = estraiMinutiInizioFascia(chiave);
               const mod = trovaModelloPerOrarioInizio(minutiInizio);
-              if(!mod) continue;
+              if(!mod){ scartiModelloNonTrovato += valore.length; continue; }
               for(const dataTesto of valore){
                 const iso = dataItalianaToISO(dataTesto);
-                if(!iso) continue;
+                if(!iso){ scartiDataNonValida++; continue; }
                 righeElaborate.push({ dateKey: iso, modelloId: mod.id });
               }
             }else{
@@ -7251,13 +7449,58 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
       };
       visita(parsed);
     }else{
-      setErrore("Formato JSON non riconosciuto.");
-      setImportando(false);
-      return;
+      // Nessun tipoTabella impostato (percorso raggiunto senza passare da
+      // "scegli-tipo"): teniamo comunque il vecchio comportamento "indovina
+      // dalla forma" come fallback, così non si rompe nulla di esistente.
+      if(Array.isArray(parsed)){
+        for(const t of parsed){
+          if(!t || typeof t.data!=="string" || typeof t.turno!=="string"){ scartiFormatoRiga++; continue; }
+          if(!/^\d{4}-\d{2}-\d{2}$/.test(t.data)){ scartiDataNonValida++; continue; }
+          const mod = trovaModelloPerTesto(t.turno);
+          if(!mod){ scartiModelloNonTrovato++; continue; }
+          righeElaborate.push({ dateKey: t.data, modelloId: mod.id });
+        }
+      }else if(parsed && typeof parsed==="object"){
+        const visita = (nodo)=>{
+          if(Array.isArray(nodo)) return;
+          if(nodo && typeof nodo==="object"){
+            for(const [chiave, valore] of Object.entries(nodo)){
+              if(Array.isArray(valore)){
+                const minutiInizio = estraiMinutiInizioFascia(chiave);
+                const mod = trovaModelloPerOrarioInizio(minutiInizio);
+                if(!mod){ scartiModelloNonTrovato += valore.length; continue; }
+                for(const dataTesto of valore){
+                  const iso = dataItalianaToISO(dataTesto);
+                  if(!iso){ scartiDataNonValida++; continue; }
+                  righeElaborate.push({ dateKey: iso, modelloId: mod.id });
+                }
+              }else{
+                visita(valore);
+              }
+            }
+          }
+        };
+        visita(parsed);
+      }else{
+        setErrore("Formato JSON non riconosciuto.");
+        setImportando(false);
+        return;
+      }
     }
 
     if(righeElaborate.length===0){
-      setErrore("Nessun turno riconosciuto in questo JSON (controlla formato date, nomi turno, o orari delle fasce).");
+      // Messaggio diagnostico: dice QUALE scarto ha prevalso, invece del
+      // generico "nessun turno riconosciuto" che non aiutava a capire dove
+      // guardare (data mal formattata? turno non mappato? orario fuori tolleranza?).
+      const dettagli = [];
+      if(scartiFormatoRiga>0) dettagli.push(`${scartiFormatoRiga} righe senza campi "data"/"turno" validi`);
+      if(scartiDataNonValida>0) dettagli.push(`${scartiDataNonValida} date non riconosciute (formato atteso: YYYY-MM-DD per i personali, "1 luglio 2026" per Stella)`);
+      if(scartiModelloNonTrovato>0) dettagli.push(`${scartiModelloNonTrovato} voci con turno/orario senza un modello corrispondente tra quelli configurati`);
+      setErrore(
+        dettagli.length>0
+          ? `Nessun turno importato. Dettaglio: ${dettagli.join("; ")}.`
+          : "Nessun turno riconosciuto in questo JSON (controlla formato date, nomi turno, o orari delle fasce)."
+      );
       setImportando(false);
       return;
     }
@@ -7442,12 +7685,16 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
                 </div>
               )}
               <div style={{fontSize:12,color:"#444444",marginBottom:8}}>
-                Incolla qui l'array JSON con i turni, es: <code>[{"{"}"data":"2026-07-01","turno":"Primo"{"}"}]</code>
+                {tipoTabella==="stella" ? (
+                  <>Incolla qui l'oggetto JSON raggruppato per fascia oraria, es: <code>{"{"}"00.00_06.30":["1 luglio 2026"]{"}"}</code></>
+                ) : (
+                  <>Incolla qui l'array JSON con i turni, es: <code>[{"{"}"data":"2026-07-01","turno":"Primo"{"}"}]</code></>
+                )}
               </div>
               <textarea
                 value={testoJsonIncollato}
                 onChange={e=>setTestoJsonIncollato(e.target.value)}
-                placeholder='[{"data":"2026-07-01","turno":"Primo"}]'
+                placeholder={tipoTabella==="stella" ? '{"00.00_06.30":["1 luglio 2026"]}' : '[{"data":"2026-07-01","turno":"Primo"}]'}
                 style={{width:"100%",minHeight:160,borderRadius:10,border:`1px solid ${T.border}`,
                   background:T.s2,color:T.text,fontSize:12,fontFamily:"monospace",padding:10,
                   boxSizing:"border-box",resize:"vertical"}}
