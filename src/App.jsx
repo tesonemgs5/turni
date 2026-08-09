@@ -2114,7 +2114,10 @@ const importsRecenti = useMemo(()=>{
       .filter(m=>(m.calendarId||mainCalId)===calId)
       .map(m=>m.titolo);
     const parolaChiave = estraiParolaChiaveTitolo(titoloImportatoRaw, titoliModelliCalendario);
-    if(!parolaChiave) return { mod:null, esito:"titolo_non_riconosciuto" };
+    if(!parolaChiave){
+      console.log(`[import] "${titoloImportatoRaw}" -> nessuna parola-chiave riconosciuta tra i modelli del calendario`, { titoliModelliCalendario });
+      return { mod:null, esito:"titolo_non_riconosciuto" };
+    }
 
     const oraInizio = estraiOraInizioDaStringaOrario(orarioStringaRaw);
 
@@ -2125,6 +2128,7 @@ const importsRecenti = useMemo(()=>{
       const tm = (m.titolo||"").trim().toUpperCase();
       return tm===parolaChiave || tm.startsWith(parolaChiave+" ") || parolaChiave.startsWith(tm+" ");
     });
+    console.log(`[import] "${titoloImportatoRaw}" (${orarioStringaRaw}) -> parolaChiave="${parolaChiave}", oraInizio=${oraInizio}, candidati=`, candidati.map(c=>`${c.titolo}@${c.inizio||'h24'}(id:${c.id})`));
     if(candidati.length===0) return { mod:null, esito:"assente" };
 
     if(oraInizio==null){
@@ -2145,8 +2149,10 @@ const importsRecenti = useMemo(()=>{
       if(distanza<distanzaMigliore){ distanzaMigliore=distanza; migliore=m; }
     }
     if(migliore && distanzaMigliore<=TOLLERANZA_MINUTI_MATCH_FLESSIBILE){
+      console.log(`[import] -> MATCH: ${migliore.titolo}@${migliore.inizio} (distanza ${distanzaMigliore} min)`);
       return { mod:migliore, esito:"orario_compatibile" };
     }
+    console.log(`[import] -> NESSUN MATCH entro tolleranza (migliore era ${migliore?migliore.titolo+'@'+migliore.inizio:'nessuno'}, distanza ${distanzaMigliore} min)`);
     // La parola-chiave esiste ma nessun modello ha un orario di inizio
     // abbastanza vicino: discordanza da segnalare, non modello assente.
     return { mod:null, esito:"orario_diverso" };
