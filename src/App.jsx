@@ -108,6 +108,28 @@ function loadFromLocalStorage(){
     return { events, calendars, modelli, timestamp, calId };
   } catch(e){ return null; }
 }
+
+// Registro locale delle righe di import che NON sono state importate
+// (mancanti: nessun modello con quel titolo; sospetti: titolo trovato ma
+// orario/ambiguità). Prima queste informazioni si vedevano solo nel popup
+// "Importazione completata" e sparivano chiudendolo — qui restano
+// consultabili in un secondo momento, tenendo le ultime 30 sessioni.
+const LOG_IMPORT_KEY = 'log_import_problemi';
+function leggiRegistroImportProblemi(){
+  try{ return JSON.parse(localStorage.getItem(LOG_IMPORT_KEY)||'[]'); }
+  catch(e){ return []; }
+}
+function registraProblemiImport(mancanti, sospetti){
+  if((!mancanti||!mancanti.length) && (!sospetti||!sospetti.length)) return;
+  try{
+    const sessioni = leggiRegistroImportProblemi();
+    sessioni.push({ ts: new Date().toISOString(), mancanti: mancanti||[], sospetti: sospetti||[] });
+    localStorage.setItem(LOG_IMPORT_KEY, JSON.stringify(sessioni.slice(-30)));
+  }catch(e){ console.warn('registro import error:', e); }
+}
+function cancellaRegistroImportProblemi(){
+  try{ localStorage.removeItem(LOG_IMPORT_KEY); }catch(e){}
+}
 function clearLocalStorageCache(){
   localStorage.removeItem('cache_events');
   localStorage.removeItem('cache_calendars');
@@ -202,46 +224,92 @@ function dataItalianaEstesaToISO(testoRaw){
   return `${m[3]}-${String(idx+1).padStart(2,"0")}-${String(parseInt(m[1],10)).padStart(2,"0")}`;
 }
 
+// Toglie artefatti tipo "[span_114](start_span)[span_114](end_span)" che
+// alcuni OCR/AI esterni lasciano nel testo estratto (visti nei tentativi
+// con span citati nel testo), e rifila gli spazi. Applicato a OGNI valore
+// testuale prima di usarlo, altrimenti finiscono dentro titolo/note e il
+// match col modello (che non li ha) fallisce sempre.
+function pulisciTestoImport(testoRaw){
+  return (testoRaw==null ? "" : String(testoRaw))
+    .replace(/\[span_\d+\]\(\s*(?:start|end)_span\s*\)/gi, "")
+    .trim();
+}
+
+// Legge un campo cercando fra più nomi candidati, IGNORANDO maiuscole/
+// minuscole nella chiave: un OCR/AI esterno a volte manda "Titolo"/
+// "TITOLO"/"Ora" invece di "titolo"/"orario", e l'accesso diretto o.titolo
+// è case-sensitive e non li trova. Ritorna undefined se nessun candidato
+// esiste o è vuoto.
+function campoCI(o, ...nomi){
+  if(!o || typeof o!=="object") return undefined;
+  const chiavi = Object.keys(o);
+  for(const nome of nomi){
+    const trovata = chiavi.find(k=>k.toLowerCase()===nome.toLowerCase());
+    if(trovata!==undefined && o[trovata]!=null && o[trovata]!=="") return o[trovata];
+  }
+  return undefined;
+}
+
 // Adatta un JSON di forma ARBITRARIA — array piatto, oggetto con l'array
 // annidato sotto una chiave qualsiasi ("voci"/"eventi"/"dettagli"/...), un
-// singolo giorno come oggetto invece che un array, "giorno" numerico invece
-// di "data" completa, "orario" come intervallo unico invece di oraInizio/
-// oraFine separati, "titolo" assente ma di fatto presente dentro "note" —
-// al formato piatto {data, titolo, oraInizio, oraFine, auto, collega, note}
-// che l'import si aspetta. Pensato per digerire l'output libero di un
-// OCR/AI esterno all'app (che cambia struttura a ogni tentativo): qui si
-// prova a INTERPRETARE la forma del dato, ma il modello associato al
-// titolo resta comunque cercato e validato dopo, in importaTurniPdfJson —
-// un titolo non riconosciuto in questo calendario finisce comunque tra i
-// "mancanti"/"sospetti", non viene mai importato a caso o inventato.
+// singolo giorno come oggetto invece che un array, "giorno" numerico (anche
+// con testo extra tipo "30 Ven") invece di "data" completa, "orario"/"ora"
+// come intervallo unico invece di oraInizio/oraFine separati, chiavi in
+// Maiuscolo o minuscolo indifferentemente, "titolo" assente ma di fatto
+// presente dentro "note" — al formato piatto {data, titolo, oraInizio,
+// oraFine, auto, collega, note} che l'import si aspetta. Pensato per
+// digerire l'output libero di un OCR/AI esterno all'app (che cambia
+// struttura, capitalizzazione e a volte lascia artefatti a ogni
+// tentativo): qui si prova a INTERPRETARE la forma del dato, ma il
+// modello associato al titolo resta comunque cercato e validato dopo, in
+// importaTurniPdfJson — un titolo non riconosciuto in questo calendario
+// finisce comunque tra i "mancanti"/"sospetti", non viene mai importato a
+// caso o inventato.
 function normalizzaRigheImportGrezzo(input, annoDefault, meseDefault){
   const righe = [];
   const CHIAVI_GESTITE = ["data","giorno","titolo","turno","codice","mese","anno"];
 
-  function haCampo(o,c){ return o && Object.prototype.hasOwnProperty.call(o,c) && o[c]!=null && o[c]!==""; }
-  function estraiTitolo(o){ return (o.titolo || o.turno || o.codice || "").toString().trim(); }
+  function estraiTitolo(o){
+    const v = campoCI(o, "titolo", "turno", "codice");
+    return v!=null ? pulisciTestoImport(v) : "";
+  }
+  function estraiGiornoNumero(o){
+    const raw = campoCI(o, "giorno");
+    if(raw==null) return null;
+    if(typeof raw==="number") return raw;
+    // Prende le cifre iniziali e ignora il resto ("30 Ven" -> 30,
+    // "28 Sab[span_114]..." -> 28): il giorno a volte arriva con il nome
+    // del giorno della settimana o artefatti OCR appiccicati.
+    const m = /^\s*(\d{1,2})/.exec(pulisciTestoImport(raw));
+    return m ? parseInt(m[1],10) : null;
+  }
   function estraiOrario(o){
-    if(haCampo(o,"oraInizio") || haCampo(o,"oraFine")){
-      return { inizio:(o.oraInizio||"").toString().trim(), fine:(o.oraFine||"").toString().trim() };
+    const oi = campoCI(o, "oraInizio", "ora_inizio", "inizio");
+    const of = campoCI(o, "oraFine", "ora_fine", "fine");
+    if(oi!=null || of!=null){
+      return { inizio: oi!=null?pulisciTestoImport(oi):"", fine: of!=null?pulisciTestoImport(of):"" };
     }
-    if(haCampo(o,"orario")) return dividiOrarioTesto(o.orario);
+    const combinato = campoCI(o, "orario", "ora", "fascia_oraria", "fasciaoraria");
+    if(combinato!=null) return dividiOrarioTesto(pulisciTestoImport(combinato));
     return { inizio:"", fine:"" };
   }
   function estraiNoteEsplicite(o){
     const parti = [];
-    if(haCampo(o,"note")) parti.push(Array.isArray(o.note) ? o.note.join("; ") : String(o.note));
-    if(haCampo(o,"dettagli") && typeof o.dettagli==="string") parti.push(o.dettagli);
+    const note = campoCI(o, "note", "nota");
+    if(note!=null) parti.push(Array.isArray(note) ? note.map(pulisciTestoImport).join("; ") : pulisciTestoImport(note));
+    const dettagli = campoCI(o, "dettagli", "dettaglio");
+    if(typeof dettagli==="string" && dettagli.trim()) parti.push(pulisciTestoImport(dettagli));
     return parti.join("; ");
   }
   function costruisciData(o, ctx){
-    if(haCampo(o,"data")){
-      const d = String(o.data).trim();
+    const dataRaw = campoCI(o, "data");
+    if(dataRaw!=null){
+      const d = pulisciTestoImport(dataRaw);
       if(/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
       const iso = dataItalianaEstesaToISO(d);
       if(iso) return iso;
     }
-    const giornoNum = typeof o.giorno==="number" ? o.giorno
-      : (typeof o.giorno==="string" && /^\d{1,2}$/.test(o.giorno) ? parseInt(o.giorno,10) : null);
+    const giornoNum = estraiGiornoNumero(o);
     if(giornoNum && ctx.anno && ctx.mese){
       return `${ctx.anno}-${String(ctx.mese).padStart(2,"0")}-${String(giornoNum).padStart(2,"0")}`;
     }
@@ -249,9 +317,11 @@ function normalizzaRigheImportGrezzo(input, annoDefault, meseDefault){
   }
   function aggiornaContesto(o, ctx){
     let { mese, anno } = ctx;
-    if(haCampo(o,"anno")) anno = parseInt(o.anno,10) || anno;
-    if(haCampo(o,"mese")){
-      const r = parseMeseAnnoTesto(o.mese, anno);
+    const annoRaw = campoCI(o, "anno");
+    if(annoRaw!=null) anno = parseInt(pulisciTestoImport(annoRaw),10) || anno;
+    const meseRaw = campoCI(o, "mese");
+    if(meseRaw!=null){
+      const r = parseMeseAnnoTesto(pulisciTestoImport(meseRaw), anno);
       if(r.mese) mese = r.mese;
       if(r.anno) anno = r.anno;
     }
@@ -259,30 +329,34 @@ function normalizzaRigheImportGrezzo(input, annoDefault, meseDefault){
   }
   function assomigliaARigaTurno(o){
     if(!o || typeof o!=="object" || Array.isArray(o)) return false;
-    const haData = haCampo(o,"data") || typeof o.giorno==="number" ||
-      (typeof o.giorno==="string" && /^\d{1,2}$/.test(o.giorno));
-    const haTitoloEsplicito = !!(o.titolo || o.turno || o.codice);
-    return haData && (haTitoloEsplicito || typeof o.note==="string");
+    const haData = campoCI(o,"data")!=null || estraiGiornoNumero(o)!=null;
+    const haTitoloEsplicito = !!estraiTitolo(o);
+    const noteRaw = campoCI(o,"note");
+    return haData && (haTitoloEsplicito || typeof noteRaw==="string");
   }
   function elaboraRiga(o, ctx){
     const data = costruisciData(o, ctx);
     let titolo = estraiTitolo(o);
     let note = estraiNoteEsplicite(o);
-    if(!titolo && typeof o.note==="string" && o.note.trim()){
-      // Nessun titolo/turno esplicito: alcuni export usano "note" come
-      // etichetta del turno stesso (es. "FESTIVO", "MATTINA"). La usiamo
-      // come titolo — se non corrisponde a nessun modello reale di questo
-      // calendario finirà comunque tra i "mancanti", non viene inventato
-      // nessun modello.
-      titolo = o.note.toString().trim();
-      note = (haCampo(o,"dettagli") && typeof o.dettagli==="string") ? o.dettagli : "";
+    if(!titolo){
+      const noteRaw = campoCI(o,"note");
+      if(typeof noteRaw==="string" && pulisciTestoImport(noteRaw)){
+        // Nessun titolo/turno esplicito: alcuni export usano "note" come
+        // etichetta del turno stesso (es. "FESTIVO", "MATTINA"). La usiamo
+        // come titolo — se non corrisponde a nessun modello reale di
+        // questo calendario finirà comunque tra i "mancanti", non viene
+        // inventato nessun modello.
+        titolo = pulisciTestoImport(noteRaw);
+        const dettagli = campoCI(o,"dettagli","dettaglio");
+        note = (typeof dettagli==="string" && dettagli.trim()) ? pulisciTestoImport(dettagli) : "";
+      }
     }
     if(!data || !titolo) return;
     const { inizio, fine } = estraiOrario(o);
     righe.push({
       data, titolo, oraInizio:inizio, oraFine:fine,
-      auto:(o.auto||"").toString().trim(),
-      collega:(o.collega||"").toString().trim(),
+      auto: pulisciTestoImport(campoCI(o,"auto")||""),
+      collega: pulisciTestoImport(campoCI(o,"collega")||""),
       note,
     });
   }
@@ -292,17 +366,19 @@ function normalizzaRigheImportGrezzo(input, annoDefault, meseDefault){
     const ctxAggiornato = aggiornaContesto(nodo, ctx);
     if(assomigliaARigaTurno(nodo)) elaboraRiga(nodo, ctxAggiornato);
     const ctxFiglio = { ...ctxAggiornato };
-    if(typeof nodo.giorno==="number") ctxFiglio.giornoEreditato = nodo.giorno;
-    if(haCampo(nodo,"data")) ctxFiglio.dataEreditata = nodo.data;
+    const giornoProprio = estraiGiornoNumero(nodo);
+    if(giornoProprio!=null) ctxFiglio.giornoEreditato = giornoProprio;
+    const dataPropria = campoCI(nodo,"data");
+    if(dataPropria!=null) ctxFiglio.dataEreditata = dataPropria;
     for(const [chiave, valore] of Object.entries(nodo)){
-      if(CHIAVI_GESTITE.includes(chiave)) continue;
+      if(CHIAVI_GESTITE.includes(chiave.toLowerCase())) continue;
       if(Array.isArray(valore)){
         for(const el of valore){
           if(el && typeof el==="object" && !Array.isArray(el)){
             const conEredita = { ...el };
-            if(!haCampo(conEredita,"data") && !haCampo(conEredita,"giorno")){
+            if(campoCI(conEredita,"data")==null && estraiGiornoNumero(conEredita)==null){
               if(ctxFiglio.dataEreditata) conEredita.data = ctxFiglio.dataEreditata;
-              else if(ctxFiglio.giornoEreditato) conEredita.giorno = ctxFiglio.giornoEreditato;
+              else if(ctxFiglio.giornoEreditato!=null) conEredita.giorno = ctxFiglio.giornoEreditato;
             }
             cammina(conEredita, ctxFiglio);
           } else {
@@ -2275,6 +2351,7 @@ const importsRecenti = useMemo(()=>{
       return ns;
     });
 
+    registraProblemiImport(mancanti, sospetti);
     return { nAggiunti, nSostituiti, nInvariati, mancanti, sospetti, importId };
   }
 
@@ -6785,11 +6862,12 @@ async function preprocessaImmagine(file){
 }
 
 function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, month, onClose, onConfirm, onDeleteImport}){
-  const [step, setStep] = useState("menu"); // menu | incolla | riepilogo
+  const [step, setStep] = useState("menu"); // menu | incolla | riepilogo | registro
   const [testoJson, setTestoJson] = useState("");
   const [importando, setImportando] = useState(false);
   const [errore, setErrore] = useState("");
   const [risultato, setRisultato] = useState(null);
+  const [registro, setRegistro] = useState(null);
   const fileInputRef = useRef(null);
 
   async function elabora(testo){
@@ -6866,6 +6944,12 @@ function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, month, o
 
             {errore && <div style={{color:"#ef4444",fontSize:12,marginBottom:14}}>{errore}</div>}
 
+            <button onClick={()=>{setRegistro(leggiRegistroImportProblemi());setStep("registro");}}
+              style={{width:"100%",background:"none",border:`1px solid ${T.border}`,borderRadius:10,color:T.text,
+                padding:"10px 0",fontWeight:700,fontSize:13,cursor:"pointer",marginBottom:16}}>
+              📋 Registro problemi import
+            </button>
+
             {importsRecenti?.length>0 && (
               <div>
                 <div style={{fontSize:11,fontWeight:800,color:T.sub,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>
@@ -6931,10 +7015,10 @@ function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, month, o
                 <div style={{fontSize:12,fontWeight:800,color:"#ef4444",marginBottom:8}}>
                   ⚠️ {risultato.mancanti.length} righe senza modello corrispondente:
                 </div>
-                <div style={{maxHeight:260,overflowY:"auto",background:T.s2,borderRadius:10,padding:10,marginBottom:14}}>
+                <div style={{maxHeight:260,overflowY:"auto",background:"#fff",border:"1px solid #ddd",borderRadius:10,padding:10,marginBottom:14}}>
                   {risultato.mancanti.map((m,i)=>(
-                    <div key={i} style={{fontSize:11,color:T.sub,padding:"5px 0",
-                      borderBottom: i<risultato.mancanti.length-1?`1px solid ${T.border}`:"none"}}>
+                    <div key={i} style={{fontSize:17,color:"#000",padding:"5px 0",
+                      borderBottom: i<risultato.mancanti.length-1?"1px solid #ddd":"none"}}>
                       {fmtDataIT(m.data)} — {m.titolo} {m.oraInizio?`(${m.oraInizio}-${m.oraFine})`:"(tutto il giorno)"}
                     </div>
                   ))}
@@ -6947,10 +7031,10 @@ function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, month, o
                 <div style={{fontSize:12,fontWeight:800,color:"#f59e0b",marginBottom:8}}>
                   🔶 {risultato.sospetti.length} righe con titolo trovato ma orario non corrispondente:
                 </div>
-                <div style={{maxHeight:260,overflowY:"auto",background:T.s2,borderRadius:10,padding:10,marginBottom:14}}>
+                <div style={{maxHeight:260,overflowY:"auto",background:"#fff",border:"1px solid #ddd",borderRadius:10,padding:10,marginBottom:14}}>
                   {risultato.sospetti.map((m,i)=>(
-                    <div key={i} style={{fontSize:11,color:T.sub,padding:"5px 0",
-                      borderBottom: i<risultato.sospetti.length-1?`1px solid ${T.border}`:"none"}}>
+                    <div key={i} style={{fontSize:17,color:"#000",padding:"5px 0",
+                      borderBottom: i<risultato.sospetti.length-1?"1px solid #ddd":"none"}}>
                       {fmtDataIT(m.data)} — {m.titolo} {m.oraInizio?`(${m.oraInizio}-${m.oraFine})`:"(nessun orario nel file)"}
                       {" — "}{m.motivo==="ambiguo"?"più modelli con questo titolo":"orario diverso dal modello salvato"}
                     </div>
@@ -6962,6 +7046,67 @@ function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, month, o
             <button onClick={onClose}
               style={{width:"100%",background:accent,border:"none",borderRadius:10,color:"#fff",
                 padding:"12px 0",fontWeight:800,fontSize:14,cursor:"pointer"}}>Chiudi</button>
+          </div>
+        )}
+
+        {step==="registro" && (
+          <div style={{padding:20}}>
+            <div style={{fontSize:16,fontWeight:900,color:T.text,marginBottom:14}}>Registro problemi import</div>
+            {(!registro || registro.length===0) ? (
+              <div style={{fontSize:13,color:T.sub,marginBottom:16}}>Nessun problema registrato finora.</div>
+            ) : (
+              <div style={{maxHeight:440,overflowY:"auto",marginBottom:14}}>
+                {registro.slice().reverse().map((sess,si)=>(
+                  <div key={si} style={{marginBottom:16}}>
+                    <div style={{fontSize:11,fontWeight:800,color:T.sub,marginBottom:6}}>
+                      {new Date(sess.ts).toLocaleString("it-IT")}
+                    </div>
+                    {sess.mancanti?.length>0 && (
+                      <div style={{background:"#fff",border:"1px solid #ddd",borderRadius:10,padding:10,marginBottom:8}}>
+                        <div style={{fontSize:12,fontWeight:800,color:"#ef4444",marginBottom:6}}>
+                          ⚠️ {sess.mancanti.length} senza modello corrispondente
+                        </div>
+                        {sess.mancanti.map((m,i)=>(
+                          <div key={i} style={{fontSize:17,color:"#000",padding:"5px 0",
+                            borderBottom: i<sess.mancanti.length-1?"1px solid #ddd":"none"}}>
+                            {fmtDataIT(m.data)} — {m.titolo} {m.oraInizio?`(${m.oraInizio}-${m.oraFine})`:"(tutto il giorno)"}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {sess.sospetti?.length>0 && (
+                      <div style={{background:"#fff",border:"1px solid #ddd",borderRadius:10,padding:10}}>
+                        <div style={{fontSize:12,fontWeight:800,color:"#f59e0b",marginBottom:6}}>
+                          🔶 {sess.sospetti.length} con titolo trovato ma orario non corrispondente
+                        </div>
+                        {sess.sospetti.map((m,i)=>(
+                          <div key={i} style={{fontSize:17,color:"#000",padding:"5px 0",
+                            borderBottom: i<sess.sospetti.length-1?"1px solid #ddd":"none"}}>
+                            {fmtDataIT(m.data)} — {m.titolo} {m.oraInizio?`(${m.oraInizio}-${m.oraFine})`:"(nessun orario nel file)"}
+                            {" — "}{m.motivo==="ambiguo"?"più modelli con questo titolo":"orario diverso dal modello salvato"}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            {registro?.length>0 && (
+              <button onClick={()=>{
+                  if(confirm("Cancellare tutto il registro dei problemi di import? L'azione non è reversibile.")){
+                    cancellaRegistroImportProblemi();
+                    setRegistro([]);
+                  }
+                }}
+                style={{width:"100%",background:"none",border:"1px solid #ef4444",borderRadius:10,color:"#ef4444",
+                  padding:"10px 0",fontWeight:800,fontSize:13,cursor:"pointer",marginBottom:10}}>
+                Cancella registro
+              </button>
+            )}
+            <button onClick={()=>setStep("menu")}
+              style={{width:"100%",background:"none",border:"none",color:T.sub,
+                padding:"6px 0 0",fontWeight:700,fontSize:12,cursor:"pointer"}}>‹ Indietro</button>
           </div>
         )}
 
