@@ -3058,11 +3058,11 @@ const importsRecenti = useMemo(()=>{
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:2,padding:"2px 3px 0",flexShrink:0}}>
                     <span style={{fontSize:20,fontWeight:500,lineHeight:1,color:red?"#ef4444":T.sub}}>{d}</span>
                     <div style={{display:"flex",alignItems:"center",gap:3,flexShrink:0}}>
-                      {evts.length>5&&<span style={{fontSize:11,fontWeight:800,color:T.sub}}>+{evts.length-5}</span>}
+                      {evts.length>8&&<span style={{fontSize:11,fontWeight:800,color:T.sub}}>+{evts.length-8}</span>}
                     </div>
                   </div>
-                  <div style={{flex:1,overflow:"hidden",display:"grid",gridTemplateRows:"repeat(5,1fr)",gap:"1px",padding:"0 1px 1px"}}>
-                    {evts.slice(0,5).map((e,ei)=>(
+                  <div style={{flex:1,overflow:"hidden",display:"grid",gridTemplateRows:"repeat(8,1fr)",gap:"1px",padding:"0 1px 1px"}}>
+                    {evts.slice(0,8).map((e,ei)=>(
                       <div key={e.id+ei} style={{background:e.color,borderRadius:3,padding:"1px 4px",
                         fontSize:evtFontSize,fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
                         whiteSpace:"nowrap",minHeight:0,display:"flex",alignItems:"center",
@@ -3101,13 +3101,13 @@ const importsRecenti = useMemo(()=>{
                 <span style={{fontSize:20,fontWeight:isT?900:500,lineHeight:1,
                   color:isT?accent:red?"#ef4444":T.sub}}>{d}</span>
                 <div style={{display:"flex",alignItems:"center",gap:3,flexShrink:0}}>
-                  {evts.length>5&&<span style={{fontSize:11,fontWeight:800,color:T.sub}}>+{evts.length-5}</span>}
+                  {evts.length>8&&<span style={{fontSize:11,fontWeight:800,color:T.sub}}>+{evts.length-8}</span>}
                 </div>
               </div>
               <div style={{flex:1,overflow:"hidden",display:"grid",
-                gridTemplateRows:`repeat(${Math.max(5,evts.slice(0,5).reduce((n,e)=>n+1+(e.protPagFine?1:0)+(e.protRecFine?1:0),0))},minmax(13px,1fr))`,
+                gridTemplateRows:`repeat(${Math.max(8,evts.slice(0,8).reduce((n,e)=>n+1+(e.protPagFine?1:0)+(e.protRecFine?1:0),0))},minmax(13px,1fr))`,
                 gap:"1px",padding:"0 1px 1px"}}>
-                {evts.slice(0,5).map((e,ei)=>{
+                {evts.slice(0,8).map((e,ei)=>{
                   const nodes = [];
                   if(e.protPagFine) nodes.push({label:"PR PAG",color:"#8b5cf6"});
                   if(e.protRecFine) nodes.push({label:"PR REC",color:"#64748b"});
@@ -4614,7 +4614,9 @@ const importsRecenti = useMemo(()=>{
                   🕐 {e.tIn}{e.tOut?` → ${e.tOut}`:""}{durataEvt?` · ${durataEvt}`:""}
                 </div>
               )}
-              {e.collega&&<div style={{color:cardSubColor,fontSize:17,marginTop:3}}>👮 {e.collega}</div>}
+              {(e.collega||e.auto)&&<div style={{color:cardSubColor,fontSize:17,marginTop:3}}>
+                {e.collega&&<>👮 {e.collega}</>}{e.collega&&e.auto?"  ·  ":""}{e.auto&&<>🚗 {e.auto}</>}
+              </div>}
               {(e.protPagFine||e.protRecFine)&&(()=>{
                 function calcDurProt(tBase, oraFine){
                   const m1=oraInMinuti(tBase), m2=oraInMinuti(oraFine);
