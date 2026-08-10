@@ -545,13 +545,52 @@ function easter(y){
   const mo=Math.floor((h+l-7*m2+114)/31),da=((h+l-7*m2+114)%31)+1;
   return {m:mo-1,d:da};
 }
-function italianHols(y){
+// Elenco festività italiane "conosciute": nazionali (sempre attive di default)
+// + patronali/facoltative comuni (disattive di default). L'utente può
+// abilitare/disabilitare ciascuna singolarmente dalle Impostazioni.
+// {key, name, m, d} per le fisse; {key, name, easterOffset} per quelle legate a Pasqua.
+const FESTIVITA_CATALOGO = [
+  { key:"capodanno",   name:"Capodanno",                 m:0,  d:1  },
+  { key:"epifania",    name:"Epifania",                   m:0,  d:6  },
+  { key:"pasqua",      name:"Pasqua",                     easterOffset:0 },
+  { key:"pasquetta",   name:"Lunedì di Pasqua",            easterOffset:1 },
+  { key:"liberazione", name:"Giorno della liberazione",   m:3,  d:25 },
+  { key:"sanmarco",    name:"San Marco",                  m:3,  d:25 },
+  { key:"lavoro",      name:"Festa del Lavoro",           m:4,  d:1  },
+  { key:"pentecoste",  name:"Lunedì di Pentecoste",        easterOffset:50 },
+  { key:"repubblica",  name:"Anniversario della Repubblica", m:5, d:2 },
+  { key:"sangiovanni", name:"San Giovanni",               m:5,  d:24 },
+  { key:"santipietropaolo", name:"Santi Pietro e Paolo",  m:5,  d:29 },
+  { key:"santarosalia",name:"Santa Rosalia",              m:6,  d:15 },
+  { key:"ferragosto",  name:"Ferragosto",                 m:7,  d:15 },
+  { key:"sangennaro",  name:"San Gennaro",                m:8,  d:19 },
+  { key:"sanfrancesco",name:"San Francesco",              m:9,  d:4  },
+  { key:"sanpetronio", name:"San Petronio",                m:9,  d:4  },
+  { key:"ognissanti",  name:"Ognissanti",                 m:10, d:1  },
+  { key:"sannicola",   name:"San Nicola",                  m:11, d:6  },
+  { key:"santambrogio",name:"Sant'Ambrogio",               m:11, d:7  },
+  { key:"immacolata",  name:"Immacolata Concezione",      m:11, d:8  },
+  { key:"natale",      name:"Natale",                     m:11, d:25 },
+  { key:"santostefano",name:"Santo Stefano",               m:11, d:26 },
+];
+// Festività attive di default (le altre — patronali locali — partono disattivate).
+const FESTIVITA_DEFAULT_ATTIVE = ["capodanno","epifania","pasqua","pasquetta","liberazione",
+  "lavoro","repubblica","ferragosto","sangennaro","sanfrancesco","ognissanti","immacolata","natale","santostefano"];
+
+function resolveFestivitaCatalogo(y){
   const e=easter(y);
-  // Gestione nativa del rollover del mese se Pasqua è a fine mese
-  const pasquettaDate = new Date(y, e.m, e.d + 1);
-  return [{m:0,d:1},{m:0,d:6},{m:3,d:25},{m:4,d:1},{m:5,d:2},
-    {m:7,d:15},{m:10,d:1},{m:11,d:8},{m:11,d:25},{m:11,d:26},
-    {m:e.m,d:e.d},{m:pasquettaDate.getMonth(),d:pasquettaDate.getDate()}];
+  const easterDate = new Date(y,e.m,e.d);
+  return FESTIVITA_CATALOGO.map(f=>{
+    if(f.easterOffset!==undefined){
+      const dd = new Date(easterDate); dd.setDate(dd.getDate()+f.easterOffset);
+      return { key:f.key, name:f.name, m:dd.getMonth(), d:dd.getDate() };
+    }
+    return { key:f.key, name:f.name, m:f.m, d:f.d };
+  });
+}
+function italianHols(y, abilitate){
+  const attive = abilitate || FESTIVITA_DEFAULT_ATTIVE;
+  return resolveFestivitaCatalogo(y).filter(f=>attive.includes(f.key));
 }
 // #endregion
 
@@ -704,7 +743,7 @@ const REPORT_TEMPLATES = [
   { type:"guadagni",        label:"Guadagni", desc:"Stima guadagni da indennità" },
 ];
 
-const INIT = { calendars:[], events:{}, theme:"auto", extraHols:[], reports:[], reportSettings:{}, fasceAutomatiche: FASCE_AUTOMATICHE_DEFAULT, sundayColor:"", holidayColor:"" };
+const INIT = { calendars:[], events:{}, theme:"auto", extraHols:[], reports:[], reportSettings:{}, fasceAutomatiche: FASCE_AUTOMATICHE_DEFAULT, sundayColor:"", holidayColor:"", nationalHolsEnabled:FESTIVITA_DEFAULT_ATTIVE };
 
 export default function App({ session }){
   const today = new Date();
@@ -989,6 +1028,7 @@ export default function App({ session }){
         const savedFasce = settings?.fasce_automatiche || FASCE_AUTOMATICHE_DEFAULT;
         const savedSundayColor = settings?.sunday_color || "";
         const savedHolidayColor = settings?.holiday_color || "";
+        const savedNationalHolsEnabled = settings?.national_hols_enabled || FESTIVITA_DEFAULT_ATTIVE;
 
         const modelliMappati = (modelliDb||[]).map(m=>({
           id:m.id, titolo:m.titolo, label:m.label||"", tempo:m.tempo,
@@ -1016,9 +1056,9 @@ export default function App({ session }){
         const modelliUguali = cached && sameData(cached.modelli, modelliMappati);
 
         if(!(calendariUguali && eventiUguali)){
-          setStore(s=>({ ...s, calendars, events, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings, fasceAutomatiche: savedFasce, sundayColor: savedSundayColor, holidayColor: savedHolidayColor }));
+          setStore(s=>({ ...s, calendars, events, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings, fasceAutomatiche: savedFasce, sundayColor: savedSundayColor, holidayColor: savedHolidayColor, nationalHolsEnabled: savedNationalHolsEnabled }));
         } else {
-          setStore(s=>({ ...s, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings, fasceAutomatiche: savedFasce, sundayColor: savedSundayColor, holidayColor: savedHolidayColor }));
+          setStore(s=>({ ...s, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings, fasceAutomatiche: savedFasce, sundayColor: savedSundayColor, holidayColor: savedHolidayColor, nationalHolsEnabled: savedNationalHolsEnabled }));
         }
         if(!modelliUguali){
           setModelli(modelliMappati);
@@ -1151,7 +1191,7 @@ export default function App({ session }){
   // solo lì dove servono a identificarli, senza "colorare" tutti i menu dell'app.
   const accent    = "#2563eb";
   const accentText = getContrastTextColor(accent);
-  const hols      = italianHols(year);
+  const hols      = italianHols(year, store.nationalHolsEnabled);
   const fasceAutomatiche = store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT;
   const colByTime = (tIn)=>getColorByTime(tIn, fasceAutomatiche);
   const colLabel  = (tIn)=>getColorLabel(tIn, fasceAutomatiche);
@@ -4558,6 +4598,44 @@ const importsRecenti = useMemo(()=>{
         </Sec>
       )}
 
+      <SecCollapsible label="FESTIVITÀ NAZIONALI" T={T}>
+        <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
+          Scegli quali festività colorare automaticamente come festivo nel calendario.
+        </div>
+        {resolveFestivitaCatalogo(year).map(f=>{
+          const enabled = (store.nationalHolsEnabled||FESTIVITA_DEFAULT_ATTIVE).includes(f.key);
+          return (
+            <div key={f.key} onClick={()=>{
+                const cur = store.nationalHolsEnabled||FESTIVITA_DEFAULT_ATTIVE;
+                const next = enabled ? cur.filter(k=>k!==f.key) : [...cur, f.key];
+                setStore(s=>({...s, nationalHolsEnabled:next}));
+                saveSettings({national_hols_enabled:next});
+              }}
+              style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+                padding:"10px 4px",borderBottom:`1px solid ${T.border}`,cursor:"pointer"}}>
+              <div>
+                <div style={{fontSize:13,fontWeight:600,color:T.text}}>{f.name}</div>
+                <div style={{fontSize:10,color:T.sub,marginTop:1}}>
+                  (es. {String(f.d).padStart(2,"0")}/{String(f.m+1).padStart(2,"0")}/{year})
+                </div>
+              </div>
+              <div style={{width:22,height:22,borderRadius:6,flexShrink:0,
+                border:`2px solid ${enabled?accent:T.border}`,background:enabled?accent:"transparent",
+                display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:14,fontWeight:900}}>
+                {enabled?"✓":""}
+              </div>
+            </div>
+          );
+        })}
+        <button onClick={()=>{
+          setStore(s=>({...s, nationalHolsEnabled:FESTIVITA_DEFAULT_ATTIVE}));
+          saveSettings({national_hols_enabled:FESTIVITA_DEFAULT_ATTIVE});
+        }} style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,
+          color:T.sub,padding:"9px 0",cursor:"pointer",fontWeight:700,fontSize:12,marginTop:10}}>
+          ↩ Ripristina selezione predefinita
+        </button>
+      </SecCollapsible>
+
       <Sec label="FESTIVI LOCALI" T={T}>
         <div style={{fontSize:11,color:T.sub,marginBottom:8}}>
           Domeniche e festivi nazionali italiani sono già in rosso automaticamente.
@@ -6414,6 +6492,7 @@ function HexColorPicker({T, value, onChange}){
 
 function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, title="Scegli colore"}){
   const [pos,setPos]=useState(null); // null = centrato di default
+  const [previewColor,setPreviewColor]=useState(cur);
   const dragState = useRef(null);
   const boxRef = useRef(null);
 
@@ -6454,7 +6533,7 @@ function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, title="Sce
         onClick={e=>e.stopPropagation()}>
         <div onMouseDown={startDrag} onTouchStart={startDrag}
           style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,cursor:"grab",userSelect:"none"}}>
-          <div style={{width:26,height:26,borderRadius:"50%",background:cur,border:`2px solid ${T.border}`,flexShrink:0}}/>
+          <div style={{width:26,height:26,borderRadius:"50%",background:previewColor,border:`2px solid ${T.border}`,flexShrink:0}}/>
           <div style={{fontSize:16,fontWeight:900,color:T.text,flex:1}}>{title}</div>
           <button onClick={onClose}
             style={{background:"none",border:"none",fontSize:18,color:T.sub,cursor:"pointer",padding:4,lineHeight:1}}>✕</button>
@@ -6465,9 +6544,9 @@ function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, title="Sce
             <div style={{fontSize:12,color:T.sub,fontWeight:700,marginBottom:8}}>USATI</div>
             <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:16}}>
               {coloriUsati.map(p=>(
-                <div key={p} onClick={()=>onPick(p)}
+                <div key={p} onClick={()=>setPreviewColor(p)}
                   style={{width:32,height:32,borderRadius:"50%",background:p,cursor:"pointer",
-                    outline:cur===p?`3px solid ${T.text}`:"none",outlineOffset:2,flexShrink:0}}/>
+                    outline:previewColor===p?`3px solid ${T.text}`:"none",outlineOffset:2,flexShrink:0}}/>
               ))}
               <div onClick={()=>{
                   const hexBox = boxRef.current?.querySelector("[data-hex-picker]");
@@ -6482,7 +6561,20 @@ function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, title="Sce
         )}
 
         <div data-hex-picker style={{fontSize:12,color:T.sub,fontWeight:700,marginBottom:8}}>Colore personalizzato (HEX)</div>
-        <HexColorPicker T={T} value={cur} onChange={onPick}/>
+        <HexColorPicker T={T} value={previewColor} onChange={setPreviewColor}/>
+
+        <div style={{display:"flex",gap:8,marginTop:16}}>
+          <button onClick={onClose}
+            style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
+              color:T.text,padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:13}}>
+            Annulla
+          </button>
+          <button onClick={()=>{onPick(previewColor);onClose();}}
+            style={{flex:1,background:previewColor,border:"none",borderRadius:10,
+              color:getContrastTextColor(previewColor),padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:13}}>
+            OK
+          </button>
+        </div>
       </div>
     </div>
   );
