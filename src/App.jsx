@@ -704,7 +704,7 @@ const REPORT_TEMPLATES = [
   { type:"guadagni",        label:"Guadagni", desc:"Stima guadagni da indennità" },
 ];
 
-const INIT = { calendars:[], events:{}, theme:"auto", extraHols:[], reports:[], reportSettings:{}, fasceAutomatiche: FASCE_AUTOMATICHE_DEFAULT };
+const INIT = { calendars:[], events:{}, theme:"auto", extraHols:[], reports:[], reportSettings:{}, fasceAutomatiche: FASCE_AUTOMATICHE_DEFAULT, sundayColor:"", holidayColor:"" };
 
 export default function App({ session }){
   const today = new Date();
@@ -987,6 +987,8 @@ export default function App({ session }){
         const savedIndennita = settings?.indennita || { diurno:"", notturno:"", festivo:"", notturno_festivo:"" };
         const savedConteggioConfigs = settings?.conteggio_configs || {};
         const savedFasce = settings?.fasce_automatiche || FASCE_AUTOMATICHE_DEFAULT;
+        const savedSundayColor = settings?.sunday_color || "";
+        const savedHolidayColor = settings?.holiday_color || "";
 
         const modelliMappati = (modelliDb||[]).map(m=>({
           id:m.id, titolo:m.titolo, label:m.label||"", tempo:m.tempo,
@@ -1014,9 +1016,9 @@ export default function App({ session }){
         const modelliUguali = cached && sameData(cached.modelli, modelliMappati);
 
         if(!(calendariUguali && eventiUguali)){
-          setStore(s=>({ ...s, calendars, events, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings, fasceAutomatiche: savedFasce }));
+          setStore(s=>({ ...s, calendars, events, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings, fasceAutomatiche: savedFasce, sundayColor: savedSundayColor, holidayColor: savedHolidayColor }));
         } else {
-          setStore(s=>({ ...s, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings, fasceAutomatiche: savedFasce }));
+          setStore(s=>({ ...s, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings, fasceAutomatiche: savedFasce, sundayColor: savedSundayColor, holidayColor: savedHolidayColor }));
         }
         if(!modelliUguali){
           setModelli(modelliMappati);
@@ -1158,6 +1160,9 @@ export default function App({ session }){
     return hols.some(h=>h.m===m&&h.d===d) ||
       (store.extraHols||[]).some(h=>+h.m-1===m&&+h.d===d);
   }
+  const sundayColor = store.sundayColor || (dark?"#2d0a0a":"#fff5f5");
+  const holidayColor = store.holidayColor || (dark?"#2d0a0a":"#fff5f5");
+  function redBg(isSun,isH){ return isSun?sundayColor:isH?holidayColor:null; }
   function getEvts(key,cid){ return store.events?.[key]?.[cid]||[]; }
   function allEvts(key){
     const res=[];
@@ -3054,7 +3059,7 @@ const importsRecenti = useMemo(()=>{
               const isH=isRed(d,prevGrid.month);
               const red=isSun||isH;
               return (
-                <div key={i} style={{background:red?(dark?"#2d0a0a":"#fff5f5"):T.surface,
+                <div key={i} style={{background:isSun?sundayColor:(isH?holidayColor:T.surface),
                   display:"flex",flexDirection:"column",overflow:"hidden"}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:2,padding:"2px 3px 0",flexShrink:0}}>
                     <span style={{fontSize:20,fontWeight:500,lineHeight:1,color:red?"#ef4444":T.sub}}>{d}</span>
@@ -3095,7 +3100,7 @@ const importsRecenti = useMemo(()=>{
                 if(quickModeModello){ applyQuickModello(key); return; }
                 setDayKey(key); setForm(null); setPal(null);
               }}
-              style={{background:isT?(dark?"#1a2f50":"#dbeafe"):red?(dark?"#2d0a0a":"#fff5f5"):T.surface,
+              style={{background:isT?(dark?"#1a2f50":"#dbeafe"):isSun?sundayColor:(isH?holidayColor:T.surface),
                 cursor:"pointer",display:"flex",flexDirection:"column",overflow:"hidden",
                 borderTop:"none"}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:2,padding:"2px 3px 0",flexShrink:0}}>
@@ -4092,7 +4097,7 @@ const importsRecenti = useMemo(()=>{
                 const modelliDelCalRot = modelliOrdinati.filter(m=>(m.calendarId||mainCalId)===calId);
                 return (<>
               {rot.tipo==="personalizzata"&&(
-                <GrigliaRotazione rot={rot} T={T} accent={accent} modelli={modelliDelCalRot} fasceAutomatiche={fasceAutomatiche}
+                <GrigliaRotazione rot={rot} T={T} accent={accent} modelli={modelliDelCalRot} fasceAutomatiche={fasceAutomatiche} sundayColor={sundayColor}
                   onUpdate={griglia=>setRotazioni(prev=>prev.map(r=>r.id===rot.id?{...r,griglia}:r))}/>
               )}
               {rot.tipo==="domeniche"&&(
@@ -4200,6 +4205,56 @@ const importsRecenti = useMemo(()=>{
         }} style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,
           color:T.sub,padding:"9px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
           ↩ Ripristina fasce predefinite
+        </button>
+      </SecCollapsible>
+
+      <SecCollapsible label="DOMENICHE E FESTIVI" T={T}>
+        <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
+          Colore di sfondo usato nel calendario per le domeniche e i giorni festivi.
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <div style={{flex:1,background:T.s2,borderRadius:10,padding:"10px 12px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <div style={{position:"relative",flexShrink:0}}>
+                <div style={{width:26,height:26,borderRadius:"50%",background:sundayColor,
+                  border:`2px solid ${T.border}`,cursor:"pointer"}}
+                  onClick={e=>{e.stopPropagation();setPal(pal==="sunday-color"?null:"sunday-color");}}/>
+                {pal==="sunday-color"&&<ColorPickerModal T={T} cur={sundayColor} title="Colore domeniche"
+                  coloriUsati={[sundayColor,holidayColor].filter(Boolean)}
+                  onPick={p=>{
+                    setStore(s=>({...s,sundayColor:p}));
+                    saveSettings({sunday_color:p});
+                  }}
+                  onClose={()=>setPal(null)}/>}
+              </div>
+              <div style={{fontSize:13,fontWeight:700,color:T.text}}>Domeniche</div>
+            </div>
+          </div>
+          <div style={{flex:1,background:T.s2,borderRadius:10,padding:"10px 12px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <div style={{position:"relative",flexShrink:0}}>
+                <div style={{width:26,height:26,borderRadius:"50%",background:holidayColor,
+                  border:`2px solid ${T.border}`,cursor:"pointer"}}
+                  onClick={e=>{e.stopPropagation();setPal(pal==="holiday-color"?null:"holiday-color");}}/>
+                {pal==="holiday-color"&&<ColorPickerModal T={T} cur={holidayColor} title="Colore festivi"
+                  coloriUsati={[sundayColor,holidayColor].filter(Boolean)}
+                  onPick={p=>{
+                    setStore(s=>({...s,holidayColor:p}));
+                    saveSettings({holiday_color:p});
+                  }}
+                  onClose={()=>setPal(null)}/>}
+              </div>
+              <div style={{fontSize:13,fontWeight:700,color:T.text}}>Festivi</div>
+            </div>
+          </div>
+        </div>
+        <button onClick={()=>{
+          const def = dark?"#2d0a0a":"#fff5f5";
+          setStore(s=>({...s, sundayColor:def, holidayColor:def}));
+          saveSettings({sunday_color:def, holiday_color:def});
+        }} style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,
+          color:T.sub,padding:"9px 0",cursor:"pointer",fontWeight:700,fontSize:12,marginTop:8}}>
+          ↩ Ripristina colore predefinito
         </button>
       </SecCollapsible>
 
@@ -5180,7 +5235,7 @@ const importsRecenti = useMemo(()=>{
                 )}
                 {showRotDetail.tipo==="personalizzata"&&(
                   <div style={{flex:1,minHeight:500}}>
-                    <GrigliaRotazione rot={showRotDetail} T={T} accent={accent} modelli={modelliDelCalRot2} fasceAutomatiche={fasceAutomatiche} onUpdate={()=>{}}/>
+                    <GrigliaRotazione rot={showRotDetail} T={T} accent={accent} modelli={modelliDelCalRot2} fasceAutomatiche={fasceAutomatiche} sundayColor={sundayColor} onUpdate={()=>{}}/>
                   </div>
                 )}
                   </>);
@@ -6897,7 +6952,7 @@ function ModelloSelector({label, value, onChange, modelli, T, required=false, la
   );
 }
 
-function GrigliaRotazione({rot, T, accent, modelli, fasceAutomatiche, onUpdate}){
+function GrigliaRotazione({rot, T, accent, modelli, fasceAutomatiche, sundayColor, onUpdate}){
   const [selModello, setSelModello] = useState(modelli[0]?.id||null);
   const griglia = rot.griglia||{};
   function getDays(){
@@ -6946,7 +7001,7 @@ function GrigliaRotazione({rot, T, accent, modelli, fasceAutomatiche, onUpdate})
                         onUpdate(newG);
                       }}
                       style={{height:32,borderRadius:6,cursor:"pointer",
-                        background:c||(isDOM?(T.bg==="#f1f5f9"?"#fff5f5":"#2d0a0a"):T.s2),
+                        background:c||(isDOM?(sundayColor||(T.bg==="#f1f5f9"?"#fff5f5":"#2d0a0a")):T.s2),
                         border:`1px solid ${c?c+"88":T.border}`,
                         display:"flex",alignItems:"center",justifyContent:"center",
                         fontSize:9,fontWeight:700,color:c?"#fff":T.sub}}>
