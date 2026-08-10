@@ -4619,9 +4619,9 @@ const importsRecenti = useMemo(()=>{
                   (es. {String(f.d).padStart(2,"0")}/{String(f.m+1).padStart(2,"0")}/{year})
                 </div>
               </div>
-              <div style={{width:22,height:22,borderRadius:6,flexShrink:0,
-                border:`2px solid ${enabled?accent:T.border}`,background:enabled?accent:"transparent",
-                display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:14,fontWeight:900}}>
+              <div style={{width:24,height:24,borderRadius:6,flexShrink:0,
+                border:`2px solid ${enabled?accent:T.border}`,background:enabled?accent:T.s2,
+                display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:15,fontWeight:900}}>
                 {enabled?"✓":""}
               </div>
             </div>
