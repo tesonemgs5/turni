@@ -1292,8 +1292,9 @@ export default function App({ session }){
   }
 
   async function updateEvt(){
-    if(!form||!dayKey||!calId||!userId||!form.editId) return;
-    const cal = store.calendars.find(c=>c.id===calId);
+    const editCalId = form?.editCid || calId;
+    if(!form||!dayKey||!editCalId||!userId||!form.editId) return;
+    const cal = store.calendars.find(c=>c.id===editCalId);
     if(!cal) return;
     let color = form.colorOvr || cal.color;
     let label = (form.label||"Evento").toUpperCase();
@@ -1338,7 +1339,7 @@ export default function App({ session }){
         collega: (form.collega||"").toUpperCase(), auto: (form.auto||"").toUpperCase(),
         protPagFine: form.protPagFine||"", protRecFine: form.protRecFine||"",
       };
-      const ns = withEventoAggiornato(prev, dayKey, calId, form.editId, patch);
+      const ns = withEventoAggiornato(prev, dayKey, editCalId, form.editId, patch);
       saveToLocalStorage(ns.events, ns.calendars, modelli);
       syncSeAttivo(ns.events, ns.calendars);
       return ns;
@@ -4545,7 +4546,7 @@ const importsRecenti = useMemo(()=>{
 // #region SEZIONE 19: DAY MODAL
 // ═══════════════════════════════════════════════════════════════
   const soloConsultazione = !editMode && selectedCalIds.length>1;
-  const curEvts = dayKey ? (soloConsultazione ? allEvts(dayKey).filter(e=>selectedCalIds.includes(e._cid)) : getEvts(dayKey,calId)) : [];
+  const curEvts = dayKey ? (selectedCalIds.length>1 ? allEvts(dayKey).filter(e=>selectedCalIds.includes(e._cid)) : getEvts(dayKey,calId)) : [];
   const dayModal = dayKey&&(
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:200,
       display:"flex",alignItems:"center"}}
@@ -4603,7 +4604,7 @@ const importsRecenti = useMemo(()=>{
           <div key={e.id} onClick={()=>{
               if(soloConsultazione) return;
               if(form?.editId===e.id){ setForm(null); return; }
-              setForm({ editId:e.id, modelloId:null, shiftId:null, label:e.label,
+              setForm({ editId:e.id, editCid:e._cid||calId, modelloId:null, shiftId:null, label:e.label,
                 colorOvr:e.color, dur:e.allDay?"allday":(e.tIn&&e.tOut&&e.tOut===calcFine6h15(e.tIn))?"fixed":"custom", tIn:e.tIn||"", tOut:e.tOut||"",
                 place:e.place||"", map:e.map||"", note:e.note||"", collega:e.collega||"", auto:e.auto||"",
                 protPagFine:e.protPagFine||"", protRecFine:e.protRecFine||"" });
@@ -4651,7 +4652,7 @@ const importsRecenti = useMemo(()=>{
 
             </div>
             <button onClick={e2=>{e2.stopPropagation();setForm({
-                editId:e.id,modelloId:null,shiftId:null,label:e.label,colorOvr:e.color,
+                editId:e.id,editCid:e._cid||calId,modelloId:null,shiftId:null,label:e.label,colorOvr:e.color,
                 dur:e.allDay?"allday":(e.tIn&&e.tOut&&e.tOut===calcFine6h15(e.tIn))?"fixed":"custom",tIn:e.tIn||"",tOut:e.tOut||"",place:e.place||"",
                 map:e.map||"",note:e.note||"",collega:e.collega||"",auto:e.auto||"",
                 protPagFine:e.protPagFine||"",protRecFine:e.protRecFine||"",
@@ -4660,8 +4661,8 @@ const importsRecenti = useMemo(()=>{
                 color:cardTextColor,width:26,height:26,cursor:"pointer",fontSize:14,marginLeft:4,flexShrink:0,
                 display:soloConsultazione?"none":undefined}}>✏️</button>
             <button onClick={e2=>{e2.stopPropagation();
-                if(e.rotazioneId){ setShowDeleteRotEvtDialog({evt:e, dKey:dayKey, cId:calId}); }
-                else if(window.confirm("Eliminare questo evento?")){ delEvt(dayKey,calId,e.id); }
+                if(e.rotazioneId){ setShowDeleteRotEvtDialog({evt:e, dKey:dayKey, cId:e._cid||calId}); }
+                else if(window.confirm("Eliminare questo evento?")){ delEvt(dayKey,e._cid||calId,e.id); }
               }}
               style={{background:cardTextColor==="#ffffff"?"rgba(0,0,0,0.2)":"rgba(255,255,255,0.35)",border:"none",borderRadius:6,
                 color:cardTextColor,width:26,height:26,cursor:"pointer",fontSize:14,marginLeft:4,flexShrink:0,
