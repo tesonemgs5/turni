@@ -1292,8 +1292,9 @@ export default function App({ session }){
   }
 
   async function updateEvt(){
-    if(!form||!dayKey||!calId||!userId||!form.editId) return;
-    const cal = store.calendars.find(c=>c.id===calId);
+    const editCalId = form?.editCid || calId;
+    if(!form||!dayKey||!editCalId||!userId||!form.editId) return;
+    const cal = store.calendars.find(c=>c.id===editCalId);
     if(!cal) return;
     let color = form.colorOvr || cal.color;
     let label = (form.label||"Evento").toUpperCase();
@@ -1338,7 +1339,7 @@ export default function App({ session }){
         collega: (form.collega||"").toUpperCase(), auto: (form.auto||"").toUpperCase(),
         protPagFine: form.protPagFine||"", protRecFine: form.protRecFine||"",
       };
-      const ns = withEventoAggiornato(prev, dayKey, calId, form.editId, patch);
+      const ns = withEventoAggiornato(prev, dayKey, editCalId, form.editId, patch);
       saveToLocalStorage(ns.events, ns.calendars, modelli);
       syncSeAttivo(ns.events, ns.calendars);
       return ns;
@@ -3058,11 +3059,11 @@ const importsRecenti = useMemo(()=>{
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:2,padding:"2px 3px 0",flexShrink:0}}>
                     <span style={{fontSize:20,fontWeight:500,lineHeight:1,color:red?"#ef4444":T.sub}}>{d}</span>
                     <div style={{display:"flex",alignItems:"center",gap:3,flexShrink:0}}>
-                      {evts.length>5&&<span style={{fontSize:11,fontWeight:800,color:T.sub}}>+{evts.length-5}</span>}
+                      {evts.length>8&&<span style={{fontSize:11,fontWeight:800,color:T.sub}}>+{evts.length-8}</span>}
                     </div>
                   </div>
-                  <div style={{flex:1,overflow:"hidden",display:"grid",gridTemplateRows:"repeat(5,1fr)",gap:"1px",padding:"0 1px 1px"}}>
-                    {evts.slice(0,5).map((e,ei)=>(
+                  <div style={{flex:1,overflow:"hidden",display:"grid",gridTemplateRows:"repeat(8,1fr)",gap:"1px",padding:"0 1px 1px"}}>
+                    {evts.slice(0,8).map((e,ei)=>(
                       <div key={e.id+ei} style={{background:e.color,borderRadius:3,padding:"1px 4px",
                         fontSize:evtFontSize,fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
                         whiteSpace:"nowrap",minHeight:0,display:"flex",alignItems:"center",
@@ -3101,13 +3102,13 @@ const importsRecenti = useMemo(()=>{
                 <span style={{fontSize:20,fontWeight:isT?900:500,lineHeight:1,
                   color:isT?accent:red?"#ef4444":T.sub}}>{d}</span>
                 <div style={{display:"flex",alignItems:"center",gap:3,flexShrink:0}}>
-                  {evts.length>5&&<span style={{fontSize:11,fontWeight:800,color:T.sub}}>+{evts.length-5}</span>}
+                  {evts.length>8&&<span style={{fontSize:11,fontWeight:800,color:T.sub}}>+{evts.length-8}</span>}
                 </div>
               </div>
               <div style={{flex:1,overflow:"hidden",display:"grid",
-                gridTemplateRows:`repeat(${Math.max(5,evts.slice(0,5).reduce((n,e)=>n+1+(e.protPagFine?1:0)+(e.protRecFine?1:0),0))},minmax(13px,1fr))`,
+                gridTemplateRows:`repeat(${Math.max(8,evts.slice(0,8).reduce((n,e)=>n+1+(e.protPagFine?1:0)+(e.protRecFine?1:0),0))},minmax(13px,1fr))`,
                 gap:"1px",padding:"0 1px 1px"}}>
-                {evts.slice(0,5).map((e,ei)=>{
+                {evts.slice(0,8).map((e,ei)=>{
                   const nodes = [];
                   if(e.protPagFine) nodes.push({label:"PR PAG",color:"#8b5cf6"});
                   if(e.protRecFine) nodes.push({label:"PR REC",color:"#64748b"});
@@ -4158,9 +4159,22 @@ const importsRecenti = useMemo(()=>{
         {fasceAutomatiche.map((f,fi)=>(
           <div key={f.key} style={{background:T.s2,borderRadius:10,padding:"10px 12px",marginBottom:8}}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-              <div style={{width:26,height:26,borderRadius:"50%",background:f.color,
-                border:`2px solid ${T.border}`,flexShrink:0}}/>
-              <div style={{flex:1,fontSize:13,fontWeight:700,color:T.text}}>{f.label}</div>
+              <div style={{position:"relative",flexShrink:0}}>
+                <div style={{width:26,height:26,borderRadius:"50%",background:f.color,
+                  border:`2px solid ${T.border}`,cursor:"pointer"}}
+                  onClick={e=>{e.stopPropagation();setPal(pal===("fascia-"+f.key)?null:("fascia-"+f.key));}}/>
+                {pal===("fascia-"+f.key)&&<ColorPickerModal T={T} cur={f.color} title={`Colore ${f.label||"fascia"}`}
+                  coloriUsati={[...new Set(fasceAutomatiche.map(ff=>ff.color).filter(Boolean))]}
+                  onPick={p=>{
+                    updateFascia(f.key,{color:p});
+                    saveSettings({fasce_automatiche:fasceAutomatiche.map(ff=>ff.key===f.key?{...ff,color:p}:ff)});
+                  }}
+                  onClose={()=>setPal(null)}/>}
+              </div>
+              <input value={f.label}
+                onChange={e=>updateFascia(f.key,{label:e.target.value})}
+                onBlur={e=>saveSettings({fasce_automatiche:fasceAutomatiche.map(ff=>ff.key===f.key?{...ff,label:e.target.value}:ff)})}
+                style={{flex:1,background:"transparent",border:"none",outline:"none",color:T.text,fontSize:13,fontWeight:700}}/>
             </div>
             <div style={{display:"flex",gap:8,alignItems:"center"}}>
               <div style={{flex:1}}>
@@ -4180,9 +4194,6 @@ const importsRecenti = useMemo(()=>{
             </div>
           </div>
         ))}
-        <div style={{fontSize:11,color:T.sub,marginBottom:8}}>
-          Nome e colore delle fasce si modificano da Modelli → Colori.
-        </div>
         <button onClick={()=>{
           setStore(s=>({...s, fasceAutomatiche:FASCE_AUTOMATICHE_DEFAULT}));
           saveSettings({fasce_automatiche:FASCE_AUTOMATICHE_DEFAULT});
@@ -4535,7 +4546,7 @@ const importsRecenti = useMemo(()=>{
 // #region SEZIONE 19: DAY MODAL
 // ═══════════════════════════════════════════════════════════════
   const soloConsultazione = !editMode && selectedCalIds.length>1;
-  const curEvts = dayKey ? (soloConsultazione ? allEvts(dayKey).filter(e=>selectedCalIds.includes(e._cid)) : getEvts(dayKey,calId)) : [];
+  const curEvts = dayKey ? (selectedCalIds.length>1 ? allEvts(dayKey).filter(e=>selectedCalIds.includes(e._cid)) : getEvts(dayKey,calId)) : [];
   const dayModal = dayKey&&(
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:200,
       display:"flex",alignItems:"center"}}
@@ -4593,7 +4604,7 @@ const importsRecenti = useMemo(()=>{
           <div key={e.id} onClick={()=>{
               if(soloConsultazione) return;
               if(form?.editId===e.id){ setForm(null); return; }
-              setForm({ editId:e.id, modelloId:null, shiftId:null, label:e.label,
+              setForm({ editId:e.id, editCid:e._cid||calId, modelloId:null, shiftId:null, label:e.label,
                 colorOvr:e.color, dur:e.allDay?"allday":(e.tIn&&e.tOut&&e.tOut===calcFine6h15(e.tIn))?"fixed":"custom", tIn:e.tIn||"", tOut:e.tOut||"",
                 place:e.place||"", map:e.map||"", note:e.note||"", collega:e.collega||"", auto:e.auto||"",
                 protPagFine:e.protPagFine||"", protRecFine:e.protRecFine||"" });
@@ -4614,7 +4625,9 @@ const importsRecenti = useMemo(()=>{
                   🕐 {e.tIn}{e.tOut?` → ${e.tOut}`:""}{durataEvt?` · ${durataEvt}`:""}
                 </div>
               )}
-              {e.collega&&<div style={{color:cardSubColor,fontSize:17,marginTop:3}}>👮 {e.collega}</div>}
+              {(e.collega||e.auto)&&<div style={{color:cardSubColor,fontSize:17,marginTop:3}}>
+                {e.collega&&<>👮 {e.collega}</>}{e.collega&&e.auto?"  ·  ":""}{e.auto&&<>🚗 {e.auto}</>}
+              </div>}
               {(e.protPagFine||e.protRecFine)&&(()=>{
                 function calcDurProt(tBase, oraFine){
                   const m1=oraInMinuti(tBase), m2=oraInMinuti(oraFine);
@@ -4639,7 +4652,7 @@ const importsRecenti = useMemo(()=>{
 
             </div>
             <button onClick={e2=>{e2.stopPropagation();setForm({
-                editId:e.id,modelloId:null,shiftId:null,label:e.label,colorOvr:e.color,
+                editId:e.id,editCid:e._cid||calId,modelloId:null,shiftId:null,label:e.label,colorOvr:e.color,
                 dur:e.allDay?"allday":(e.tIn&&e.tOut&&e.tOut===calcFine6h15(e.tIn))?"fixed":"custom",tIn:e.tIn||"",tOut:e.tOut||"",place:e.place||"",
                 map:e.map||"",note:e.note||"",collega:e.collega||"",auto:e.auto||"",
                 protPagFine:e.protPagFine||"",protRecFine:e.protRecFine||"",
@@ -4648,8 +4661,8 @@ const importsRecenti = useMemo(()=>{
                 color:cardTextColor,width:26,height:26,cursor:"pointer",fontSize:14,marginLeft:4,flexShrink:0,
                 display:soloConsultazione?"none":undefined}}>✏️</button>
             <button onClick={e2=>{e2.stopPropagation();
-                if(e.rotazioneId){ setShowDeleteRotEvtDialog({evt:e, dKey:dayKey, cId:calId}); }
-                else if(window.confirm("Eliminare questo evento?")){ delEvt(dayKey,calId,e.id); }
+                if(e.rotazioneId){ setShowDeleteRotEvtDialog({evt:e, dKey:dayKey, cId:e._cid||calId}); }
+                else if(window.confirm("Eliminare questo evento?")){ delEvt(dayKey,e._cid||calId,e.id); }
               }}
               style={{background:cardTextColor==="#ffffff"?"rgba(0,0,0,0.2)":"rgba(255,255,255,0.35)",border:"none",borderRadius:6,
                 color:cardTextColor,width:26,height:26,cursor:"pointer",fontSize:14,marginLeft:4,flexShrink:0,
