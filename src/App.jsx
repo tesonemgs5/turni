@@ -293,6 +293,88 @@ function estraiJsonDaTesto(testoRaw){
   return s.slice(inizio).trim();
 }
 
+// ---- Classificatore note della vecchia app --------------------------
+// Nella vecchia app "auto" e "collega" non erano campi separati: erano
+// righe dentro l'array "note", mischiate alle note vere e proprie. Qui le
+// si separa nei campi giusti della nuova app:
+//  - "CH NN" (anche con un cognome sulla stessa riga, es. "CH 51 SANGES")
+//    -> campo auto
+//  - un modello di auto noto senza "CH" davanti (es. "DOBLO 112")
+//    -> campo auto, diventa "CH DOBLO 112"
+//  - una o due parole tutte maiuscole (es. "LEPRE", "LA MANNA", "MEO N")
+//    -> campo collega
+//  - tutto il resto resta nel campo note
+// Modelli di auto noti che compaiono senza "CH" davanti: per aggiungerne
+// altri, scrivere il nome in minuscolo qui sotto.
+const MODELLI_AUTO_NOTI = ["doblo"];
+
+// Righe che assomigliano a un cognome (una o due parole tutte maiuscole)
+// ma non lo sono, quindi vanno sempre lasciate in nota anche se altrimenti
+// combacerebbero con la regola del cognome (es. "RIS S3102", "PERIMETRALE").
+const NOTE_NON_COLLEGA_PREFISSI = ["ris", "ch"];
+const NOTE_NON_COLLEGA_ESATTE = ["perimetrale"];
+
+function sembraCognome(rigaRaw){
+  const p = pulisciTestoImport(rigaRaw);
+  if(!p) return false;
+  if(/\d/.test(p)) return false;
+  if(/^richiesto/i.test(p)) return false;
+  const chiaveIntera = p.toLowerCase();
+  if(NOTE_NON_COLLEGA_ESATTE.includes(chiaveIntera)) return false;
+  if(NOTE_NON_COLLEGA_PREFISSI.some(pref=>chiaveIntera.startsWith(pref))) return false;
+  const parole = p.split(/\s+/);
+  if(parole.length<1 || parole.length>2) return false;
+  return parole.every(w=>/^[A-ZÀÁÈÉÌÍÒÓÙÚ']+$/.test(w));
+}
+
+// Classifica UNA riga di nota della vecchia app in auto / collega / nota.
+function classificaRigaNota(rigaRaw){
+  const riga = pulisciTestoImport(rigaRaw);
+  if(!riga) return { tipo:"nota", testo:"" };
+
+  // "CH NN" da solo, oppure "CH NN COGNOME" sulla stessa riga
+  let m = /^CH\s*(\d+)(?:\s+(.+))?$/i.exec(riga);
+  if(m){
+    const resto = m[2] ? m[2].trim() : "";
+    const restoECognome = resto && sembraCognome(resto);
+    return {
+      tipo: "auto",
+      auto: `CH ${m[1]}`,
+      collegaExtra: restoECognome ? resto : "",
+      notaExtra: resto && !restoECognome ? resto : "",
+    };
+  }
+
+  // Modello auto noto senza "CH" davanti, es. "DOBLO 112" -> "CH DOBLO 112"
+  m = /^([A-Za-zÀ-ù]+)\s+(\d+)$/.exec(riga);
+  if(m && MODELLI_AUTO_NOTI.includes(m[1].toLowerCase())){
+    return { tipo:"auto", auto:`CH ${riga}` };
+  }
+
+  if(sembraCognome(riga)) return { tipo:"collega", testo:riga };
+
+  return { tipo:"nota", testo:riga };
+}
+
+// Passa l'intero array "note" della vecchia app e restituisce i tre campi
+// separati della nuova app: {auto, collega, note}.
+function classificaNoteVecchiaApp(noteArray){
+  const auto = [], collega = [], note = [];
+  for(const rigaRaw of noteArray){
+    const esito = classificaRigaNota(rigaRaw);
+    if(esito.tipo==="auto"){
+      auto.push(esito.auto);
+      if(esito.collegaExtra) collega.push(esito.collegaExtra);
+      if(esito.notaExtra) note.push(esito.notaExtra);
+    } else if(esito.tipo==="collega"){
+      collega.push(esito.testo);
+    } else if(esito.testo){
+      note.push(esito.testo);
+    }
+  }
+  return { auto: auto.join(", "), collega: collega.join(", "), note: note.join("; ") };
+}
+
 // Adatta un JSON di forma ARBITRARIA — array piatto, oggetto con l'array
 // annidato sotto una chiave qualsiasi ("voci"/"eventi"/"dettagli"/...), un
 // singolo giorno come oggetto invece che un array, "giorno" numerico (anche
@@ -382,7 +464,23 @@ function normalizzaRigheImportGrezzo(input, annoDefault, meseDefault){
   function elaboraRiga(o, ctx){
     const data = costruisciData(o, ctx);
     let titolo = estraiTitolo(o);
-    let note = estraiNoteEsplicite(o);
+    const noteRawIniziale = campoCI(o,"note");
+
+    // Se "note" è un array (formato tipico della vecchia app), separa le
+    // righe CH NN / modello auto noto / cognome nei campi auto e collega
+    // invece di lasciarle tutte mischiate nel campo note.
+    let note, autoDaNote = "", collegaDaNote = "";
+    if(Array.isArray(noteRawIniziale)){
+      const cls = classificaNoteVecchiaApp(noteRawIniziale);
+      note = cls.note; autoDaNote = cls.auto; collegaDaNote = cls.collega;
+      const dettagli = campoCI(o, "dettagli", "dettaglio");
+      if(typeof dettagli==="string" && dettagli.trim()){
+        note = note ? `${note}; ${pulisciTestoImport(dettagli)}` : pulisciTestoImport(dettagli);
+      }
+    } else {
+      note = estraiNoteEsplicite(o);
+    }
+
     if(!titolo){
       const noteRaw = campoCI(o,"note");
       if(typeof noteRaw==="string" && pulisciTestoImport(noteRaw)){
@@ -400,8 +498,8 @@ function normalizzaRigheImportGrezzo(input, annoDefault, meseDefault){
     const { inizio, fine } = estraiOrario(o);
     righe.push({
       data, titolo, oraInizio:inizio, oraFine:fine,
-      auto: pulisciTestoImport(campoCI(o,"auto")||""),
-      collega: pulisciTestoImport(campoCI(o,"collega")||""),
+      auto: pulisciTestoImport(campoCI(o,"auto")||"") || autoDaNote,
+      collega: pulisciTestoImport(campoCI(o,"collega")||"") || collegaDaNote,
       note,
     });
   }
