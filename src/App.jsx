@@ -4158,9 +4158,22 @@ const importsRecenti = useMemo(()=>{
         {fasceAutomatiche.map((f,fi)=>(
           <div key={f.key} style={{background:T.s2,borderRadius:10,padding:"10px 12px",marginBottom:8}}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-              <div style={{width:26,height:26,borderRadius:"50%",background:f.color,
-                border:`2px solid ${T.border}`,flexShrink:0}}/>
-              <div style={{flex:1,fontSize:13,fontWeight:700,color:T.text}}>{f.label}</div>
+              <div style={{position:"relative",flexShrink:0}}>
+                <div style={{width:26,height:26,borderRadius:"50%",background:f.color,
+                  border:`2px solid ${T.border}`,cursor:"pointer"}}
+                  onClick={e=>{e.stopPropagation();setPal(pal===("fascia-"+f.key)?null:("fascia-"+f.key));}}/>
+                {pal===("fascia-"+f.key)&&<ColorPickerModal T={T} cur={f.color} title={`Colore ${f.label||"fascia"}`}
+                  coloriUsati={[...new Set(fasceAutomatiche.map(ff=>ff.color).filter(Boolean))]}
+                  onPick={p=>{
+                    updateFascia(f.key,{color:p});
+                    saveSettings({fasce_automatiche:fasceAutomatiche.map(ff=>ff.key===f.key?{...ff,color:p}:ff)});
+                  }}
+                  onClose={()=>setPal(null)}/>}
+              </div>
+              <input value={f.label}
+                onChange={e=>updateFascia(f.key,{label:e.target.value})}
+                onBlur={e=>saveSettings({fasce_automatiche:fasceAutomatiche.map(ff=>ff.key===f.key?{...ff,label:e.target.value}:ff)})}
+                style={{flex:1,background:"transparent",border:"none",outline:"none",color:T.text,fontSize:13,fontWeight:700}}/>
             </div>
             <div style={{display:"flex",gap:8,alignItems:"center"}}>
               <div style={{flex:1}}>
@@ -4180,9 +4193,6 @@ const importsRecenti = useMemo(()=>{
             </div>
           </div>
         ))}
-        <div style={{fontSize:11,color:T.sub,marginBottom:8}}>
-          Nome e colore delle fasce si modificano da Modelli → Colori.
-        </div>
         <button onClick={()=>{
           setStore(s=>({...s, fasceAutomatiche:FASCE_AUTOMATICHE_DEFAULT}));
           saveSettings({fasce_automatiche:FASCE_AUTOMATICHE_DEFAULT});
