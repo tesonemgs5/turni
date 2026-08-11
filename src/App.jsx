@@ -6923,7 +6923,7 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[]
                         <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>TURNO</div>
                         <div style={{display:"flex",gap:6,marginBottom:10}}>
                           {[["","Automatica"],["primo","1° Turno"],["secondo","2° Turno"]].map(([v,l])=>(
-                            <button key={v||l} onClick={()=>setForm(f=>({...f,categoria:v,turnoVuoto:false}))}
+                            <button key={v||l} onClick={()=>setForm(f=>({...f,categoria:(f.categoria||"")===v&&!f.turnoVuoto?"":v,turnoVuoto:false}))}
                               style={{flex:1,padding:"7px 4px",borderRadius:8,cursor:"pointer",
                                 fontWeight:700,fontSize:11,border:"none",
                                 background:(form.categoria||"")===v&&!form.turnoVuoto?accent:T.surface,
@@ -6934,7 +6934,7 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[]
                           <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>APP/AUTO</div>
                           <div style={{display:"flex",gap:6}}>
                             {[["","Automatica"],["app","APP"],["auto","AUTO"]].map(([v,l])=>(
-                              <button key={v||l} onClick={()=>setForm(f=>({...f,categoriaAppAuto:v,appAutoVuoto:false}))}
+                              <button key={v||l} onClick={()=>setForm(f=>({...f,categoriaAppAuto:(f.categoriaAppAuto||"")===v&&!f.appAutoVuoto?"":v,appAutoVuoto:false}))}
                                 style={{flex:1,padding:"7px 4px",borderRadius:8,cursor:"pointer",
                                   fontWeight:700,fontSize:11,border:"none",
                                   background:(form.categoriaAppAuto||"")===v&&!form.appAutoVuoto?accent:T.surface,
