@@ -1910,6 +1910,7 @@ function calcolaOrdineModelli(sottoinsieme){
 // Elenco completo (tutti i calendari insieme), usato dove serve una vista
 // globale — es. il ripristino da backup, o quando calId===null ("tutti").
 const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
+const suggerimentiAutocomplete = useMemo(()=>raccogliSuggerimenti(store.events, modelli), [store.events, modelli]);
 
 const importsRecenti = useMemo(()=>{
   const gruppi = {};
@@ -2753,22 +2754,24 @@ const importsRecenti = useMemo(()=>{
           result.totale++;
           const modelloEvt = e.modelloId ? modelli.find(mm=>mm.id===e.modelloId) : null;
           const overrideTurnoRaw = e.modelloId ? gruppiManuali[e.modelloId] : null;
+          const escludiTurno = overrideTurnoRaw==="escluso";
           const overrideTurno = (overrideTurnoRaw==="primo"||overrideTurnoRaw==="secondo") ? overrideTurnoRaw : null;
           const overrideAppAutoRaw = e.modelloId ? gruppiManuali[e.modelloId+"_appauto"] : null;
+          const escludiAppAuto = overrideAppAutoRaw==="escluso";
           const overrideAppAuto = (overrideAppAutoRaw==="app"||overrideAppAutoRaw==="auto") ? overrideAppAutoRaw : null;
 
           // ── Asse 1: TURNO (1°/2°) — indipendente, decide su categoria manuale del
           // modello, poi override di questo report, poi automatico per orario.
-          // Se l'utente ha esplicitamente deselezionato questo asse, niente auto: nessun gruppo.
-          const gruppoTurno = modelloEvt?.categoria_turno_vuoto
+          // Se l'utente ha esplicitamente deselezionato questo asse (modello o report), niente auto: nessun gruppo.
+          const gruppoTurno = (modelloEvt?.categoria_turno_vuoto || escludiTurno)
             ? null
             : ((modelloEvt?.categoria==="primo"||modelloEvt?.categoria==="secondo")
               ? modelloEvt.categoria
               : (overrideTurno || categoriaTurnoAutomatica(modelloEvt)));
 
           // ── Asse 2: APP/AUTO — indipendente, stessa priorità ma decide su titolo.
-          // Se l'utente ha esplicitamente deselezionato questo asse, niente auto: nessun gruppo.
-          const gruppoAppAuto = modelloEvt?.categoria_app_auto_vuoto
+          // Se l'utente ha esplicitamente deselezionato questo asse (modello o report), niente auto: nessun gruppo.
+          const gruppoAppAuto = (modelloEvt?.categoria_app_auto_vuoto || escludiAppAuto)
             ? null
             : ((modelloEvt?.categoriaAppAuto==="app"||modelloEvt?.categoriaAppAuto==="auto")
               ? modelloEvt.categoriaAppAuto
@@ -4881,7 +4884,8 @@ const importsRecenti = useMemo(()=>{
               </>
             )}
             {!form.shiftId&&!form.modelloId&&!form.editId&&(
-              <input value={form.label||""} onChange={e=>setForm(f=>({...f,label:e.target.value}))}
+              <AutocompleteInput value={form.label||""} onChange={e=>setForm(f=>({...f,label:e.target.value}))}
+                suggestions={suggerimentiAutocomplete.label}
                 placeholder="NOME EVENTO..."
                 style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                   borderRadius:8,padding:"9px 10px",color:T.text,fontSize:13,
@@ -4996,22 +5000,26 @@ const importsRecenti = useMemo(()=>{
   </div>
 )}
 
-            <input value={form.auto||""} onChange={e=>{
+            <AutocompleteInput value={form.auto||""} onChange={e=>{
                 const raw=e.target.value.toUpperCase();
                 const stripped=raw.replace(/^(CH\s*)+/i,"").trim();
                 setForm(f=>({...f,auto:stripped?"CH "+stripped:""}));
               }}
+              suggestions={suggerimentiAutocomplete.auto}
               placeholder="🚗 Numero auto/pattuglia (opzionale)..."
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
                 marginBottom:6,boxSizing:"border-box",outline:"none"}}/>
-            <textarea value={form.collega||""} onChange={e=>{setForm(f=>({...f,collega:e.target.value.toUpperCase()}));e.target.style.height="auto";e.target.style.height=e.target.scrollHeight+"px";}}
+            <AutocompleteInput as="textarea" value={form.collega||""} onChange={e=>{setForm(f=>({...f,collega:e.target.value.toUpperCase()}));e.target.style.height="auto";e.target.style.height=e.target.scrollHeight+"px";}}
+              suggestions={suggerimentiAutocomplete.collega}
+              textareaProps={{rows:1}}
               placeholder="👮 Collega" rows={1}
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
                 marginBottom:6,boxSizing:"border-box",outline:"none",resize:"none",fontFamily:"inherit",
                 overflow:"hidden",minHeight:36}}/>
-            <input value={form.place||""} onChange={e=>setForm(f=>({...f,place:e.target.value.toUpperCase()}))}
+            <AutocompleteInput value={form.place||""} onChange={e=>setForm(f=>({...f,place:e.target.value.toUpperCase()}))}
+              suggestions={suggerimentiAutocomplete.place}
               placeholder="📍 LUOGO (OPZIONALE)..."
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
@@ -5199,6 +5207,7 @@ const importsRecenti = useMemo(()=>{
             <ModelForm T={T} form={modelForm} setForm={setModelForm} accent={accent} dark={dark}
               fasceAutomatiche={fasceAutomatiche} modelli={modelli}
               reports={store.reports||[]} getConteggioConfig={getConteggioConfig} updateConteggioConfig={updateConteggioConfig}
+              suggerimentiTitolo={suggerimentiAutocomplete.label}
               onSave={async()=>{
                 const esito = await saveModello({...modelForm,id:editModello?.id});
                 if(esito?.ok){
@@ -5764,6 +5773,106 @@ function SmartTimeInput({ value, onChange, style }) {
     />
   );
 }
+// #endregion
+
+
+// #region SEZIONE 22B: AUTOCOMPLETE INPUT
+// ═══════════════════════════════════════════════════════════════
+// Componente riutilizzabile: mostra una tendina di suggerimenti cliccabili
+// mentre l'utente digita, filtrando "suggestions" (array di stringhe uniche
+// già raccolte dai dati storici) per corrispondenza parziale case-insensitive.
+// Non altera in alcun modo la logica di onChange del chiamante: riceve lo
+// stesso value/onChange che avrebbe un <input>/<textarea> normale, e si
+// limita ad aggiungere la tendina sopra. Cliccando un suggerimento, invoca
+// onChange con l'intero valore scelto (come se l'utente lo avesse digitato).
+function AutocompleteInput({ as="input", value, onChange, suggestions=[], style, textareaProps={}, ...rest }){
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  useEffect(()=>{
+    function onDocClick(e){
+      if(wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("touchstart", onDocClick);
+    return ()=>{
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("touchstart", onDocClick);
+    };
+  }, []);
+
+  const testo = (value||"").toString().trim().toLowerCase();
+  const filtrati = testo.length===0 ? [] : suggestions
+    .filter(s=>s && s.toLowerCase().includes(testo) && s.toLowerCase()!==testo)
+    .slice(0, 6);
+
+  const Tag = as==="textarea" ? "textarea" : "input";
+
+  return (
+    <div ref={wrapRef} style={{position:"relative"}}>
+      <Tag
+        value={value}
+        onChange={e=>{ onChange(e); setOpen(true); }}
+        onFocus={()=>setOpen(true)}
+        style={style}
+        {...(as==="textarea" ? textareaProps : {})}
+        {...rest}
+      />
+      {open&&filtrati.length>0&&(
+        <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:50,marginTop:2,
+          background:"#fff",border:"1px solid #cbd5e1",borderRadius:8,
+          boxShadow:"0 4px 16px rgba(0,0,0,0.15)",overflow:"hidden",maxHeight:180,overflowY:"auto"}}>
+          {filtrati.map((s,i)=>(
+            <div key={s+i}
+              onMouseDown={ev=>{
+                ev.preventDefault();
+                onChange({ target:{ value:s } });
+                setOpen(false);
+              }}
+              style={{padding:"9px 12px",fontSize:13,color:"#0f172a",cursor:"pointer",
+                borderBottom:i<filtrati.length-1?"1px solid #f1f5f9":"none"}}>
+              {s}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Raccoglie i valori unici, già usati in passato, per ciascun campo — dai
+// dati già presenti in memoria (eventi + modelli), senza query aggiuntive
+// né nuove tabelle. Chiamata dentro App() via useMemo, ricalcolata solo
+// quando eventi o modelli cambiano davvero.
+function raccogliSuggerimenti(events, modelli){
+  const label = new Set(), collega = new Set(), auto = new Set(), place = new Set();
+  for(const calMap of Object.values(events||{})){
+    for(const evts of Object.values(calMap||{})){
+      for(const e of (evts||[])){
+        if(e.label) label.add(e.label);
+        if(e.place) place.add(e.place);
+        if(e.auto) auto.add(e.auto);
+        if(e.collega){
+          // Il campo collega può contenere più nomi su righe separate:
+          // ogni riga diventa un suggerimento a sé, non l'intero blocco.
+          e.collega.split(/\r?\n/).map(r=>r.trim()).filter(Boolean).forEach(r=>collega.add(r));
+        }
+      }
+    }
+  }
+  for(const m of (modelli||[])){
+    if(m.titolo) label.add(m.titolo);
+    if(m.label) label.add(m.label);
+  }
+  const toSorted = set => [...set].sort((a,b)=>a.localeCompare(b));
+  return {
+    label: toSorted(label),
+    collega: toSorted(collega),
+    auto: toSorted(auto),
+    place: toSorted(place),
+  };
+}
+// #endregion
 // #endregion
 
 
@@ -6755,7 +6864,7 @@ function ModelloCard({m, T, accent, fasceAutomatiche, onEdit, onDelete, onMoveUp
 }
 
 
-function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[], reports=[], getConteggioConfig, updateConteggioConfig, onSave}){
+function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[], reports=[], getConteggioConfig, updateConteggioConfig, suggerimentiTitolo=[], onSave}){
   const [reportEspanso, setReportEspanso] = useState(null);
   const autoColore=form.tempo==="h24"?"#64748b":getColorByTime(form.inizio, fasceAutomatiche);
   const coloreVis=form.coloreCustom||autoColore;
@@ -6764,13 +6873,15 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[]
   return (
     <div style={{padding:"16px 14px 40px"}}>
       <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:8}}>
-        <input value={form.titolo} onChange={e=>setForm(f=>({...f,titolo:e.target.value.toUpperCase()}))}
+        <AutocompleteInput value={form.titolo} onChange={e=>setForm(f=>({...f,titolo:e.target.value.toUpperCase()}))}
+          suggestions={suggerimentiTitolo}
           placeholder="TITOLO / CODICE (es. 00-06)"
           style={{width:"100%",padding:"14px 16px",background:"transparent",border:"none",
             outline:"none",color:T.text,fontSize:16,fontWeight:600,boxSizing:"border-box"}}/>
       </div>
       <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:16}}>
-        <input value={form.label||""} onChange={e=>setForm(f=>({...f,label:e.target.value.toUpperCase()}))}
+        <AutocompleteInput value={form.label||""} onChange={e=>setForm(f=>({...f,label:e.target.value.toUpperCase()}))}
+          suggestions={suggerimentiTitolo}
           placeholder="NOME DA MOSTRARE NEL CALENDARIO (es. NOTTE)"
           style={{width:"100%",padding:"14px 16px",background:"transparent",border:"none",
             outline:"none",color:T.text,fontSize:16,fontWeight:600,boxSizing:"border-box"}}/>
@@ -6921,24 +7032,20 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[]
                     </button>
                     {isTurnazione&&espanso&&(()=>{
                       const gruppiManuali = cfg.gruppiManuali||{};
-                      const turnoAttuale = gruppiManuali[form.id]==="primo"||gruppiManuali[form.id]==="secondo" ? gruppiManuali[form.id] : "";
-                      const appAutoAttuale = gruppiManuali[form.id+"_appauto"]==="app"||gruppiManuali[form.id+"_appauto"]==="auto" ? gruppiManuali[form.id+"_appauto"] : "";
+                      const turnoAttuale = gruppiManuali[form.id]||"escluso";
+                      const appAutoAttuale = gruppiManuali[form.id+"_appauto"]||"escluso";
                       function setTurno(v){
-                        const next = {...gruppiManuali};
-                        if(v==="") delete next[form.id]; else next[form.id]=v;
-                        updateConteggioConfig(r.id, {...cfg, gruppiManuali:next});
+                        updateConteggioConfig(r.id, {...cfg, gruppiManuali:{...gruppiManuali, [form.id]:v}});
                       }
                       function setAppAuto(v){
-                        const next = {...gruppiManuali};
-                        if(v==="") delete next[form.id+"_appauto"]; else next[form.id+"_appauto"]=v;
-                        updateConteggioConfig(r.id, {...cfg, gruppiManuali:next});
+                        updateConteggioConfig(r.id, {...cfg, gruppiManuali:{...gruppiManuali, [form.id+"_appauto"]:v}});
                       }
                       return (
                       <div style={{padding:"0 12px 12px"}}>
                         <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>TURNO (solo per questo report)</div>
                         <div style={{display:"flex",gap:6,marginBottom:10}}>
-                          {[["","Automatica"],["primo","1° Turno"],["secondo","2° Turno"]].map(([v,l])=>(
-                            <button key={v||l} onClick={()=>setTurno(turnoAttuale===v?"":v)}
+                          {[["escluso","Escluso"],["primo","1° Turno"],["secondo","2° Turno"]].map(([v,l])=>(
+                            <button key={v} onClick={()=>setTurno(v)}
                               style={{flex:1,padding:"7px 4px",borderRadius:8,cursor:"pointer",
                                 fontWeight:700,fontSize:11,border:"none",
                                 background:turnoAttuale===v?accent:T.surface,
@@ -6948,8 +7055,8 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[]
                         {form.tempo!=="h24"&&(<>
                           <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>APP/AUTO (solo per questo report)</div>
                           <div style={{display:"flex",gap:6}}>
-                            {[["","Automatica"],["app","APP"],["auto","AUTO"]].map(([v,l])=>(
-                              <button key={v||l} onClick={()=>setAppAuto(appAutoAttuale===v?"":v)}
+                            {[["escluso","Escluso"],["app","APP"],["auto","AUTO"]].map(([v,l])=>(
+                              <button key={v} onClick={()=>setAppAuto(v)}
                                 style={{flex:1,padding:"7px 4px",borderRadius:8,cursor:"pointer",
                                   fontWeight:700,fontSize:11,border:"none",
                                   background:appAutoAttuale===v?accent:T.surface,
