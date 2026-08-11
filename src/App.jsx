@@ -1202,7 +1202,10 @@ export default function App({ session }){
   }
   const sundayColor = store.sundayColor || (dark?"#2d0a0a":"#fff5f5");
   const holidayColor = store.holidayColor || (dark?"#2d0a0a":"#fff5f5");
-  function redBg(isSun,isH){ return isSun?sundayColor:isH?holidayColor:null; }
+  function redBg(isSun,isH){
+    if(isSun&&isH) return `linear-gradient(to bottom, ${sundayColor} 50%, ${holidayColor} 50%)`;
+    return isSun?sundayColor:isH?holidayColor:null;
+  }
   function getEvts(key,cid){ return store.events?.[key]?.[cid]||[]; }
   function allEvts(key){
     const res=[];
@@ -1227,13 +1230,14 @@ export default function App({ session }){
 
   async function saveSettings(updates={}){
     if(!userId) return;
-    await supabase.from("user_settings").upsert({
+    const { error } = await supabase.from("user_settings").upsert({
       user_id: userId,
       theme: store.theme,
       extra_hols: store.extraHols,
       ...updates,
       updated_at: new Date().toISOString(),
     });
+    if(error) segnalaErroreDb(error, "Salvataggio impostazioni");
   }
 // #endregion
 
@@ -3099,7 +3103,7 @@ const importsRecenti = useMemo(()=>{
               const isH=isRed(d,prevGrid.month);
               const red=isSun||isH;
               return (
-                <div key={i} style={{background:isSun?sundayColor:(isH?holidayColor:T.surface),
+                <div key={i} style={{background:redBg(isSun,isH)||T.surface,
                   display:"flex",flexDirection:"column",overflow:"hidden"}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:2,padding:"2px 3px 0",flexShrink:0}}>
                     <span style={{fontSize:20,fontWeight:500,lineHeight:1,color:red?"#ef4444":T.sub}}>{d}</span>
@@ -3140,7 +3144,7 @@ const importsRecenti = useMemo(()=>{
                 if(quickModeModello){ applyQuickModello(key); return; }
                 setDayKey(key); setForm(null); setPal(null);
               }}
-              style={{background:isT?(dark?"#1a2f50":"#dbeafe"):isSun?sundayColor:(isH?holidayColor:T.surface),
+              style={{background:isT?(dark?"#1a2f50":"#dbeafe"):(redBg(isSun,isH)||T.surface),
                 cursor:"pointer",display:"flex",flexDirection:"column",overflow:"hidden",
                 borderTop:"none"}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:2,padding:"2px 3px 0",flexShrink:0}}>
@@ -4598,6 +4602,7 @@ const importsRecenti = useMemo(()=>{
         </Sec>
       )}
 
+      <SecCollapsible label="FESTIVI" T={T}>
       <SecCollapsible label="FESTIVITÀ NAZIONALI" T={T}>
         <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
           Scegli quali festività colorare automaticamente come festivo nel calendario.
@@ -4636,7 +4641,7 @@ const importsRecenti = useMemo(()=>{
         </button>
       </SecCollapsible>
 
-      <Sec label="FESTIVI LOCALI" T={T}>
+      <SecCollapsible label="FESTIVI LOCALI" T={T}>
         <div style={{fontSize:11,color:T.sub,marginBottom:8}}>
           Domeniche e festivi nazionali italiani sono già in rosso automaticamente.
         </div>
@@ -4670,7 +4675,8 @@ const importsRecenti = useMemo(()=>{
           }} style={{background:"#ef4444",border:"none",borderRadius:8,
             color:"#fff",padding:"7px 12px",cursor:"pointer",fontWeight:800}}>+</button>
         </div>
-      </Sec>
+      </SecCollapsible>
+      </SecCollapsible>
     </div>
   );
 // #endregion
@@ -4758,8 +4764,8 @@ const importsRecenti = useMemo(()=>{
                   🕐 {e.tIn}{e.tOut?` → ${e.tOut}`:""}{durataEvt?` · ${durataEvt}`:""}
                 </div>
               )}
-              {(e.collega||e.auto)&&<div style={{color:cardSubColor,fontSize:17,marginTop:3}}>
-                {e.collega&&<>👮 {e.collega}</>}{e.collega&&e.auto?"  ·  ":""}{e.auto&&<>🚗 {e.auto}</>}
+              {(e.auto||e.collega)&&<div style={{color:cardSubColor,fontSize:17,marginTop:3}}>
+                {e.auto&&<>🚗 {e.auto}</>}{e.collega&&e.auto?"  ·  ":""}{e.collega&&<>👮 {e.collega}</>}
               </div>}
               {(e.protPagFine||e.protRecFine)&&(()=>{
                 function calcDurProt(tBase, oraFine){
@@ -5191,6 +5197,7 @@ const importsRecenti = useMemo(()=>{
             </div>
             <ModelForm T={T} form={modelForm} setForm={setModelForm} accent={accent} dark={dark}
               fasceAutomatiche={fasceAutomatiche} modelli={modelli}
+              reports={store.reports||[]} getConteggioConfig={getConteggioConfig} updateConteggioConfig={updateConteggioConfig}
               onSave={async()=>{
                 const esito = await saveModello({...modelForm,id:editModello?.id});
                 if(esito?.ok){
@@ -6747,7 +6754,7 @@ function ModelloCard({m, T, accent, fasceAutomatiche, onEdit, onDelete, onMoveUp
 }
 
 
-function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[], onSave}){
+function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[], reports=[], getConteggioConfig, updateConteggioConfig, onSave}){
   const autoColore=form.tempo==="h24"?"#64748b":getColorByTime(form.inizio, fasceAutomatiche);
   const coloreVis=form.coloreCustom||autoColore;
   const fineAuto=form.tempo==="6h15"&&form.inizio?calcFine6h15(form.inizio):null;
@@ -6850,6 +6857,64 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[]
       <div style={{fontSize:11,color:T.sub,marginTop:-10,marginBottom:16,paddingLeft:4}}>
         "Automatica" decide da sola in base a titolo/orario. Scegliendo una categoria qui, ogni evento creato da questo modello finirà sempre in quel gruppo nel report Turnazione.
       </div>
+      {reports.length>0&&(
+        <div style={{marginBottom:16}}>
+          <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>CATEGORIA REPORT</div>
+          {!form.id?(
+            <div style={{fontSize:11,color:T.sub,paddingLeft:4}}>
+              Salva il modello per poterlo includere o escludere dai report.
+            </div>
+          ):(
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {reports.map(r=>{
+                const isTurnazione = r.type==="turnazione";
+                const cfg = getConteggioConfig(r.id, r.type);
+                const isDefault = isTurnazione && isModelloTurnazioneDefault(form);
+                const esclusi = cfg.modelliEsclusi||[];
+                const aggiunti = cfg.modelliAggiunti||[];
+                const whitelist = cfg.modelliInclusi||[];
+                const incluso = isTurnazione
+                  ? ((isDefault && !esclusi.includes(form.id)) || aggiunti.includes(form.id))
+                  : (whitelist.length===0 || whitelist.includes(form.id));
+                const toggle=()=>{
+                  if(isTurnazione){
+                    if(incluso){
+                      if(isDefault) updateConteggioConfig(r.id, {...cfg, modelliEsclusi:[...esclusi, form.id]});
+                      else updateConteggioConfig(r.id, {...cfg, modelliAggiunti: aggiunti.filter(id=>id!==form.id)});
+                    } else {
+                      if(isDefault) updateConteggioConfig(r.id, {...cfg, modelliEsclusi: esclusi.filter(id=>id!==form.id)});
+                      else updateConteggioConfig(r.id, {...cfg, modelliAggiunti:[...aggiunti, form.id]});
+                    }
+                  } else {
+                    if(incluso){
+                      const nuova = whitelist.length===0
+                        ? modelli.filter(mm=>mm.id!==form.id).map(mm=>mm.id)
+                        : whitelist.filter(id=>id!==form.id);
+                      updateConteggioConfig(r.id, {...cfg, modelliInclusi:nuova});
+                    } else {
+                      updateConteggioConfig(r.id, {...cfg, modelliInclusi:[...whitelist, form.id]});
+                    }
+                  }
+                };
+                return (
+                  <button key={r.id} onClick={toggle}
+                    style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+                      padding:"9px 12px",borderRadius:10,border:"none",cursor:"pointer",
+                      background:incluso?accent+"1f":T.s2,textAlign:"left"}}>
+                    <span style={{fontSize:13,fontWeight:700,color:T.text}}>{r.label}</span>
+                    <span style={{fontSize:11,fontWeight:800,color:incluso?accent:T.sub}}>
+                      {incluso?"✓ Incluso":"Escluso"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <div style={{fontSize:11,color:T.sub,marginTop:6,paddingLeft:4}}>
+            Include o esclude questo modello dai report elencati, esistenti e futuri.
+          </div>
+        </div>
+      )}
       <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>COLORE</div>
       <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,padding:"12px 14px",marginBottom:16}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
@@ -8482,3 +8547,4 @@ function NLRSView({rot, T, accent, modelli}){
   );
 }
 // #endregion
+
