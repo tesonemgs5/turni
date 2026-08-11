@@ -6755,6 +6755,7 @@ function ModelloCard({m, T, accent, fasceAutomatiche, onEdit, onDelete, onMoveUp
 
 
 function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[], reports=[], getConteggioConfig, updateConteggioConfig, onSave}){
+  const [reportEspanso, setReportEspanso] = useState(null);
   const autoColore=form.tempo==="h24"?"#64748b":getColorByTime(form.inizio, fasceAutomatiche);
   const coloreVis=form.coloreCustom||autoColore;
   const fineAuto=form.tempo==="6h15"&&form.inizio?calcFine6h15(form.inizio):null;
@@ -6896,16 +6897,54 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[]
                     }
                   }
                 };
+                const espanso = reportEspanso===r.id;
                 return (
-                  <button key={r.id} onClick={toggle}
-                    style={{display:"flex",alignItems:"center",justifyContent:"space-between",
-                      padding:"9px 12px",borderRadius:10,border:"none",cursor:"pointer",
-                      background:incluso?accent+"1f":T.s2,textAlign:"left"}}>
-                    <span style={{fontSize:13,fontWeight:700,color:T.text}}>{r.label}</span>
-                    <span style={{fontSize:11,fontWeight:800,color:incluso?accent:T.sub}}>
-                      {incluso?"✓ Incluso":"Escluso"}
-                    </span>
-                  </button>
+                  <div key={r.id} style={{background:incluso?accent+"1f":T.s2,borderRadius:10,overflow:"hidden"}}>
+                    <button onClick={()=>{
+                        toggle();
+                        if(isTurnazione) setReportEspanso(espanso?null:r.id);
+                      }}
+                      style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+                        width:"100%",padding:"9px 12px",borderRadius:0,border:"none",cursor:"pointer",
+                        background:"transparent",textAlign:"left"}}>
+                      <span style={{fontSize:13,fontWeight:700,color:T.text}}>{r.label}</span>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <span style={{fontSize:11,fontWeight:800,color:incluso?accent:T.sub}}>
+                          {incluso?"✓ Incluso":"Escluso"}
+                        </span>
+                        {isTurnazione&&(
+                          <span onClick={e=>{e.stopPropagation();setReportEspanso(espanso?null:r.id);}}
+                            style={{fontSize:11,color:T.sub,padding:"2px 4px"}}>{espanso?"▲":"▼"}</span>
+                        )}
+                      </div>
+                    </button>
+                    {isTurnazione&&espanso&&(
+                      <div style={{padding:"0 12px 12px"}}>
+                        <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>TURNO</div>
+                        <div style={{display:"flex",gap:6,marginBottom:10}}>
+                          {[["","Automatica"],["primo","1° Turno"],["secondo","2° Turno"]].map(([v,l])=>(
+                            <button key={v||l} onClick={()=>setForm(f=>({...f,categoria:v,turnoVuoto:false}))}
+                              style={{flex:1,padding:"7px 4px",borderRadius:8,cursor:"pointer",
+                                fontWeight:700,fontSize:11,border:"none",
+                                background:(form.categoria||"")===v&&!form.turnoVuoto?accent:T.surface,
+                                color:(form.categoria||"")===v&&!form.turnoVuoto?"#fff":T.sub}}>{l}</button>
+                          ))}
+                        </div>
+                        {form.tempo!=="h24"&&(<>
+                          <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>APP/AUTO</div>
+                          <div style={{display:"flex",gap:6}}>
+                            {[["","Automatica"],["app","APP"],["auto","AUTO"]].map(([v,l])=>(
+                              <button key={v||l} onClick={()=>setForm(f=>({...f,categoriaAppAuto:v,appAutoVuoto:false}))}
+                                style={{flex:1,padding:"7px 4px",borderRadius:8,cursor:"pointer",
+                                  fontWeight:700,fontSize:11,border:"none",
+                                  background:(form.categoriaAppAuto||"")===v&&!form.appAutoVuoto?accent:T.surface,
+                                  color:(form.categoriaAppAuto||"")===v&&!form.appAutoVuoto?"#fff":T.sub}}>{l}</button>
+                            ))}
+                          </div>
+                        </>)}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
