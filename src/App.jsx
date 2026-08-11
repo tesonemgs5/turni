@@ -5787,11 +5787,18 @@ function SmartTimeInput({ value, onChange, style }) {
 // onChange con l'intero valore scelto (come se l'utente lo avesse digitato).
 function AutocompleteInput({ as="input", value, onChange, suggestions=[], style, textareaProps={}, ...rest }){
   const [open, setOpen] = useState(false);
+  const [rect, setRect] = useState(null);
   const wrapRef = useRef(null);
+  const fieldRef = useRef(null);
+
+  function aggiornaPosizione(){
+    if(fieldRef.current) setRect(fieldRef.current.getBoundingClientRect());
+  }
 
   useEffect(()=>{
     function onDocClick(e){
-      if(wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+      if(wrapRef.current && wrapRef.current.contains(e.target)) return;
+      setOpen(false);
     }
     document.addEventListener("mousedown", onDocClick);
     document.addEventListener("touchstart", onDocClick);
@@ -5801,25 +5808,42 @@ function AutocompleteInput({ as="input", value, onChange, suggestions=[], style,
     };
   }, []);
 
+  // Il campo può stare dentro un contenitore scrollabile (es. il modal del
+  // giorno): mentre il menu è aperto, ricalcola la posizione a ogni scroll
+  // (capture:true intercetta lo scroll di QUALSIASI antenato, non solo la
+  // finestra), così il menu segue il campo invece di restare "staccato".
+  useEffect(()=>{
+    if(!open) return;
+    aggiornaPosizione();
+    window.addEventListener("scroll", aggiornaPosizione, true);
+    window.addEventListener("resize", aggiornaPosizione);
+    return ()=>{
+      window.removeEventListener("scroll", aggiornaPosizione, true);
+      window.removeEventListener("resize", aggiornaPosizione);
+    };
+  }, [open]);
+
   const testo = (value||"").toString().trim().toLowerCase();
   const filtrati = testo.length===0 ? [] : suggestions
     .filter(s=>s && s.toLowerCase().includes(testo) && s.toLowerCase()!==testo)
     .slice(0, 6);
 
   const Tag = as==="textarea" ? "textarea" : "input";
+  const menuAperto = open && filtrati.length>0 && rect;
 
   return (
     <div ref={wrapRef} style={{position:"relative"}}>
       <Tag
+        ref={fieldRef}
         value={value}
-        onChange={e=>{ onChange(e); setOpen(true); }}
-        onFocus={()=>setOpen(true)}
+        onChange={e=>{ onChange(e); setOpen(true); requestAnimationFrame(aggiornaPosizione); }}
+        onFocus={()=>{ setOpen(true); requestAnimationFrame(aggiornaPosizione); }}
         style={style}
         {...(as==="textarea" ? textareaProps : {})}
         {...rest}
       />
-      {open&&filtrati.length>0&&(
-        <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:50,marginTop:2,
+      {menuAperto&&(
+        <div style={{position:"fixed",top:rect.bottom+2,left:rect.left,width:rect.width,zIndex:950,
           background:"#fff",border:"1px solid #cbd5e1",borderRadius:8,
           boxShadow:"0 4px 16px rgba(0,0,0,0.15)",overflow:"hidden",maxHeight:180,overflowY:"auto"}}>
           {filtrati.map((s,i)=>(
@@ -7032,8 +7056,17 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[]
                     </button>
                     {isTurnazione&&espanso&&(()=>{
                       const gruppiManuali = cfg.gruppiManuali||{};
-                      const turnoAttuale = gruppiManuali[form.id]||"escluso";
-                      const appAutoAttuale = gruppiManuali[form.id+"_appauto"]||"escluso";
+                      const scelteTurno = gruppiManuali[form.id];
+                      const scelteAppAuto = gruppiManuali[form.id+"_appauto"];
+                      // Nessuna scelta esplicita ancora salvata per questo report: il pulsante
+                      // evidenziato segue il modello (categoria manuale o automatica per orario/titolo),
+                      // esattamente come farebbe il calcolo reale del report — mai "Escluso" di default.
+                      const turnoDalModello = (form.categoria==="primo"||form.categoria==="secondo")
+                        ? form.categoria : categoriaTurnoAutomatica(form);
+                      const appAutoDalModello = (form.categoriaAppAuto==="app"||form.categoriaAppAuto==="auto")
+                        ? form.categoriaAppAuto : (categoriaAppAutoAutomatica(form) || "auto");
+                      const turnoAttuale = scelteTurno || turnoDalModello || "escluso";
+                      const appAutoAttuale = scelteAppAuto || appAutoDalModello || "escluso";
                       function setTurno(v){
                         updateConteggioConfig(r.id, {...cfg, gruppiManuali:{...gruppiManuali, [form.id]:v}});
                       }
