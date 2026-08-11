@@ -2740,7 +2740,7 @@ const importsRecenti = useMemo(()=>{
     const aggiunti = cfg?.modelliAggiunti || [];
     const default6h15 = modelli.filter(m=>isModelloTurnazioneDefault(m) && !esclusi.includes(m.id)).map(m=>m.id);
     const modelliInclusi = [...new Set([...default6h15, ...aggiunti])];
-    const gruppiManuali = cfg?.gruppiManuali || {}; // { modelloId: "primo"|"secondo"|"app"|"auto" }
+    const gruppiManuali = cfg?.gruppiManuali || {}; // { modelloId: "primo"|"secondo", "modelloId_appauto": "app"|"auto" }
     const result = { totale:0, primo:0, secondo:0, app:0, auto:0 };
     const perModello = {};
     const perGruppo = { primo:{}, secondo:{}, app:{}, auto:{} };
@@ -2752,9 +2752,10 @@ const importsRecenti = useMemo(()=>{
           if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
           result.totale++;
           const modelloEvt = e.modelloId ? modelli.find(mm=>mm.id===e.modelloId) : null;
-          const overrideGruppo = e.modelloId ? gruppiManuali[e.modelloId] : null;
-          const overrideTurno = (overrideGruppo==="primo"||overrideGruppo==="secondo") ? overrideGruppo : null;
-          const overrideAppAuto = (overrideGruppo==="app"||overrideGruppo==="auto") ? overrideGruppo : null;
+          const overrideTurnoRaw = e.modelloId ? gruppiManuali[e.modelloId] : null;
+          const overrideTurno = (overrideTurnoRaw==="primo"||overrideTurnoRaw==="secondo") ? overrideTurnoRaw : null;
+          const overrideAppAutoRaw = e.modelloId ? gruppiManuali[e.modelloId+"_appauto"] : null;
+          const overrideAppAuto = (overrideAppAutoRaw==="app"||overrideAppAutoRaw==="auto") ? overrideAppAutoRaw : null;
 
           // ── Asse 1: TURNO (1°/2°) — indipendente, decide su categoria manuale del
           // modello, poi override di questo report, poi automatico per orario.
@@ -6918,32 +6919,47 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[]
                         )}
                       </div>
                     </button>
-                    {isTurnazione&&espanso&&(
+                    {isTurnazione&&espanso&&(()=>{
+                      const gruppiManuali = cfg.gruppiManuali||{};
+                      const turnoAttuale = gruppiManuali[form.id]==="primo"||gruppiManuali[form.id]==="secondo" ? gruppiManuali[form.id] : "";
+                      const appAutoAttuale = gruppiManuali[form.id+"_appauto"]==="app"||gruppiManuali[form.id+"_appauto"]==="auto" ? gruppiManuali[form.id+"_appauto"] : "";
+                      function setTurno(v){
+                        const next = {...gruppiManuali};
+                        if(v==="") delete next[form.id]; else next[form.id]=v;
+                        updateConteggioConfig(r.id, {...cfg, gruppiManuali:next});
+                      }
+                      function setAppAuto(v){
+                        const next = {...gruppiManuali};
+                        if(v==="") delete next[form.id+"_appauto"]; else next[form.id+"_appauto"]=v;
+                        updateConteggioConfig(r.id, {...cfg, gruppiManuali:next});
+                      }
+                      return (
                       <div style={{padding:"0 12px 12px"}}>
-                        <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>TURNO</div>
+                        <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>TURNO (solo per questo report)</div>
                         <div style={{display:"flex",gap:6,marginBottom:10}}>
                           {[["","Automatica"],["primo","1° Turno"],["secondo","2° Turno"]].map(([v,l])=>(
-                            <button key={v||l} onClick={()=>setForm(f=>({...f,categoria:(f.categoria||"")===v&&!f.turnoVuoto?"":v,turnoVuoto:false}))}
+                            <button key={v||l} onClick={()=>setTurno(turnoAttuale===v?"":v)}
                               style={{flex:1,padding:"7px 4px",borderRadius:8,cursor:"pointer",
                                 fontWeight:700,fontSize:11,border:"none",
-                                background:(form.categoria||"")===v&&!form.turnoVuoto?accent:T.surface,
-                                color:(form.categoria||"")===v&&!form.turnoVuoto?"#fff":T.sub}}>{l}</button>
+                                background:turnoAttuale===v?accent:T.surface,
+                                color:turnoAttuale===v?"#fff":T.sub}}>{l}</button>
                           ))}
                         </div>
                         {form.tempo!=="h24"&&(<>
-                          <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>APP/AUTO</div>
+                          <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>APP/AUTO (solo per questo report)</div>
                           <div style={{display:"flex",gap:6}}>
                             {[["","Automatica"],["app","APP"],["auto","AUTO"]].map(([v,l])=>(
-                              <button key={v||l} onClick={()=>setForm(f=>({...f,categoriaAppAuto:(f.categoriaAppAuto||"")===v&&!f.appAutoVuoto?"":v,appAutoVuoto:false}))}
+                              <button key={v||l} onClick={()=>setAppAuto(appAutoAttuale===v?"":v)}
                                 style={{flex:1,padding:"7px 4px",borderRadius:8,cursor:"pointer",
                                   fontWeight:700,fontSize:11,border:"none",
-                                  background:(form.categoriaAppAuto||"")===v&&!form.appAutoVuoto?accent:T.surface,
-                                  color:(form.categoriaAppAuto||"")===v&&!form.appAutoVuoto?"#fff":T.sub}}>{l}</button>
+                                  background:appAutoAttuale===v?accent:T.surface,
+                                  color:appAutoAttuale===v?"#fff":T.sub}}>{l}</button>
                             ))}
                           </div>
                         </>)}
                       </div>
-                    )}
+                      );
+                    })()}
                   </div>
                 );
               })}
