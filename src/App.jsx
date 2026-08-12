@@ -762,7 +762,12 @@ export default function App({ session }){
     if(calId){ try{ localStorage.setItem('cache_calId', calId); }catch(e){} }
   }, [calId]);
   const [editMode, setEditMode] = useState(false); // "M" — ON = modifica singola, OFF = selezione multipla
-  const [selectedCalIds, setSelectedCalIds] = useState([]); // selezione multipla calendari — determina anche cosa resta visibile in editMode
+  const [selectedCalIds, setSelectedCalIds] = useState(()=>{
+    try{ return JSON.parse(localStorage.getItem('cache_selectedCalIds')||'[]'); }catch(e){ return []; }
+  }); // selezione multipla calendari — determina anche cosa resta visibile in editMode. Persistita: al refresh/riavvio resta quella scelta dall'utente, non torna a "tutti".
+  useEffect(()=>{
+    try{ localStorage.setItem('cache_selectedCalIds', JSON.stringify(selectedCalIds)); }catch(e){}
+  }, [selectedCalIds]);
   const [reportCalIds, setReportCalIds] = useState([]); // selezione calendari per il Report (vuoto = tutti)
   const [selectedModelloIds, setSelectedModelloIds] = useState([]); // selezione multipla modelli (editMode OFF)
   const [screen, setScreen] = useState("cal");
@@ -5823,13 +5828,26 @@ function AutocompleteInput({ as="input", value, onChange, suggestions=[], style,
     };
   }, [open]);
 
-  const testo = (value||"").toString().trim().toLowerCase();
+  const rawValue = (value||"").toString();
+  const righe = rawValue.split(/\r?\n/);
+  const ultimaRiga = as==="textarea" ? righe[righe.length-1] : rawValue;
+  const testo = ultimaRiga.trim().toLowerCase();
   const filtrati = testo.length===0 ? [] : suggestions
-    .filter(s=>s && s.toLowerCase().includes(testo) && s.toLowerCase()!==testo)
-    .slice(0, 6);
+    .filter(s=>s && s.toLowerCase().startsWith(testo) && s.toLowerCase()!==testo)
+    .slice(0, 8);
 
   const Tag = as==="textarea" ? "textarea" : "input";
   const menuAperto = open && filtrati.length>0 && rect;
+
+  function scegli(s){
+    if(as==="textarea"){
+      const nuoveRighe = [...righe]; nuoveRighe[nuoveRighe.length-1] = s;
+      onChange({ target:{ value: nuoveRighe.join("\n") } });
+    } else {
+      onChange({ target:{ value:s } });
+    }
+    setOpen(false);
+  }
 
   return (
     <div ref={wrapRef} style={{position:"relative"}}>
@@ -5850,8 +5868,7 @@ function AutocompleteInput({ as="input", value, onChange, suggestions=[], style,
             <div key={s+i}
               onMouseDown={ev=>{
                 ev.preventDefault();
-                onChange({ target:{ value:s } });
-                setOpen(false);
+                scegli(s);
               }}
               style={{padding:"9px 12px",fontSize:13,color:"#0f172a",cursor:"pointer",
                 borderBottom:i<filtrati.length-1?"1px solid #f1f5f9":"none"}}>
