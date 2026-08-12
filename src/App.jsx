@@ -2008,6 +2008,22 @@ const importsRecenti = useMemo(()=>{
   // "su" e "giù"). Il modello spostato viene marcato FLAG_MANUALE: da questo
   // momento appartiene alla lista libera e non torna più a riordinarsi da
   // solo per orario.
+  // Riassegna sort_order 0,10,20... a un sottoinsieme già riordinato,
+  // aggiornando solo i modelli coinvolti sull'elenco completo "prev".
+  // idsManuali: quali di questi modelli diventano FLAG_MANUALE (gli altri
+  // vengono solo rinumerati, restando automatici se non toccati direttamente).
+  // Funzione condivisa da spostaModelloPuro (frecce) e trascinaModelloPuro
+  // (drag & drop): stessa identica logica di rinumerazione in entrambi i casi.
+  function rinumeraSottoinsieme(prev, riordinato, idsManuali){
+    const nuoviValori = new Map(riordinato.map((m,i)=>[m.id, i*10]));
+    return prev.map(m=>{
+      if(!nuoviValori.has(m.id)) return m;
+      const nuovoSort = nuoviValori.get(m.id);
+      const diventaManuale = idsManuali.has(m.id);
+      return {...m, sortOrder:nuovoSort, posizione: diventaManuale ? FLAG_MANUALE : m.posizione};
+    });
+  }
+
   function spostaModelloPuro(prev, id, dir, calIdFiltro){
     const sottoinsieme = calcolaOrdineModelli(modelliDelCalendario(prev, calIdFiltro));
     const idx = sottoinsieme.findIndex(m=>m.id===id);
@@ -2028,18 +2044,12 @@ const importsRecenti = useMemo(()=>{
     // di limitarci a scambiare due numeri potenzialmente ambigui.
     const riordinato = [...sottoinsieme];
     [riordinato[idx], riordinato[vicinoIdx]] = [riordinato[vicinoIdx], riordinato[idx]];
-    const nuoviValori = new Map(riordinato.map((m,i)=>[m.id, i*10]));
-    const idModello = sottoinsieme[idx].id, idVicino = sottoinsieme[vicinoIdx].id;
-    return prev.map(m=>{
-      if(!nuoviValori.has(m.id)) return m;
-      const nuovoSort = nuoviValori.get(m.id);
-      // Solo i due modelli effettivamente spostati dall'utente diventano
-      // "manuali": gli altri vengono solo rinumerati (stesso ordine
-      // relativo) per restare univoci, senza uscire dalla lista automatica
-      // per orario se non sono mai stati toccati direttamente.
-      const diventaManuale = m.id===idModello || m.id===idVicino;
-      return {...m, sortOrder:nuovoSort, posizione: diventaManuale ? FLAG_MANUALE : m.posizione};
-    });
+    // Solo i due modelli effettivamente spostati dall'utente diventano
+    // "manuali": gli altri vengono solo rinumerati (stesso ordine relativo)
+    // per restare univoci, senza uscire dalla lista automatica per orario
+    // se non sono mai stati toccati direttamente.
+    const idsManuali = new Set([sottoinsieme[idx].id, sottoinsieme[vicinoIdx].id]);
+    return rinumeraSottoinsieme(prev, riordinato, idsManuali);
   }
 
   // ── Trascina un modello (drag & drop) fino alla posizione esatta di
@@ -2051,25 +2061,31 @@ const importsRecenti = useMemo(()=>{
   // c'è modo che questo produca cicli o incoerenze, perché non uso mai
   // riferimenti tra modelli, solo una rinumerazione sequenziale.
   function trascinaModelloPuro(prev, srcId, dstId, calIdFiltro){
-    if(!srcId || !dstId || srcId===dstId) return prev;
+    console.log("[DEBUG trascinaModelloPuro] srcId=", srcId, "dstId=", dstId, "calIdFiltro=", calIdFiltro);
+    if(!srcId || !dstId || srcId===dstId){
+      console.log("[DEBUG trascinaModelloPuro] uscita anticipata: srcId o dstId mancanti/uguali");
+      return prev;
+    }
     const sottoinsiemeIds = new Set(modelliDelCalendario(prev, calIdFiltro).map(m=>m.id));
-    if(!sottoinsiemeIds.has(srcId) || !sottoinsiemeIds.has(dstId)) return prev;
+    if(!sottoinsiemeIds.has(srcId) || !sottoinsiemeIds.has(dstId)){
+      console.log("[DEBUG trascinaModelloPuro] uscita anticipata: srcId o dstId non nel sottoinsieme", {srcInSet:sottoinsiemeIds.has(srcId), dstInSet:sottoinsiemeIds.has(dstId)});
+      return prev;
+    }
     const ordinato = calcolaOrdineModelli(modelliDelCalendario(prev, calIdFiltro));
     const srcIdx = ordinato.findIndex(m=>m.id===srcId);
     const dstIdx = ordinato.findIndex(m=>m.id===dstId);
-    if(srcIdx===-1 || dstIdx===-1) return prev;
+    if(srcIdx===-1 || dstIdx===-1){
+      console.log("[DEBUG trascinaModelloPuro] uscita anticipata: indice non trovato", {srcIdx, dstIdx});
+      return prev;
+    }
     const riordinato = [...ordinato];
     const [tolto] = riordinato.splice(srcIdx,1);
     riordinato.splice(dstIdx,0,tolto);
-    // Rinumerazione sequenziale: ogni modello del sottoinsieme prende un
-    // sort_order 0,10,20... (passo 10 per lasciare margine a inserimenti
-    // automatici futuri senza dover rinumerare tutto). Tutti i modelli
-    // toccati da un drag esplicito diventano manuali.
-    const nuoviValori = new Map(riordinato.map((m,i)=>[m.id, i*10]));
-    return prev.map(m=>{
-      if(!nuoviValori.has(m.id)) return m;
-      return {...m, sortOrder:nuoviValori.get(m.id), posizione:FLAG_MANUALE};
-    });
+    // Rinumerazione sequenziale: tutti i modelli toccati da un drag esplicito
+    // diventano manuali (comportamento invariato rispetto a prima).
+    const idsManuali = new Set(riordinato.map(m=>m.id));
+    console.log("[DEBUG trascinaModelloPuro] riordino applicato, nuovo ordine ids=", riordinato.map(m=>m.id));
+    return rinumeraSottoinsieme(prev, riordinato, idsManuali);
   }
 
   // Salva su Supabase i modelli effettivamente cambiati (confronto tra stato
