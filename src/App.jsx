@@ -857,6 +857,14 @@ export default function App({ session }){
   const [colorAssignCalFiltro, setColorAssignCalFiltro] = useState(null); // calendari selezionati per filtrare la lista modelli nel popup colore (null = tutti)
   const [showAddColorPicker, setShowAddColorPicker] = useState(false); // popup "+" per aggiungere un colore alla sezione
   const [coloriExtra, setColoriExtra] = useState([]); // colori aggiunti manualmente o generati da modelli: array di {hex, label}
+  // ── Autocomplete: 5 liste dedicate, sincronizzate su Supabase (tabella
+  // autocomplete_valori), una per campo. Caricate una volta all'avvio;
+  // l'autocomplete legge SOLO da qui, mai scansionando eventi/modelli —
+  // niente rumore da valori sporadici, sempre veloce indipendentemente da
+  // quanti eventi/modelli esistono.
+  const [autocompleteValori, setAutocompleteValori] = useState({
+    titolo:[], nome_visualizzato:[], auto:[], luogo:[], collega:[],
+  });
   const [showEditFasciaColor, setShowEditFasciaColor] = useState(null); // key della fascia automatica di cui si sta editando il colore
 
   const [rotazioni, setRotazioni] = useState([]);
@@ -1074,6 +1082,18 @@ export default function App({ session }){
         setSheetsSecret(sSec);
         setIndennita(savedIndennita);
         setConteggioConfigs(savedConteggioConfigs);
+
+        // Autocomplete: tabella dedicata, non inclusa nella RPC get_user_data
+        // (aggiunta successivamente), quindi caricata con una query separata.
+        try {
+          const { data: acRows, error: acErr } = await supabase.from("autocomplete_valori")
+            .select("campo, valore").eq("user_id", userId).order("valore");
+          if(acErr) console.warn("Caricamento autocomplete_valori:", acErr.message);
+          const raggruppati = { titolo:[], nome_visualizzato:[], auto:[], luogo:[], collega:[] };
+          (acRows||[]).forEach(r=>{ if(raggruppati[r.campo]) raggruppati[r.campo].push(r.valore); });
+          setAutocompleteValori(raggruppati);
+        } catch(acEx){ console.warn("Caricamento autocomplete_valori:", acEx); }
+
         setCalId(prevCalId => {
           if(prevCalId && calendars.some(c=>c.id===prevCalId)) return prevCalId;
           const daCache = calIdDaCache && calendars.some(c=>c.id===calIdDaCache) ? calIdDaCache : null;
@@ -1326,6 +1346,10 @@ export default function App({ session }){
       protPagFine: form.protPagFine||null, protRecFine: form.protRecFine||null,
     });
     if(error){ segnalaErroreDb(error, "Salvataggio turno"); return; }
+    if(!form.modelloId && form.label) registraValoreAutocomplete("titolo", label);
+    if(form.auto) registraValoreAutocomplete("auto", data.auto||form.auto);
+    if(form.place) registraValoreAutocomplete("luogo", data.place||form.place);
+    if(form.collega) registraValoriAutocomplete("collega", form.collega.split(/\r?\n/));
     const evt = {
       id: data.id, color, label, allDay: data.all_day,
       tIn: data.time_in||"", tOut: data.time_out||"",
@@ -1384,6 +1408,10 @@ export default function App({ session }){
       prot_rec_fine: form.protRecFine||null,
     }).eq("id", form.editId).eq("user_id", userId);
     if(error){ segnalaErroreDb(error, "Modifica turno"); return; }
+    if(!form.modelloId && form.label) registraValoreAutocomplete("titolo", label);
+    if(form.auto) registraValoreAutocomplete("auto", (form.auto||"").toUpperCase());
+    if(form.place) registraValoreAutocomplete("luogo", (form.place||"").toUpperCase());
+    if(form.collega) registraValoriAutocomplete("collega", (form.collega||"").toUpperCase().split(/\r?\n/));
 
     setStore(prev=>{
       const patch = {label, color,
@@ -1915,7 +1943,6 @@ function calcolaOrdineModelli(sottoinsieme){
 // Elenco completo (tutti i calendari insieme), usato dove serve una vista
 // globale — es. il ripristino da backup, o quando calId===null ("tutti").
 const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
-const suggerimentiAutocomplete = useMemo(()=>raccogliSuggerimenti(store.events, modelli), [store.events, modelli]);
 
 const importsRecenti = useMemo(()=>{
   const gruppi = {};
@@ -2128,6 +2155,49 @@ const importsRecenti = useMemo(()=>{
     } catch(e){ console.warn("ensureColoreRegistrato:", e); }
   }
 
+  // ── Autocomplete: registra un valore nuovo in una delle 5 liste dedicate
+  // (titolo, nome_visualizzato, auto, luogo, collega), sincronizzata su
+  // Supabase e condivisa fra tutti i dispositivi dell'utente. Chiamata al
+  // salvataggio di eventi/modelli — mai durante la digitazione, solo a
+  // conferma, per non riempire la lista di valori a metà scritti.
+  async function registraValoreAutocomplete(campo, valore){
+    if(!userId || !valore) return;
+    const v = valore.trim();
+    if(!v) return;
+    if((autocompleteValori[campo]||[]).includes(v)) return;
+    try {
+      const { error } = await supabase.from("autocomplete_valori")
+        .insert({ user_id:userId, campo, valore:v });
+      // Violazione unique (valore già presente per un altro motivo, es. race
+      // condition fra dispositivi) non è un errore reale: il valore è comunque lì.
+      if(error && error.code!=="23505") { console.warn("registraValoreAutocomplete:", error.message); return; }
+      setAutocompleteValori(prev=>({
+        ...prev,
+        [campo]: prev[campo].includes(v) ? prev[campo] : [...prev[campo], v].sort((a,b)=>a.localeCompare(b)),
+      }));
+    } catch(e){ console.warn("registraValoreAutocomplete:", e); }
+  }
+
+  // Registra più valori insieme (es. il campo collega, multi-riga: ogni riga
+  // è un nome a sé che deve entrare nella lista come voce indipendente).
+  async function registraValoriAutocomplete(campo, valori){
+    for(const v of (valori||[])) await registraValoreAutocomplete(campo, v);
+  }
+
+  // Rimuove un valore da una lista autocomplete — SOLO dalla lista dei
+  // suggerimenti: non tocca in alcun modo eventi o modelli già salvati con
+  // quel valore, che restano intatti. Serve a ripulire refusi o valori che
+  // non si vogliono più vedere proposti in digitazione.
+  async function rimuoviValoreAutocomplete(campo, valore){
+    if(!userId) return;
+    try {
+      const { error } = await supabase.from("autocomplete_valori")
+        .delete().eq("user_id", userId).eq("campo", campo).eq("valore", valore);
+      if(error){ console.warn("rimuoviValoreAutocomplete:", error.message); return; }
+      setAutocompleteValori(prev=>({ ...prev, [campo]: prev[campo].filter(v=>v!==valore) }));
+    } catch(e){ console.warn("rimuoviValoreAutocomplete:", e); }
+  }
+
   // Prova a salvare; se Supabase segnala una colonna mancante nello schema,
   // la rimuove dal payload e riprova, finché va a buon fine o non c'è più nulla da togliere.
   // Così l'app resta funzionante anche se lo schema del DB non è ancora aggiornato.
@@ -2168,6 +2238,8 @@ const importsRecenti = useMemo(()=>{
       categoria_app_auto_vuoto: !!data.appAutoVuoto,
     };
     if(data.coloreCustom) await ensureColoreRegistrato(data.coloreCustom);
+    if(data.titolo) registraValoreAutocomplete("titolo", (data.titolo||"").toUpperCase());
+    if(data.label) registraValoreAutocomplete("nome_visualizzato", (data.label||"").toUpperCase());
     if(data.id){
       const { error: errUpdate } = await supabaseUpsertConRetry(
         (p)=>supabase.from("modelli").update(p).eq("id",data.id).eq("user_id",userId),
@@ -4890,7 +4962,8 @@ const importsRecenti = useMemo(()=>{
             )}
             {!form.shiftId&&!form.modelloId&&!form.editId&&(
               <AutocompleteInput value={form.label||""} onChange={e=>setForm(f=>({...f,label:e.target.value}))}
-                suggestions={suggerimentiAutocomplete.label}
+                suggestions={autocompleteValori.titolo}
+                onRemoveSuggestion={s=>rimuoviValoreAutocomplete("titolo", s)}
                 placeholder="NOME EVENTO..."
                 style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                   borderRadius:8,padding:"9px 10px",color:T.text,fontSize:13,
@@ -5010,13 +5083,15 @@ const importsRecenti = useMemo(()=>{
                 const stripped=raw.replace(/^(CH\s*)+/i,"").trim();
                 setForm(f=>({...f,auto:stripped?"CH "+stripped:""}));
               }}
-              suggestions={suggerimentiAutocomplete.auto}
+              suggestions={autocompleteValori.auto}
+              onRemoveSuggestion={s=>rimuoviValoreAutocomplete("auto", s)}
               placeholder="🚗 Numero auto/pattuglia (opzionale)..."
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
                 marginBottom:6,boxSizing:"border-box",outline:"none"}}/>
             <AutocompleteInput as="textarea" value={form.collega||""} onChange={e=>{setForm(f=>({...f,collega:e.target.value.toUpperCase()}));e.target.style.height="auto";e.target.style.height=e.target.scrollHeight+"px";}}
-              suggestions={suggerimentiAutocomplete.collega}
+              suggestions={autocompleteValori.collega}
+              onRemoveSuggestion={s=>rimuoviValoreAutocomplete("collega", s)}
               textareaProps={{rows:1}}
               placeholder="👮 Collega" rows={1}
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
@@ -5024,7 +5099,8 @@ const importsRecenti = useMemo(()=>{
                 marginBottom:6,boxSizing:"border-box",outline:"none",resize:"none",fontFamily:"inherit",
                 overflow:"hidden",minHeight:36}}/>
             <AutocompleteInput value={form.place||""} onChange={e=>setForm(f=>({...f,place:e.target.value.toUpperCase()}))}
-              suggestions={suggerimentiAutocomplete.place}
+              suggestions={autocompleteValori.luogo}
+              onRemoveSuggestion={s=>rimuoviValoreAutocomplete("luogo", s)}
               placeholder="📍 LUOGO (OPZIONALE)..."
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
@@ -5212,7 +5288,8 @@ const importsRecenti = useMemo(()=>{
             <ModelForm T={T} form={modelForm} setForm={setModelForm} accent={accent} dark={dark}
               fasceAutomatiche={fasceAutomatiche} modelli={modelli}
               reports={store.reports||[]} getConteggioConfig={getConteggioConfig} updateConteggioConfig={updateConteggioConfig}
-              suggerimentiTitolo={suggerimentiAutocomplete.modelliTitoli}
+              suggerimentiTitolo={autocompleteValori.titolo} suggerimentiNomeVis={autocompleteValori.nome_visualizzato}
+              onRimuoviSuggerimento={rimuoviValoreAutocomplete}
               onSave={async()=>{
                 const esito = await saveModello({...modelForm,id:editModello?.id});
                 if(esito?.ok){
@@ -5790,7 +5867,7 @@ function SmartTimeInput({ value, onChange, style }) {
 // stesso value/onChange che avrebbe un <input>/<textarea> normale, e si
 // limita ad aggiungere la tendina sopra. Cliccando un suggerimento, invoca
 // onChange con l'intero valore scelto (come se l'utente lo avesse digitato).
-function AutocompleteInput({ as="input", value, onChange, suggestions=[], style, textareaProps={}, ...rest }){
+function AutocompleteInput({ as="input", value, onChange, suggestions=[], style, textareaProps={}, onRemoveSuggestion, ...rest }){
   const [open, setOpen] = useState(false);
   const [rect, setRect] = useState(null);
   const wrapRef = useRef(null);
@@ -5866,13 +5943,23 @@ function AutocompleteInput({ as="input", value, onChange, suggestions=[], style,
           boxShadow:"0 4px 16px rgba(0,0,0,0.15)",overflow:"hidden",maxHeight:180,overflowY:"auto"}}>
           {filtrati.map((s,i)=>(
             <div key={s+i}
-              onMouseDown={ev=>{
-                ev.preventDefault();
-                scegli(s);
-              }}
-              style={{padding:"9px 12px",fontSize:13,color:"#0f172a",cursor:"pointer",
+              style={{display:"flex",alignItems:"center",gap:6,
                 borderBottom:i<filtrati.length-1?"1px solid #f1f5f9":"none"}}>
-              {s}
+              <div onMouseDown={ev=>{
+                  ev.preventDefault();
+                  scegli(s);
+                }}
+                style={{flex:1,padding:"9px 12px",fontSize:13,color:"#0f172a",cursor:"pointer"}}>
+                {s}
+              </div>
+              {onRemoveSuggestion&&(
+                <button onMouseDown={ev=>{
+                    ev.preventDefault(); ev.stopPropagation();
+                    onRemoveSuggestion(s);
+                  }}
+                  style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",
+                    fontSize:16,padding:"6px 10px",flexShrink:0,lineHeight:1}}>×</button>
+              )}
             </div>
           ))}
         </div>
@@ -5881,39 +5968,6 @@ function AutocompleteInput({ as="input", value, onChange, suggestions=[], style,
   );
 }
 
-// Raccoglie i valori unici, già usati in passato, per ciascun campo — dai
-// dati già presenti in memoria (eventi + modelli), senza query aggiuntive
-// né nuove tabelle. Chiamata dentro App() via useMemo, ricalcolata solo
-// quando eventi o modelli cambiano davvero.
-function raccogliSuggerimenti(events, modelli){
-  const label = new Set(), collega = new Set(), auto = new Set(), place = new Set(), modelliTitoli = new Set();
-  for(const calMap of Object.values(events||{})){
-    for(const evts of Object.values(calMap||{})){
-      for(const e of (evts||[])){
-        if(e.label) label.add(e.label);
-        if(e.place) place.add(e.place);
-        if(e.auto) auto.add(e.auto);
-        if(e.collega){
-          // Il campo collega può contenere più nomi su righe separate:
-          // ogni riga diventa un suggerimento a sé, non l'intero blocco.
-          e.collega.split(/\r?\n/).map(r=>r.trim()).filter(Boolean).forEach(r=>collega.add(r));
-        }
-      }
-    }
-  }
-  for(const m of (modelli||[])){
-    if(m.titolo) { label.add(m.titolo); modelliTitoli.add(m.titolo); }
-    if(m.label) { label.add(m.label); modelliTitoli.add(m.label); }
-  }
-  const toSorted = set => [...set].sort((a,b)=>a.localeCompare(b));
-  return {
-    label: toSorted(label),
-    collega: toSorted(collega),
-    auto: toSorted(auto),
-    place: toSorted(place),
-    modelliTitoli: toSorted(modelliTitoli),
-  };
-}
 // #endregion
 // #endregion
 
@@ -6906,7 +6960,7 @@ function ModelloCard({m, T, accent, fasceAutomatiche, onEdit, onDelete, onMoveUp
 }
 
 
-function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[], reports=[], getConteggioConfig, updateConteggioConfig, suggerimentiTitolo=[], onSave}){
+function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[], reports=[], getConteggioConfig, updateConteggioConfig, suggerimentiTitolo=[], suggerimentiNomeVis=[], onRimuoviSuggerimento, onSave}){
   const [reportEspanso, setReportEspanso] = useState(null);
   const autoColore=form.tempo==="h24"?"#64748b":getColorByTime(form.inizio, fasceAutomatiche);
   const coloreVis=form.coloreCustom||autoColore;
@@ -6917,13 +6971,15 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[]
       <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:8}}>
         <AutocompleteInput value={form.titolo} onChange={e=>setForm(f=>({...f,titolo:e.target.value.toUpperCase()}))}
           suggestions={suggerimentiTitolo}
+          onRemoveSuggestion={onRimuoviSuggerimento?(s=>onRimuoviSuggerimento("titolo", s)):undefined}
           placeholder="TITOLO / CODICE (es. 00-06)"
           style={{width:"100%",padding:"14px 16px",background:"transparent",border:"none",
             outline:"none",color:T.text,fontSize:16,fontWeight:600,boxSizing:"border-box"}}/>
       </div>
       <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:16}}>
         <AutocompleteInput value={form.label||""} onChange={e=>setForm(f=>({...f,label:e.target.value.toUpperCase()}))}
-          suggestions={suggerimentiTitolo}
+          suggestions={suggerimentiNomeVis}
+          onRemoveSuggestion={onRimuoviSuggerimento?(s=>onRimuoviSuggerimento("nome_visualizzato", s)):undefined}
           placeholder="NOME DA MOSTRARE NEL CALENDARIO (es. NOTTE)"
           style={{width:"100%",padding:"14px 16px",background:"transparent",border:"none",
             outline:"none",color:T.text,fontSize:16,fontWeight:600,boxSizing:"border-box"}}/>
