@@ -1209,8 +1209,8 @@ export default function App({ session }){
     surface: dark?"#0f172a":"#ffffff",
     s2:      dark?"#1e293b":"#f1f5f9",
     border:  dark?"#334155":"#e2e8f0",
-    text:    dark?"#f1f5f9":"#0f172a",
-    sub:     dark?"#64748b":"#94a3b8",
+    text:    "#000000",
+    sub:     "#000000",
     gap:     dark?"#1e293b":"#e2e8f0",
   };
 
