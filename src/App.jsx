@@ -5212,7 +5212,7 @@ const importsRecenti = useMemo(()=>{
             <ModelForm T={T} form={modelForm} setForm={setModelForm} accent={accent} dark={dark}
               fasceAutomatiche={fasceAutomatiche} modelli={modelli}
               reports={store.reports||[]} getConteggioConfig={getConteggioConfig} updateConteggioConfig={updateConteggioConfig}
-              suggerimentiTitolo={suggerimentiAutocomplete.label}
+              suggerimentiTitolo={suggerimentiAutocomplete.modelliTitoli}
               onSave={async()=>{
                 const esito = await saveModello({...modelForm,id:editModello?.id});
                 if(esito?.ok){
@@ -5886,7 +5886,7 @@ function AutocompleteInput({ as="input", value, onChange, suggestions=[], style,
 // né nuove tabelle. Chiamata dentro App() via useMemo, ricalcolata solo
 // quando eventi o modelli cambiano davvero.
 function raccogliSuggerimenti(events, modelli){
-  const label = new Set(), collega = new Set(), auto = new Set(), place = new Set();
+  const label = new Set(), collega = new Set(), auto = new Set(), place = new Set(), modelliTitoli = new Set();
   for(const calMap of Object.values(events||{})){
     for(const evts of Object.values(calMap||{})){
       for(const e of (evts||[])){
@@ -5902,8 +5902,8 @@ function raccogliSuggerimenti(events, modelli){
     }
   }
   for(const m of (modelli||[])){
-    if(m.titolo) label.add(m.titolo);
-    if(m.label) label.add(m.label);
+    if(m.titolo) { label.add(m.titolo); modelliTitoli.add(m.titolo); }
+    if(m.label) { label.add(m.label); modelliTitoli.add(m.label); }
   }
   const toSorted = set => [...set].sort((a,b)=>a.localeCompare(b));
   return {
@@ -5911,6 +5911,7 @@ function raccogliSuggerimenti(events, modelli){
     collega: toSorted(collega),
     auto: toSorted(auto),
     place: toSorted(place),
+    modelliTitoli: toSorted(modelliTitoli),
   };
 }
 // #endregion
