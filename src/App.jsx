@@ -637,6 +637,12 @@ function calcFine6h15(tIn){
   const tot=mins+375;
   return `${String(Math.floor(tot/60)%24).padStart(2,"0")}:${String(tot%60).padStart(2,"0")}`;
 }
+function calcFine6h30(tIn){
+  const mins=oraInMinuti(tIn);
+  if(mins===null) return "";
+  const tot=mins+390;
+  return `${String(Math.floor(tot/60)%24).padStart(2,"0")}:${String(tot%60).padStart(2,"0")}`;
+}
 function calcDurata(tIn,tOut){
   const m1=oraInMinuti(tIn), m2=oraInMinuti(tOut);
   if(m1===null||m2===null) return "";
@@ -1295,10 +1301,12 @@ export default function App({ session }){
 
 // #region SEZIONE 11: CRUD EVENTI
 // ═══════════════════════════════════════════════════════════════
-  async function saveEvt(){
-    if(!form||!dayKey||!calId||!userId) return;
-    const cal = store.calendars.find(c=>c.id===calId);
-    if(!cal) return;
+  // Calcola color/label/orari/shiftId/extraNote a partire dal form corrente.
+  // Funzione condivisa (superset) usata sia da saveEvt che da updateEvt: contiene
+  // TUTTI i rami di entrambe (gestione modelloId, shiftId, fixed/fixed30, extraNote),
+  // così nessuna delle due perde comportamento. Ogni chiamante decide se usare
+  // extraNote o ignorarlo, ma il calcolo avviene sempre allo stesso modo per entrambi.
+  function computeEventFields(form, cal, modelli){
     let color = form.colorOvr || cal.color;
     let label = (form.label||"Evento").toUpperCase();
     let tInFinal = form.dur==="allday"?"":form.tIn||"";
@@ -1324,6 +1332,9 @@ export default function App({ session }){
     if(form.dur==="fixed" && tInFinal && !form.modelloId){
       tOutFinal = form.tOut||calcFine6h15(tInFinal);
     }
+    if(form.dur==="fixed30" && tInFinal && !form.modelloId){
+      tOutFinal = form.tOut||calcFine6h30(tInFinal);
+    }
     let extraNote = form.note||"";
     if(form.modelloId && tInFinal && tOutFinal){
       const mod=modelli.find(m=>m.id===form.modelloId);
@@ -1335,6 +1346,14 @@ export default function App({ session }){
         if(diff<0) extraNote=(extraNote?extraNote+" | ":"")+`Anticipo: ${Math.floor(Math.abs(diff)/60)}h${Math.abs(diff)%60>0?Math.abs(diff)%60+"m":""}`;
       }
     }
+    return { color, label, tInFinal, tOutFinal, extraNote };
+  }
+
+  async function saveEvt(){
+    if(!form||!dayKey||!calId||!userId) return;
+    const cal = store.calendars.find(c=>c.id===calId);
+    if(!cal) return;
+    const { color, label, tInFinal, tOutFinal, extraNote } = computeEventFields(form, cal, modelli);
 
     const { data, error } = await creaEventoSupabase({
       userId, calId, dateKey: dayKey,
@@ -1374,27 +1393,8 @@ export default function App({ session }){
     if(!form||!dayKey||!editCalId||!userId||!form.editId) return;
     const cal = store.calendars.find(c=>c.id===editCalId);
     if(!cal) return;
-    let color = form.colorOvr || cal.color;
-    let label = (form.label||"Evento").toUpperCase();
-    let tInFinal = form.dur==="allday"?"":form.tIn||"";
-    let tOutFinal = form.dur==="allday"?"":form.tOut||"";
-    if(form.modelloId){
-      const mod = modelli.find(m=>m.id===form.modelloId);
-      if(mod){
-        color = form.colorOvr||(mod.coloreCustom||colByTime(mod.inizio));
-        label = (mod.label||mod.titolo||label).toUpperCase();
-        if(mod.tempo==="h24"){ tInFinal=""; tOutFinal=""; }
-        else if(mod.tempo==="6h15"){
-          tInFinal = form.tIn||mod.inizio||"";
-          tOutFinal = form.tOut||calcFine6h15(tInFinal)||"";
-        } else {
-          tInFinal = form.tIn||mod.inizio||"";
-          tOutFinal = form.tOut||mod.fine||"";
-        }
-      }
-    } else if(form.dur==="fixed" && tInFinal && !form.modelloId){
-      tOutFinal = form.tOut||calcFine6h15(tInFinal);
-    }
+    const { color, label, tInFinal, tOutFinal } = computeEventFields(form, cal, modelli);
+
     const { error } = await supabase.from("events").update({
       label, color, all_day: form.dur==="allday",
       time_in: tInFinal, time_out: tOutFinal,
@@ -4825,7 +4825,7 @@ const importsRecenti = useMemo(()=>{
               if(soloConsultazione) return;
               if(form?.editId===e.id){ setForm(null); return; }
               setForm({ editId:e.id, editCid:e._cid||calId, modelloId:null, shiftId:null, label:e.label,
-                colorOvr:e.color, dur:e.allDay?"allday":(e.tIn&&e.tOut&&e.tOut===calcFine6h15(e.tIn))?"fixed":"custom", tIn:e.tIn||"", tOut:e.tOut||"",
+                colorOvr:e.color, dur:e.allDay?"allday":(e.tIn&&e.tOut&&e.tOut===calcFine6h15(e.tIn))?"fixed":(e.tIn&&e.tOut&&e.tOut===calcFine6h30(e.tIn))?"fixed30":"custom", tIn:e.tIn||"", tOut:e.tOut||"",
                 place:e.place||"", map:e.map||"", note:e.note||"", collega:e.collega||"", auto:e.auto||"",
                 protPagFine:e.protPagFine||"", protRecFine:e.protRecFine||"" });
             }}
@@ -4873,7 +4873,7 @@ const importsRecenti = useMemo(()=>{
             </div>
             <button onClick={e2=>{e2.stopPropagation();setForm({
                 editId:e.id,editCid:e._cid||calId,modelloId:null,shiftId:null,label:e.label,colorOvr:e.color,
-                dur:e.allDay?"allday":(e.tIn&&e.tOut&&e.tOut===calcFine6h15(e.tIn))?"fixed":"custom",tIn:e.tIn||"",tOut:e.tOut||"",place:e.place||"",
+                dur:e.allDay?"allday":(e.tIn&&e.tOut&&e.tOut===calcFine6h15(e.tIn))?"fixed":(e.tIn&&e.tOut&&e.tOut===calcFine6h30(e.tIn))?"fixed30":"custom",tIn:e.tIn||"",tOut:e.tOut||"",place:e.place||"",
                 map:e.map||"",note:e.note||"",collega:e.collega||"",auto:e.auto||"",
                 protPagFine:e.protPagFine||"",protRecFine:e.protRecFine||"",
               });}}
@@ -4894,11 +4894,51 @@ const importsRecenti = useMemo(()=>{
         ))}
         {form&&(
           <div style={{background:T.s2,borderRadius:12,padding:14,marginTop:8}}>
+            {form.editId&&(
+              <div onClick={()=>setForm(f=>({...f,_showModPicker:!f._showModPicker}))}
+                style={{fontSize:24,color:T.text,fontWeight:900,marginBottom:12,letterSpacing:1,cursor:"pointer",
+                  display:"flex",alignItems:"center",gap:8}}>
+                {(form.label||"EVENTO").toUpperCase()}
+                <span style={{fontSize:12,color:T.sub,fontWeight:700}}>✎ cambia modello</span>
+              </div>
+            )}
+            {modelli.length>0&&form.editId&&form._showModPicker&&(()=>{
+              const modelliDelCal = modelliOrdinati.filter(m=>{
+                if(!calId) return true;
+                const mcid = m.calendarId||mainCalId;
+                return mcid===calId;
+              });
+              if(modelliDelCal.length===0) return null;
+              return (
+              <>
+                <div style={{fontSize:10,color:T.sub,marginBottom:6,fontWeight:600}}>CAMBIA MODELLO TURNO</div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+                  {modelliDelCal.map(m=>{
+                    const c=m.coloreCustom||colByTime(m.inizio);
+                    return (
+                      <button key={m.id}
+                        onClick={()=>setForm(f=>({...f,modelloId:m.id,shiftId:null,label:m.label||m.titolo,colorOvr:null,
+                          dur:m.tempo==="h24"?"allday":m.tempo==="6h15"?"fixed":"custom",
+                          tIn:m.inizio||"",
+                          tOut:m.tempo==="6h15"&&m.inizio?calcFine6h15(m.inizio):(m.fine||""),
+                          protPagFine:"",protRecFine:"",
+                          _showModPicker:false}))}
+                        style={{background:form.modelloId===m.id?c:T.surface,
+                          border:`2px solid ${form.modelloId===m.id?c:T.border}`,
+                          borderRadius:10,padding:"6px 10px",cursor:"pointer",
+                          color:form.modelloId===m.id?"#fff":T.sub,fontSize:11,fontWeight:700,
+                          display:"flex",alignItems:"center",gap:5}}>
+                        <div style={{width:8,height:8,borderRadius:"50%",background:c}}/>
+                        {m.titolo}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+              );
+            })()}
             {!form.modelloId&&!form.editId&&(
               <div style={{fontSize:10,color:T.sub,fontWeight:900,marginBottom:12,letterSpacing:1}}>NUOVO EVENTO</div>
-            )}
-            {form.editId&&(
-              <div style={{fontSize:24,color:T.text,fontWeight:900,marginBottom:12,letterSpacing:1}}>{(form.label||"EVENTO").toUpperCase()}</div>
             )}
             {modelli.length>0&&!form.editId&&(()=>{
               const modelliDelCal = modelliOrdinati.filter(m=>{
@@ -4991,10 +5031,10 @@ const importsRecenti = useMemo(()=>{
               </div>
             )}
             <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>DURATA</div>
-            <div style={{display:"flex",gap:6,marginBottom:10}}>
-              {[["allday","Tutto il giorno"],["fixed","6h 15m"],["custom","Orario libero"]].map(([v,l])=>(
+            <div style={{display:"flex",gap:4,marginBottom:10}}>
+              {[["allday","Tutto il giorno"],["fixed","6h 15m"],["fixed30","6h 30m"],["custom","Orario libero"]].map(([v,l])=>(
                 <button key={v} onClick={()=>setForm(f=>({...f,dur:v}))}
-                  style={{flex:1,padding:"7px 2px",borderRadius:8,cursor:"pointer",fontSize:10,fontWeight:700,
+                  style={{flex:1,padding:"7px 1px",borderRadius:8,cursor:"pointer",fontSize:11,fontWeight:700,
                     background:form.dur===v?accent:T.surface,
                     color:form.dur===v?"#fff":T.sub,
                     border:`1.5px solid ${form.dur===v?accent:T.border}`}}>{l}</button>
@@ -5006,7 +5046,7 @@ const importsRecenti = useMemo(()=>{
       <div style={{flex:1}}>
         <div style={{fontSize:9,color:T.sub,marginBottom:3}}>INGRESSO</div>
         <SmartTimeInput value={form.tIn||""} onChange={v=>setForm(f=>({...f,tIn:v,
-          tOut: f.dur==="fixed"&&v ? calcFine6h15(v) : ""}))}
+          tOut: f.dur==="fixed"&&v ? calcFine6h15(v) : f.dur==="fixed30"&&v ? calcFine6h30(v) : ""}))}
           style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
             borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
       </div>
@@ -5022,6 +5062,14 @@ const importsRecenti = useMemo(()=>{
         <div style={{flex:1}}>
           <div style={{fontSize:9,color:T.sub,marginBottom:3}}>USCITA (modif.)</div>
           <SmartTimeInput value={form.tOut||calcFine6h15(form.tIn)} onChange={v=>setForm(f=>({...f,tOut:v}))}
+            style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
+              borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
+        </div>
+      )}
+      {form.dur==="fixed30"&&form.tIn&&(
+        <div style={{flex:1}}>
+          <div style={{fontSize:9,color:T.sub,marginBottom:3}}>USCITA (modif.)</div>
+          <SmartTimeInput value={form.tOut||calcFine6h30(form.tIn)} onChange={v=>setForm(f=>({...f,tOut:v}))}
             style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
               borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
         </div>
