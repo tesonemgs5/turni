@@ -1320,6 +1320,9 @@ export default function App({ session }){
         else if(mod.tempo==="6h15"){
           tInFinal = form.tIn||mod.inizio||"";
           tOutFinal = form.tOut||calcFine6h15(tInFinal)||"";
+        } else if(mod.tempo==="6h30"){
+          tInFinal = form.tIn||mod.inizio||"";
+          tOutFinal = form.tOut||calcFine6h30(tInFinal)||"";
         } else {
           tInFinal = form.tIn||mod.inizio||"";
           tOutFinal = form.tOut||mod.fine||"";
@@ -1541,7 +1544,7 @@ export default function App({ session }){
         headers:{"Content-Type":"application/json"},
         body: JSON.stringify({ secret: customSecret, action:"save_modelli", modelli: modelliToSave.map(m=>({
           ...m,
-          fine: (m.tempo==="6h15"||m.tempo==="6h 15m")&&m.inizio ? calcFine6h15(m.inizio) : m.fine||"",
+          fine: (m.tempo==="6h15"||m.tempo==="6h 15m")&&m.inizio ? calcFine6h15(m.inizio) : (m.tempo==="6h30"||m.tempo==="6h 30m")&&m.inizio ? calcFine6h30(m.inizio) : m.fine||"",
         }))}),
       });
       return "✅ Esportato su Sheets";
@@ -2253,7 +2256,7 @@ const importsRecenti = useMemo(()=>{
       // ── Retroattivo: propaga le modifiche a tutti i turni già in calendario
       const labelNuova = (data.label||data.titolo||"").toUpperCase();
       const tInNuovo = data.tempo==="h24" ? "" : (data.inizio||"");
-      const tOutNuovo = data.tempo==="h24" ? "" : (data.tempo==="6h15" ? (calcFine6h15(data.inizio)||"") : (data.fine||""));
+      const tOutNuovo = data.tempo==="h24" ? "" : (data.tempo==="6h15" ? (calcFine6h15(data.inizio)||"") : data.tempo==="6h30" ? (calcFine6h30(data.inizio)||"") : (data.fine||""));
       await supabase.from("events").update({
         label: labelNuova, color: coloreEff, time_in: tInNuovo, time_out: tOutNuovo,
       }).eq("modello_id", data.id).eq("user_id", userId);
@@ -2478,7 +2481,7 @@ const importsRecenti = useMemo(()=>{
     const label = (labelOverride || mod?.label || mod?.titolo || "").toUpperCase();
     const allDay = mod ? mod.tempo==="h24" : true;
     const tIn = (!mod || allDay) ? "" : (mod.inizio || "");
-    const tOut = (!mod || allDay) ? "" : (mod.tempo==="6h15" ? calcFine6h15(mod.inizio) : (mod.fine || ""));
+    const tOut = (!mod || allDay) ? "" : (mod.tempo==="6h15" ? calcFine6h15(mod.inizio) : mod.tempo==="6h30" ? calcFine6h30(mod.inizio) : (mod.fine || ""));
 
     const { data, error } = await creaEventoSupabase({
       userId, calId, dateKey, label, color, allDay,
@@ -2987,7 +2990,7 @@ const importsRecenti = useMemo(()=>{
     const label = (mod.label||mod.titolo||"").toUpperCase();
     const allDay = mod.tempo==="h24";
     const tIn = allDay?"":(mod.inizio||"");
-    const tOut = allDay?"":(mod.tempo==="6h15"?calcFine6h15(mod.inizio):(mod.fine||""));
+    const tOut = allDay?"":(mod.tempo==="6h15"?calcFine6h15(mod.inizio):mod.tempo==="6h30"?calcFine6h30(mod.inizio):(mod.fine||""));
     const { data, error } = await creaEventoSupabase({
       userId, calId, dateKey: key, label, color,
       allDay, tIn, tOut, modelloId: mod.id,
@@ -4918,9 +4921,9 @@ const importsRecenti = useMemo(()=>{
                     return (
                       <button key={m.id}
                         onClick={()=>setForm(f=>({...f,modelloId:m.id,shiftId:null,label:m.label||m.titolo,colorOvr:null,
-                          dur:m.tempo==="h24"?"allday":m.tempo==="6h15"?"fixed":"custom",
+                          dur:m.tempo==="h24"?"allday":m.tempo==="6h15"?"fixed":m.tempo==="6h30"?"fixed30":"custom",
                           tIn:m.inizio||"",
-                          tOut:m.tempo==="6h15"&&m.inizio?calcFine6h15(m.inizio):(m.fine||""),
+                          tOut:m.tempo==="6h15"&&m.inizio?calcFine6h15(m.inizio):m.tempo==="6h30"&&m.inizio?calcFine6h30(m.inizio):(m.fine||""),
                           protPagFine:"",protRecFine:"",
                           _showModPicker:false}))}
                         style={{background:form.modelloId===m.id?c:T.surface,
@@ -4956,9 +4959,9 @@ const importsRecenti = useMemo(()=>{
                     return (
                       <button key={m.id}
                         onClick={()=>setForm(f=>({...f,modelloId:m.id,shiftId:null,label:m.label||m.titolo,colorOvr:null,
-                          dur:m.tempo==="h24"?"allday":m.tempo==="6h15"?"fixed":"custom",
+                          dur:m.tempo==="h24"?"allday":m.tempo==="6h15"?"fixed":m.tempo==="6h30"?"fixed30":"custom",
                           tIn:m.inizio||"",
-                          tOut:m.tempo==="6h15"&&m.inizio?calcFine6h15(m.inizio):(m.fine||"")}))}
+                          tOut:m.tempo==="6h15"&&m.inizio?calcFine6h15(m.inizio):m.tempo==="6h30"&&m.inizio?calcFine6h30(m.inizio):(m.fine||"")}))}
                         style={{background:form.modelloId===m.id?c:T.surface,
                           border:`2px solid ${form.modelloId===m.id?c:T.border}`,
                           borderRadius:10,padding:"6px 10px",cursor:"pointer",
@@ -5032,7 +5035,7 @@ const importsRecenti = useMemo(()=>{
             )}
             <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>DURATA</div>
             <div style={{display:"flex",gap:4,marginBottom:10}}>
-              {[["allday","Tutto il giorno"],["fixed","6h 15m"],["fixed30","6h 30m"],["custom","Orario libero"]].map(([v,l])=>(
+              {[["allday","H24"],["fixed","6h 15m"],["fixed30","6h 30m"],["custom","PERSONALIZZATO"]].map(([v,l])=>(
                 <button key={v} onClick={()=>setForm(f=>({...f,dur:v}))}
                   style={{flex:1,padding:"7px 1px",borderRadius:8,cursor:"pointer",fontSize:11,fontWeight:700,
                     background:form.dur===v?accent:T.surface,
@@ -5432,7 +5435,7 @@ const importsRecenti = useMemo(()=>{
                     shiftId:null,
                     label:modelloScelto.titolo,
                     note:"",
-                    dur:modelloScelto.tempo==="h24"?"allday":modelloScelto.tempo==="6h15"?"fixed":"custom",
+                    dur:modelloScelto.tempo==="h24"?"allday":modelloScelto.tempo==="6h15"?"fixed":modelloScelto.tempo==="6h30"?"fixed30":"custom",
                     tIn:modelloScelto.inizio||"",
                     tOut:modelloScelto.fine||"",
                     place:"",map:"",colorOvr:null,collega:"",auto:"",
@@ -5524,8 +5527,8 @@ const importsRecenti = useMemo(()=>{
               <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:12}}>
                 {modelliPicker.map((m,i,arr)=>{
                   const c=m.coloreCustom||colByTime(m.inizio);
-                  const durata=m.tempo==="h24"?"Tutto il giorno"
-                    :m.tempo==="6h15"&&m.inizio?`${m.inizio} - ${calcFine6h15(m.inizio)} • 6h 15m`
+                  const durata=m.tempo==="h24"?"H24"
+                    :m.tempo==="6h15"&&m.inizio?`${m.inizio} - ${calcFine6h15(m.inizio)} • 6h 15m`:m.tempo==="6h30"&&m.inizio?`${m.inizio} - ${calcFine6h30(m.inizio)} • 6h 30m`
                     :m.inizio&&m.fine?`${m.inizio} - ${m.fine} • ${calcDurata(m.inizio,m.fine)}`
                     :m.inizio?m.inizio:"";
                   return (
@@ -5536,7 +5539,7 @@ const importsRecenti = useMemo(()=>{
                           return;
                         }
                         setForm({modelloId:m.id,shiftId:null,label:m.titolo,note:"",
-                          dur:m.tempo==="h24"?"allday":m.tempo==="6h15"?"fixed":"custom",
+                          dur:m.tempo==="h24"?"allday":m.tempo==="6h15"?"fixed":m.tempo==="6h30"?"fixed30":"custom",
                           tIn:m.inizio||"",tOut:m.fine||"",place:"",map:"",colorOvr:null,collega:"",auto:""});
                         setShowModelloPicker(false);
                       }} style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}>
@@ -6172,7 +6175,7 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, fas
           <div style={{flex:1}}>
             <span style={{fontSize:12,fontWeight:700,color:T.text}}>{m.titolo}</span>
             <span style={{fontSize:10,color:T.sub,marginLeft:6}}>
-              {m.tempo==="h24"?"H24":m.tempo==="6h15"&&m.inizio?`${m.inizio} - ${calcFine6h15(m.inizio)}`:m.inizio&&m.fine?`${m.inizio} - ${m.fine}`:m.inizio||""}
+              {m.tempo==="h24"?"H24":m.tempo==="6h15"&&m.inizio?`${m.inizio} - ${calcFine6h15(m.inizio)}`:m.tempo==="6h30"&&m.inizio?`${m.inizio} - ${calcFine6h30(m.inizio)}`:m.inizio&&m.fine?`${m.inizio} - ${m.fine}`:m.inizio||""}
             </span>
           </div>
           <span style={{fontSize:12,fontWeight:800,color:T.sub}}>{cnt}</span>
@@ -6930,8 +6933,8 @@ function PressableArrow({ onClick, accent, children, disabled, title }){
 
 function ModelloCard({m, T, accent, fasceAutomatiche, onEdit, onDelete, onMoveUp, onMoveDown, onDragStart, onDragOver, onDrop, onDragEnd, onTouchStart, onTouchMove, onTouchEnd, selectMode, selected, onToggleSelect, isDragging, isDropTarget}){
   const colore=m.coloreCustom||(m.tempo==="h24"?"#64748b":getColorByTime(m.inizio, fasceAutomatiche));
-  const durata=m.tempo==="h24"?"Tutto il giorno"
-    :m.tempo==="6h15"&&m.inizio?`${m.inizio} - ${calcFine6h15(m.inizio)} • 6h 15m`
+  const durata=m.tempo==="h24"?"H24"
+    :m.tempo==="6h15"&&m.inizio?`${m.inizio} - ${calcFine6h15(m.inizio)} • 6h 15m`:m.tempo==="6h30"&&m.inizio?`${m.inizio} - ${calcFine6h30(m.inizio)} • 6h 30m`
     :m.inizio&&m.fine?`${m.inizio} - ${m.fine} • ${calcDurata(m.inizio,m.fine)}`
     :m.inizio?m.inizio:"";
   const cardRef = useRef(null);
@@ -7012,7 +7015,7 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[]
   const [reportEspanso, setReportEspanso] = useState(null);
   const autoColore=form.tempo==="h24"?"#64748b":getColorByTime(form.inizio, fasceAutomatiche);
   const coloreVis=form.coloreCustom||autoColore;
-  const fineAuto=form.tempo==="6h15"&&form.inizio?calcFine6h15(form.inizio):null;
+  const fineAuto=form.tempo==="6h15"&&form.inizio?calcFine6h15(form.inizio):form.tempo==="6h30"&&form.inizio?calcFine6h30(form.inizio):null;
   const [showPal,setShowPal]=useState(false);
   return (
     <div style={{padding:"16px 14px 40px"}}>
@@ -7034,7 +7037,7 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[]
       </div>
       <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>DURATA TURNO</div>
       <div style={{display:"flex",gap:8,marginBottom:16}}>
-        {[["h24","H24"],["6h15","6h 15m"],["personalizzato","Personalizzato"]].map(([v,l])=>(
+        {[["h24","H24"],["6h15","6h 15m"],["6h30","6h 30m"],["personalizzato","PERSONALIZZATO"]].map(([v,l])=>(
           <button key={v} onClick={()=>setForm(f=>({...f,tempo:v, categoriaAppAuto: v==="h24" ? "" : f.categoriaAppAuto}))}
             style={{flex:1,padding:"10px 4px",borderRadius:10,border:"none",cursor:"pointer",
               fontWeight:700,fontSize:12,
@@ -7051,7 +7054,7 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[]
           </div>
           <div style={{display:"flex",alignItems:"center",padding:"14px 16px"}}>
             <span style={{flex:1,fontSize:15,color:T.text}}>Fine</span>
-            {form.tempo==="6h15"&&fineAuto?(
+            {(form.tempo==="6h15"||form.tempo==="6h30")&&fineAuto?(
               <span style={{fontSize:15,fontWeight:700,color:T.sub}}>{fineAuto} (auto)</span>
             ):(
               <input type="time" value={form.fine} onChange={e=>setForm(f=>({...f,fine:e.target.value}))}
@@ -7413,7 +7416,7 @@ function ModelloSelector({label, value, onChange, modelli, T, required=false, la
                 <div style={{flex:1}}>
                   <div style={{fontSize:13,fontWeight:700,color:T.text}}>{m.titolo}</div>
                   <div style={{fontSize:11,color:T.sub}}>
-                    {m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${m.tempo==="6h15"?` - ${calcFine6h15(m.inizio)}`:m.fine?` - ${m.fine}`:""}`:m.tempo}
+                    {m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${m.tempo==="6h15"?` - ${calcFine6h15(m.inizio)}`:m.tempo==="6h30"?` - ${calcFine6h30(m.inizio)}`:m.fine?` - ${m.fine}`:""}`:m.tempo}
                   </div>
                 </div>
                 {value===m.id&&<span style={{color:"#3b82f6"}}>✓</span>}
