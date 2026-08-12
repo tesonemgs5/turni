@@ -2319,16 +2319,20 @@ const importsRecenti = useMemo(()=>{
         //    messaggio che richiede OK per procedere.
         const calendarioModelli = modelli.filter(m=>(m.calendarId||mainCalId)===targetCalId);
         const tutti = calcolaOrdineModelli(calendarioModelli);
+        console.log("[DEBUG saveModello] tutti (ordine attuale) =", tutti.map((m,i)=>`${i}:${m.titolo}(${m.inizio||"h24"},sort=${m.sortOrder})`));
 
         function rinumeraEInserisci(idxInserimento){
           // Rinumera l'intero calendario con passo 10 e restituisce il
           // sort_order assegnato al nuovo modello nello slot scelto.
+          console.log("[DEBUG rinumeraEInserisci] idxInserimento=", idxInserimento);
           for(let i=0;i<tutti.length;i++){
             const nuovoVal = i>=idxInserimento ? (i+1)*10 : i*10;
+            console.log("[DEBUG rinumeraEInserisci] i=",i,"titolo=",tutti[i].titolo,"vecchioSort=",tutti[i].sortOrder,"nuovoVal=",nuovoVal);
             if(nuovoVal!==tutti[i].sortOrder){
               supabase.from("modelli").update({sort_order:nuovoVal}).eq("id",tutti[i].id).eq("user_id",userId);
             }
           }
+          console.log("[DEBUG rinumeraEInserisci] nuovo modello prende sortOrder=", idxInserimento*10+5);
           return idxInserimento*10 + 5;
         }
 
@@ -2349,9 +2353,11 @@ const importsRecenti = useMemo(()=>{
           // di avviso, secondo la regola 3.
           const coeso = indiciStessoOrario.length>0 &&
             indiciStessoOrario.every((v,i)=>i===0 || v===indiciStessoOrario[i-1]+1);
+          console.log("[DEBUG saveModello] nuovoOrarioKey=", nuovoOrarioKey, "indiciStessoOrario=", indiciStessoOrario, "coeso=", coeso);
           if(coeso){
             const ultimoIdx = indiciStessoOrario[indiciStessoOrario.length-1];
             nuovoSortOrder = rinumeraEInserisci(ultimoIdx+1);
+            console.log("[DEBUG saveModello] ramo COESO: ultimoIdx=", ultimoIdx, "-> rinumeraEInserisci(", ultimoIdx+1, ") = nuovoSortOrder", nuovoSortOrder);
           } else {
             // Zero match o gruppo sparso: in fondo a tutto, con avviso.
             // Eccezione: se il calendario non ha ALCUN altro modello con un
@@ -8883,4 +8889,5 @@ function NLRSView({rot, T, accent, modelli}){
   );
 }
 // #endregion
+
 
