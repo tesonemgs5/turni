@@ -1705,7 +1705,14 @@ export default function App({ session }){
 
   async function loadFromSheets(customUrl=sheetsUrl, customSecret=sheetsSecret){
     try {
-      const res = await fetch(`/api/sheets?secret=${customSecret}&action=load&userId=${userId}`);
+      // Il segreto va nel body (POST), non in query string: la query string
+      // può finire nei log del server o in eventuali proxy/CDN intermedi,
+      // il body no. Coerente con saveToSheets, che già usa POST+body.
+      const res = await fetch(`/api/sheets`, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ secret: customSecret, action:"load", userId }),
+      });
       return await res.json() || null;
     } catch(e){ return null; }
   }
@@ -2164,18 +2171,6 @@ const importsRecenti = useMemo(()=>{
   return Object.values(gruppi).sort((a,b)=> (b.importId||"").localeCompare(a.importId||""));
 }, [store.events, calId]);
 
-
-  function getFasciaModello(m){
-    if(m.tempo==="h24") return "libero";
-    if(!m.inizio) return "libero";
-    const mins=oraInMinuti(m.inizio);
-    if(mins===null) return "libero";
-    const h=Math.floor(mins/60), mi=mins%60;
-    if(h>=6&&h<12) return "mattina";
-    if(h>=12&&h<16||(h===16&&mi<30)) return "pomeriggio";
-    if(h>=16&&h<23) return "terzo";
-    return "notte";
-  }
 
   // Pinna un modello: lo aggancia "sopra" il modello che si trova alla
   // posizione newIdx nell'elenco visivo corrente (già senza il modello
