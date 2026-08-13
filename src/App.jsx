@@ -109,6 +109,52 @@ function loadFromLocalStorage(){
   } catch(e){ return null; }
 }
 
+// ─── Offline-first: il locale è la fonte di verità, Supabase/Sheets sono
+// backup di ripristino. Ogni scrittura (crea/modifica/elimina) aggiorna
+// SUBITO lo stato locale — online o offline, l'utente vede il risultato
+// all'istante — e in parallelo tenta Supabase; se fallisce per assenza di
+// connessione, l'operazione resta in coda e riparte da sola al ritorno
+// della rete, senza intervento dell'utente e senza mostrare errori per
+// quello specifico caso (un errore "vero", non di rete, resta comunque
+// visibile come prima tramite segnalaErroreDb).
+//
+// L'id di ogni nuova riga (evento/modello/rotazione/calendario) viene
+// generato QUI, lato client, con un vero UUID — non più lasciato generare
+// al database con l'insert. Così l'id locale e quello su Supabase sono
+// identici fin dal primo istante: nessuna riconciliazione "id temporaneo
+// -> id reale" necessaria dopo che il server risponde.
+function generaIdLocale(){
+  if(typeof crypto!=="undefined" && crypto.randomUUID) return crypto.randomUUID();
+  // Fallback per ambienti senza crypto.randomUUID (raro, browser molto vecchi):
+  // stesso formato v4, generato con Math.random (meno robusto ma sufficiente
+  // per un id locale, non per uso crittografico).
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c=>{
+    const r = Math.random()*16|0, v = c==="x" ? r : (r&0x3|0x8);
+    return v.toString(16);
+  });
+}
+
+const CODA_SYNC_KEY = 'coda_sync_offline';
+
+function leggiCodaSync(){
+  try{ return JSON.parse(localStorage.getItem(CODA_SYNC_KEY)||'[]'); }
+  catch(e){ return []; }
+}
+function scriviCodaSync(coda){
+  try{ localStorage.setItem(CODA_SYNC_KEY, JSON.stringify(coda)); }catch(e){}
+}
+// Accoda un'operazione da ritentare quando torna la connessione.
+//   tipo: "insert" | "update" | "delete"
+//   table: nome tabella Supabase (es. "events")
+//   payload: dati da scrivere (per insert/update)
+//   match: filtro per individuare la riga (per update/delete), es. {id, user_id}
+//   contesto: per i messaggi di log/errore, coerente col resto dell'app
+function accodaOperazioneSync(tipo, table, payload, match, contesto){
+  const coda = leggiCodaSync();
+  coda.push({ id: generaIdLocale(), ts: new Date().toISOString(), tipo, table, payload, match, contesto });
+  scriviCodaSync(coda);
+}
+
 // ─── Log persistente di TUTTI gli errori dell'app (non solo import) ───
 // Ogni errore, anche il più minore, finisce qui con: quando, da quale
 // funzione/azione dell'app arriva (contesto), e il messaggio tecnico
@@ -1332,11 +1378,48 @@ export default function App({ session }){
 
 // #region SEZIONE 8: USEEFFECT OVERSCROLL + ONLINE/OFFLINE
 // ═══════════════════════════════════════════════════════════════
+  // Svuota la coda di sincronizzazione offline: prova ogni operazione in
+  // ordine (crea/modifica/elimina), la toglie dalla coda solo se riesce.
+  // Se un'operazione fallisce di nuovo (rete ancora instabile, o un errore
+  // reale stavolta), resta in coda per il prossimo tentativo — tranne se
+  // l'errore non è di rete, nel qual caso viene comunque segnalata
+  // all'utente (stesso comportamento di sempre per gli errori "veri").
+  async function processaCodaSync(){
+    const coda = leggiCodaSync();
+    if(coda.length===0) return;
+    const rimasti = [];
+    for(const op of coda){
+      try{
+        let query = supabase.from(op.table);
+        let res;
+        if(op.tipo==="insert") res = await query.insert(op.payload);
+        else if(op.tipo==="update") res = await query.update(op.payload).match(op.match);
+        else if(op.tipo==="delete") res = await query.delete().match(op.match);
+        if(res?.error){
+          // Errore non di connessione (es. validazione, permessi): non ha
+          // senso ritentarlo all'infinito, si segnala e si scarta.
+          segnalaErrore(res.error, `Sincronizzazione in sospeso — ${op.contesto}`);
+        } else {
+          rimasti.push(null); // marcato come completato, verrà filtrato sotto
+        }
+      } catch(e){
+        // Eccezione di rete (offline di nuovo, timeout...): resta in coda,
+        // si ritenterà al prossimo giro. Nessun alert per questo caso —
+        // è lo scenario normale "sto ancora aspettando la connessione".
+        rimasti.push(op);
+      }
+    }
+    scriviCodaSync(rimasti.filter(Boolean));
+  }
   useEffect(()=>{
-    function goOnline(){ setIsOnline(true); }
+    function goOnline(){ setIsOnline(true); processaCodaSync(); }
     function goOffline(){ setIsOnline(false); }
     window.addEventListener('online', goOnline);
     window.addEventListener('offline', goOffline);
+    // Anche all'avvio: se erano rimaste operazioni in coda da una sessione
+    // precedente (es. l'app è stata chiusa mentre era offline), si prova
+    // subito a smaltirle.
+    if(navigator.onLine) processaCodaSync();
     return ()=>{ window.removeEventListener('online', goOnline); window.removeEventListener('offline', goOffline); };
   },[]);
 // #endregion
@@ -1500,30 +1583,35 @@ export default function App({ session }){
     if(!cal) return;
     const { color, label, tInFinal, tOutFinal, extraNote } = computeEventFields(form, cal, modelli);
 
-    const { data, error } = await creaEventoSupabase({
-      userId, calId, dateKey: dayKey,
-      label, color, allDay: form.dur==="allday"&&!form.modelloId,
-      tIn: tInFinal, tOut: tOutFinal,
-      place: form.place, mapUrl: form.map||"", note: extraNote,
-      modelloId: form.modelloId||null, rotazioneId: form.rotazioneId||null,
-      collega: form.collega, auto: form.auto,
-      protPagFine: form.protPagFine||null, protRecFine: form.protRecFine||null,
-    });
-    if(error){ segnalaErroreDb(error, "Salvataggio turno"); return; }
-    if(!form.modelloId && form.label) registraValoreAutocomplete("titolo", label);
-    if(form.auto) registraValoreAutocomplete("auto", data.auto||form.auto);
-    if(form.place) registraValoreAutocomplete("luogo", data.place||form.place);
-    if(form.collega) registraValoriAutocomplete("collega", form.collega.split(/\r?\n/));
-    const evt = {
-      id: data.id, color, label, allDay: data.all_day,
-      tIn: data.time_in||"", tOut: data.time_out||"",
-      place: data.place||"", map: data.map_url||"",
-      note: data.note||"", modelloId: data.modello_id||null,
-      rotazioneId: data.rotazione_id||null,
-      collega: data.collega||null, auto: data.auto||"",
-      protPagFine: data.prot_pag_fine||"", protRecFine: data.prot_rec_fine||"",
+    // L'id viene generato QUI, non più dal database: così l'evento locale
+    // e quello su Supabase condividono lo stesso id fin dal primo istante,
+    // nessuna riconciliazione necessaria dopo che il server risponde.
+    const idLocale = generaIdLocale();
+    const payload = {
+      id: idLocale,
+      user_id: userId, calendar_id: calId, date_key: dayKey,
+      label, color, all_day: form.dur==="allday"&&!form.modelloId,
+      time_in: tInFinal, time_out: tOutFinal,
+      place: up(form.place), map_url: form.map||"", note: up(extraNote),
+      modello_id: form.modelloId||null, rotazione_id: form.rotazioneId||null,
+      collega: up(form.collega), auto: up(form.auto),
+      prot_pag_fine: form.protPagFine||null, prot_rec_fine: form.protRecFine||null,
     };
 
+    // 1) SUBITO in locale: l'utente vede il turno all'istante, online o offline.
+    const evt = {
+      id: idLocale, color, label, allDay: payload.all_day,
+      tIn: tInFinal||"", tOut: tOutFinal||"",
+      place: payload.place||"", map: payload.map_url||"",
+      note: payload.note||"", modelloId: payload.modello_id,
+      rotazioneId: payload.rotazione_id,
+      collega: payload.collega||null, auto: payload.auto||"",
+      protPagFine: payload.prot_pag_fine||"", protRecFine: payload.prot_rec_fine||"",
+    };
+    if(!form.modelloId && form.label) registraValoreAutocomplete("titolo", label);
+    if(form.auto) registraValoreAutocomplete("auto", form.auto);
+    if(form.place) registraValoreAutocomplete("luogo", form.place);
+    if(form.collega) registraValoriAutocomplete("collega", form.collega.split(/\r?\n/));
     setStore(prev=>{
       const ns = withEventoAggiunto(prev, dayKey, calId, evt);
       saveToLocalStorage(ns.events, ns.calendars, modelli);
@@ -1531,6 +1619,16 @@ export default function App({ session }){
       return ns;
     });
     setForm(null); setDayKey(null);
+
+    // 2) In background, backup su Supabase. Se fallisce per rete assente,
+    // finisce in coda e riparte da sola al ritorno della connessione —
+    // l'utente non aspetta e non vede errori per questo caso specifico.
+    try{
+      const { error } = await supabase.from("events").insert(payload);
+      if(error) segnalaErroreDb(error, "Salvataggio turno (backup su Supabase)");
+    }catch(e){
+      accodaOperazioneSync("insert", "events", payload, null, "Creazione turno");
+    }
   }
 
   async function updateEvt(){
@@ -3392,12 +3490,18 @@ const importsRecenti = useMemo(()=>{
         }
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",
-        background:editMode?T.s2:"#ffffff",borderBottom:`1px solid ${editMode?T.border:"#000000"}`,flexShrink:0}}>
+        background: !isOnline ? "#ef4444" : (editMode?T.s2:"#ffffff"),
+        borderBottom:`1px solid ${!isOnline ? "#b91c1c" : (editMode?T.border:"#000000")}`,flexShrink:0}}>
         {DAYS.map((d,i)=>(
           <div key={i} style={{textAlign:"center",fontSize:9,fontWeight:800,
-            padding:"3px 0",color:i===6?"#ef4444":(editMode?T.sub:"#0f172a")}}>{d}</div>
+            padding:"3px 0",color: !isOnline ? "#ffffff" : (i===6?"#ef4444":(editMode?T.sub:"#0f172a"))}}>{d}</div>
         ))}
       </div>
+      {!isOnline && (
+        <div style={{textAlign:"center",fontSize:9,fontWeight:800,color:"#ffffff",background:"#b91c1c",padding:"2px 0",flexShrink:0}}>
+          📴 OFFLINE — le modifiche verranno sincronizzate al ritorno della connessione
+        </div>
+      )}
       <div style={{position:"relative",flex:1,overflow:"hidden",minHeight:0}}>
       {prevGrid&&(()=>{
         const pTotalDays=daysInMonth(prevGrid.year,prevGrid.month);
