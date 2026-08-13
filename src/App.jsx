@@ -3,7 +3,7 @@
 // (font.jsx accorpato qui sotto — SEZIONE 0)
 // ═══════════════════════════════════════════════════════════════
 
-// #region SEZIONE 0: FONT & COLORI (ex font.jsx, accorpato)
+// #region SEZIONE 0: FONT & COLORI
 // ═══════════════════════════════════════════════════════════════
 export const FONT_FAMILY_BASE = "system-ui,sans-serif";
 export const FONT_FAMILY_DISPLAY = "Georgia,serif";
@@ -716,6 +716,19 @@ function calcFine6h30(tIn){
   if(mins===null) return "";
   const tot=mins+390;
   return `${String(Math.floor(tot/60)%24).padStart(2,"0")}:${String(tot%60).padStart(2,"0")}`;
+}
+// Calcola l'orario di fine di un modello a partire dal suo tempo/inizio/fine.
+// Centralizza una logica che era ripetuta identica in circa 10 punti del
+// file: se cambia in futuro (es. si aggiunge "6h45"), va cambiata qui sola.
+//   - "h24": nessun orario di fine (turno tutto il giorno)
+//   - "6h15"/"6h30": fine calcolata automaticamente da inizio
+//   - "personalizzato" (o altro): usa mod.fine così com'è salvato
+function calcFineModello(mod){
+  if(!mod) return "";
+  if(mod.tempo==="h24") return "";
+  if(mod.tempo==="6h15") return calcFine6h15(mod.inizio)||"";
+  if(mod.tempo==="6h30") return calcFine6h30(mod.inizio)||"";
+  return mod.fine||"";
 }
 function calcDurata(tIn,tOut){
   const m1=oraInMinuti(tIn), m2=oraInMinuti(tOut);
@@ -2094,7 +2107,7 @@ export default function App({ session }){
 // #endregion
 
 
-// #region SEZIONE 13: CRUD MODELLI + COLORI (con fix sync colore custom)
+// #region SEZIONE 13: CRUD MODELLI + COLORI
 // ═══════════════════════════════════════════════════════════════
 // Memoizzato: prima veniva ricalcolato (sort completo) ad ogni singolo
 // render dell'app, anche quando i modelli non erano cambiati.
@@ -2448,7 +2461,7 @@ const importsRecenti = useMemo(()=>{
       // ── Retroattivo: propaga le modifiche a tutti i turni già in calendario
       const labelNuova = (data.label||data.titolo||"").toUpperCase();
       const tInNuovo = data.tempo==="h24" ? "" : (data.inizio||"");
-      const tOutNuovo = data.tempo==="h24" ? "" : (data.tempo==="6h15" ? (calcFine6h15(data.inizio)||"") : data.tempo==="6h30" ? (calcFine6h30(data.inizio)||"") : (data.fine||""));
+      const tOutNuovo = calcFineModello(data);
       const { error: errPropagazione } = await dbUpdate("events", {
         label: labelNuova, color: coloreEff, time_in: tInNuovo, time_out: tOutNuovo,
       }, {modello_id:data.id, user_id:userId}, "Aggiornamento modello — propagazione agli eventi già in calendario", {soloLog:true});
@@ -2702,7 +2715,7 @@ const importsRecenti = useMemo(()=>{
     const label = (labelOverride || mod?.label || mod?.titolo || "").toUpperCase();
     const allDay = mod ? mod.tempo==="h24" : true;
     const tIn = (!mod || allDay) ? "" : (mod.inizio || "");
-    const tOut = (!mod || allDay) ? "" : (mod.tempo==="6h15" ? calcFine6h15(mod.inizio) : mod.tempo==="6h30" ? calcFine6h30(mod.inizio) : (mod.fine || ""));
+    const tOut = (!mod || allDay) ? "" : calcFineModello(mod);
 
     const { data, error } = await creaEventoSupabase({
       userId, calId, dateKey, label, color, allDay,
@@ -3212,7 +3225,7 @@ const importsRecenti = useMemo(()=>{
     const label = (mod.label||mod.titolo||"").toUpperCase();
     const allDay = mod.tempo==="h24";
     const tIn = allDay?"":(mod.inizio||"");
-    const tOut = allDay?"":(mod.tempo==="6h15"?calcFine6h15(mod.inizio):mod.tempo==="6h30"?calcFine6h30(mod.inizio):(mod.fine||""));
+    const tOut = allDay?"":calcFineModello(mod);
     const { data, error } = await creaEventoSupabase({
       userId, calId, dateKey: key, label, color,
       allDay, tIn, tOut, modelloId: mod.id,
@@ -6258,7 +6271,7 @@ function SmartTimeInput({ value, onChange, style }) {
 // #endregion
 
 
-// #region SEZIONE 22B: AUTOCOMPLETE INPUT
+// #region SEZIONE 23: AUTOCOMPLETE INPUT
 // ═══════════════════════════════════════════════════════════════
 // Componente riutilizzabile: mostra una tendina di suggerimenti cliccabili
 // mentre l'utente digita, filtrando "suggestions" (array di stringhe uniche
@@ -6369,10 +6382,9 @@ function AutocompleteInput({ as="input", value, onChange, suggestions=[], style,
 }
 
 // #endregion
-// #endregion
 
 
-// #region SEZIONE 23: REPORT SUBCOMPONENTS
+// #region SEZIONE 24: REPORT SUBCOMPONENTS
 // ═══════════════════════════════════════════════════════════════
 function FasceExpand({data, pct1, pct2, T, modelli, accent, cfg}){
   const [openFascia, setOpenFascia] = useState(null);
@@ -6933,7 +6945,7 @@ function GuadagniView({T, indennita, calc}){
 // #endregion
 
 
-// #region SEZIONE 24: SHARED UI COMPONENTS (Pal, ColorRow, Sec)
+// #region SEZIONE 25: SHARED UI COMPONENTS (Pal, ColorRow, Sec)
 // ═══════════════════════════════════════════════════════════════
 function hexToRgbObj(hex){
   const h=hex.replace("#","");
@@ -7322,7 +7334,7 @@ function Sec({label,children,T}){
 // #endregion
 
 
-// #region SEZIONE 25: MODELLO CARD & FORM (fix: colore libero via palette condivisa)
+// #region SEZIONE 26: MODELLO CARD & FORM
 // ═══════════════════════════════════════════════════════════════
 // Pulsante freccia con feedback "pressed": si schiaccia leggermente e cambia
 // colore/ombra appena riceve il tap/click, così l'utente capisce subito che
@@ -7706,7 +7718,7 @@ const NB={background:"none",border:"none",fontSize:22,cursor:"pointer",
 // #endregion
 
 
-// #region SEZIONE 26: ROTAZIONE COMPONENTS
+// #region SEZIONE 27: ROTAZIONE COMPONENTS
 // ═══════════════════════════════════════════════════════════════
 function RotazioneCard({r, T, accent, modelli, onOpen, onEdit, onDelete}){
   const tipoLabel = r.tipo==="domeniche"?"🗓 Domeniche 1/4":r.tipo==="nlrs"?"🔄 NL / RS classico":r.tipo==="nlrs_scalante"?"📅 RS/NL Scalante":" Personalizzata";
@@ -7977,7 +7989,10 @@ async function preprocessaImmagine(file){
   const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
   return new File([blob], (file.name||"foto") + "-preproc.png", { type: "image/png" });
 }
+// #endregion
 
+// #region SEZIONE 28: IMPORT TURNI DA JSON
+// ═══════════════════════════════════════════════════════════════
 function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, month, onClose, onConfirm, onDeleteImport}){
   const [step, setStep] = useState("menu"); // menu | incolla | riepilogo | registro
   const [testoJson, setTestoJson] = useState("");
@@ -8234,7 +8249,10 @@ function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, month, o
     </div>
   );
 }
+// #endregion
 
+// #region SEZIONE 29: IMPORT TURNI DA OCR FOTO
+// ═══════════════════════════════════════════════════════════════
 function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onConfirm}){
   const [step, setStep] = useState("scegli-tipo"); // scegli-tipo | upload | ocr | chiedi-gemini | gemini-ocr | incolla-json | riepilogo
   const [tipoTabella, setTipoTabella] = useState(null); // "personale" | "stella"
@@ -9210,7 +9228,10 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
     </div>
   );
 }
+// #endregion
 
+// #region SEZIONE 30: VISTE ROTAZIONE NLRS/DOMENICHE
+// ═══════════════════════════════════════════════════════════════
 function NLRSScalanteView({rot, T, accent, modelli}){
   const modRS=modelli.find(m=>m.id===rot.modelloRSId);
   const modNL=modelli.find(m=>m.id===rot.modelloNLId);
