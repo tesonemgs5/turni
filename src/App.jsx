@@ -109,7 +109,81 @@ function loadFromLocalStorage(){
   } catch(e){ return null; }
 }
 
-// Registro locale delle righe di import che NON sono state importate
+// ─── Log persistente di TUTTI gli errori dell'app (non solo import) ───
+// Ogni errore, anche il più minore, finisce qui con: quando, da quale
+// funzione/azione dell'app arriva (contesto), e il messaggio tecnico
+// originale. Serve a due scopi distinti:
+//  1) sapere SEMPRE dove guardare quando qualcosa non va, anche per errori
+//     che oggi sparivano in console senza che l'utente li vedesse mai;
+//  2) per chi lavora sul codice, il campo "contesto" indica esattamente
+//     quale funzione ha generato l'errore, senza dover cercarlo alla cieca.
+const LOG_ERRORI_KEY = 'log_errori_app';
+const ERRORI_SILENZIATI_KEY = 'errori_app_silenziati';
+
+function leggiLogErrori(){
+  try{ return JSON.parse(localStorage.getItem(LOG_ERRORI_KEY)||'[]'); }
+  catch(e){ return []; }
+}
+function cancellaLogErrori(){
+  try{ localStorage.removeItem(LOG_ERRORI_KEY); }catch(e){}
+}
+function leggiErroriSilenziati(){
+  try{ return JSON.parse(localStorage.getItem(ERRORI_SILENZIATI_KEY)||'{}'); }
+  catch(e){ return {}; }
+}
+function impostaSilenziamentoErrore(contesto, silenziato){
+  try{
+    const attuali = leggiErroriSilenziati();
+    if(silenziato) attuali[contesto] = true; else delete attuali[contesto];
+    localStorage.setItem(ERRORI_SILENZIATI_KEY, JSON.stringify(attuali));
+  }catch(e){}
+}
+// Coda degli errori da mostrare come modale in-app (non popup nativo del
+// browser): un array di {messaggio, contesto, id}, letto e svuotato dal
+// componente ModaleErrore renderizzato una sola volta nella root dell'app.
+// Un semplice array in un oggetto globale, aggiornato tramite un listener,
+// evita di dover passare setError attraverso decine di funzioni diverse.
+let _codaErroriListener = null;
+function registraListenerCodaErrori(fn){ _codaErroriListener = fn; }
+function accodaErroreVisibile(messaggio, contesto){
+  if(_codaErroriListener) _codaErroriListener({ id: Date.now()+Math.random(), messaggio, contesto });
+}
+
+// Variante di segnalaErrore che scrive SOLO nel log persistente, senza
+// accodare il modale visibile. Serve nei pochi punti dove l'errore può
+// ripetersi molte volte in un singolo ciclo (es. normalizzazione riga per
+// riga): mostrare un modale per ognuno sarebbe una sequenza di N popup da
+// chiudere uno a uno. In quei casi il chiamante logga ogni singola riga con
+// questa funzione, poi mostra UN alert riassuntivo con segnalaErrore.
+function segnalaErroreSoloLog(messaggioTecnico, contesto){
+  console.error(`[${contesto}]`, messaggioTecnico);
+  const msg = String(messaggioTecnico?.message||messaggioTecnico||"Errore sconosciuto");
+  try{
+    const log = leggiLogErrori();
+    log.push({ ts: new Date().toISOString(), contesto, messaggio: msg });
+    localStorage.setItem(LOG_ERRORI_KEY, JSON.stringify(log.slice(-200)));
+  }catch(e){}
+}
+
+
+// dall'utente per questo specifico contesto, lo accoda per la visualizzazione
+// come modale in-app (un solo bottone OK + checkbox "non mostrare più").
+// Va chiamata al posto di console.error/console.warn ovunque nell'app tocchi
+// un'operazione che può fallire (Supabase, localStorage, rete, parsing...).
+function segnalaErrore(messaggioTecnico, contesto){
+  console.error(`[${contesto}]`, messaggioTecnico);
+  const msg = String(messaggioTecnico?.message||messaggioTecnico||"Errore sconosciuto");
+  try{
+    const log = leggiLogErrori();
+    log.push({ ts: new Date().toISOString(), contesto, messaggio: msg });
+    localStorage.setItem(LOG_ERRORI_KEY, JSON.stringify(log.slice(-200)));
+  }catch(e){}
+  const silenziati = leggiErroriSilenziati();
+  if(silenziati[contesto]) return;
+  accodaErroreVisibile(msg, contesto);
+}
+
+
 // (mancanti: nessun modello con quel titolo; sospetti: titolo trovato ma
 // orario/ambiguità). Prima queste informazioni si vedevano solo nel popup
 // "Importazione completata" e sparivano chiudendolo — qui restano
@@ -803,12 +877,62 @@ export default function App({ session }){
   },[]);
   const evtFontSize = isWideScreen ? "12px" : "clamp(12px,3.2vw,15px)";
   const dbErrorTimer = useRef(null);
+  // Coda degli errori accodati da segnalaErrore() in qualsiasi punto
+  // dell'app (anche fuori da questo componente). Mostrati uno alla volta:
+  // un solo bottone OK (chiude sempre) + checkbox "non mostrare più" per
+  // quel contesto specifico (silenziamento persistente, riattivabile da
+  // Impostazioni → Log).
+  const [codaErrori, setCodaErrori] = useState([]);
+  // Dati per la sezione "Log" in Impostazioni: caricati solo quando la
+  // sezione viene aperta (leggiLogErrori/leggiErroriSilenziati leggono da
+  // localStorage, non serve tenerli sempre in memoria).
+  const [logErroriVisibile, setLogErroriVisibile] = useState(null);
+  const [erroriSilenziatiVisibile, setErroriSilenziatiVisibile] = useState(null);
+  useEffect(()=>{
+    registraListenerCodaErrori((nuovoErrore)=>{
+      setCodaErrori(prev=>[...prev, nuovoErrore]);
+    });
+    return ()=>registraListenerCodaErrori(null);
+  }, []);
   function segnalaErroreDb(error, contesto){
-    console.error(`[${contesto}]`, error);
+    segnalaErrore(error, contesto);
     const msg = error?.message || "Errore sconosciuto";
     setDbError(`⚠️ ${contesto}: ${msg}`);
     if(dbErrorTimer.current) clearTimeout(dbErrorTimer.current);
     dbErrorTimer.current = setTimeout(()=>setDbError(""), 6000);
+  }
+  // ─── Wrapper per il pattern Supabase+gestione errore, ripetuto in tutto
+  // il file: query, controlla error, segnala se fallisce. Un solo posto da
+  // toccare se cambia come viene gestito un errore di scrittura; e soprattutto
+  // impossibile dimenticare il controllo dell'errore, perché è già dentro
+  // il wrapper stesso invece di doverlo scrivere ogni volta a mano.
+  // matchObj: oggetto di filtri applicati con .match() (es. {id, user_id}).
+  // opzioni.soloLog: se true, l'errore va solo nel Log senza aprire il
+  // modale — per i casi dentro un ciclo dove un riepilogo unico basta
+  // (vedi eseguiNormalizzazione).
+  async function dbUpdate(table, payload, matchObj, contesto, opzioni={}){
+    const { data, error } = await supabase.from(table).update(payload).match(matchObj).select();
+    if(error){
+      if(opzioni.soloLog) segnalaErroreSoloLog(error, contesto);
+      else segnalaErroreDb(error, contesto);
+    }
+    return { data, error };
+  }
+  async function dbDelete(table, matchObj, contesto, opzioni={}){
+    const { data, error } = await supabase.from(table).delete().match(matchObj).select();
+    if(error){
+      if(opzioni.soloLog) segnalaErroreSoloLog(error, contesto);
+      else segnalaErroreDb(error, contesto);
+    }
+    return { data, error };
+  }
+  async function dbInsert(table, payload, contesto, opzioni={}){
+    const { data, error } = await supabase.from(table).insert(payload).select();
+    if(error){
+      if(opzioni.soloLog) segnalaErroreSoloLog(error, contesto);
+      else segnalaErroreDb(error, contesto);
+    }
+    return { data, error };
   }
   // Normalizza un campo testo in maiuscolo, gestendo null/undefined.
   // Usata al posto di ripetere ovunque (campo||"").toUpperCase().
@@ -1099,11 +1223,11 @@ export default function App({ session }){
         try {
           const { data: acRows, error: acErr } = await supabase.from("autocomplete_valori")
             .select("campo, valore").eq("user_id", userId).order("valore");
-          if(acErr) console.warn("Caricamento autocomplete_valori:", acErr.message);
+          if(acErr) segnalaErrore(acErr, "Caricamento valori autocomplete");
           const raggruppati = { titolo:[], nome_visualizzato:[], auto:[], luogo:[], collega:[] };
           (acRows||[]).forEach(r=>{ if(raggruppati[r.campo]) raggruppati[r.campo].push(r.valore); });
           setAutocompleteValori(raggruppati);
-        } catch(acEx){ console.warn("Caricamento autocomplete_valori:", acEx); }
+        } catch(acEx){ segnalaErrore(acEx, "Caricamento valori autocomplete"); }
 
         setCalId(prevCalId => {
           if(prevCalId && calendars.some(c=>c.id===prevCalId)) return prevCalId;
@@ -1122,7 +1246,7 @@ export default function App({ session }){
             const { data: curStats } = await supabase.from("usage_stats").select("login_count").eq("user_id", userId).maybeSingle();
             const newCount = (curStats?.login_count || 0) + 1;
             await supabase.from("usage_stats").upsert({ user_id: userId, last_active: new Date().toISOString(), login_count: newCount });
-          } catch(statErr) { console.warn("Stats error:", statErr); }
+          } catch(statErr) { segnalaErrore(statErr, "Aggiornamento statistiche di utilizzo"); }
 
           // Sincronizza i colori custom già presenti sui modelli con la tabella "colori"
           try {
@@ -1141,7 +1265,7 @@ export default function App({ session }){
                 return aggiornato;
               });
             }
-          } catch(e){ console.warn("Sync colori modelli:", e); }
+          } catch(e){ segnalaErrore(e, "Sincronizzazione colori modelli all'avvio"); }
 
           // Inizializza sortOrder per modelli H24 che hanno tutti 0
           try {
@@ -1185,9 +1309,9 @@ export default function App({ session }){
                 posizione:m.posizione||"",sortOrder:m.sort_order||0,
               })));
             }
-          } catch(e){ console.warn("Fix sortOrder h24:", e); }
+          } catch(e){ segnalaErrore(e, "Correzione automatica ordine modelli all'avvio"); }
         })();
-      } catch(e){ console.log("Errore startup:", e); setLoading(false); }
+      } catch(e){ segnalaErrore(e, "Avvio applicazione (caricamento dati iniziale)"); setLoading(false); }
     })();
   },[userId]);
 // #endregion
@@ -1579,7 +1703,8 @@ export default function App({ session }){
     try {
       const data = await loadFromSheets(customUrl, customSecret);
       if(!data||!data.data) return "❌ Nessun dato valido da Sheets";
-      await supabase.from("events").delete().eq("user_id", userId);
+      const { error: delEvtsErr } = await dbDelete("events", {user_id:userId}, "Sincronizzazione da Sheets — pulizia eventi esistenti", {soloLog:true});
+      if(delEvtsErr){ segnalaErrore("Non sono riuscito a pulire gli eventi esistenti prima di importare da Sheets: l'importazione è stata annullata per evitare duplicati.", "Sincronizzazione da Sheets"); return "❌ Errore durante la sincronizzazione"; }
       const existingNames = cals.map(c=>c.name);
       const newCals = [...cals];
       for(const tabName of (data.tabs||Object.keys(data.data))){
@@ -1631,7 +1756,8 @@ export default function App({ session }){
         const resMod = await fetch(`${customUrl}?secret=${customSecret}&action=load_modelli`);
         const dataMod = await resMod.json();
         if(dataMod.modelli&&dataMod.modelli.length>0){
-          await supabase.from("modelli").delete().eq("user_id",userId);
+          const { error: delModErr } = await dbDelete("modelli", {user_id:userId}, "Sincronizzazione da Sheets — pulizia modelli esistenti", {soloLog:true});
+          if(delModErr){ segnalaErrore("Non sono riuscito a pulire i modelli esistenti prima di importare da Sheets: l'importazione dei modelli è stata saltata.", "Sincronizzazione da Sheets"); return "✅ Turni importati (modelli non aggiornati, vedi Log)"; }
           const newModelli=[];
           for(const m of dataMod.modelli){
             const coloreEff=m.tempo==="h24"?"#64748b":colByTime(m.inizio);
@@ -1646,10 +1772,10 @@ export default function App({ session }){
           }
           setModelli(newModelli);
         }
-      } catch(e){ console.error("Errore import modelli:",e); }
+      } catch(e){ segnalaErrore(e, "Import modelli da Google Sheets"); }
       return "✅ Importazione completata";
     } catch(e){
-      console.error(e);
+      segnalaErrore(e, "Sincronizzazione con Google Sheets");
       return "❌ Errore sincronizzazione Sheets";
     } finally {
       if(isBackground) setBgSyncing(false); else setSyncing(false);
@@ -1685,9 +1811,9 @@ export default function App({ session }){
       (async()=>{
         try {
           const {data,error}=await supabase.rpc('get_app_stats');
-          if(error){ console.error("Errore caricamento statistiche admin:", error); }
+          if(error){ segnalaErrore(error, "Caricamento statistiche amministratore"); }
           if(!error&&data&&data.length>0) setStats(data[0]);
-        } catch(e){ console.error(e); }
+        } catch(e){ segnalaErrore(e, "Caricamento statistiche amministratore"); }
       })();
     }
   },[screen, session]);
@@ -1700,7 +1826,7 @@ export default function App({ session }){
       setDbCalsCount(cals?.length||0);
       setDbEvtsCount(evts?.length||0);
       setDbRawData({calendars:cals||[],events:evts||[]});
-    } catch(e){ console.error(e); }
+    } catch(e){ segnalaErrore(e, "Visualizzazione dati database (pannello admin)"); }
   }
 
   async function buildBackupPayload(){
@@ -1725,7 +1851,7 @@ export default function App({ session }){
       });
       if(insErr) throw insErr;
       setSyncMsg("✅ Backup salvato su Supabase");
-    } catch(e){ console.error(e); setSyncMsg("❌ Errore durante l'esportazione: "+e.message); }
+    } catch(e){ segnalaErrore(e, "Esportazione backup su Supabase"); setSyncMsg("❌ Errore durante l'esportazione: "+e.message); }
   }
 
   async function handleOpenImportSupabase(){
@@ -1740,7 +1866,7 @@ export default function App({ session }){
       setBackupsList(data||[]);
       setShowBackupsModal(true);
       setSyncMsg("");
-    } catch(e){ console.error(e); setSyncMsg("❌ Errore nel caricare i backup: "+e.message); }
+    } catch(e){ segnalaErrore(e, "Caricamento elenco backup"); setSyncMsg("❌ Errore nel caricare i backup: "+e.message); }
   }
 
   async function handleRestoreBackup(backupId){
@@ -1753,52 +1879,109 @@ export default function App({ session }){
       if(!row?.data) throw new Error("Backup non trovato");
       const backup = row.data;
 
-      await supabase.from("events").delete().eq("user_id",userId);
-      await supabase.from("calendars").delete().eq("user_id",userId);
-      await supabase.from("modelli").delete().eq("user_id",userId);
-      await supabase.from("rotazioni").delete().eq("user_id",userId);
+      // Ogni fallimento qui sotto viene contato (prima erano ignorati in
+      // silenzio): se qualcosa non si cancella o non si inserisce, l'utente
+      // lo sa a fine ripristino invece di scoprire dati incoerenti dopo.
+      let erroriRiscontrati = 0;
+      const contaErrore = ({error}) => { if(error) erroriRiscontrati++; };
+
+      contaErrore(await dbDelete("events", {user_id:userId}, "Ripristino backup — pulizia eventi esistenti", {soloLog:true}));
+      contaErrore(await dbDelete("calendars", {user_id:userId}, "Ripristino backup — pulizia calendari esistenti", {soloLog:true}));
+      contaErrore(await dbDelete("modelli", {user_id:userId}, "Ripristino backup — pulizia modelli esistenti", {soloLog:true}));
+      contaErrore(await dbDelete("rotazioni", {user_id:userId}, "Ripristino backup — pulizia rotazioni esistenti", {soloLog:true}));
 
       const calIdMap = {};
       for(const c of (backup.calendars||[])){
-        const {data} = await supabase.from("calendars").insert({
+        const {data, error:errC} = await dbInsert("calendars", {
           user_id:userId, name:c.name, color:c.color, is_main:c.is_main, shifts:c.shifts||[],
-        }).select().maybeSingle();
-        if(data) calIdMap[c.id] = data.id;
+        }, `Ripristino backup — calendario "${c.name}"`, {soloLog:true});
+        if(errC) erroriRiscontrati++;
+        if(data?.[0]) calIdMap[c.id] = data[0].id;
       }
       const modIdMap = {};
       for(const m of (backup.modelli||[])){
-        const {data} = await supabase.from("modelli").insert({
+        const {data, error:errM} = await dbInsert("modelli", {
           user_id:userId, titolo:m.titolo, tempo:m.tempo, inizio:m.inizio, fine:m.fine,
           colore:m.colore, colore_custom:m.colore_custom, posizione:m.posizione||"", // flag "manuale"/vuoto, non un id: nessun rimapping necessario
           sort_order:m.sort_order, calendar_id: calIdMap[m.calendar_id]||null,
-        }).select().maybeSingle();
-        if(data) modIdMap[m.id] = data.id;
+        }, `Ripristino backup — modello "${m.titolo}"`, {soloLog:true});
+        if(errM) erroriRiscontrati++;
+        if(data?.[0]) modIdMap[m.id] = data[0].id;
       }
       for(const e of (backup.events||[])){
-        await supabase.from("events").insert({
+        const {error:errE} = await dbInsert("events", {
           user_id:userId, calendar_id: calIdMap[e.calendar_id]||e.calendar_id,
           date_key:e.date_key, label:e.label, color:e.color, all_day:e.all_day,
           time_in:e.time_in, time_out:e.time_out, place:e.place, map_url:e.map_url,
           note:e.note, modello_id: modIdMap[e.modello_id]||null,
           collega:e.collega, auto:e.auto,
-        });
+        }, `Ripristino backup — evento "${e.label}" (${e.date_key})`, {soloLog:true});
+        if(errE) erroriRiscontrati++;
       }
       for(const r of (backup.rotazioni||[])){
-        await supabase.from("rotazioni").insert({
+        const {error:errR} = await dbInsert("rotazioni", {
           user_id:userId, tipo:r.tipo, titolo:r.titolo, data_inizio:r.data_inizio,
           n_settimane:r.n_settimane,
           modello_lavoro_id: modIdMap[r.modello_lavoro_id]||null,
           modello_nl_id: modIdMap[r.modello_nl_id]||null,
           modello_rs_id: modIdMap[r.modello_rs_id]||null,
           griglia:r.griglia||{},
-        });
+        }, `Ripristino backup — rotazione "${r.titolo}"`, {soloLog:true});
+        if(errR) erroriRiscontrati++;
+      }
+      if(erroriRiscontrati>0){
+        segnalaErrore(`${erroriRiscontrati} elementi non sono stati ripristinati correttamente (dettaglio nel Log). Il resto del backup è stato importato.`, "Ripristino backup");
       }
       setSyncMsg("✅ Importazione completata — ricarico l'app...");
       setTimeout(()=>window.location.reload(), 1500);
-    } catch(e){ console.error(e); setSyncMsg("❌ Errore durante l'importazione: "+e.message); }
+    } catch(e){ segnalaErrore(e, "Ripristino backup (sovrascrittura dati)"); setSyncMsg("❌ Errore durante l'importazione: "+e.message); }
   }
 
   async function handleLogout(){ await supabase.auth.signOut(); }
+
+  // ─── Scheletro condiviso per gli script di manutenzione "una tantum" ───
+  // Entrambe le normalizzazioni (modelli e eventi) seguono sempre la stessa
+  // sequenza: calcola cosa andrebbe cambiato -> se dryRun, mostra l'anteprima
+  // e si ferma -> altrimenti scrive su Supabase riga per riga, contando
+  // successi/errori -> stampa il messaggio finale. Questa sequenza è scritta
+  // UNA sola volta qui: se in futuro cambia (es. il formato dei log, o si
+  // vuole scrivere in batch invece che riga per riga), la si cambia in un
+  // solo posto e sia normalizzaModelliTempo che normalizzaEventiTempo la
+  // seguono automaticamente — non esiste una seconda copia da dimenticare.
+  //
+  // Parametri:
+  //   nomeOperazione: stringa per i messaggi di log (es. "modelli", "eventi")
+  //   trovaDaSistemare: () => [{...}] — calcola l'elenco delle righe da
+  //     cambiare, ciascuna deve avere almeno {id} più i campi target
+  //   formatoTabella: (item) => oggetto per console.table (colonne attuale/nuovo)
+  //   applicaSuDb: (item) => Promise — esegue l'update Supabase per un item
+  //   applicaSuStatoLocale: (itemsSistemati) => void — aggiorna lo state React
+  //     (facoltativo: se assente, serve un refresh manuale per vedere i dati)
+  async function eseguiNormalizzazione({ nomeOperazione, trovaDaSistemare, formatoTabella, applicaSuDb, applicaSuStatoLocale, dryRun }){
+    const daSistemare = trovaDaSistemare();
+    if(daSistemare.length===0){ console.log(`✅ Nessun elemento (${nomeOperazione}) da normalizzare, sono già tutti in formato standard.`); return; }
+    console.table(daSistemare.map(formatoTabella));
+    if(dryRun){
+      console.log(`ℹ️ Anteprima (${nomeOperazione}): ${daSistemare.length} elementi verrebbero normalizzati. Richiama con {dryRun:false} per applicare davvero su Supabase.`);
+      return daSistemare;
+    }
+    let ok=0, ko=0;
+    const sistematiConSuccesso = [];
+    for(const item of daSistemare){
+      try{
+        const { error } = await applicaSuDb(item);
+        // Ogni singolo fallimento va comunque nel Log (per tracciare quale
+        // riga esatta non è passata), ma qui NON si accoda un modale per
+        // ognuno: in un ciclo con più righe sarebbe una sequenza di N popup
+        // da chiudere uno a uno. Un solo alert riassuntivo compare alla fine.
+        if(error){ segnalaErroreSoloLog(error, `Normalizzazione ${nomeOperazione} — elemento "${item.id}"`); ko++; }
+        else { ok++; sistematiConSuccesso.push(item); }
+      } catch(err){ segnalaErroreSoloLog(err, `Normalizzazione ${nomeOperazione} — elemento "${item.id}"`); ko++; }
+    }
+    console.log(`✅ Normalizzati ${ok} elementi (${nomeOperazione}) su Supabase${ko>0?`, ${ko} da controllare a mano`:""}. Ricarica la pagina per vedere i dati aggiornati.`);
+    if(ko>0) segnalaErrore(`${ko} elementi su ${daSistemare.length} non sono stati normalizzati (dettaglio nel Log). ${ok} completati con successo.`, `Normalizzazione ${nomeOperazione}`);
+    if(applicaSuStatoLocale) applicaSuStatoLocale(sistematiConSuccesso);
+  }
 
   // ─── Manutenzione: standardizza tempo/inizio/fine di tutti i modelli ───
   // Riscrive su Supabase, per ogni modello con formato "sporco", i campi:
@@ -1809,7 +1992,7 @@ export default function App({ session }){
   // Va lanciata una tantum (es. da console: window.normalizzaModelliTempo())
   // dopo aver verificato in anteprima l'elenco che stampa.
   async function normalizzaModelliTempo({dryRun=true}={}){
-    if(!userId){ console.warn("normalizzaModelliTempo: utente non loggato"); return; }
+    if(!userId){ segnalaErrore("Utente non loggato", "Normalizzazione modelli (manutenzione)"); return; }
     function calcolaTarget(m){
       if(m.tempo==="h24") return null; // H24 non ha inizio/fine, niente da normalizzare
       const inizioNorm=normalizzaOraHHMM(m.inizio);
@@ -1821,37 +2004,37 @@ export default function App({ session }){
       const cambiato = target.tempo!==m.tempo || target.inizio!==(m.inizio||"") || target.fine!==(m.fine||"");
       return cambiato ? target : null;
     }
-    const daSistemare = (modelli||[])
-      .map(m=>({ m, target: calcolaTarget(m) }))
-      .filter(x=>x.target!==null);
-    if(daSistemare.length===0){ console.log("✅ Nessun modello da normalizzare, sono già tutti in formato standard."); return; }
-    console.table(daSistemare.map(({m,target})=>({
-      id:m.id, titolo:m.titolo,
-      tempo_attuale:m.tempo, tempo_nuovo:target.tempo,
-      inizio_attuale:m.inizio, inizio_nuovo:target.inizio,
-      fine_attuale:m.fine, fine_nuovo:target.fine,
-    })));
-    if(dryRun){
-      console.log(`ℹ️ Anteprima: ${daSistemare.length} modelli verrebbero normalizzati. Richiama con {dryRun:false} per applicare davvero su Supabase.`);
-      return daSistemare;
-    }
-    let ok=0, ko=0;
-    for(const {m,target} of daSistemare){
-      if((target.tempo==="6h15") && !target.inizio){
-        console.warn(`⚠️ Modello "${m.titolo}" (${m.id}) ha durata 6h15/6h30 ma nessun orario di inizio leggibile: sistemalo a mano.`);
-        ko++; continue;
-      }
-      const { error } = await supabase.from("modelli")
-        .update({ tempo:target.tempo, inizio:target.inizio, fine:target.fine })
-        .eq("id", m.id).eq("user_id", userId);
-      if(error){ console.error(`❌ Errore su "${m.titolo}" (${m.id}):`, error); ko++; }
-      else ok++;
-    }
-    console.log(`✅ Normalizzati ${ok} modelli su Supabase${ko>0?`, ${ko} da controllare a mano`:""}. Ricarica la pagina per vedere i dati aggiornati.`);
-    setModelli(prev=>prev.map(m=>{
-      const hit=daSistemare.find(d=>d.m.id===m.id);
-      return hit ? {...m, ...hit.target} : m;
-    }));
+    return eseguiNormalizzazione({
+      nomeOperazione: "modelli",
+      dryRun,
+      trovaDaSistemare: () => (modelli||[])
+        .map(m=>({ id:m.id, m, target: calcolaTarget(m) }))
+        .filter(x=>x.target!==null),
+      formatoTabella: ({m,target}) => ({
+        id:m.id, titolo:m.titolo,
+        tempo_attuale:m.tempo, tempo_nuovo:target.tempo,
+        inizio_attuale:m.inizio, inizio_nuovo:target.inizio,
+        fine_attuale:m.fine, fine_nuovo:target.fine,
+      }),
+      applicaSuDb: async ({m,target}) => {
+        // Caso speciale: durata 6h15/6h30 ma nessun orario di inizio leggibile
+        // -> non scrivibile in automatico, va segnalato come errore invece di
+        // essere silenziosamente scartato (comportamento invariato rispetto
+        // a prima, solo ora passa dallo stesso canale ok/ko dello scheletro).
+        if(target.tempo==="6h15" && !target.inizio){
+          return { error: { message:`Modello "${m.titolo}" (${m.id}) ha durata 6h15/6h30 ma nessun orario di inizio leggibile: sistemalo a mano.` } };
+        }
+        return await supabase.from("modelli")
+          .update({ tempo:target.tempo, inizio:target.inizio, fine:target.fine })
+          .eq("id", m.id).eq("user_id", userId);
+      },
+      applicaSuStatoLocale: (sistemati) => {
+        setModelli(prev=>prev.map(m=>{
+          const hit=sistemati.find(d=>d.m.id===m.id);
+          return hit ? {...m, ...hit.target} : m;
+        }));
+      },
+    });
   }
   // Non più esposta su window: era uno script di migrazione una tantum,
   // già eseguito. La funzione resta definita sopra se dovesse servire ancora
@@ -1870,10 +2053,14 @@ export default function App({ session }){
   //   - altrimenti (nessun modello o non determinabile) -> calcFine6h15(time_in) come fallback standard
   // Va lanciata una tantum da console: window.normalizzaEventiTempo({dryRun:false})
   async function normalizzaEventiTempo({dryRun=true}={}){
-    if(!userId){ console.warn("normalizzaEventiTempo: utente non loggato"); return; }
+    if(!userId){ segnalaErrore("Utente non loggato", "Normalizzazione eventi (manutenzione)"); return; }
     const { data: evts, error: fetchErr } = await supabase.from("events")
       .select("id,date_key,time_in,time_out,modello_id,label").eq("user_id", userId);
-    if(fetchErr){ console.error("normalizzaEventiTempo: errore lettura eventi", fetchErr); return; }
+    if(fetchErr){ segnalaErrore(fetchErr, "Normalizzazione eventi — lettura dati"); return; }
+    // Il fetch iniziale è asincrono e serve prima di poter calcolare
+    // daSistemare: lo scheletro condiviso assume la lista già pronta, quindi
+    // il fetch resta qui fuori (unica differenza reale tra le due periferiche)
+    // e si passa allo scheletro solo il calcolo che segue.
     const daSistemare = (evts||[])
       .filter(e=>e.time_in && !e.time_out)
       .map(e=>{
@@ -1882,26 +2069,23 @@ export default function App({ session }){
         if(mod && mod.tempo==="6h15") fineCalcolata = calcFine6h15(e.time_in);
         else if(mod && mod.fine) fineCalcolata = normalizzaOraHHMM(mod.fine);
         else fineCalcolata = calcFine6h15(e.time_in); // fallback standard 6h15
-        return { e, fineCalcolata };
+        return { id:e.id, e, fineCalcolata };
       })
       .filter(x=>x.fineCalcolata);
-    if(daSistemare.length===0){ console.log("✅ Nessun evento da normalizzare, time_out già ok per tutti."); return; }
-    console.table(daSistemare.map(({e,fineCalcolata})=>({
-      id:e.id, data:e.date_key, label:e.label,
-      time_in:e.time_in, time_out_attuale:e.time_out||"(vuoto)", time_out_nuovo:fineCalcolata,
-    })));
-    if(dryRun){
-      console.log(`ℹ️ Anteprima: ${daSistemare.length} eventi verrebbero sistemati. Richiama con {dryRun:false} per applicare davvero su Supabase.`);
-      return daSistemare;
-    }
-    let ok=0, ko=0;
-    for(const {e,fineCalcolata} of daSistemare){
-      const { error } = await supabase.from("events")
-        .update({ time_out: fineCalcolata }).eq("id", e.id).eq("user_id", userId);
-      if(error){ console.error(`❌ Errore su evento ${e.id} (${e.date_key}):`, error); ko++; }
-      else ok++;
-    }
-    console.log(`✅ Sistemati ${ok} eventi su Supabase${ko>0?`, ${ko} da controllare a mano`:""}. Ricarica la pagina per vedere i dati aggiornati.`);
+    return eseguiNormalizzazione({
+      nomeOperazione: "eventi",
+      dryRun,
+      trovaDaSistemare: () => daSistemare,
+      formatoTabella: ({e,fineCalcolata}) => ({
+        id:e.id, data:e.date_key, label:e.label,
+        time_in:e.time_in, time_out_attuale:e.time_out||"(vuoto)", time_out_nuovo:fineCalcolata,
+      }),
+      applicaSuDb: async ({e,fineCalcolata}) =>
+        await supabase.from("events").update({ time_out: fineCalcolata }).eq("id", e.id).eq("user_id", userId),
+      // Nessun applicaSuStatoLocale qui: comportamento invariato rispetto a
+      // prima (lo stato locale degli eventi non veniva aggiornato in memoria,
+      // serviva ricaricare la pagina — lo dice già il messaggio finale).
+    });
   }
   // Stesso discorso: script di migrazione una tantum, non più esposto su window.
   // useEffect(()=>{
@@ -2096,7 +2280,6 @@ const importsRecenti = useMemo(()=>{
       const prima = prevById.get(m.id);
       return !prima || prima.sortOrder!==m.sortOrder || prima.posizione!==m.posizione;
     });
-    console.log("[DEBUG salvaModifichePosizioni] daSalvare.length=", daSalvare.length, daSalvare.map(m=>({id:m.id,titolo:m.titolo,sortOrder:m.sortOrder})));
     let primoErrore = null;
     let bloccatoDaPolicy = false;
     for(const m of daSalvare){
@@ -2141,21 +2324,14 @@ const importsRecenti = useMemo(()=>{
   }
 
   async function reorderModelli(srcId, dstId, calIdFiltro){
-    console.log("[DEBUG reorderModelli] chiamata con srcId=", srcId, "dstId=", dstId, "calIdFiltro=", calIdFiltro);
     let prevSnapshot = null, nuovoElenco = null;
     setModelli(prev=>{
       prevSnapshot = prev;
       nuovoElenco = trascinaModelloPuro(prev, srcId, dstId, calIdFiltro);
-      console.log("[DEBUG reorderModelli] prev===nuovoElenco?", prev===nuovoElenco, "prevSnapshot set?", !!prevSnapshot, "nuovoElenco set?", !!nuovoElenco);
       return nuovoElenco;
     });
-    console.log("[DEBUG reorderModelli] dopo setModelli, prevSnapshot?", !!prevSnapshot, "nuovoElenco?", !!nuovoElenco);
     if(prevSnapshot && nuovoElenco){
-      console.log("[DEBUG reorderModelli] chiamo salvaModifichePosizioni...");
       await salvaModifichePosizioni(prevSnapshot, nuovoElenco);
-      console.log("[DEBUG reorderModelli] salvaModifichePosizioni completata");
-    } else {
-      console.log("[DEBUG reorderModelli] SALTO il salvataggio: prevSnapshot o nuovoElenco sono null/falsy");
     }
   }
 
@@ -2169,9 +2345,9 @@ const importsRecenti = useMemo(()=>{
     if(coloriExtra.some(c=>c.hex===hex)) return;
     try {
       const { data, error } = await supabase.from("colori").insert({ user_id:userId, hex }).select().maybeSingle();
-      if(error){ console.warn("Colore non registrato nel database:", error); }
+      if(error){ segnalaErrore(error, "Registrazione nuovo colore"); }
       if(!error && data) setColoriExtra(prev=>prev.some(c=>c.hex===hex)?prev:[...prev, {hex, label:null}]);
-    } catch(e){ console.warn("ensureColoreRegistrato:", e); }
+    } catch(e){ segnalaErrore(e, "Registrazione nuovo colore"); }
   }
 
   // ── Autocomplete: registra un valore nuovo in una delle 5 liste dedicate
@@ -2189,12 +2365,12 @@ const importsRecenti = useMemo(()=>{
         .insert({ user_id:userId, campo, valore:v });
       // Violazione unique (valore già presente per un altro motivo, es. race
       // condition fra dispositivi) non è un errore reale: il valore è comunque lì.
-      if(error && error.code!=="23505") { console.warn("registraValoreAutocomplete:", error.message); return; }
+      if(error && error.code!=="23505") { segnalaErrore(error, `Registrazione valore autocomplete (${campo})`); return; }
       setAutocompleteValori(prev=>({
         ...prev,
         [campo]: prev[campo].includes(v) ? prev[campo] : [...prev[campo], v].sort((a,b)=>a.localeCompare(b)),
       }));
-    } catch(e){ console.warn("registraValoreAutocomplete:", e); }
+    } catch(e){ segnalaErrore(e, `Registrazione valore autocomplete (${campo})`); }
   }
 
   // Registra più valori insieme (es. il campo collega, multi-riga: ogni riga
@@ -2212,9 +2388,9 @@ const importsRecenti = useMemo(()=>{
     try {
       const { error } = await supabase.from("autocomplete_valori")
         .delete().eq("user_id", userId).eq("campo", campo).eq("valore", valore);
-      if(error){ console.warn("rimuoviValoreAutocomplete:", error.message); return; }
+      if(error){ segnalaErrore(error, `Rimozione valore autocomplete (${campo})`); return; }
       setAutocompleteValori(prev=>({ ...prev, [campo]: prev[campo].filter(v=>v!==valore) }));
-    } catch(e){ console.warn("rimuoviValoreAutocomplete:", e); }
+    } catch(e){ segnalaErrore(e, `Rimozione valore autocomplete (${campo})`); }
   }
 
   // Prova a salvare; se Supabase segnala una colonna mancante nello schema,
@@ -2230,7 +2406,7 @@ const importsRecenti = useMemo(()=>{
       if(!error) return { data, error:null, payloadUsato:payload };
       const match = /Could not find the '([^']+)' column/.exec(error.message||"");
       if(match && match[1] in payload){
-        console.warn(`Colonna '${match[1]}' assente su Supabase: la ometto e riprovo. Esegui l'ALTER TABLE per abilitarla stabilmente.`);
+        segnalaErroreSoloLog(`Colonna '${match[1]}' assente su Supabase: omessa e riprovato automaticamente. Esegui l'ALTER TABLE per abilitarla stabilmente.`, "Salvataggio modello (schema database)");
         const { [match[1]]: _omessa, ...resto } = payload;
         payload = resto;
         continue;
@@ -2265,7 +2441,7 @@ const importsRecenti = useMemo(()=>{
         payload, false
       );
       if(errUpdate){
-        console.error("Errore salvataggio modello (update):", errUpdate);
+        segnalaErroreSoloLog(errUpdate, "Salvataggio modello (update)");
         return { ok:false, error: errUpdate.message };
       }
 
@@ -2273,9 +2449,10 @@ const importsRecenti = useMemo(()=>{
       const labelNuova = (data.label||data.titolo||"").toUpperCase();
       const tInNuovo = data.tempo==="h24" ? "" : (data.inizio||"");
       const tOutNuovo = data.tempo==="h24" ? "" : (data.tempo==="6h15" ? (calcFine6h15(data.inizio)||"") : data.tempo==="6h30" ? (calcFine6h30(data.inizio)||"") : (data.fine||""));
-      await supabase.from("events").update({
+      const { error: errPropagazione } = await dbUpdate("events", {
         label: labelNuova, color: coloreEff, time_in: tInNuovo, time_out: tOutNuovo,
-      }).eq("modello_id", data.id).eq("user_id", userId);
+      }, {modello_id:data.id, user_id:userId}, "Aggiornamento modello — propagazione agli eventi già in calendario", {soloLog:true});
+      if(errPropagazione) segnalaErrore("Il modello è stato salvato, ma gli eventi già presenti in calendario che lo usano potrebbero non essere stati aggiornati.", "Aggiornamento modello (propagazione)");
       setStore(prev=>{
         const ns = JSON.parse(JSON.stringify(prev));
         Object.keys(ns.events||{}).forEach(dk=>{
@@ -2300,7 +2477,7 @@ const importsRecenti = useMemo(()=>{
     } else {
       const {data:res, error:errInsert}=await supabaseUpsertConRetry(null, payload, true);
       if(errInsert){
-        console.error("Errore salvataggio modello (insert):", errInsert);
+        segnalaErroreSoloLog(errInsert, "Salvataggio modello (insert)");
         return { ok:false, error: errInsert.message };
       }
       if(res){
@@ -2378,12 +2555,16 @@ const importsRecenti = useMemo(()=>{
         // prossimo reload da Supabase) l'ordine vecchio per tutti i modelli
         // già esistenti, con solo il nuovo modello nella posizione corretta
         // — causa del disallineamento "un rigo più in basso" osservato.
+        let erroriRinumerazione = 0;
         if(rinumerazioniApplicate.length>0){
-          await Promise.all(rinumerazioniApplicate.map(({id,nuovoVal})=>
-            supabase.from("modelli").update({sort_order:nuovoVal}).eq("id",id).eq("user_id",userId)
+          const risultati = await Promise.all(rinumerazioniApplicate.map(({id,nuovoVal})=>
+            dbUpdate("modelli", {sort_order:nuovoVal}, {id, user_id:userId}, "Creazione modello — rinumerazione posizioni esistenti", {soloLog:true})
           ));
+          erroriRinumerazione = risultati.filter(r=>r.error).length;
         }
-        await supabase.from("modelli").update({sort_order:nuovoSortOrder}).eq("id",res.id).eq("user_id",userId);
+        const { error: errNuovoSort } = await dbUpdate("modelli", {sort_order:nuovoSortOrder}, {id:res.id, user_id:userId}, "Creazione modello — posizionamento", {soloLog:true});
+        if(errNuovoSort) erroriRinumerazione++;
+        if(erroriRinumerazione>0) segnalaErrore("Il modello è stato creato, ma la sua posizione nell'elenco potrebbe non essere quella corretta (dettaglio nel Log).", "Creazione modello (posizionamento)");
         setModelli(prev=>{
           const rinumerazioniMap = new Map(rinumerazioniApplicate.map(r=>[r.id, r.nuovoVal]));
           const conRinumerazioni = prev.map(m=>
@@ -2403,7 +2584,8 @@ const importsRecenti = useMemo(()=>{
     // Con la nuova architettura (posizioni assolute, non riferimenti tra
     // modelli) l'eliminazione è semplice: nessun altro modello punta a
     // questo tramite id, quindi non serve "riparare" nessun riferimento.
-    await supabase.from("modelli").delete().eq("id",id).eq("user_id",userId);
+    const { error } = await dbDelete("modelli", {id, user_id:userId}, "Eliminazione modello");
+    if(error) return; // non rimuovo dalla UI se la cancellazione su Supabase non è andata a buon fine
     setModelli(prev=>{
       const updated=prev.filter(m=>m.id!==id);
       syncSeAttivo(store.events, store.calendars, updated);
@@ -2423,7 +2605,8 @@ const importsRecenti = useMemo(()=>{
 
   async function removeColoreExtra(hex){
     if(!userId) return;
-    await supabase.from("colori").delete().eq("user_id", userId).eq("hex", hex);
+    const { error } = await dbDelete("colori", {user_id:userId, hex}, "Rimozione colore");
+    if(error) return;
     setColoriExtra(prev=>prev.filter(c=>c.hex!==hex));
     const daResettare = modelli.filter(m=>m.coloreCustom===hex);
     for(const m of daResettare){
@@ -2441,8 +2624,8 @@ const importsRecenti = useMemo(()=>{
     if(!userId) return;
     try {
       const { error } = await supabase.from("colori").update({label}).eq("user_id",userId).eq("hex",hex);
-      if(error) console.warn("updateColoreExtraLabel: colonna 'label' forse assente su Supabase.", error.message);
-    } catch(e){ console.warn("updateColoreExtraLabel:", e); }
+      if(error) segnalaErroreSoloLog(error, "Aggiornamento etichetta colore (colonna 'label' forse assente su Supabase)");
+    } catch(e){ segnalaErroreSoloLog(e, "Aggiornamento etichetta colore"); }
   }
 
   // ── FIX: sostituisce l'hex di un colore ovunque sia usato (modelli +
@@ -2455,14 +2638,15 @@ const importsRecenti = useMemo(()=>{
     const daAggiornare = modelli.filter(m=>m.coloreCustom===oldHex);
     for(const m of daAggiornare){
       const {error} = await supabase.from("modelli").update({ colore_custom:newHex, colore:newHex }).eq("id",m.id).eq("user_id",userId);
-      if(error) console.error("Errore update modello colore:", error.message, error.details, error.hint);
+      if(error) segnalaErroreSoloLog(error, `Sostituzione colore su modello "${m.titolo||m.id}"`);
     }
     setModelli(prev=>prev.map(m=>m.coloreCustom===oldHex?{...m,coloreCustom:newHex,colore:newHex}:m));
     // Aggiorna il registro colori extra
     if(coloriExtra.some(c=>c.hex===oldHex)){
       const vecchiaLabel = coloriExtra.find(c=>c.hex===oldHex)?.label||null;
-      await supabase.from("colori").delete().eq("user_id",userId).eq("hex",oldHex);
-      await supabase.from("colori").insert({ user_id:userId, hex:newHex, label:vecchiaLabel });
+      const { error: errDel } = await dbDelete("colori", {user_id:userId, hex:oldHex}, "Sostituzione colore ovunque (rimozione vecchio)", {soloLog:true});
+      const { error: errIns } = await dbInsert("colori", { user_id:userId, hex:newHex, label:vecchiaLabel }, "Sostituzione colore ovunque (inserimento nuovo)", {soloLog:true});
+      if(errDel || errIns) segnalaErrore("Il colore potrebbe non essere stato aggiornato correttamente nel registro colori (dettaglio nel Log).", "Sostituzione colore ovunque");
       setColoriExtra(prev=>[...prev.filter(c=>c.hex!==oldHex), {hex:newHex, label:vecchiaLabel}]);
     } else {
       await ensureColoreRegistrato(newHex);
@@ -2488,21 +2672,25 @@ const importsRecenti = useMemo(()=>{
       griglia:data.griglia||{},
     };
     if(data.id){
-      await supabase.from("rotazioni").update(payload).eq("id",data.id).eq("user_id",userId);
+      const { error } = await dbUpdate("rotazioni", payload, {id:data.id, user_id:userId}, "Salvataggio rotazione");
+      if(error) return;
       setRotazioni(prev=>prev.map(r=>r.id===data.id?{...r,...data}:r));
     } else {
-      const {data:res}=await supabase.from("rotazioni").insert(payload).select().maybeSingle();
-      if(res) setRotazioni(prev=>[...prev,{...data,id:res.id,griglia:{}}]);
+      const {data:res, error} = await dbInsert("rotazioni", payload, "Creazione rotazione");
+      if(error) return;
+      if(res?.[0]) setRotazioni(prev=>[...prev,{...data,id:res[0].id,griglia:{}}]);
     }
   }
 
   async function deleteRotazione(id){
-    await supabase.from("rotazioni").delete().eq("id",id).eq("user_id",userId);
+    const { error } = await dbDelete("rotazioni", {id, user_id:userId}, "Eliminazione rotazione");
+    if(error) return;
     setRotazioni(prev=>prev.filter(r=>r.id!==id));
   }
 
   async function updateGrigliaRotazione(rotId, griglia){
-    await supabase.from("rotazioni").update({griglia}).eq("id",rotId).eq("user_id",userId);
+    const { error } = await dbUpdate("rotazioni", {griglia}, {id:rotId, user_id:userId}, "Aggiornamento griglia rotazione");
+    if(error) return;
     setRotazioni(prev=>prev.map(r=>r.id===rotId?{...r,griglia}:r));
   }
 
@@ -2728,7 +2916,8 @@ const importsRecenti = useMemo(()=>{
     const rot = rotazioni.find(r=>r.id===rotId);
     if(!rot) return;
 
-    await supabase.from("rotazioni").update({dataInizio:startDayKey, nSettimane:numRipetizioni}).eq("id",rotId).eq("user_id",userId);
+    const { error } = await dbUpdate("rotazioni", {dataInizio:startDayKey, nSettimane:numRipetizioni}, {id:rotId, user_id:userId}, "Applicazione rotazione", {soloLog:true});
+    if(error) segnalaErrore("La rotazione è stata applicata al calendario ma il salvataggio della configurazione potrebbe non essere andato a buon fine.", "Applicazione rotazione");
     setRotazioni(prev=>prev.map(r=>r.id===rotId?{...r,dataInizio:startDayKey,nSettimane:numRipetizioni}:r));
 
     const nuoviEventiLocali = {};
@@ -3139,13 +3328,13 @@ const importsRecenti = useMemo(()=>{
               const cacheNames = await caches.keys();
               await Promise.all(cacheNames.map(name=>caches.delete(name)));
             }
-          } catch(e){ console.warn("Errore pulizia cache SW:", e); }
+          } catch(e){ segnalaErrore(e, "Svuotamento cache (Service Worker)"); }
           try {
             if("serviceWorker" in navigator){
               const regs = await navigator.serviceWorker.getRegistrations();
               await Promise.all(regs.map(r=>r.unregister()));
             }
-          } catch(e){ console.warn("Errore unregister Service Worker:", e); }
+          } catch(e){ segnalaErrore(e, "Disattivazione Service Worker"); }
           window.location.href = window.location.href.split('?')[0] + '?v=' + Date.now();
         }}
           title="Svuota cache e ricarica tutto"
@@ -4304,6 +4493,72 @@ const importsRecenti = useMemo(()=>{
           🚪 Logout
         </button>
       </Sec>
+
+      <SecCollapsible label="LOG ERRORI" T={T}
+        onToggle={(aperta)=>{
+          if(aperta){
+            setLogErroriVisibile(leggiLogErrori());
+            setErroriSilenziatiVisibile(leggiErroriSilenziati());
+          }
+        }}>
+        <div style={{fontSize:11,color:T.sub,marginBottom:12}}>
+          Ogni errore dell'app finisce qui, anche quelli minori: quando è successo, in quale
+          punto dell'app (contesto), e il dettaglio tecnico. Utile per capire cosa sistemare
+          e dove, anche se hai scelto di non vederlo più come avviso.
+        </div>
+
+        {erroriSilenziatiVisibile && Object.keys(erroriSilenziatiVisibile).length>0 && (
+          <div style={{marginBottom:16}}>
+            <div style={{fontSize:11,fontWeight:800,color:T.sub,marginBottom:8}}>ERRORI SILENZIATI</div>
+            <div style={{background:T.s2,borderRadius:10,padding:10}}>
+              {Object.keys(erroriSilenziatiVisibile).map((contesto,i,arr)=>(
+                <div key={contesto} style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+                  padding:"7px 0",borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
+                  <div style={{fontSize:12,color:T.text,flex:1,paddingRight:8}}>{contesto}</div>
+                  <button onClick={()=>{
+                      impostaSilenziamentoErrore(contesto, false);
+                      setErroriSilenziatiVisibile(leggiErroriSilenziati());
+                    }}
+                    style={{background:"none",border:`1px solid ${T.border}`,borderRadius:8,
+                      color:T.sub,padding:"5px 10px",cursor:"pointer",fontWeight:700,fontSize:11,flexShrink:0}}>
+                    Riattiva
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div style={{fontSize:11,fontWeight:800,color:T.sub,marginBottom:8}}>
+          CRONOLOGIA {logErroriVisibile?.length>0 ? `(${logErroriVisibile.length})` : ""}
+        </div>
+        {(!logErroriVisibile || logErroriVisibile.length===0) ? (
+          <div style={{fontSize:12,color:T.sub}}>Nessun errore registrato finora.</div>
+        ) : (
+          <div style={{maxHeight:340,overflowY:"auto",background:T.s2,borderRadius:10,padding:10,marginBottom:12}}>
+            {logErroriVisibile.slice().reverse().map((voce,i)=>(
+              <div key={i} style={{padding:"7px 0",borderBottom:i<logErroriVisibile.length-1?`1px solid ${T.border}`:"none"}}>
+                <div style={{fontSize:10,color:T.sub,marginBottom:2}}>
+                  {new Date(voce.ts).toLocaleString("it-IT")} — <strong>{voce.contesto}</strong>
+                </div>
+                <div style={{fontSize:12,color:T.text}}>{voce.messaggio}</div>
+              </div>
+            ))}
+          </div>
+        )}
+        {logErroriVisibile?.length>0 && (
+          <button onClick={()=>{
+              if(confirm("Cancellare tutto il log degli errori? L'azione non è reversibile.")){
+                cancellaLogErrori();
+                setLogErroriVisibile([]);
+              }
+            }}
+            style={{width:"100%",background:"none",border:"1px solid #ef4444",borderRadius:10,color:"#ef4444",
+              padding:"10px 0",fontWeight:800,fontSize:12,cursor:"pointer"}}>
+            Cancella log
+          </button>
+        )}
+      </SecCollapsible>
       <Sec label="TEMA" T={T}>
         <div style={{display:"flex",gap:6}}>
           {[["auto","Auto"],["light","Chiaro"],["dark","Scuro"]].map(([v,l])=>(
@@ -5308,6 +5563,51 @@ const importsRecenti = useMemo(()=>{
     <div style={{display:"flex",flexDirection:"column",height:"100vh",background:T.bg,
       fontFamily:"system-ui,sans-serif",maxWidth:480,margin:"0 auto",overflow:"hidden"}}
       onClick={()=>pal&&setPal(null)}>
+      {codaErrori.length>0 && (()=>{
+        if(codaErrori.length===1){
+          // Un solo errore: schermata semplice, con la checkbox di
+          // silenziamento diretta (comportamento invariato).
+          const err = codaErrori[0];
+          let nonMostrarePiu = false;
+          return (
+            <div style={{position:"fixed",inset:0,zIndex:99999,background:"rgba(0,0,0,0.5)",
+              display:"flex",alignItems:"center",justifyContent:"center",padding:20}}
+              onClick={e=>e.stopPropagation()}>
+              <div style={{background:"#fff",borderRadius:14,padding:20,maxWidth:380,width:"100%",
+                boxShadow:"0 10px 40px rgba(0,0,0,0.3)"}}>
+                <div style={{fontSize:15,fontWeight:900,color:"#000",marginBottom:8}}>⚠️ {err.contesto}</div>
+                <div style={{fontSize:13,color:"#000",marginBottom:14,lineHeight:1.4}}>{err.messaggio}</div>
+                <div style={{fontSize:11,color:"#666",marginBottom:14}}>
+                  Questo errore resta comunque salvato nel Log (Impostazioni → Log), riattivabile da lì in qualsiasi momento.
+                </div>
+                <label style={{display:"flex",alignItems:"center",gap:8,marginBottom:16,cursor:"pointer",fontSize:12,color:"#000"}}>
+                  <input type="checkbox" defaultChecked={false}
+                    onChange={e=>{ nonMostrarePiu = e.target.checked; }}
+                    style={{width:16,height:16}}/>
+                  Non mostrare più questo errore
+                </label>
+                <button onClick={()=>{
+                    if(nonMostrarePiu) impostaSilenziamentoErrore(err.contesto, true);
+                    setCodaErrori(prev=>prev.slice(1));
+                  }}
+                  style={{width:"100%",background:accent,border:"none",borderRadius:10,color:"#fff",
+                    padding:"11px 0",fontWeight:800,fontSize:14,cursor:"pointer"}}>
+                  OK
+                </button>
+              </div>
+            </div>
+          );
+        }
+        // Più errori accodati insieme (es. un ciclo con più righe fallite):
+        // un'unica schermata con l'elenco, ciascuno espandibile per vedere
+        // il dettaglio, un solo bottone OK per chiuderli tutti insieme —
+        // invece di N popup identici da chiudere in sequenza.
+        return <ModaleErroriMultipli errori={codaErrori} accent={accent}
+          onChiudi={(contestiSilenziati)=>{
+            contestiSilenziati.forEach(c=>impostaSilenziamentoErrore(c, true));
+            setCodaErrori([]);
+          }}/>;
+      })()}
       <style>{`
         @keyframes calSlideOutLeft { from { transform:translateX(0); opacity:1; } to { transform:translateX(-100%); opacity:0; } }
         @keyframes calSlideOutRight { from { transform:translateX(0); opacity:1; } to { transform:translateX(100%); opacity:0; } }
@@ -6914,12 +7214,92 @@ function ColorRow({T, hex, label, sub, count, onClick, onRemove}){
   );
 }
 
-function SecCollapsible({label,children,T}){
+// Mostra più errori accodati insieme come un'unica lista, invece di N popup
+// identici in sequenza. Ogni riga è espandibile (mostra/nasconde il
+// messaggio tecnico) e ha una checkbox propria per silenziare quello
+// specifico contesto. Un solo bottone OK chiude tutto e applica i
+// silenziamenti scelti.
+function ModaleErroriMultipli({errori, accent, onChiudi}){
+  const [espansi, setEspansi] = useState(()=>new Set());
+  const [daSilenziare, setDaSilenziare] = useState(()=>new Set());
+  // Un contesto può comparire più volte nella coda (es. stesso errore
+  // ripetuto su più righe di un ciclo non protetto): raggruppiamo per
+  // contesto e contiamo le occorrenze, così la lista resta leggibile anche
+  // con molte righe fallite invece di ripetere la stessa voce N volte.
+  const raggruppati = [];
+  const indicePerContesto = new Map();
+  for(const e of errori){
+    if(indicePerContesto.has(e.contesto)){
+      raggruppati[indicePerContesto.get(e.contesto)].count++;
+    } else {
+      indicePerContesto.set(e.contesto, raggruppati.length);
+      raggruppati.push({ contesto:e.contesto, messaggio:e.messaggio, count:1 });
+    }
+  }
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:99999,background:"rgba(0,0,0,0.5)",
+      display:"flex",alignItems:"center",justifyContent:"center",padding:20}}
+      onClick={e=>e.stopPropagation()}>
+      <div style={{background:"#fff",borderRadius:14,padding:20,maxWidth:420,width:"100%",
+        maxHeight:"80vh",display:"flex",flexDirection:"column",boxShadow:"0 10px 40px rgba(0,0,0,0.3)"}}>
+        <div style={{fontSize:15,fontWeight:900,color:"#000",marginBottom:4}}>
+          ⚠️ {raggruppati.length} problem{raggruppati.length===1?"a":"i"} riscontrat{raggruppati.length===1?"o":"i"}
+        </div>
+        <div style={{fontSize:11,color:"#666",marginBottom:12}}>
+          Tocca una riga per vedere il dettaglio. Tutto resta comunque salvato nel Log (Impostazioni → Log).
+        </div>
+        <div style={{overflowY:"auto",flex:1,marginBottom:14}}>
+          {raggruppati.map((g,i)=>{
+            const aperto = espansi.has(g.contesto);
+            const silenziato = daSilenziare.has(g.contesto);
+            return (
+              <div key={g.contesto} style={{border:"1px solid #ddd",borderRadius:10,marginBottom:8,overflow:"hidden"}}>
+                <div onClick={()=>setEspansi(prev=>{
+                    const n=new Set(prev);
+                    if(n.has(g.contesto)) n.delete(g.contesto); else n.add(g.contesto);
+                    return n;
+                  })}
+                  style={{padding:"10px 12px",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+                  <div style={{fontSize:13,fontWeight:700,color:"#000",flex:1}}>
+                    {g.contesto}{g.count>1?` (×${g.count})`:""}
+                  </div>
+                  <span style={{color:"#666",fontSize:11,flexShrink:0}}>{aperto?"▲":"▼"}</span>
+                </div>
+                {aperto && (
+                  <div style={{padding:"0 12px 12px"}}>
+                    <div style={{fontSize:12,color:"#000",marginBottom:10,lineHeight:1.4}}>{g.messaggio}</div>
+                    <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:12,color:"#000"}}>
+                      <input type="checkbox" checked={silenziato}
+                        onChange={e=>setDaSilenziare(prev=>{
+                          const n=new Set(prev);
+                          if(e.target.checked) n.add(g.contesto); else n.delete(g.contesto);
+                          return n;
+                        })}
+                        style={{width:16,height:16}}/>
+                      Non mostrare più questo errore
+                    </label>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <button onClick={()=>onChiudi([...daSilenziare])}
+          style={{width:"100%",background:accent,border:"none",borderRadius:10,color:"#fff",
+            padding:"11px 0",fontWeight:800,fontSize:14,cursor:"pointer",flexShrink:0}}>
+          OK
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SecCollapsible({label,children,T,onToggle}){
   const [open,setOpen]=useState(false);
   return (
     <div style={{background:T.surface,border:`1px solid ${T.border}`,
       borderRadius:12,marginBottom:14}}>
-      <div onClick={()=>setOpen(o=>!o)}
+      <div onClick={()=>setOpen(o=>{ const n=!o; if(onToggle) onToggle(n); return n; })}
         style={{display:"flex",alignItems:"center",justifyContent:"space-between",
           padding:"12px 14px",cursor:"pointer"}}>
         <div style={{fontSize:10,fontWeight:800,color:T.sub,letterSpacing:"0.8px"}}>{label}</div>
@@ -7865,6 +8245,13 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
   const [nessunTurnoRilevato, setNessunTurnoRilevato] = useState(false); // true se l'OCR non ha trovato nessuna parola simile a un turno noto
   const [testoJsonIncollato, setTestoJsonIncollato] = useState("");
   const [nRigheAggiunte, setNRigheAggiunte] = useState(0);
+  // Dettaglio {mancanti, sospetti} dell'ultima importazione (OCR o JSON
+  // incollato), mostrato nello step "riepilogo" con lo stesso stile già
+  // usato in ImportaTurniJsonDialog. Sempre registrato anche nel registro
+  // persistente condiviso (registraProblemiImport), consultabile in un
+  // secondo momento indipendentemente da questa sessione.
+  const [risultatoImportOcr, setRisultatoImportOcr] = useState(null);
+  const [registroOcr, setRegistroOcr] = useState(null);
   const [importando, setImportando] = useState(false); // true durante l'elaborazione del JSON incollato, per disabilitare il pulsante e mostrare feedback visivo
   // --- Verifica incrociata OCR (backend Render) sul JSON incollato ---
   const [fotoVerifica, setFotoVerifica] = useState(null); // File della foto per il doppio controllo
@@ -7984,7 +8371,7 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
       // Tesseract scarica il modello linguistico italiano da un CDN esterno al
       // primo uso; se la rete non lo raggiunge, l'errore arriva qui invece che
       // come "zero parole lette" -> lo segnaliamo in modo esplicito e distinto.
-      console.error("Errore Tesseract (probabile problema di rete/download modello):", errTess);
+      segnalaErroreSoloLog(errTess, "OCR Tesseract (download modello linguistico)");
       const erroreRete = new Error("Impossibile caricare il modulo di lettura offline (problema di connessione). Riprova o usa l'AI.");
       erroreRete.isErroreRete = true;
       throw erroreRete;
@@ -7999,6 +8386,11 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
     const mm = String(month+1).padStart(2,"0");
     const righeElaborate = [];
     const radiciTrovate = [];
+    // Giorni riconosciuti dall'OCR ma senza un modello corrispondente: prima
+    // scartati silenziosamente con "continue", ora tracciati con lo stesso
+    // schema {data,titolo,oraInizio,oraFine} usato dall'import JSON, per
+    // finire nello stesso registro persistente e nel riepilogo finale.
+    const mancanti = [];
 
     if(tipoTabella==="stella"){
       // Percorso per posizione: serve la Y di ogni riga-data nota, dedotta
@@ -8016,11 +8408,12 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
           numeroGiorniRigheData.push([numGiorno, yCentro]);
         }
       }
-      const trovati = trovaRigheStellaPerPosizione(parole, numeroGiorniRigheData);
+      const { righeStella: trovati, mancantiStella } = trovaRigheStellaPerPosizione(parole, numeroGiorniRigheData);
       for(const r of trovati){
         const dd = String(r.numGiorno).padStart(2,"0");
         righeElaborate.push({ dateKey: `${year}-${mm}-${dd}`, modelloId: r.modelloId });
       }
+      mancanti.push(...mancantiStella);
       if(trovati.length>0) radiciTrovate.push("stella");
     }else{
       for(const numGiorno of numeriGiorno){
@@ -8028,7 +8421,10 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
         const dd = String(numGiorno).padStart(2,"0");
         const dateKey = `${year}-${mm}-${dd}`;
         const mod = trovaModelloPerTesto(testoTurno);
-        if(!mod) continue;
+        if(!mod){
+          mancanti.push({ data:dateKey, titolo: testoTurno||"(testo non riconosciuto)", oraInizio:"", oraFine:"" });
+          continue;
+        }
         righeElaborate.push({ dateKey, modelloId: mod.id });
         const radice = MAPPING_TURNI.find(m=>(testoTurno||"").toLowerCase().includes(m.radice));
         if(radice) radiciTrovate.push(radice.radice);
@@ -8040,7 +8436,7 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
     // stata trovata (forza il tentativo successivo, con messaggio corretto).
     const { confidenza, nessunaParolaRilevante } = calcolaConfidenzaTurni(parole, radiciTrovate);
 
-    return { righeElaborate, confidenza, nessunaParolaRilevante };
+    return { righeElaborate, confidenza, nessunaParolaRilevante, mancanti };
   }
 
   async function handleFile(file){
@@ -8051,6 +8447,7 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
     setProgresso(0);
     setConfidenzaRaggiunta(null);
     setNessunTurnoRilevato(false);
+    setRisultatoImportOcr(null);
     try{
       // Preprocessing sempre applicato (contrasto, bianco/nero, upscaling) per
       // dare a Tesseract la miglior immagine possibile fin dal primo tentativo.
@@ -8066,6 +8463,8 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
       if(risultato.righeElaborate.length>0){
         const n = await onConfirm(risultato.righeElaborate);
         setNRigheAggiunte(n||0);
+        registraProblemiImport(risultato.mancanti, []);
+        setRisultatoImportOcr({ mancanti: risultato.mancanti||[], sospetti: [] });
         setStep("riepilogo");
         return;
       }
@@ -8079,7 +8478,7 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
       }
       setStep("chiedi-gemini");
     }catch(err){
-      console.error("Errore OCR:", err);
+      segnalaErroreSoloLog(err, "OCR lettura foto (locale)");
       setErrore(err && err.isErroreRete ? err.message : "Errore durante la lettura della foto in locale.");
       setStep("chiedi-gemini");
     }
@@ -8117,7 +8516,7 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
       }
       await onConfirm(righeElaborate);
     }catch(err){
-      console.error("Errore Gemini:", err);
+      segnalaErroreSoloLog(err, "OCR/interpretazione con AI (Gemini)");
       setErrore("Errore durante la lettura con l'AI. Riprova.");
       setStep("upload");
     }
@@ -8217,23 +8616,30 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
     // 3) Per ogni parola "stella" trovata, determina colonna (-> modello) e riga
     //    (-> giorno, tramite la Y della parola più vicina a una riga-data nota).
     const risultati = [];
+    const mancantiGeometria = []; // "stella" trovata ma colonna/riga non determinabile
     const paroleStella = words.filter(w=>/stella/i.test(w.text));
     for(const w of paroleStella){
       const centroX = (w.bbox.x0+w.bbox.x1)/2;
       const centroY = (w.bbox.y0+w.bbox.y1)/2;
       const colonna = colonnaDiX(centroX);
       const mod = modelliOrdinati[colonna];
-      if(!mod) continue;
+      if(!mod){
+        mancantiGeometria.push({ data:"", titolo:`"stella" in colonna ${colonna} (nessun modello con orario in quella posizione)`, oraInizio:"", oraFine:"" });
+        continue;
+      }
       // trova la riga-data (numeroGiorno) la cui Y è più vicina al centroY di "stella"
       let giornoVicino = null, distanzaY = Infinity;
       for(const [numGiorno, yRiga] of numeroGiorniRigheData){
         const d = Math.abs(yRiga-centroY);
         if(d<distanzaY){ distanzaY = d; giornoVicino = numGiorno; }
       }
-      if(giornoVicino==null) continue;
+      if(giornoVicino==null){
+        mancantiGeometria.push({ data:"", titolo:`"stella" per ${mod.titolo} (nessuna riga-data vicina riconosciuta)`, oraInizio:"", oraFine:"" });
+        continue;
+      }
       risultati.push({ numGiorno: giornoVicino, modelloId: mod.id });
     }
-    return risultati;
+    return { righeStella: risultati, mancantiStella: mancantiGeometria };
   }
 
 
@@ -8241,6 +8647,7 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
     if(importando) return; // guardia esplicita: ignora click ripetuti mentre un'importazione è già in corso
     setImportando(true);
     setErrore("");
+    setRisultatoImportOcr(null);
     let parsed;
     try{
       parsed = JSON.parse(testoJsonIncollato.trim());
@@ -8251,14 +8658,29 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
     }
 
     const righeElaborate = [];
+    // Stesso schema di ImportaTurniJsonDialog (righe scartate tracciate con
+    // motivo, non solo ignorate con continue), così anche questo flusso
+    // alimenta il registro persistente condiviso invece di perdere
+    // silenziosamente l'informazione su cosa non è stato importato.
+    const mancanti = [];
+    const sospetti = [];
 
     if(Array.isArray(parsed)){
       // Formato "piatto": [{"data":"2026-07-01","turno":"Primo"}, ...]
       for(const t of parsed){
-        if(!t || typeof t.data!=="string" || typeof t.turno!=="string") continue;
-        if(!/^\d{4}-\d{2}-\d{2}$/.test(t.data)) continue;
+        if(!t || typeof t.data!=="string" || typeof t.turno!=="string"){
+          sospetti.push({ data:t?.data||"", titolo:t?.turno||"(riga malformata)", oraInizio:"", oraFine:"", motivo:"formato_riga_non_valido" });
+          continue;
+        }
+        if(!/^\d{4}-\d{2}-\d{2}$/.test(t.data)){
+          sospetti.push({ data:t.data, titolo:t.turno, oraInizio:"", oraFine:"", motivo:"data_non_valida" });
+          continue;
+        }
         const mod = trovaModelloPerTesto(t.turno);
-        if(!mod) continue;
+        if(!mod){
+          mancanti.push({ data:t.data, titolo:t.turno, oraInizio:"", oraFine:"" });
+          continue;
+        }
         righeElaborate.push({ dateKey: t.data, modelloId: mod.id });
       }
     }else if(parsed && typeof parsed==="object"){
@@ -8274,10 +8696,19 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
             if(Array.isArray(valore)){
               const minutiInizio = estraiMinutiInizioFascia(chiave);
               const mod = trovaModelloPerOrarioInizio(minutiInizio);
-              if(!mod) continue;
+              if(!mod){
+                for(const dataTesto of valore){
+                  const iso = dataItalianaToISO(dataTesto) || dataTesto;
+                  mancanti.push({ data:iso, titolo:`(fascia "${chiave}")`, oraInizio:"", oraFine:"" });
+                }
+                continue;
+              }
               for(const dataTesto of valore){
                 const iso = dataItalianaToISO(dataTesto);
-                if(!iso) continue;
+                if(!iso){
+                  sospetti.push({ data:dataTesto, titolo:mod.titolo, oraInizio:"", oraFine:"", motivo:"data_non_valida" });
+                  continue;
+                }
                 righeElaborate.push({ dateKey: iso, modelloId: mod.id });
               }
             }else{
@@ -8293,13 +8724,15 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
       return;
     }
 
-    if(righeElaborate.length===0){
+    if(righeElaborate.length===0 && mancanti.length===0 && sospetti.length===0){
       setErrore("Nessun turno riconosciuto in questo JSON (controlla formato date, nomi turno, o orari delle fasce).");
       setImportando(false);
       return;
     }
-    const n = await onConfirm(righeElaborate);
+    const n = righeElaborate.length>0 ? await onConfirm(righeElaborate) : 0;
+    registraProblemiImport(mancanti, sospetti);
     setNRigheAggiunte(n||0);
+    setRisultatoImportOcr({ mancanti, sospetti });
     setImportando(false);
     setStep("riepilogo");
   }
@@ -8391,7 +8824,7 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
       const risultato = await resp.json();
       setRisultatoVerifica(risultato);
     }catch(err){
-      console.error("Errore verifica OCR:", err);
+      segnalaErroreSoloLog(err, "Verifica OCR incrociata (backend Render)");
       setErroreVerifica(
         "Non sono riuscito a completare la verifica. Se il backend era inattivo da un po', "+
         "potrebbe aver bisogno di 30-60 secondi per svegliarsi: riprova tra poco. "+
@@ -8437,6 +8870,73 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
                   background:"#ffffff"}}>
                 ⭐ Turni Stella (per fasce orarie)
               </button>
+              <button onClick={()=>{ setRegistroOcr(leggiRegistroImportProblemi()); setStep("registro-ocr"); }}
+                style={{display:"block",width:"100%",marginTop:10,border:"none",borderRadius:10,
+                  padding:"10px 0",textAlign:"center",cursor:"pointer",color:T.sub,fontSize:12,fontWeight:700,
+                  background:"transparent"}}>
+                📋 Registro problemi import
+              </button>
+            </div>
+          )}
+
+          {step==="registro-ocr"&&(
+            <div>
+              <div style={{fontSize:16,fontWeight:900,color:"#1a1a1a",marginBottom:14}}>Registro problemi import</div>
+              {(!registroOcr || registroOcr.length===0) ? (
+                <div style={{fontSize:13,color:T.sub,marginBottom:16}}>Nessun problema registrato finora.</div>
+              ) : (
+                <div style={{maxHeight:440,overflowY:"auto",marginBottom:14}}>
+                  {registroOcr.slice().reverse().map((sess,si)=>(
+                    <div key={si} style={{marginBottom:16}}>
+                      <div style={{fontSize:11,fontWeight:800,color:T.sub,marginBottom:6}}>
+                        {new Date(sess.ts).toLocaleString("it-IT")}
+                      </div>
+                      {sess.mancanti?.length>0 && (
+                        <div style={{background:"#fff",border:"1px solid #ddd",borderRadius:10,padding:10,marginBottom:8}}>
+                          <div style={{fontSize:12,fontWeight:800,color:"#ef4444",marginBottom:6}}>
+                            ⚠️ {sess.mancanti.length} senza modello corrispondente
+                          </div>
+                          {sess.mancanti.map((m,i)=>(
+                            <div key={i} style={{fontSize:13,color:"#000",padding:"5px 0",
+                              borderBottom: i<sess.mancanti.length-1?"1px solid #ddd":"none"}}>
+                              {m.data?fmtDataIT(m.data):"(riga senza data)"} — {m.titolo} {m.oraInizio?`(${m.oraInizio}-${m.oraFine})`:"(tutto il giorno)"}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {sess.sospetti?.length>0 && (
+                        <div style={{background:"#fff",border:"1px solid #ddd",borderRadius:10,padding:10}}>
+                          <div style={{fontSize:12,fontWeight:800,color:"#f59e0b",marginBottom:6}}>
+                            🔶 {sess.sospetti.length} con titolo trovato ma orario non corrispondente
+                          </div>
+                          {sess.sospetti.map((m,i)=>(
+                            <div key={i} style={{fontSize:13,color:"#000",padding:"5px 0",
+                              borderBottom: i<sess.sospetti.length-1?"1px solid #ddd":"none"}}>
+                              {m.data?fmtDataIT(m.data):"(riga senza data)"} — {m.titolo} {m.oraInizio?`(${m.oraInizio}-${m.oraFine})`:"(nessun orario nel file)"}
+                              {" — "}{m.motivo==="ambiguo"?"più modelli con questo titolo":m.motivo==="data_non_valida"?"data non riconosciuta":m.motivo==="formato_riga_non_valido"?"riga malformata":"orario diverso dal modello salvato"}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {registroOcr?.length>0 && (
+                <button onClick={()=>{
+                    if(confirm("Cancellare tutto il registro dei problemi di import? L'azione non è reversibile.")){
+                      cancellaRegistroImportProblemi();
+                      setRegistroOcr([]);
+                    }
+                  }}
+                  style={{width:"100%",background:"none",border:"1px solid #ef4444",borderRadius:10,color:"#ef4444",
+                    padding:"10px 0",fontWeight:800,fontSize:13,cursor:"pointer",marginBottom:10}}>
+                  Cancella registro
+                </button>
+              )}
+              <button onClick={()=>setStep("scegli-tipo")}
+                style={{width:"100%",background:"none",border:"none",color:T.sub,
+                  padding:"6px 0 0",fontWeight:700,fontSize:12,cursor:"pointer"}}>‹ Indietro</button>
             </div>
           )}
 
@@ -8593,20 +9093,56 @@ function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onCo
           )}
 
           {step==="riepilogo"&&(
-            <div style={{textAlign:"center",padding:"30px 8px"}}>
-              <div style={{fontSize:36,marginBottom:12}}>✅</div>
-              <div style={{fontSize:15,color:"#1a1a1a",fontWeight:800,marginBottom:8}}>
-                {nRigheAggiunte>0
-                  ? `${nRigheAggiunte} turno${nRigheAggiunte===1?"":"i"} aggiunto${nRigheAggiunte===1?"":"i"} al calendario`
-                  : "Nessun turno nuovo aggiunto"}
+            <div style={{textAlign:"left",padding:"24px 20px"}}>
+              <div style={{textAlign:"center"}}>
+                <div style={{fontSize:36,marginBottom:12}}>✅</div>
+                <div style={{fontSize:15,color:"#1a1a1a",fontWeight:800,marginBottom:8}}>
+                  {nRigheAggiunte>0
+                    ? `${nRigheAggiunte} turno${nRigheAggiunte===1?"":"i"} aggiunto${nRigheAggiunte===1?"":"i"} al calendario`
+                    : "Nessun turno nuovo aggiunto"}
+                </div>
+                {nRigheAggiunte===0&&(!risultatoImportOcr || (risultatoImportOcr.mancanti.length===0 && risultatoImportOcr.sospetti.length===0))&&(
+                  <div style={{fontSize:12,color:"#1a1a1a",marginBottom:8}}>
+                    I turni trovati erano probabilmente già presenti nel calendario.
+                  </div>
+                )}
               </div>
-              {nRigheAggiunte===0&&(
-                <div style={{fontSize:12,color:"#1a1a1a",marginBottom:8}}>
-                  I turni trovati erano probabilmente già presenti nel calendario.
+
+              {risultatoImportOcr?.mancanti?.length>0 && (
+                <div style={{marginTop:14}}>
+                  <div style={{fontSize:12,fontWeight:800,color:"#ef4444",marginBottom:8}}>
+                    ⚠️ {risultatoImportOcr.mancanti.length} righe senza modello corrispondente:
+                  </div>
+                  <div style={{maxHeight:220,overflowY:"auto",background:"#fff",border:"1px solid #ddd",borderRadius:10,padding:10,marginBottom:14}}>
+                    {risultatoImportOcr.mancanti.map((m,i)=>(
+                      <div key={i} style={{fontSize:13,color:"#000",padding:"5px 0",
+                        borderBottom: i<risultatoImportOcr.mancanti.length-1?"1px solid #ddd":"none"}}>
+                        {m.data?fmtDataIT(m.data):"(riga senza data)"} — {m.titolo} {m.oraInizio?`(${m.oraInizio}-${m.oraFine})`:"(tutto il giorno)"}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
+
+              {risultatoImportOcr?.sospetti?.length>0 && (
+                <div>
+                  <div style={{fontSize:12,fontWeight:800,color:"#f59e0b",marginBottom:8}}>
+                    🔶 {risultatoImportOcr.sospetti.length} righe con titolo trovato ma orario non corrispondente:
+                  </div>
+                  <div style={{maxHeight:220,overflowY:"auto",background:"#fff",border:"1px solid #ddd",borderRadius:10,padding:10,marginBottom:14}}>
+                    {risultatoImportOcr.sospetti.map((m,i)=>(
+                      <div key={i} style={{fontSize:13,color:"#000",padding:"5px 0",
+                        borderBottom: i<risultatoImportOcr.sospetti.length-1?"1px solid #ddd":"none"}}>
+                        {m.data?fmtDataIT(m.data):"(riga senza data)"} — {m.titolo} {m.oraInizio?`(${m.oraInizio}-${m.oraFine})`:"(nessun orario nel file)"}
+                        {" — "}{m.motivo==="ambiguo"?"più modelli con questo titolo":m.motivo==="data_non_valida"?"data non riconosciuta":m.motivo==="formato_riga_non_valido"?"riga malformata":"orario diverso dal modello salvato"}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <button onClick={()=>{ onClose(); }}
-                style={{width:"100%",marginTop:16,background:accent,border:"none",borderRadius:10,
+                style={{width:"100%",marginTop:2,background:accent,border:"none",borderRadius:10,
                   color:getContrastTextColor(accent),padding:"11px 0",cursor:"pointer",fontWeight:700,fontSize:13}}>
                 Fatto
               </button>
