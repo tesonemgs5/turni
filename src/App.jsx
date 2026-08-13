@@ -2061,21 +2061,17 @@ const importsRecenti = useMemo(()=>{
   // c'è modo che questo produca cicli o incoerenze, perché non uso mai
   // riferimenti tra modelli, solo una rinumerazione sequenziale.
   function trascinaModelloPuro(prev, srcId, dstId, calIdFiltro){
-    console.log("[DEBUG trascinaModelloPuro] srcId=", srcId, "dstId=", dstId, "calIdFiltro=", calIdFiltro);
     if(!srcId || !dstId || srcId===dstId){
-      console.log("[DEBUG trascinaModelloPuro] uscita anticipata: srcId o dstId mancanti/uguali");
       return prev;
     }
     const sottoinsiemeIds = new Set(modelliDelCalendario(prev, calIdFiltro).map(m=>m.id));
     if(!sottoinsiemeIds.has(srcId) || !sottoinsiemeIds.has(dstId)){
-      console.log("[DEBUG trascinaModelloPuro] uscita anticipata: srcId o dstId non nel sottoinsieme", {srcInSet:sottoinsiemeIds.has(srcId), dstInSet:sottoinsiemeIds.has(dstId)});
       return prev;
     }
     const ordinato = calcolaOrdineModelli(modelliDelCalendario(prev, calIdFiltro));
     const srcIdx = ordinato.findIndex(m=>m.id===srcId);
     const dstIdx = ordinato.findIndex(m=>m.id===dstId);
     if(srcIdx===-1 || dstIdx===-1){
-      console.log("[DEBUG trascinaModelloPuro] uscita anticipata: indice non trovato", {srcIdx, dstIdx});
       return prev;
     }
     const riordinato = [...ordinato];
@@ -2084,7 +2080,6 @@ const importsRecenti = useMemo(()=>{
     // Rinumerazione sequenziale: tutti i modelli toccati da un drag esplicito
     // diventano manuali (comportamento invariato rispetto a prima).
     const idsManuali = new Set(riordinato.map(m=>m.id));
-    console.log("[DEBUG trascinaModelloPuro] riordino applicato, nuovo ordine ids=", riordinato.map(m=>m.id));
     return rinumeraSottoinsieme(prev, riordinato, idsManuali);
   }
 
@@ -2319,20 +2314,17 @@ const importsRecenti = useMemo(()=>{
         //    messaggio che richiede OK per procedere.
         const calendarioModelli = modelli.filter(m=>(m.calendarId||mainCalId)===targetCalId);
         const tutti = calcolaOrdineModelli(calendarioModelli);
-        console.log("[DEBUG saveModello] tutti (ordine attuale) =", tutti.map((m,i)=>`${i}:${m.titolo}(${m.inizio||"h24"},sort=${m.sortOrder})`));
 
+        const rinumerazioniApplicate = []; // {id, nuovoVal} per ogni modello il cui sort_order cambia
         function rinumeraEInserisci(idxInserimento){
           // Rinumera l'intero calendario con passo 10 e restituisce il
           // sort_order assegnato al nuovo modello nello slot scelto.
-          console.log("[DEBUG rinumeraEInserisci] idxInserimento=", idxInserimento);
           for(let i=0;i<tutti.length;i++){
             const nuovoVal = i>=idxInserimento ? (i+1)*10 : i*10;
-            console.log("[DEBUG rinumeraEInserisci] i=",i,"titolo=",tutti[i].titolo,"vecchioSort=",tutti[i].sortOrder,"nuovoVal=",nuovoVal);
             if(nuovoVal!==tutti[i].sortOrder){
-              supabase.from("modelli").update({sort_order:nuovoVal}).eq("id",tutti[i].id).eq("user_id",userId);
+              rinumerazioniApplicate.push({id:tutti[i].id, nuovoVal});
             }
           }
-          console.log("[DEBUG rinumeraEInserisci] nuovo modello prende sortOrder=", idxInserimento*10+5);
           return idxInserimento*10 + 5;
         }
 
@@ -2353,11 +2345,9 @@ const importsRecenti = useMemo(()=>{
           // di avviso, secondo la regola 3.
           const coeso = indiciStessoOrario.length>0 &&
             indiciStessoOrario.every((v,i)=>i===0 || v===indiciStessoOrario[i-1]+1);
-          console.log("[DEBUG saveModello] nuovoOrarioKey=", nuovoOrarioKey, "indiciStessoOrario=", indiciStessoOrario, "coeso=", coeso);
           if(coeso){
             const ultimoIdx = indiciStessoOrario[indiciStessoOrario.length-1];
             nuovoSortOrder = rinumeraEInserisci(ultimoIdx+1);
-            console.log("[DEBUG saveModello] ramo COESO: ultimoIdx=", ultimoIdx, "-> rinumeraEInserisci(", ultimoIdx+1, ") = nuovoSortOrder", nuovoSortOrder);
           } else {
             // Zero match o gruppo sparso: in fondo a tutto, con avviso.
             // Eccezione: se il calendario non ha ALCUN altro modello con un
@@ -2376,9 +2366,25 @@ const importsRecenti = useMemo(()=>{
             }
           }
         }
+        // Applica su Supabase tutte le rinumerazioni calcolate (in parallelo,
+        // ma attendendo il completamento di tutte prima di proseguire) e poi
+        // il nuovo modello. Aggiorna anche lo stato locale per ogni modello
+        // toccato: senza questo, la UI mostrava per un istante (fino al
+        // prossimo reload da Supabase) l'ordine vecchio per tutti i modelli
+        // già esistenti, con solo il nuovo modello nella posizione corretta
+        // — causa del disallineamento "un rigo più in basso" osservato.
+        if(rinumerazioniApplicate.length>0){
+          await Promise.all(rinumerazioniApplicate.map(({id,nuovoVal})=>
+            supabase.from("modelli").update({sort_order:nuovoVal}).eq("id",id).eq("user_id",userId)
+          ));
+        }
         await supabase.from("modelli").update({sort_order:nuovoSortOrder}).eq("id",res.id).eq("user_id",userId);
         setModelli(prev=>{
-          const updated=[...prev,{...data,id:res.id,colore:coloreEff,sortOrder:nuovoSortOrder,posizione:"",calendarId:targetCalId}];
+          const rinumerazioniMap = new Map(rinumerazioniApplicate.map(r=>[r.id, r.nuovoVal]));
+          const conRinumerazioni = prev.map(m=>
+            rinumerazioniMap.has(m.id) ? {...m, sortOrder:rinumerazioniMap.get(m.id)} : m
+          );
+          const updated=[...conRinumerazioni,{...data,id:res.id,colore:coloreEff,sortOrder:nuovoSortOrder,posizione:"",calendarId:targetCalId}];
           syncSeAttivo(store.events, store.calendars, updated);
           return updated;
         });
