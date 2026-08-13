@@ -855,6 +855,11 @@ export default function App({ session }){
   const [modelliSort, setModelliSort] = useState("orario");
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [showModelForm, setShowModelForm] = useState(false);
+  // Da dove è stato aperto il form "Nuovo/Modifica modello": determina dove
+  // tornare dopo il salvataggio (lista Modelli, o il picker "Scegli modello"
+  // se si stava scegliendo un modello per un evento). Senza questo, il
+  // salvataggio riportava sempre al picker anche partendo dalla lista.
+  const [origineModelForm, setOrigineModelForm] = useState("lista");
   const [editModello, setEditModello] = useState(null);
   const [modelForm, setModelForm] = useState({ titolo:"", tempo:"personalizzato", inizio:"", fine:"", coloreCustom:null, posizione:"" });
 
@@ -3729,6 +3734,7 @@ const importsRecenti = useMemo(()=>{
                 if(modelliTab==="turni"){
                   setEditModello(null);
                   setModelForm({titolo:"",tempo:"6h15",inizio:"",fine:"",coloreCustom:null,posizione:"",calendarId:calId});
+                  setOrigineModelForm("lista");
                   setShowModelForm(true);
                 } else {
                   setEditRotazione(null);
@@ -3810,7 +3816,7 @@ const importsRecenti = useMemo(()=>{
                       categoriaAppAuto:(m.categoria_app_auto==="app"||m.categoria_app_auto==="auto")?m.categoria_app_auto:((m.categoria==="app"||m.categoria==="auto")?m.categoria:""),
                       turnoVuoto: !!m.categoria_turno_vuoto,
                       appAutoVuoto: !!m.categoria_app_auto_vuoto
-                    }); setShowModelForm(true); })}
+                    }); setOrigineModelForm("lista"); setShowModelForm(true); })}
                     onDelete={()=>deleteModello(m.id)}
                     // Frecce ▲▼: sempre disponibili, spostano di UNA posizione
                     // nell'elenco realmente visibile (modelliVisibili, filtrato
@@ -3906,7 +3912,7 @@ const importsRecenti = useMemo(()=>{
                       categoriaAppAuto:(m.categoria_app_auto==="app"||m.categoria_app_auto==="auto")?m.categoria_app_auto:((m.categoria==="app"||m.categoria==="auto")?m.categoria:""),
                       turnoVuoto: !!m.categoria_turno_vuoto,
                       appAutoVuoto: !!m.categoria_app_auto_vuoto
-                    }); setShowModelForm(true); setSelectedModelloIds([]); }
+                    }); setOrigineModelForm("lista"); setShowModelForm(true); setSelectedModelloIds([]); }
                   }}
                   style={{background:accent,border:"none",borderRadius:8,
                     color:getContrastTextColor(accent),padding:"7px 14px",cursor:"pointer",fontWeight:800,fontSize:12}}>
@@ -5373,7 +5379,13 @@ const importsRecenti = useMemo(()=>{
                 const esito = await saveModello({...modelForm,id:editModello?.id});
                 if(esito?.ok){
                   setShowModelForm(false);
-                  setShowModelloPicker(true);
+                  // Torna da dove si era partiti: se il form era stato aperto dal
+                  // picker "Scegli modello" (creazione al volo mentre si sceglieva
+                  // un modello per un evento), si riapre il picker; se era stato
+                  // aperto dalla lista Modelli, si resta semplicemente sulla lista
+                  // (nessun picker da riaprire — prima si andava sempre al picker
+                  // anche partendo dalla lista, comportamento non voluto).
+                  if(origineModelForm==="picker") setShowModelloPicker(true);
                 } else {
                   alert("Errore nel salvataggio del modello: "+(esito?.error||"errore sconosciuto")+"\n\nIl modello NON è stato salvato, controlla i dati e riprova.");
                 }
@@ -5624,6 +5636,7 @@ const importsRecenti = useMemo(()=>{
                 <button onClick={()=>{
                   setEditModello(null);
                   setModelForm({titolo:"",tempo:"personalizzato",inizio:"",fine:"",coloreCustom:null,posizione:""});
+                  setOrigineModelForm("picker");
                   setShowModelForm(true);
                   setShowModelloPicker(false);
                 }} style={{width:"100%",background:accent,border:"none",borderRadius:14,
