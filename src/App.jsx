@@ -4802,7 +4802,15 @@ const importsRecenti = useMemo(()=>{
 
 // #region SEZIONE 19: DAY MODAL
 // ═══════════════════════════════════════════════════════════════
-  const soloConsultazione = !editMode && selectedCalIds.length>1;
+  // Nella finestra del giorno i controlli di modifica (+Modello, Rotazioni,
+  // matite, ×) restano SEMPRE attivi, indipendentemente da "M" e da quanti
+  // calendari sono selezionati insieme: la scelta del calendario a cui
+  // applicare la modifica avviene già tramite il selettore dentro la
+  // finestra stessa (il pallino con bordo giallo), quindi non serve più
+  // bloccare l'editing qui. "M" mantiene invece invariata la sua funzione
+  // sul calendario mensile esterno (filtro multi-visualizzazione vs scelta
+  // del calendario attivo per la modifica).
+  const soloConsultazione = false;
   const curEvts = dayKey ? (selectedCalIds.length>1 ? allEvts(dayKey).filter(e=>selectedCalIds.includes(e._cid)) : getEvts(dayKey,calId)) : [];
   const dayModal = dayKey&&(
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:200,
