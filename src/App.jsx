@@ -1638,7 +1638,7 @@ export default function App({ session }){
     if(!cal) return;
     const { color, label, tInFinal, tOutFinal } = computeEventFields(form, cal, modelli);
 
-    const { error } = await supabase.from("events").update({
+    const payload = {
       label, color, all_day: form.dur==="allday",
       time_in: tInFinal, time_out: tOutFinal,
       place: (form.place||"").toUpperCase(),
@@ -1649,13 +1649,15 @@ export default function App({ session }){
       auto: (form.auto||"").toUpperCase(),
       prot_pag_fine: form.protPagFine||null,
       prot_rec_fine: form.protRecFine||null,
-    }).eq("id", form.editId).eq("user_id", userId);
-    if(error){ segnalaErroreDb(error, "Modifica turno"); return; }
+    };
+    const match = { id: form.editId, user_id: userId };
+
     if(!form.modelloId && form.label) registraValoreAutocomplete("titolo", label);
     if(form.auto) registraValoreAutocomplete("auto", (form.auto||"").toUpperCase());
     if(form.place) registraValoreAutocomplete("luogo", (form.place||"").toUpperCase());
     if(form.collega) registraValoriAutocomplete("collega", (form.collega||"").toUpperCase().split(/\r?\n/));
 
+    // 1) SUBITO in locale.
     setStore(prev=>{
       const patch = {label, color,
         allDay: form.dur==="allday", tIn: tInFinal, tOut: tOutFinal,
@@ -1670,17 +1672,32 @@ export default function App({ session }){
       return ns;
     });
     setForm(null); setDayKey(null);
+
+    // 2) Backup su Supabase in background, con fallback in coda se offline.
+    try{
+      const { error } = await supabase.from("events").update(payload).match(match);
+      if(error) segnalaErroreDb(error, "Modifica turno (backup su Supabase)");
+    }catch(e){
+      accodaOperazioneSync("update", "events", payload, match, "Modifica turno");
+    }
   }
 
   async function delEvt(dKey, cId, evtId){
-    const { error } = await supabase.from("events").delete().eq("id", evtId).eq("user_id", userId);
-    if(error){ segnalaErroreDb(error, "Eliminazione turno"); return; }
+    // 1) SUBITO in locale.
     setStore(prev=>{
       const ns = withEventoRimosso(prev, dKey, cId, evtId);
       saveToLocalStorage(ns.events, ns.calendars, modelli);
       syncSeAttivo(ns.events, ns.calendars);
       return ns;
     });
+    // 2) Backup su Supabase in background, con fallback in coda se offline.
+    const match = { id: evtId, user_id: userId };
+    try{
+      const { error } = await supabase.from("events").delete().match(match);
+      if(error) segnalaErroreDb(error, "Eliminazione turno (backup su Supabase)");
+    }catch(e){
+      accodaOperazioneSync("delete", "events", null, match, "Eliminazione turno");
+    }
   }
 
   async function delEvtiRotazioneDaData(rotazioneId, fromDateKey, cId, limit=null){
@@ -2538,27 +2555,15 @@ const importsRecenti = useMemo(()=>{
       categoria_turno_vuoto: !!data.turnoVuoto,
       categoria_app_auto_vuoto: !!data.appAutoVuoto,
     };
-    if(data.coloreCustom) await ensureColoreRegistrato(data.coloreCustom);
+    if(data.coloreCustom) ensureColoreRegistrato(data.coloreCustom); // non bloccante: colore già visibile localmente comunque
     if(data.titolo) registraValoreAutocomplete("titolo", (data.titolo||"").toUpperCase());
     if(data.label) registraValoreAutocomplete("nome_visualizzato", (data.label||"").toUpperCase());
     if(data.id){
-      const { error: errUpdate } = await supabaseUpsertConRetry(
-        (p)=>supabase.from("modelli").update(p).eq("id",data.id).eq("user_id",userId),
-        payload, false
-      );
-      if(errUpdate){
-        segnalaErroreSoloLog(errUpdate, "Salvataggio modello (update)");
-        return { ok:false, error: errUpdate.message };
-      }
-
-      // ── Retroattivo: propaga le modifiche a tutti i turni già in calendario
+      // UPDATE: subito in locale (propagazione agli eventi collegati inclusa),
+      // poi backup su Supabase in background.
       const labelNuova = (data.label||data.titolo||"").toUpperCase();
       const tInNuovo = data.tempo==="h24" ? "" : (data.inizio||"");
       const tOutNuovo = calcFineModello(data);
-      const { error: errPropagazione } = await dbUpdate("events", {
-        label: labelNuova, color: coloreEff, time_in: tInNuovo, time_out: tOutNuovo,
-      }, {modello_id:data.id, user_id:userId}, "Aggiornamento modello — propagazione agli eventi già in calendario", {soloLog:true});
-      if(errPropagazione) segnalaErrore("Il modello è stato salvato, ma gli eventi già presenti in calendario che lo usano potrebbero non essere stati aggiornati.", "Aggiornamento modello (propagazione)");
       setStore(prev=>{
         const ns = JSON.parse(JSON.stringify(prev));
         Object.keys(ns.events||{}).forEach(dk=>{
@@ -2573,116 +2578,104 @@ const importsRecenti = useMemo(()=>{
         saveToLocalStorage(ns.events, ns.calendars, modelli);
         return ns;
       });
-
       setModelli(prev=>{
         const updated=prev.map(m=>m.id===data.id?{...m,...data,colore:coloreEff,calendarId:targetCalId}:m);
         syncSeAttivo(store.events, store.calendars, updated);
         return updated;
       });
+
+      try{
+        const { error: errUpdate } = await supabase.from("modelli").update(payload).eq("id",data.id).eq("user_id",userId);
+        if(errUpdate) segnalaErroreSoloLog(errUpdate, "Salvataggio modello (backup update su Supabase)");
+        else{
+          const { error: errPropagazione } = await dbUpdate("events", {
+            label: labelNuova, color: coloreEff, time_in: tInNuovo, time_out: tOutNuovo,
+          }, {modello_id:data.id, user_id:userId}, "Aggiornamento modello — propagazione agli eventi già in calendario", {soloLog:true});
+          if(errPropagazione) segnalaErroreSoloLog(errPropagazione, "Aggiornamento modello (propagazione backup)");
+        }
+      }catch(e){
+        accodaOperazioneSync("update", "modelli", payload, {id:data.id, user_id:userId}, "Aggiornamento modello");
+        accodaOperazioneSync("update", "events", {
+          label: labelNuova, color: coloreEff, time_in: tInNuovo, time_out: tOutNuovo,
+        }, {modello_id:data.id, user_id:userId}, "Propagazione modello agli eventi");
+      }
       return { ok:true };
     } else {
-      const {data:res, error:errInsert}=await supabaseUpsertConRetry(null, payload, true);
-      if(errInsert){
-        segnalaErroreSoloLog(errInsert, "Salvataggio modello (insert)");
-        return { ok:false, error: errInsert.message };
+      // INSERT: il calcolo del posizionamento usa solo dati già in memoria
+      // (modelli, calcolaOrdineModelli) — non serve aspettare Supabase per
+      // deciderlo. L'id è generato qui, subito, come per gli eventi.
+      const idLocale = generaIdLocale();
+      const calendarioModelli = modelli.filter(m=>(m.calendarId||mainCalId)===targetCalId);
+      const tutti = calcolaOrdineModelli(calendarioModelli);
+
+      const rinumerazioniApplicate = []; // {id, nuovoVal} per ogni modello il cui sort_order cambia
+      function rinumeraEInserisci(idxInserimento){
+        for(let i=0;i<tutti.length;i++){
+          const nuovoVal = i>=idxInserimento ? (i+1)*10 : i*10;
+          if(nuovoVal!==tutti[i].sortOrder){
+            rinumerazioniApplicate.push({id:tutti[i].id, nuovoVal});
+          }
+        }
+        return idxInserimento*10 + 5;
       }
-      if(res){
-        // ── Inserimento automatico (avviene UNA SOLA VOLTA, alla
-        // creazione): dopo questo momento il modello non viene più
-        // ricalcolato o spostato da nessun automatismo — solo l'utente lo
-        // sposta, con frecce o drag. Regole:
-        // 1) h24: sempre in fondo a tutto il calendario, nessun avviso.
-        // 2) Esiste già almeno un modello con lo STESSO orario, e sono tutti
-        //    raggruppati insieme (adiacenti tra loro nell'elenco attuale):
-        //    si inserisce in fondo a quel gruppo, nessun avviso.
-        // 3) In ogni altro caso — zero modelli con quell'orario, OPPURE
-        //    modelli con quell'orario ma sparsi in punti diversi della
-        //    lista — l'app non può decidere da sola dove metterlo: va in
-        //    fondo a TUTTO il calendario, e l'utente viene avvisato con un
-        //    messaggio che richiede OK per procedere.
-        const calendarioModelli = modelli.filter(m=>(m.calendarId||mainCalId)===targetCalId);
-        const tutti = calcolaOrdineModelli(calendarioModelli);
 
-        const rinumerazioniApplicate = []; // {id, nuovoVal} per ogni modello il cui sort_order cambia
-        function rinumeraEInserisci(idxInserimento){
-          // Rinumera l'intero calendario con passo 10 e restituisce il
-          // sort_order assegnato al nuovo modello nello slot scelto.
-          for(let i=0;i<tutti.length;i++){
-            const nuovoVal = i>=idxInserimento ? (i+1)*10 : i*10;
-            if(nuovoVal!==tutti[i].sortOrder){
-              rinumerazioniApplicate.push({id:tutti[i].id, nuovoVal});
-            }
-          }
-          return idxInserimento*10 + 5;
-        }
-
-        let nuovoSortOrder;
-        if(data.tempo==="h24"){
-          // Regola 1: h24 sempre in fondo a tutto, senza eccezioni.
-          nuovoSortOrder = rinumeraEInserisci(tutti.length);
+      let nuovoSortOrder;
+      if(data.tempo==="h24"){
+        // Regola 1: h24 sempre in fondo a tutto, senza eccezioni.
+        nuovoSortOrder = rinumeraEInserisci(tutti.length);
+      } else {
+        const nuovoOrarioKey = data.inizio||"";
+        const indiciStessoOrario = [];
+        tutti.forEach((m,i)=>{
+          const k = m.tempo==="h24" ? "h24" : (m.inizio||"");
+          if(k===nuovoOrarioKey) indiciStessoOrario.push(i);
+        });
+        const coeso = indiciStessoOrario.length>0 &&
+          indiciStessoOrario.every((v,i)=>i===0 || v===indiciStessoOrario[i-1]+1);
+        if(coeso){
+          const ultimoIdx = indiciStessoOrario[indiciStessoOrario.length-1];
+          nuovoSortOrder = rinumeraEInserisci(ultimoIdx+1);
         } else {
-          const nuovoOrarioKey = data.inizio||"";
-          const indiciStessoOrario = [];
-          tutti.forEach((m,i)=>{
-            const k = m.tempo==="h24" ? "h24" : (m.inizio||"");
-            if(k===nuovoOrarioKey) indiciStessoOrario.push(i);
-          });
-          // Gruppo "coeso" = esiste almeno un modello con lo stesso orario E
-          // tutti quelli trovati sono adiacenti tra loro (es. indici [3,4,5],
-          // non [1,6]). Zero risultati o indici sparsi sono entrambi motivo
-          // di avviso, secondo la regola 3.
-          const coeso = indiciStessoOrario.length>0 &&
-            indiciStessoOrario.every((v,i)=>i===0 || v===indiciStessoOrario[i-1]+1);
-          if(coeso){
-            const ultimoIdx = indiciStessoOrario[indiciStessoOrario.length-1];
-            nuovoSortOrder = rinumeraEInserisci(ultimoIdx+1);
-          } else {
-            // Zero match o gruppo sparso: in fondo a tutto, con avviso.
-            // Eccezione: se il calendario non ha ALCUN altro modello con un
-            // proprio orario (es. è vuoto, o ha solo h24), non c'è alcuna
-            // ambiguità reale da segnalare — è semplicemente il primo/unico
-            // modello con quell'orario, non un conflitto. L'avviso ha senso
-            // solo quando esisteva un contesto in cui un aggancio automatico
-            // sarebbe stato possibile ma non lo è stato.
-            const esistonoAltriModelliConOrario = tutti.some(m=>m.tempo!=="h24" && m.inizio);
-            nuovoSortOrder = rinumeraEInserisci(tutti.length);
-            if(esistonoAltriModelliConOrario){
-              const messaggio = indiciStessoOrario.length===0
-                ? `Non ci sono altri modelli con l'orario ${nuovoOrarioKey} in questo calendario, quindi non ho un riferimento per posizionarlo: ho messo "${(data.titolo||"il nuovo modello").toUpperCase()}" in fondo alla lista. Spostalo manualmente quando vuoi.`
-                : `Ci sono già più modelli con l'orario ${nuovoOrarioKey} ma in posizioni diverse della lista, quindi non posso capire automaticamente dove raggrupparlo: ho messo "${(data.titolo||"il nuovo modello").toUpperCase()}" in fondo alla lista. Spostalo manualmente quando vuoi.`;
-              window.alert(messaggio);
-            }
+          const esistonoAltriModelliConOrario = tutti.some(m=>m.tempo!=="h24" && m.inizio);
+          nuovoSortOrder = rinumeraEInserisci(tutti.length);
+          if(esistonoAltriModelliConOrario){
+            const messaggio = indiciStessoOrario.length===0
+              ? `Non ci sono altri modelli con l'orario ${nuovoOrarioKey} in questo calendario, quindi non ho un riferimento per posizionarlo: ho messo "${(data.titolo||"il nuovo modello").toUpperCase()}" in fondo alla lista. Spostalo manualmente quando vuoi.`
+              : `Ci sono già più modelli con l'orario ${nuovoOrarioKey} ma in posizioni diverse della lista, quindi non posso capire automaticamente dove raggrupparlo: ho messo "${(data.titolo||"il nuovo modello").toUpperCase()}" in fondo alla lista. Spostalo manualmente quando vuoi.`;
+            window.alert(messaggio);
           }
         }
-        // Applica su Supabase tutte le rinumerazioni calcolate (in parallelo,
-        // ma attendendo il completamento di tutte prima di proseguire) e poi
-        // il nuovo modello. Aggiorna anche lo stato locale per ogni modello
-        // toccato: senza questo, la UI mostrava per un istante (fino al
-        // prossimo reload da Supabase) l'ordine vecchio per tutti i modelli
-        // già esistenti, con solo il nuovo modello nella posizione corretta
-        // — causa del disallineamento "un rigo più in basso" osservato.
-        let erroriRinumerazione = 0;
+      }
+
+      // Subito in locale: nuovo modello + rinumerazioni già visibili all'istante.
+      setModelli(prev=>{
+        const rinumerazioniMap = new Map(rinumerazioniApplicate.map(r=>[r.id, r.nuovoVal]));
+        const conRinumerazioni = prev.map(m=>
+          rinumerazioniMap.has(m.id) ? {...m, sortOrder:rinumerazioniMap.get(m.id)} : m
+        );
+        const updated=[...conRinumerazioni,{...data,id:idLocale,colore:coloreEff,sortOrder:nuovoSortOrder,posizione:"",calendarId:targetCalId}];
+        syncSeAttivo(store.events, store.calendars, updated);
+        return updated;
+      });
+
+      // Backup su Supabase in background: insert col nostro id + rinumerazioni.
+      try{
+        const { error: errInsert } = await supabase.from("modelli").insert({...payload, id:idLocale});
+        if(errInsert){ segnalaErroreSoloLog(errInsert, "Salvataggio modello (backup insert su Supabase)"); return { ok:true }; }
         if(rinumerazioniApplicate.length>0){
           const risultati = await Promise.all(rinumerazioniApplicate.map(({id,nuovoVal})=>
             dbUpdate("modelli", {sort_order:nuovoVal}, {id, user_id:userId}, "Creazione modello — rinumerazione posizioni esistenti", {soloLog:true})
           ));
-          erroriRinumerazione = risultati.filter(r=>r.error).length;
+          const erroriRinumerazione = risultati.filter(r=>r.error).length;
+          if(erroriRinumerazione>0) segnalaErroreSoloLog(`${erroriRinumerazione} rinumerazioni non salvate su Supabase`, "Creazione modello (posizionamento backup)");
         }
-        const { error: errNuovoSort } = await dbUpdate("modelli", {sort_order:nuovoSortOrder}, {id:res.id, user_id:userId}, "Creazione modello — posizionamento", {soloLog:true});
-        if(errNuovoSort) erroriRinumerazione++;
-        if(erroriRinumerazione>0) segnalaErrore("Il modello è stato creato, ma la sua posizione nell'elenco potrebbe non essere quella corretta (dettaglio nel Log).", "Creazione modello (posizionamento)");
-        setModelli(prev=>{
-          const rinumerazioniMap = new Map(rinumerazioniApplicate.map(r=>[r.id, r.nuovoVal]));
-          const conRinumerazioni = prev.map(m=>
-            rinumerazioniMap.has(m.id) ? {...m, sortOrder:rinumerazioniMap.get(m.id)} : m
-          );
-          const updated=[...conRinumerazioni,{...data,id:res.id,colore:coloreEff,sortOrder:nuovoSortOrder,posizione:"",calendarId:targetCalId}];
-          syncSeAttivo(store.events, store.calendars, updated);
-          return updated;
-        });
-        return { ok:true };
+      }catch(e){
+        accodaOperazioneSync("insert", "modelli", {...payload, id:idLocale}, null, "Creazione modello");
+        rinumerazioniApplicate.forEach(({id,nuovoVal})=>
+          accodaOperazioneSync("update", "modelli", {sort_order:nuovoVal}, {id, user_id:userId}, "Rinumerazione posizioni modelli")
+        );
       }
-      return { ok:false, error:"Nessun dato restituito dal salvataggio." };
+      return { ok:true };
     }
   }
 
@@ -2690,13 +2683,20 @@ const importsRecenti = useMemo(()=>{
     // Con la nuova architettura (posizioni assolute, non riferimenti tra
     // modelli) l'eliminazione è semplice: nessun altro modello punta a
     // questo tramite id, quindi non serve "riparare" nessun riferimento.
-    const { error } = await dbDelete("modelli", {id, user_id:userId}, "Eliminazione modello");
-    if(error) return; // non rimuovo dalla UI se la cancellazione su Supabase non è andata a buon fine
+    // 1) SUBITO in locale.
     setModelli(prev=>{
       const updated=prev.filter(m=>m.id!==id);
       syncSeAttivo(store.events, store.calendars, updated);
       return updated;
     });
+    // 2) Backup su Supabase in background, con fallback in coda se offline.
+    const match = { id, user_id: userId };
+    try{
+      const { error } = await supabase.from("modelli").delete().match(match);
+      if(error) segnalaErroreDb(error, "Eliminazione modello (backup su Supabase)");
+    }catch(e){
+      accodaOperazioneSync("delete", "modelli", null, match, "Eliminazione modello");
+    }
   }
 
   // ── COLORI: aggiunta/rimozione dalla sezione + assegnazione esclusiva ai modelli
@@ -2778,26 +2778,54 @@ const importsRecenti = useMemo(()=>{
       griglia:data.griglia||{},
     };
     if(data.id){
-      const { error } = await dbUpdate("rotazioni", payload, {id:data.id, user_id:userId}, "Salvataggio rotazione");
-      if(error) return;
+      // 1) SUBITO in locale.
       setRotazioni(prev=>prev.map(r=>r.id===data.id?{...r,...data}:r));
+      // 2) Backup su Supabase in background.
+      const match = {id:data.id, user_id:userId};
+      try{
+        const { error } = await supabase.from("rotazioni").update(payload).match(match);
+        if(error) segnalaErroreDb(error, "Salvataggio rotazione (backup su Supabase)");
+      }catch(e){
+        accodaOperazioneSync("update", "rotazioni", payload, match, "Salvataggio rotazione");
+      }
     } else {
-      const {data:res, error} = await dbInsert("rotazioni", payload, "Creazione rotazione");
-      if(error) return;
-      if(res?.[0]) setRotazioni(prev=>[...prev,{...data,id:res[0].id,griglia:{}}]);
+      const idLocale = generaIdLocale();
+      // 1) SUBITO in locale.
+      setRotazioni(prev=>[...prev,{...data,id:idLocale,griglia:{}}]);
+      // 2) Backup su Supabase in background.
+      try{
+        const { error } = await supabase.from("rotazioni").insert({...payload, id:idLocale});
+        if(error) segnalaErroreDb(error, "Creazione rotazione (backup su Supabase)");
+      }catch(e){
+        accodaOperazioneSync("insert", "rotazioni", {...payload, id:idLocale}, null, "Creazione rotazione");
+      }
     }
   }
 
   async function deleteRotazione(id){
-    const { error } = await dbDelete("rotazioni", {id, user_id:userId}, "Eliminazione rotazione");
-    if(error) return;
+    // 1) SUBITO in locale.
     setRotazioni(prev=>prev.filter(r=>r.id!==id));
+    // 2) Backup su Supabase in background.
+    const match = {id, user_id:userId};
+    try{
+      const { error } = await supabase.from("rotazioni").delete().match(match);
+      if(error) segnalaErroreDb(error, "Eliminazione rotazione (backup su Supabase)");
+    }catch(e){
+      accodaOperazioneSync("delete", "rotazioni", null, match, "Eliminazione rotazione");
+    }
   }
 
   async function updateGrigliaRotazione(rotId, griglia){
-    const { error } = await dbUpdate("rotazioni", {griglia}, {id:rotId, user_id:userId}, "Aggiornamento griglia rotazione");
-    if(error) return;
+    // 1) SUBITO in locale.
     setRotazioni(prev=>prev.map(r=>r.id===rotId?{...r,griglia}:r));
+    // 2) Backup su Supabase in background.
+    const match = {id:rotId, user_id:userId};
+    try{
+      const { error } = await supabase.from("rotazioni").update({griglia}).match(match);
+      if(error) segnalaErroreDb(error, "Aggiornamento griglia rotazione (backup su Supabase)");
+    }catch(e){
+      accodaOperazioneSync("update", "rotazioni", {griglia}, match, "Aggiornamento griglia rotazione");
+    }
   }
 
   async function inserisciEventoGenerico(mod, dataEv, rotazioneId, nuoviEventiLocali, labelOverride=null, extra={}){
