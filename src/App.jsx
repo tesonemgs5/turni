@@ -8270,6 +8270,7 @@ function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, month, o
   const [step, setStep] = useState("menu"); // menu | incolla | riepilogo | registro
   const [testoJson, setTestoJson] = useState("");
   const [importando, setImportando] = useState(false);
+  const [incollando, setIncollando] = useState(false);
   const [errore, setErrore] = useState("");
   const [risultato, setRisultato] = useState(null);
   const [registro, setRegistro] = useState(null);
@@ -8401,16 +8402,30 @@ function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, month, o
               Va bene anche l'output "grezzo" di un OCR/AI esterno: non deve avere per forza questa struttura esatta,
               basta che ogni turno abbia una data (o un numero di giorno) e un titolo.
             </div>
-            <textarea value={testoJson} onChange={e=>setTestoJson(e.target.value)}
-              placeholder='[{"data":"2024-01-02","titolo":"T S","oraInizio":"07:45","oraFine":"14:00","auto":"","collega":"","note":""}]'
-              style={{width:"100%",minHeight:220,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
-                color:T.text,padding:10,fontSize:12,fontFamily:"monospace",boxSizing:"border-box",marginBottom:4}}/>
-            {/* Conferma visiva che l'incolla è stato ricevuto: su Android, incollare un testo
-                molto lungo in una textarea controllata da React può richiedere un attimo prima
-                che il contenuto ridisegnato sia visibile, e in quella finestra non c'è nessun
-                segnale che dica "è andato a buon fine" — questo contatore, comparendo/
-                aggiornandosi nello stesso render del testo, è la prova che il paste è stato
-                recepito, senza dover aggiungere un caricamento finto. */}
+            <div style={{position:"relative"}}>
+              <textarea value={testoJson}
+                onPaste={()=>{
+                  // Si attiva PRIMA che il testo incollato venga renderizzato: su Android,
+                  // incollare un blob enorme in una textarea controllata da React può bloccare
+                  // il thread per un momento, e in quella finestra non c'era nessun segnale che
+                  // il paste fosse partito. Il setTimeout(0) spegne lo spinner solo al giro di
+                  // render successivo, quando il testo è già visibile.
+                  setIncollando(true);
+                  setTimeout(()=>setIncollando(false), 0);
+                }}
+                onChange={e=>setTestoJson(e.target.value)}
+                placeholder='[{"data":"2024-01-02","titolo":"T S","oraInizio":"07:45","oraFine":"14:00","auto":"","collega":"","note":""}]'
+                style={{width:"100%",minHeight:220,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
+                  color:T.text,padding:10,fontSize:12,fontFamily:"monospace",boxSizing:"border-box",marginBottom:4}}/>
+              {incollando && (
+                <div style={{position:"absolute",inset:0,background:"rgba(255,255,255,0.85)",
+                  borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                  <span style={{width:48,height:48,border:"5px solid #ddd",borderTopColor:"#000",
+                    borderRadius:"50%",display:"inline-block",animation:"spin 0.6s linear infinite"}}/>
+                </div>
+              )}
+            </div>
+            <style>{"@keyframes spin{to{transform:rotate(360deg)}}"}</style>
             <div style={{fontSize:11,color:T.sub,marginBottom:8,textAlign:"right"}}>
               {testoJson ? `${testoJson.length.toLocaleString("it-IT")} caratteri incollati` : ""}
             </div>
