@@ -520,10 +520,10 @@ function classificaNoteVecchiaApp(noteArray){
 // caso o inventato.
 function normalizzaRigheImportGrezzo(input, annoDefault, meseDefault){
   const righe = [];
-  const CHIAVI_GESTITE = ["data","giorno","titolo","turno","codice","mese","anno"];
+  const CHIAVI_GESTITE = ["data","giorno","titolo","turno","modello","codice","mese","anno"];
 
   function estraiTitolo(o){
-    const v = campoCI(o, "titolo", "turno", "codice");
+    const v = campoCI(o, "titolo", "turno", "modello", "codice");
     return v!=null ? pulisciTestoImport(v) : "";
   }
   function estraiGiornoNumero(o){
@@ -3570,7 +3570,7 @@ const importsRecenti = useMemo(()=>{
             borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:"#0f172a",flexShrink:0}}>
           ✏️
         </button>
-        
+
         <button onClick={()=>{
             setEditMode(em=>{
               const next=!em;
@@ -8026,7 +8026,7 @@ function RotazioneForm({T, form, setForm, accent, modelli, onSave, sortedModelli
           style={{width:"100%",padding:"14px 16px",background:"transparent",border:"none",
             outline:"none",color:T.text,fontSize:16,fontWeight:600,boxSizing:"border-box"}}/>
       </div>
-      
+
       {form.tipo==="domeniche"&&(
         <div style={{marginBottom:16}}>
           <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>MODELLI</div>
@@ -9736,4 +9736,3 @@ function NLRSView({rot, T, accent, modelli}){
   );
 }
 // #endregion
-
