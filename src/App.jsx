@@ -386,9 +386,19 @@ function pulisciTestoImport(testoRaw){
 // esiste o è vuoto.
 function campoCI(o, ...nomi){
   if(!o || typeof o!=="object") return undefined;
-  const chiavi = Object.keys(o);
+  // Mappa chiave-lowercase -> chiave-originale calcolata una sola volta per
+  // oggetto (cache su una proprietà non enumerabile), invece di rifare
+  // Object.keys()+find() per ogni singolo nome cercato: su import grandi con
+  // molte righe e molti campi per riga questo era il costo dominante che
+  // teneva il thread occupato e bloccava la UI durante l'importazione.
+  let mappa = o.__ciMap;
+  if(!mappa){
+    mappa = {};
+    for(const k of Object.keys(o)) mappa[k.toLowerCase()] = k;
+    Object.defineProperty(o, "__ciMap", { value: mappa, enumerable:false, configurable:true });
+  }
   for(const nome of nomi){
-    const trovata = chiavi.find(k=>k.toLowerCase()===nome.toLowerCase());
+    const trovata = mappa[nome.toLowerCase()];
     if(trovata!==undefined && o[trovata]!=null && o[trovata]!=="") return o[trovata];
   }
   return undefined;
@@ -8268,11 +8278,13 @@ function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, month, o
   async function elabora(testo){
     if(importando) return;
     setImportando(true); setErrore("");
-    // Lascia che React dipinga lo stato "Importazione in corso..." prima di
-    // eseguire il parsing/normalizzazione, che su testi OCR grossi può bloccare
-    // il thread per un momento: senza questo yield il bottone resta con la
-    // label vecchia finché il lavoro non finisce, e sembra che non sia successo nulla.
-    await new Promise(r=>setTimeout(r,30));
+    // Il parsing vero (estraiJsonDaTesto + normalizzazione ricorsiva riga per
+    // riga) è sincrono e su un JSON grande può durare secoli: se lo lanciamo
+    // subito dopo setImportando, il browser non fa in tempo a dipingere lo
+    // spinner prima di restare bloccato sul calcolo, e sembra tutto fermo.
+    // Un doppio giro di rAF+setTimeout(0) garantisce che il frame con lo
+    // spinner venga effettivamente disegnato prima di iniziare il lavoro pesante.
+    await new Promise(r=>requestAnimationFrame(()=>setTimeout(r,0)));
     let parsed;
     try{
       // estraiJsonDaTesto toglie fence markdown e artefatti OCR appiccicati
@@ -8392,7 +8404,16 @@ function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, month, o
             <textarea value={testoJson} onChange={e=>setTestoJson(e.target.value)}
               placeholder='[{"data":"2024-01-02","titolo":"T S","oraInizio":"07:45","oraFine":"14:00","auto":"","collega":"","note":""}]'
               style={{width:"100%",minHeight:220,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
-                color:T.text,padding:10,fontSize:12,fontFamily:"monospace",boxSizing:"border-box",marginBottom:12}}/>
+                color:T.text,padding:10,fontSize:12,fontFamily:"monospace",boxSizing:"border-box",marginBottom:4}}/>
+            {/* Conferma visiva che l'incolla è stato ricevuto: su Android, incollare un testo
+                molto lungo in una textarea controllata da React può richiedere un attimo prima
+                che il contenuto ridisegnato sia visibile, e in quella finestra non c'è nessun
+                segnale che dica "è andato a buon fine" — questo contatore, comparendo/
+                aggiornandosi nello stesso render del testo, è la prova che il paste è stato
+                recepito, senza dover aggiungere un caricamento finto. */}
+            <div style={{fontSize:11,color:T.sub,marginBottom:8,textAlign:"right"}}>
+              {testoJson ? `${testoJson.length.toLocaleString("it-IT")} caratteri incollati` : ""}
+            </div>
             {errore && <div style={{color:"#ef4444",fontSize:12,marginBottom:12}}>{errore}</div>}
             <button disabled={importando} onClick={()=>elabora(testoJson)}
               style={{width:"100%",background:accent,border:"none",borderRadius:10,color:"#fff",
