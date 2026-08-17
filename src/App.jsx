@@ -8268,6 +8268,11 @@ function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, month, o
   async function elabora(testo){
     if(importando) return;
     setImportando(true); setErrore("");
+    // Lascia che React dipinga lo stato "Importazione in corso..." prima di
+    // eseguire il parsing/normalizzazione, che su testi OCR grossi può bloccare
+    // il thread per un momento: senza questo yield il bottone resta con la
+    // label vecchia finché il lavoro non finisce, e sembra che non sia successo nulla.
+    await new Promise(r=>setTimeout(r,30));
     let parsed;
     try{
       // estraiJsonDaTesto toglie fence markdown e artefatti OCR appiccicati
@@ -8392,9 +8397,16 @@ function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, month, o
             <button disabled={importando} onClick={()=>elabora(testoJson)}
               style={{width:"100%",background:accent,border:"none",borderRadius:10,color:"#fff",
                 padding:"12px 0",fontWeight:800,fontSize:14,cursor:importando?"default":"pointer",
-                opacity:importando?0.6:1,marginBottom:10}}>
+                opacity:importando?0.6:1,marginBottom:10,display:"flex",alignItems:"center",
+                justifyContent:"center",gap:8}}>
+              {importando && (
+                <span style={{width:14,height:14,border:"2px solid rgba(255,255,255,0.4)",
+                  borderTopColor:"#fff",borderRadius:"50%",display:"inline-block",
+                  animation:"spin 0.7s linear infinite"}}/>
+              )}
               {importando?"Importazione in corso...":"Importa"}
             </button>
+            <style>{"@keyframes spin{to{transform:rotate(360deg)}}"}</style>
             <button onClick={()=>{setStep("menu");setErrore("");}}
               style={{width:"100%",background:"none",border:"none",color:T.sub,
                 padding:"10px 0",fontWeight:700,fontSize:12,cursor:"pointer"}}>‹ Indietro</button>
