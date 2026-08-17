@@ -386,9 +386,19 @@ function pulisciTestoImport(testoRaw){
 // esiste o è vuoto.
 function campoCI(o, ...nomi){
   if(!o || typeof o!=="object") return undefined;
-  const chiavi = Object.keys(o);
+  // Mappa chiave-lowercase -> chiave-originale calcolata una sola volta per
+  // oggetto (cache su una proprietà non enumerabile), invece di rifare
+  // Object.keys()+find() per ogni singolo nome cercato: su import grandi con
+  // molte righe e molti campi per riga questo era il costo dominante che
+  // teneva il thread occupato e bloccava la UI durante l'importazione.
+  let mappa = o.__ciMap;
+  if(!mappa){
+    mappa = {};
+    for(const k of Object.keys(o)) mappa[k.toLowerCase()] = k;
+    Object.defineProperty(o, "__ciMap", { value: mappa, enumerable:false, configurable:true });
+  }
   for(const nome of nomi){
-    const trovata = chiavi.find(k=>k.toLowerCase()===nome.toLowerCase());
+    const trovata = mappa[nome.toLowerCase()];
     if(trovata!==undefined && o[trovata]!=null && o[trovata]!=="") return o[trovata];
   }
   return undefined;
@@ -8260,14 +8270,24 @@ function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, month, o
   const [step, setStep] = useState("menu"); // menu | incolla | riepilogo | registro
   const [testoJson, setTestoJson] = useState("");
   const [importando, setImportando] = useState(false);
+  const [incollando, setIncollando] = useState(false);
   const [errore, setErrore] = useState("");
   const [risultato, setRisultato] = useState(null);
   const [registro, setRegistro] = useState(null);
   const fileInputRef = useRef(null);
+  const testoJsonRef = useRef(null);
+  const syncTimeoutRef = useRef(null);
 
   async function elabora(testo){
     if(importando) return;
     setImportando(true); setErrore("");
+    // Il parsing vero (estraiJsonDaTesto + normalizzazione ricorsiva riga per
+    // riga) è sincrono e su un JSON grande può durare secoli: se lo lanciamo
+    // subito dopo setImportando, il browser non fa in tempo a dipingere lo
+    // spinner prima di restare bloccato sul calcolo, e sembra tutto fermo.
+    // Un doppio giro di rAF+setTimeout(0) garantisce che il frame con lo
+    // spinner venga effettivamente disegnato prima di iniziare il lavoro pesante.
+    await new Promise(r=>requestAnimationFrame(()=>setTimeout(r,0)));
     let parsed;
     try{
       // estraiJsonDaTesto toglie fence markdown e artefatti OCR appiccicati
@@ -8384,17 +8404,54 @@ function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, month, o
               Va bene anche l'output "grezzo" di un OCR/AI esterno: non deve avere per forza questa struttura esatta,
               basta che ogni turno abbia una data (o un numero di giorno) e un titolo.
             </div>
-            <textarea value={testoJson} onChange={e=>setTestoJson(e.target.value)}
-              placeholder='[{"data":"2024-01-02","titolo":"T S","oraInizio":"07:45","oraFine":"14:00","auto":"","collega":"","note":""}]'
-              style={{width:"100%",minHeight:220,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
-                color:T.text,padding:10,fontSize:12,fontFamily:"monospace",boxSizing:"border-box",marginBottom:12}}/>
+            <div style={{position:"relative"}}>
+              <textarea ref={testoJsonRef} defaultValue={testoJson}
+                onPaste={()=>{
+                  // Textarea non controllata: l'incolla è gestito dal browser nativamente,
+                  // React non deve ridisegnare nulla durante l'operazione stessa (era questo il
+                  // blocco che su telefono impediva anche allo spinner di comparire). Lo
+                  // spinner si accende subito qui...
+                  setIncollando(true);
+                }}
+                onInput={()=>{
+                  // ...e la sincronizzazione con lo state React (necessaria solo per abilitare
+                  // il bottone Importa e mostrare il contatore) avviene con un debounce breve,
+                  // fuori dal percorso critico dell'incolla stesso.
+                  if(syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+                  syncTimeoutRef.current = setTimeout(()=>{
+                    setTestoJson(testoJsonRef.current?.value || "");
+                    setIncollando(false);
+                  }, 50);
+                }}
+                placeholder='[{"data":"2024-01-02","titolo":"T S","oraInizio":"07:45","oraFine":"14:00","auto":"","collega":"","note":""}]'
+                style={{width:"100%",minHeight:220,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
+                  color:T.text,padding:10,fontSize:12,fontFamily:"monospace",boxSizing:"border-box",marginBottom:4}}/>
+              {incollando && (
+                <div style={{position:"absolute",inset:0,background:"rgba(255,255,255,0.85)",
+                  borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                  <span style={{width:48,height:48,border:"5px solid #ddd",borderTopColor:"#000",
+                    borderRadius:"50%",display:"inline-block",animation:"spin 0.6s linear infinite"}}/>
+                </div>
+              )}
+            </div>
+            <style>{"@keyframes spin{to{transform:rotate(360deg)}}"}</style>
+            <div style={{fontSize:11,color:T.sub,marginBottom:8,textAlign:"right"}}>
+              {testoJson ? `${testoJson.length.toLocaleString("it-IT")} caratteri incollati` : ""}
+            </div>
             {errore && <div style={{color:"#ef4444",fontSize:12,marginBottom:12}}>{errore}</div>}
-            <button disabled={importando} onClick={()=>elabora(testoJson)}
+            <button disabled={importando} onClick={()=>elabora(testoJsonRef.current?.value ?? testoJson)}
               style={{width:"100%",background:accent,border:"none",borderRadius:10,color:"#fff",
                 padding:"12px 0",fontWeight:800,fontSize:14,cursor:importando?"default":"pointer",
-                opacity:importando?0.6:1,marginBottom:10}}>
+                opacity:importando?0.6:1,marginBottom:10,display:"flex",alignItems:"center",
+                justifyContent:"center",gap:8}}>
+              {importando && (
+                <span style={{width:14,height:14,border:"2px solid rgba(255,255,255,0.4)",
+                  borderTopColor:"#fff",borderRadius:"50%",display:"inline-block",
+                  animation:"spin 0.7s linear infinite"}}/>
+              )}
               {importando?"Importazione in corso...":"Importa"}
             </button>
+            <style>{"@keyframes spin{to{transform:rotate(360deg)}}"}</style>
             <button onClick={()=>{setStep("menu");setErrore("");}}
               style={{width:"100%",background:"none",border:"none",color:T.sub,
                 padding:"10px 0",fontWeight:700,fontSize:12,cursor:"pointer"}}>‹ Indietro</button>
