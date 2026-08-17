@@ -8406,24 +8406,30 @@ function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, month, o
             </div>
             <div style={{position:"relative"}}>
               <textarea ref={testoJsonRef} defaultValue={testoJson}
+                onFocus={()=>{
+                  // Si accende appena il box riceve il focus (primo tap), non solo quando il
+                  // testo cambia: su Android il blocco reale avviene a livello di sistema
+                  // mentre il testo enorme viene scritto nel campo nativo, prima che qualunque
+                  // evento JS possa scattare — quindi l'unico momento affidabile per accendere
+                  // lo spinner è PRIMA, appena l'utente entra nel campo per incollare. Se è solo
+                  // un tap per scrivere a mano, lo spegne subito dopo (nessun testo arriva).
+                  setIncollando(true);
+                  if(syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+                  syncTimeoutRef.current = setTimeout(()=>setIncollando(false), 600);
+                }}
                 onInput={e=>{
-                  // Attivazione tramite "input", non "paste": sul menu contestuale nativo di
-                  // Android ("Incolla" a tocco lungo) l'evento "paste" del DOM spesso non
-                  // scatta affatto, mentre "input" scatta sempre per qualunque modifica al
-                  // contenuto, incolla compreso — è la base per rilevare l'incolla in modo
-                  // affidabile su ogni piattaforma.
                   const lunghezzaAttuale = e.target.value.length;
-                  const salto = lunghezzaAttuale - (testoJsonRef.current?.__ultimaLunghezza || 0);
-                  if(salto > 50) setIncollando(true); // salto grande = incolla, non battitura
                   if(testoJsonRef.current) testoJsonRef.current.__ultimaLunghezza = lunghezzaAttuale;
-                  // La sincronizzazione con lo state React (necessaria solo per abilitare il
-                  // bottone Importa e mostrare il contatore) avviene con un debounce breve,
-                  // fuori dal percorso critico dell'incolla stesso.
+                  // Spegne lo spinner solo quando il testo si è stabilizzato (nessuna modifica
+                  // per 400ms): se il thread era bloccato a scrivere un testo enorme, l'evento
+                  // input arriva tutto insieme alla fine, quindi questo timeout scade subito
+                  // dopo — lo spinner resta visibile per l'intera durata del blocco reale.
+                  setIncollando(true);
                   if(syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
                   syncTimeoutRef.current = setTimeout(()=>{
                     setTestoJson(testoJsonRef.current?.value || "");
                     setIncollando(false);
-                  }, 50);
+                  }, 400);
                 }}
                 placeholder='[{"data":"2024-01-02","titolo":"T S","oraInizio":"07:45","oraFine":"14:00","auto":"","collega":"","note":""}]'
                 style={{width:"100%",minHeight:220,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
