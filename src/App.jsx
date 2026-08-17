@@ -8405,15 +8405,26 @@ function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, month, o
             <div style={{position:"relative"}}>
               <textarea value={testoJson}
                 onPaste={()=>{
-                  // Si attiva PRIMA che il testo incollato venga renderizzato: su Android,
-                  // incollare un blob enorme in una textarea controllata da React può bloccare
-                  // il thread per un momento, e in quella finestra non c'era nessun segnale che
-                  // il paste fosse partito. Il setTimeout(0) spegne lo spinner solo al giro di
-                  // render successivo, quando il testo è già visibile.
+                  // Attivazione primaria: scatta sull'evento paste nativo, prima che il testo
+                  // incollato venga renderizzato.
                   setIncollando(true);
+                }}
+                onInput={e=>{
+                  // Fallback: su alcune tastiere/browser Android l'evento "paste" non scatta in
+                  // modo affidabile (l'incolla arriva come sequenza di "input"), quindi onPaste
+                  // da solo non basta — senza questo, su telefono lo spinner non compariva mai.
+                  // Un salto di più di 200 caratteri in un colpo solo è quasi certamente un
+                  // incolla, non battitura, e attiva lo stesso spinner.
+                  const nuovaLunghezza = e.target.value.length;
+                  if(nuovaLunghezza - testoJson.length > 200) setIncollando(true);
+                }}
+                onChange={e=>{
+                  setTestoJson(e.target.value);
+                  // Spegne lo spinner solo al giro di render successivo, quando il testo
+                  // incollato è già visibile nella textarea (non prima, altrimenti sparirebbe
+                  // mentre il browser sta ancora ridisegnando un testo enorme).
                   setTimeout(()=>setIncollando(false), 0);
                 }}
-                onChange={e=>setTestoJson(e.target.value)}
                 placeholder='[{"data":"2024-01-02","titolo":"T S","oraInizio":"07:45","oraFine":"14:00","auto":"","collega":"","note":""}]'
                 style={{width:"100%",minHeight:220,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
                   color:T.text,padding:10,fontSize:12,fontFamily:"monospace",boxSizing:"border-box",marginBottom:4}}/>
