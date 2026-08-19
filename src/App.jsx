@@ -1387,6 +1387,8 @@ export default function App({ session }){
           calendarId:m.calendar_id||null,
           categoria:(m.categoria==="primo"||m.categoria==="secondo")?m.categoria:"",
           categoriaAppAuto:(m.categoria_app_auto==="app"||m.categoria_app_auto==="auto")?m.categoria_app_auto:((m.categoria==="app"||m.categoria==="auto")?m.categoria:""),
+          turnoVuoto: !!m.categoria_turno_vuoto,
+          appAutoVuoto: !!m.categoria_app_auto_vuoto,
         }));
 
         const rotazioniMappate = (rotazioniDb||[]).map(r=>({
@@ -3501,7 +3503,7 @@ const importsRecenti = useMemo(()=>{
           // ── Asse 1: TURNO (1°/2°) — indipendente, decide su categoria manuale del
           // modello, poi override di questo report, poi automatico per orario.
           // Se l'utente ha esplicitamente deselezionato questo asse (modello o report), niente auto: nessun gruppo.
-          const gruppoTurno = (modelloEvt?.categoria_turno_vuoto || escludiTurno)
+          const gruppoTurno = (modelloEvt?.turnoVuoto || escludiTurno)
             ? null
             : ((modelloEvt?.categoria==="primo"||modelloEvt?.categoria==="secondo")
               ? modelloEvt.categoria
@@ -3509,7 +3511,7 @@ const importsRecenti = useMemo(()=>{
 
           // ── Asse 2: APP/AUTO — indipendente, stessa priorità ma decide su titolo.
           // Se l'utente ha esplicitamente deselezionato questo asse (modello o report), niente auto: nessun gruppo.
-          const gruppoAppAuto = (modelloEvt?.categoria_app_auto_vuoto || escludiAppAuto)
+          const gruppoAppAuto = (modelloEvt?.appAutoVuoto || escludiAppAuto)
             ? null
             : ((modelloEvt?.categoriaAppAuto==="app"||modelloEvt?.categoriaAppAuto==="auto")
               ? modelloEvt.categoriaAppAuto
@@ -4443,10 +4445,18 @@ const importsRecenti = useMemo(()=>{
                     onToggleSelect={()=>setSelectedModelloIds(prev=>prev.includes(m.id)?prev.filter(id=>id!==m.id):[...prev,m.id])}
                     onEdit={modalitaSpostamento?(()=>{}):(()=>{ setEditModello(m); setModelForm({
                       ...m,
-                      categoria:(m.categoria==="primo"||m.categoria==="secondo")?m.categoria:"",
-                      categoriaAppAuto:(m.categoria_app_auto==="app"||m.categoria_app_auto==="auto")?m.categoria_app_auto:((m.categoria==="app"||m.categoria==="auto")?m.categoria:""),
-                      turnoVuoto: !!m.categoria_turno_vuoto,
-                      appAutoVuoto: !!m.categoria_app_auto_vuoto
+                      // FIX: prima qui si leggevano m.categoria_app_auto /
+                      // m.categoria_turno_vuoto / m.categoria_app_auto_vuoto,
+                      // campi snake_case che esistono solo nella riga grezza
+                      // di Supabase — sull'oggetto "m" (già mappato in JS,
+                      // vedi il mapping più in alto nel file) queste chiavi
+                      // sono sempre undefined. Il risultato era che ad ogni
+                      // apertura di "Modifica" i tre valori venivano azzerati
+                      // subito dopo che "...m" li aveva già portati corretti,
+                      // facendo sembrare impossibile selezionare o mantenere
+                      // una categoria APP/AUTO o TURNO. "...m" da solo porta
+                      // già m.categoria, m.categoriaAppAuto, m.turnoVuoto e
+                      // m.appAutoVuoto nel formato giusto: non serve altro.
                     }); setOrigineModelForm("lista"); setShowModelForm(true); })}
                     onDelete={()=>deleteModello(m.id)}
                     // Frecce ▲▼: sempre disponibili, spostano di UNA posizione
@@ -4539,10 +4549,9 @@ const importsRecenti = useMemo(()=>{
                     const m=modelli.find(x=>x.id===selectedModelloIds[0]);
                     if(m){ setEditModello(m); setModelForm({
                       ...m,
-                      categoria:(m.categoria==="primo"||m.categoria==="secondo")?m.categoria:"",
-                      categoriaAppAuto:(m.categoria_app_auto==="app"||m.categoria_app_auto==="auto")?m.categoria_app_auto:((m.categoria==="app"||m.categoria==="auto")?m.categoria:""),
-                      turnoVuoto: !!m.categoria_turno_vuoto,
-                      appAutoVuoto: !!m.categoria_app_auto_vuoto
+                      // Stesso fix del punto gemello sopra: "...m" porta già
+                      // i campi corretti in camelCase, non serve rileggerli
+                      // da chiavi snake_case che qui non esistono.
                     }); setOrigineModelForm("lista"); setShowModelForm(true); setSelectedModelloIds([]); }
                   }}
                   style={{background:accent,border:"none",borderRadius:8,
