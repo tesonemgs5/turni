@@ -676,6 +676,63 @@ function normalizzaRigheImportGrezzo(input, annoDefault, meseDefault){
   return righe;
 }
 
+// Riconosce il formato testuale "a blocchi" tipo:
+//   Giovedi 01/01/2026
+//     Turno:    DF AVVOCATA APPIEDATO
+//     Orario:   14:00 - 20:15  (6h 15m)
+//     Auto:     -
+//     Collega:  MORRA
+//     Note:     -
+// (non è JSON: è l'export testuale/OCR di un turnario). Ogni blocco inizia
+// con una riga "NomeGiorno GG/MM/AAAA" e prosegue con righe "Campo: valore"
+// fino al blocco successivo. "-" o vuoto nei campi valgono come assenti.
+// Restituisce un array di oggetti compatibile con normalizzaRigheImportGrezzo.
+function normalizzaTestoGrezzoTurni(testoRaw){
+  const testo = pulisciTestoImport(testoRaw);
+  if(!testo) return [];
+  const righeTesto = testo.split(/\r?\n/);
+  const RIGA_DATA = /^[A-Za-zÀ-ù]+\s+(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})\s*$/;
+  const RIGA_CAMPO = /^\s*([A-Za-zÀ-ùéé][\w àèéìòù]*)\s*:\s*(.*)$/i;
+
+  const blocchi = [];
+  let corrente = null;
+  for(const rigaOrig of righeTesto){
+    const riga = rigaOrig.trim();
+    if(!riga) continue;
+    const mData = RIGA_DATA.exec(riga);
+    if(mData){
+      corrente = { data: mData[1], campi: {} };
+      blocchi.push(corrente);
+      continue;
+    }
+    if(!corrente) continue;
+    const mCampo = RIGA_CAMPO.exec(riga);
+    if(mCampo){
+      const chiave = mCampo[1].trim().toLowerCase();
+      let valore = mCampo[2].trim();
+      if(valore==="-") valore = "";
+      corrente.campi[chiave] = valore;
+    }
+  }
+
+  const risultato = [];
+  for(const b of blocchi){
+    const dataISO = dataSlashToISO(b.data);
+    if(!dataISO) continue;
+    const titolo = b.campi["turno"] || "";
+    if(!titolo) continue;
+    // "Orario" tipo "14:00 - 20:15  (6h 15m)" o "Tutto il giorno": scarta la
+    // durata fra parentesi prima di passarlo a dividiOrarioTesto.
+    const orarioGrezzo = (b.campi["orario"]||"").replace(/\([^)]*\)\s*$/,"").trim();
+    const { inizio, fine } = dividiOrarioTesto(orarioGrezzo);
+    const auto = b.campi["auto"]||"";
+    const collega = b.campi["collega"]||"";
+    const note = b.campi["note"]||"";
+    risultato.push({ data: dataISO, titolo, oraInizio: inizio, oraFine: fine, auto, collega, note });
+  }
+  return risultato;
+}
+
 function easter(y){
   const a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4;
   const f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30;
@@ -8341,16 +8398,23 @@ function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, month, o
     // Un doppio giro di rAF+setTimeout(0) garantisce che il frame con lo
     // spinner venga effettivamente disegnato prima di iniziare il lavoro pesante.
     await new Promise(r=>requestAnimationFrame(()=>setTimeout(r,0)));
-    let parsed;
+    let parsed = null, righeDaTesto = null;
     try{
       // estraiJsonDaTesto toglie fence markdown e artefatti OCR appiccicati
       // prima/dopo le parentesi, che altrimenti fanno fallire JSON.parse
       // anche quando il JSON dentro è valido.
       parsed = JSON.parse(estraiJsonDaTesto((testo||"").trim()));
     }catch(err){
-      setErrore("Il contenuto non è un JSON valido. Controlla di aver incluso tutte le parentesi [ ] o { }.");
-      setImportando(false);
-      return;
+      // Non è JSON: prova a riconoscerlo come testo "a blocchi" tipo export
+      // turnario (righe "NomeGiorno GG/MM/AAAA" seguite da "Campo: valore").
+      // Solo se anche questo fallisce (nessuna riga riconosciuta) si mostra
+      // l'errore di JSON non valido.
+      righeDaTesto = normalizzaTestoGrezzoTurni(testo);
+      if(righeDaTesto.length===0){
+        setErrore("Il contenuto non è un JSON valido né un testo turni riconoscibile. Controlla di aver incluso tutte le parentesi [ ] o { } (per JSON) oppure che ogni turno abbia una riga data e un campo Turno (per il testo).");
+        setImportando(false);
+        return;
+      }
     }
     // Il formato "canonico" è un array piatto [{data, titolo, oraInizio,
     // oraFine, auto, collega, note}], ma qui arriva spesso l'output libero
@@ -8362,7 +8426,7 @@ function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, month, o
     // resta comunque cercato e validato dopo (in importaTurniPdfJson): un
     // titolo non riconosciuto in questo calendario finisce comunque tra i
     // "mancanti"/"sospetti" nel riepilogo, non viene importato a caso.
-    const righeValide = normalizzaRigheImportGrezzo(parsed, year, month+1);
+    const righeValide = righeDaTesto ? righeDaTesto : normalizzaRigheImportGrezzo(parsed, year, month+1);
     if(righeValide.length===0){
       setErrore("Nessuna riga turno riconosciuta in questo JSON, neanche provando formati alternativi (giorno numerico, orario unico, struttura annidata sotto un'altra chiave...). Controlla che ci sia almeno una data (o un numero di giorno) e un titolo per ogni turno.");
       setImportando(false);
@@ -8378,8 +8442,8 @@ function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, month, o
     const file = e.target.files?.[0];
     e.target.value = "";
     if(!file) return;
-    if(!/\.json$/i.test(file.name)){
-      setErrore("Seleziona un file .json.");
+    if(!/\.(json|txt)$/i.test(file.name)){
+      setErrore("Seleziona un file .json o .txt.");
       return;
     }
     const reader = new FileReader();
@@ -8400,17 +8464,17 @@ function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, month, o
           <div style={{padding:20}}>
             <div style={{fontSize:16,fontWeight:900,color:T.text,marginBottom:14}}>Importa turni da JSON</div>
 
-            <input ref={fileInputRef} type="file" accept=".json,application/json"
+            <input ref={fileInputRef} type="file" accept=".json,application/json,.txt,text/plain"
               onChange={handleFileChange} style={{display:"none"}}/>
             <button onClick={()=>{setErrore("");fileInputRef.current?.click();}}
               style={{width:"100%",background:accent,border:"none",borderRadius:10,color:"#fff",
                 padding:"12px 0",fontWeight:800,fontSize:14,cursor:"pointer",marginBottom:10}}>
-              📄 Carica file .json
+              📄 Carica file .json o .txt
             </button>
             <button onClick={()=>{setErrore("");setStep("incolla");}}
               style={{width:"100%",background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,color:T.text,
                 padding:"12px 0",fontWeight:800,fontSize:14,cursor:"pointer",marginBottom:16}}>
-              📋 Incolla testo JSON
+              📋 Incolla testo (JSON o turni)
             </button>
 
             {errore && <div style={{color:"#ef4444",fontSize:12,marginBottom:14}}>{errore}</div>}
@@ -8452,10 +8516,11 @@ function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, month, o
 
         {step==="incolla" && (
           <div style={{padding:20}}>
-            <div style={{fontSize:16,fontWeight:900,color:T.text,marginBottom:14}}>Incolla JSON</div>
+            <div style={{fontSize:16,fontWeight:900,color:T.text,marginBottom:14}}>Incolla JSON o testo turni</div>
             <div style={{fontSize:11,color:T.sub,marginBottom:8}}>
-              Va bene anche l'output "grezzo" di un OCR/AI esterno: non deve avere per forza questa struttura esatta,
-              basta che ogni turno abbia una data (o un numero di giorno) e un titolo.
+              Va bene anche l'output "grezzo" di un OCR/AI esterno, o un testo semplice tipo:
+              "Giovedi 01/01/2026" seguito da righe "Turno:", "Orario:", "Auto:", "Collega:", "Note:".
+              Basta che ogni turno abbia una data e un titolo (campo Turno).
             </div>
             <div style={{position:"relative"}}>
               <textarea ref={testoJsonRef} defaultValue={testoJson}
