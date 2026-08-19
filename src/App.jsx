@@ -533,7 +533,7 @@ function normalizzaRigheImportGrezzo(input, annoDefault, meseDefault){
   const CHIAVI_GESTITE = ["data","giorno","titolo","turno","modello","codice","mese","anno"];
 
   function estraiTitolo(o){
-    const v = campoCI(o, "titolo", "turno", "modello", "codice");
+    const v = campoCI(o, "titolo", "turno", "modello", "codice", "nome_turno");
     return v!=null ? pulisciTestoImport(v) : "";
   }
   function estraiGiornoNumero(o){
