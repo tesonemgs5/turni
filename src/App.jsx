@@ -3130,7 +3130,7 @@ const importsRecenti = useMemo(()=>{
   }
 
   async function importaTurniPdfJson(righeJson){
-    const risultatoVuoto = { nAggiunti:0, nSostituiti:0, nInvariati:0, mancanti:[], sospetti:[], importId:null };
+    const risultatoVuoto = { nAggiunti:0, nSostituiti:0, nInvariati:0, mancanti:[], sospetti:[], importId:null, sostituzioni:[] };
     if(!userId || !calId || !righeJson?.length) return risultatoVuoto;
 
     const importId = `imp_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
@@ -3139,6 +3139,7 @@ const importsRecenti = useMemo(()=>{
     const mancanti = [];
     const sospetti = [];
     let nAggiunti=0, nSostituiti=0, nInvariati=0;
+    const sostituzioni = [];
 
     // Separo le righe di protrazione dalle righe di turno normali: le
     // prime non generano un evento proprio, vengono agganciate al turno
@@ -3190,7 +3191,23 @@ const importsRecenti = useMemo(()=>{
         if(invariato){ nInvariati++; continue; }
         const [yy,mm,dd] = dateKey.split("-").map(Number);
         const giornoSett = NOMI_GIORNI_IT[new Date(yy,mm-1,dd).getDay()];
-        alert(`Sostituito: ${giornoSett} ${fmtDataIT(dateKey)} — ${mod.titolo}`);
+        // Niente più alert() per ogni singola riga: si accoda il dettaglio
+        // (titolo vecchio -> nuovo, e stesso per orario/auto/collega/note se
+        // cambiati) e si mostra tutto insieme nel riepilogo finale, un solo
+        // popup con l'elenco completo invece di un click per ogni turno.
+        sostituzioni.push({
+          data: dateKey, giornoSett,
+          vecchio: {
+            titolo: esistente.titolo || esistente.modelloTitolo || "",
+            oraInizio: esistente.oraInizio || "", oraFine: esistente.oraFine || "",
+            note: esistente.note || "", collega: esistente.collega || "", auto: esistente.auto || "",
+          },
+          nuovo: {
+            titolo: mod.titolo || "",
+            oraInizio: mod.inizio || "", oraFine: mod.fine || "",
+            note, collega, auto,
+          },
+        });
         idsDaCancellare.push(esistente.id);
         nSostituiti++;
       } else {
@@ -3237,7 +3254,7 @@ const importsRecenti = useMemo(()=>{
     });
 
     registraProblemiImport(mancanti, sospetti);
-    return { nAggiunti, nSostituiti, nInvariati, mancanti, sospetti, importId };
+    return { nAggiunti, nSostituiti, nInvariati, mancanti, sospetti, importId, sostituzioni };
   }
 
   async function delTuttiEventiImport(importId, cId){
@@ -8618,6 +8635,43 @@ function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, month, o
                       borderBottom: i<risultato.sospetti.length-1?"1px solid #ddd":"none"}}>
                       {fmtDataIT(m.data)} — {m.titolo} {m.oraInizio?`(${m.oraInizio}-${m.oraFine})`:"(nessun orario nel file)"}
                       {" — "}{m.motivo==="ambiguo"?"più modelli con questo titolo":"orario diverso dal modello salvato"}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {risultato.sostituzioni?.length>0 && (
+              <div>
+                <div style={{fontSize:12,fontWeight:800,color:T.text,marginBottom:8}}>
+                  ♻️ Dettaglio {risultato.sostituzioni.length} sostituzioni:
+                </div>
+                <div style={{maxHeight:280,overflowY:"auto",background:"#fff",border:"1px solid #ddd",borderRadius:10,padding:10,marginBottom:14}}>
+                  {risultato.sostituzioni.map((s,i)=>(
+                    <div key={i} style={{fontSize:13,color:"#000",padding:"8px 0",
+                      borderBottom: i<risultato.sostituzioni.length-1?"1px solid #ddd":"none"}}>
+                      <div style={{fontWeight:800,marginBottom:3}}>{s.giornoSett} {fmtDataIT(s.data)}</div>
+                      <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                        <span style={{color:"#888"}}>{s.vecchio.titolo||"—"}</span>
+                        <span>→</span>
+                        <span style={{fontWeight:700}}>{s.nuovo.titolo||"—"}</span>
+                      </div>
+                      {(s.vecchio.oraInizio||s.nuovo.oraInizio) && (
+                        <div style={{fontSize:12,color:"#555",marginTop:2}}>
+                          {s.vecchio.oraInizio?`${s.vecchio.oraInizio}-${s.vecchio.oraFine}`:"tutto il giorno"}
+                          {" → "}
+                          {s.nuovo.oraInizio?`${s.nuovo.oraInizio}-${s.nuovo.oraFine}`:"tutto il giorno"}
+                        </div>
+                      )}
+                      {(s.vecchio.auto||s.nuovo.auto) && s.vecchio.auto!==s.nuovo.auto && (
+                        <div style={{fontSize:12,color:"#555",marginTop:2}}>Auto: {s.vecchio.auto||"—"} → {s.nuovo.auto||"—"}</div>
+                      )}
+                      {(s.vecchio.collega||s.nuovo.collega) && s.vecchio.collega!==s.nuovo.collega && (
+                        <div style={{fontSize:12,color:"#555",marginTop:2}}>Collega: {s.vecchio.collega||"—"} → {s.nuovo.collega||"—"}</div>
+                      )}
+                      {(s.vecchio.note||s.nuovo.note) && s.vecchio.note!==s.nuovo.note && (
+                        <div style={{fontSize:12,color:"#555",marginTop:2}}>Note: {s.vecchio.note||"—"} → {s.nuovo.note||"—"}</div>
+                      )}
                     </div>
                   ))}
                 </div>
