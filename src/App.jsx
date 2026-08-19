@@ -1091,7 +1091,7 @@ export default function App({ session }){
   // (non di quando questa funzione viene eseguita) — usato per decidere la
   // precedenza se due dispositivi modificano la stessa riga mentre uno era
   // offline: vince sempre la modifica con ts più recente.
-  async function scriviConBackup({ tipo, table, payload, matchObj, contesto, ts, eventsPerSheets, calendarsPerSheets, modelliPerSheets }){
+  async function scriviConBackup({ tipo, table, payload, matchObj, contesto, ts, eventsPerSheets, calendarsPerSheets, modelliPerSheets, opzioni={} }){
     async function provaSupabase(payloadCorrente, tentativi=0){
       if(tentativi>=10) return { error:{message:"Troppi tentativi di retry sullo schema"} };
       let q;
@@ -1113,15 +1113,23 @@ export default function App({ session }){
         provaSupabase(payload),
         (eventsPerSheets!==undefined) ? syncSeAttivo(eventsPerSheets, calendarsPerSheets, modelliPerSheets) : Promise.resolve(),
       ]);
-      if(risSupabase.error) segnalaErroreDb(risSupabase.error, `${contesto} (backup su Supabase)`);
-      return { ok: !risSupabase.error };
+      if(risSupabase.error){
+        // soloLog: il locale è comunque già scritto dal chiamante prima di
+        // arrivare qui, quindi un modale bloccante per un errore di solo
+        // backup remoto non aggiunge nulla — resta nel log tecnico e basta.
+        // Il chiamante che ha bisogno di un riepilogo (es. più scritture
+        // della stessa azione utente) lo mostra lui stesso, una volta sola.
+        if(opzioni.soloLog) segnalaErroreSoloLog(risSupabase.error, `${contesto} (backup su Supabase)`);
+        else segnalaErroreDb(risSupabase.error, `${contesto} (backup su Supabase)`);
+      }
+      return { ok: !risSupabase.error, errore: risSupabase.error||null };
     }catch(e){
       // Eccezione di rete: l'intera operazione (con il suo timestamp
       // originale) resta in coda, riparte identica al ritorno online.
       const coda = leggiCodaSync();
       coda.push({ id: generaIdLocale(), ts: ts||new Date().toISOString(), tipo, table, payload, match: matchObj, contesto });
       scriviCodaSync(coda);
-      return { ok:true, accodato:true }; // ok:true perché il locale è comunque salvato, è solo il backup remoto in sospeso
+      return { ok:true, accodato:true, errore:null }; // ok:true perché il locale è comunque salvato, è solo il backup remoto in sospeso
     }
   }
   // Normalizza un campo testo in maiuscolo, gestendo null/undefined.
@@ -2767,21 +2775,37 @@ const importsRecenti = useMemo(()=>{
         return updated;
       });
 
-      await scriviConBackup({
-        tipo:"update", table:"modelli", payload, matchObj:{id:data.id, user_id:userId},
-        contesto:"Salvataggio modello", ts,
-        eventsPerSheets: nuovoStore.events, calendarsPerSheets: nuovoStore.calendars, modelliPerSheets: modelliAggiornati,
-      });
-      // Propagazione agli eventi collegati: stessa logica, operazione separata
-      // (tabella diversa) ma stesso timestamp, così in coda mantiene l'ordine
-      // corretto rispetto all'update del modello.
-      await scriviConBackup({
-        tipo:"update", table:"events",
-        payload:{ label: labelNuova, color: coloreEff, time_in: tInNuovo, time_out: tOutNuovo },
-        matchObj:{modello_id:data.id, user_id:userId},
-        contesto:"Aggiornamento modello — propagazione agli eventi già in calendario", ts,
-        eventsPerSheets: nuovoStore.events, calendarsPerSheets: nuovoStore.calendars, modelliPerSheets: modelliAggiornati,
-      });
+      // Il form aspetta questa funzione per chiudersi (await saveModello in
+      // onSave): il locale è già scritto sopra, quindi da qui si ritorna
+      // SUBITO. Il backup su Supabase/Sheets parte in background (senza
+      // await) — se resta appeso per rete lenta o altro, non blocca più il
+      // form sulla schermata di salvataggio senza via d'uscita.
+      (async()=>{
+        const risModello = await scriviConBackup({
+          tipo:"update", table:"modelli", payload, matchObj:{id:data.id, user_id:userId},
+          contesto:"Salvataggio modello", ts,
+          eventsPerSheets: nuovoStore.events, calendarsPerSheets: nuovoStore.calendars, modelliPerSheets: modelliAggiornati,
+          opzioni:{soloLog:true},
+        });
+        // Propagazione agli eventi collegati: stessa logica, operazione separata
+        // (tabella diversa) ma stesso timestamp, così in coda mantiene l'ordine
+        // corretto rispetto all'update del modello.
+        const risEventi = await scriviConBackup({
+          tipo:"update", table:"events",
+          payload:{ label: labelNuova, color: coloreEff, time_in: tInNuovo, time_out: tOutNuovo },
+          matchObj:{modello_id:data.id, user_id:userId},
+          contesto:"Aggiornamento modello — propagazione agli eventi già in calendario", ts,
+          eventsPerSheets: nuovoStore.events, calendarsPerSheets: nuovoStore.calendars, modelliPerSheets: modelliAggiornati,
+          opzioni:{soloLog:true},
+        });
+        // Un solo popup per l'intero salvataggio invece di uno per ogni tabella
+        // toccata: il locale è comunque già scritto in entrambi i casi, quindi
+        // due modali di fila per la stessa azione utente erano solo fastidiosi,
+        // non un'informazione in più.
+        if(risModello?.errore || risEventi?.errore){
+          segnalaErroreDb(risModello?.errore || risEventi?.errore, "Salvataggio modello");
+        }
+      })();
       return { ok:true };
     } else {
       // INSERT: il calcolo del posizionamento usa solo dati già in memoria
@@ -2842,21 +2866,26 @@ const importsRecenti = useMemo(()=>{
         return updated;
       });
 
-      // Backup su Supabase (con retry colonna) + Sheets in parallelo.
-      await scriviConBackup({
-        tipo:"insert", table:"modelli", payload:{...payload, id:idLocale}, matchObj:null,
-        contesto:"Creazione modello", ts,
-        eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelliAggiornati,
-      });
-      // Rinumerazioni: stesso timestamp, così restano in ordine in coda
-      // rispetto all'insert del nuovo modello se si finisce offline.
-      for(const {id,nuovoVal} of rinumerazioniApplicate){
+      // Come per l'update: locale già scritto sopra, si ritorna subito e il
+      // backup Supabase/Sheets parte in background senza bloccare il form.
+      (async()=>{
         await scriviConBackup({
-          tipo:"update", table:"modelli", payload:{sort_order:nuovoVal}, matchObj:{id, user_id:userId},
-          contesto:"Creazione modello — rinumerazione posizioni esistenti", ts,
+          tipo:"insert", table:"modelli", payload:{...payload, id:idLocale}, matchObj:null,
+          contesto:"Creazione modello", ts,
           eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelliAggiornati,
+          opzioni:{soloLog:true},
         });
-      }
+        // Rinumerazioni: stesso timestamp, così restano in ordine in coda
+        // rispetto all'insert del nuovo modello se si finisce offline.
+        for(const {id,nuovoVal} of rinumerazioniApplicate){
+          await scriviConBackup({
+            tipo:"update", table:"modelli", payload:{sort_order:nuovoVal}, matchObj:{id, user_id:userId},
+            contesto:"Creazione modello — rinumerazione posizioni esistenti", ts,
+            eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelliAggiornati,
+            opzioni:{soloLog:true},
+          });
+        }
+      })();
       return { ok:true };
     }
   }
