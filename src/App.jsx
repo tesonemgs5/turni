@@ -2976,7 +2976,7 @@ const importsRecenti = useMemo(()=>{
 
   async function inserisciEventoGenerico(mod, dataEv, rotazioneId, nuoviEventiLocali, labelOverride=null, extra={}){
     if(!mod && !labelOverride) return;
-    const { note="", collega="", auto="", importId=null } = extra;
+    const { note="", collega="", auto="", importId=null, protPagFine=null, protRecFine=null } = extra;
     const dateKey = dkey(dataEv.getFullYear(), dataEv.getMonth(), dataEv.getDate());
     const color = mod ? (mod.coloreCustom || (mod.tempo==="h24" ? "#64748b" : colByTime(mod.inizio))) : "#94a3b8";
     const label = (labelOverride || mod?.label || mod?.titolo || "").toUpperCase();
@@ -2987,7 +2987,7 @@ const importsRecenti = useMemo(()=>{
     const { data, error } = await creaEventoSupabase({
       userId, calId, dateKey, label, color, allDay,
       tIn, tOut, modelloId: mod?.id || null, rotazioneId,
-      note, collega, auto, importId,
+      note, collega, auto, importId, protPagFine, protRecFine,
     });
 
     if(error) {
@@ -3012,6 +3012,8 @@ const importsRecenti = useMemo(()=>{
       collega: data.collega || "",
       auto: data.auto || "",
       importId: data.import_id || null,
+      protPagFine: data.prot_pag_fine || "",
+      protRecFine: data.prot_rec_fine || "",
     });
   }
 
@@ -3054,6 +3056,22 @@ const importsRecenti = useMemo(()=>{
     return { mod:null, esito:"ambiguo" };
   }
 
+  // Una riga JSON è una "protrazione" (non un turno a sé) se il titolo
+  // contiene PROTAZIONE/PROTRAZIONE (copre anche il refuso comune) e porta
+  // sia ora_inizio che ora_fine: verrà agganciata al turno base dello
+  // stesso giorno il cui orario di uscita coincide con l'inizio di questa
+  // riga, invece di generare un evento "mancante" a sé stante.
+  function isRigaProtrazione(r){
+    const t = (r.titolo||"").toUpperCase();
+    return (t.includes("PROTAZIONE") || t.includes("PROTRAZIONE")) && !!(r.oraInizio && r.oraFine);
+  }
+  function tipoProtrazione(r){
+    const t = (r.titolo||"").toUpperCase() + " " + (r.note||"").toUpperCase();
+    if(t.includes("RECUPERO")) return "recupero";
+    if(t.includes("PAGAMENTO")) return "pagamento";
+    return "pagamento"; // default: le protrazioni straordinarie/elettorali sono tipicamente a pagamento
+  }
+
   async function importaTurniPdfJson(righeJson){
     const risultatoVuoto = { nAggiunti:0, nSostituiti:0, nInvariati:0, mancanti:[], sospetti:[], importId:null };
     if(!userId || !calId || !righeJson?.length) return risultatoVuoto;
@@ -3065,7 +3083,26 @@ const importsRecenti = useMemo(()=>{
     const sospetti = [];
     let nAggiunti=0, nSostituiti=0, nInvariati=0;
 
-    for(const r of righeJson){
+    // Separo le righe di protrazione dalle righe di turno normali: le
+    // prime non generano un evento proprio, vengono agganciate al turno
+    // base con stesso giorno e orario di uscita coincidente.
+    const righeProtrazione = righeJson.filter(isRigaProtrazione);
+    const righeNormali = righeJson.filter(r=>!isRigaProtrazione(r));
+
+    function trovaProtrazionePerRigaBase(r){
+      const dateKey = (r.data||"").trim();
+      const idx = righeProtrazione.findIndex(p=>{
+        if((p.data||"").trim()!==dateKey) return false;
+        // L'orario di uscita del turno base deve coincidere con l'inizio
+        // della protrazione (tolleranza sul formato tramite minsOf).
+        return minsOf(r.oraFine)!==null && minsOf(p.oraInizio)!==null && minsOf(r.oraFine)===minsOf(p.oraInizio);
+      });
+      if(idx===-1) return null;
+      const [p] = righeProtrazione.splice(idx,1);
+      return p;
+    }
+
+    for(const r of righeNormali){
       const dateKey = (r.data||"").trim();
       if(!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) continue;
       const { mod, esito } = trovaModelloPerTitoloOrario(r.titolo, r.oraInizio, r.oraFine);
@@ -3079,11 +3116,20 @@ const importsRecenti = useMemo(()=>{
       const collega = (r.collega||"").trim();
       const auto = (r.auto||"").trim();
 
+      // Se esiste una riga di protrazione agganciata a questo turno base
+      // (stesso giorno, orario di inizio = orario di uscita del turno),
+      // la fondo qui invece di farla comparire come evento a sé o come
+      // riga "mancante".
+      const prot = trovaProtrazionePerRigaBase(r);
+      const protPagFine = prot && tipoProtrazione(prot)==="pagamento" ? prot.oraFine : null;
+      const protRecFine = prot && tipoProtrazione(prot)==="recupero" ? prot.oraFine : null;
+
       const eventiEsistenti = store.events?.[dateKey]?.[calId] || [];
       const esistente = eventiEsistenti.find(ev=>ev.modelloId===mod.id);
 
       if(esistente){
-        const invariato = up(esistente.note)===up(note) && up(esistente.collega)===up(collega) && up(esistente.auto)===up(auto);
+        const invariato = up(esistente.note)===up(note) && up(esistente.collega)===up(collega) && up(esistente.auto)===up(auto)
+          && up(esistente.protPagFine)===up(protPagFine||"") && up(esistente.protRecFine)===up(protRecFine||"");
         if(invariato){ nInvariati++; continue; }
         const [yy,mm,dd] = dateKey.split("-").map(Number);
         const giornoSett = NOMI_GIORNI_IT[new Date(yy,mm-1,dd).getDay()];
@@ -3096,7 +3142,14 @@ const importsRecenti = useMemo(()=>{
 
       const [yy,mm,dd] = dateKey.split("-").map(Number);
       const dataEv = new Date(yy, mm-1, dd);
-      await inserisciEventoGenerico(mod, dataEv, null, nuoviEventiLocali, null, { note, collega, auto, importId });
+      await inserisciEventoGenerico(mod, dataEv, null, nuoviEventiLocali, null, { note, collega, auto, importId, protPagFine, protRecFine });
+    }
+
+    // Righe di protrazione che non hanno trovato un turno base con
+    // orario di uscita coincidente restano "mancanti" come prima,
+    // nessuna invenzione di eventi a sé stanti.
+    for(const p of righeProtrazione){
+      mancanti.push({ data:(p.data||"").trim(), titolo: p.titolo||"", oraInizio: p.oraInizio||"", oraFine: p.oraFine||"" });
     }
 
     if(idsDaCancellare.length){
