@@ -212,6 +212,11 @@ export default function VistaCalendario({ C }){
               await Promise.all(regs.map(r=>r.unregister()));
             }
           } catch(e){ segnalaErrore(e, "Disattivazione Service Worker"); }
+          // Piccolo delay: su mobile, subito dopo unregister/cache.delete il
+          // browser può avere ancora operazioni async in sospeso; un reload
+          // troppo immediato a volte produce un primo render incompleto
+          // (es. bottom nav mancante) finché i chunk JS non sono ricaricati.
+          await new Promise(res=>setTimeout(res, 300));
           window.location.href = window.location.href.split('?')[0] + '?v=' + Date.now();
         }}
           title="Svuota cache e ricarica tutto"
