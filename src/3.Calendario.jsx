@@ -212,11 +212,6 @@ export default function VistaCalendario({ C }){
               await Promise.all(regs.map(r=>r.unregister()));
             }
           } catch(e){ segnalaErrore(e, "Disattivazione Service Worker"); }
-          // Piccolo delay: su mobile, subito dopo unregister/cache.delete il
-          // browser può avere ancora operazioni async in sospeso; un reload
-          // troppo immediato a volte produce un primo render incompleto
-          // (es. bottom nav mancante) finché i chunk JS non sono ricaricati.
-          await new Promise(res=>setTimeout(res, 300));
           window.location.href = window.location.href.split('?')[0] + '?v=' + Date.now();
         }}
           title="Svuota cache e ricarica tutto"
@@ -345,13 +340,13 @@ export default function VistaCalendario({ C }){
                 <span style={{fontSize:20,fontWeight:isT?900:500,lineHeight:1,
                   color:isT?accent:red?"#ef4444":T.sub}}>{d}</span>
                 <div style={{display:"flex",alignItems:"center",gap:3,flexShrink:0}}>
-                  {evts.length>8&&<span style={{fontSize:11,fontWeight:800,color:T.sub}}>+{evts.length-8}</span>}
+                  {evts.length>5&&<span style={{fontSize:11,fontWeight:800,color:T.sub}}>+{evts.length-5}</span>}
                 </div>
               </div>
               <div style={{flex:1,overflow:"hidden",display:"grid",
-                gridTemplateRows:`repeat(${Math.max(8,evts.slice(0,8).reduce((n,e)=>n+1+(e.protPagFine?1:0)+(e.protRecFine?1:0),0))},minmax(13px,1fr))`,
+                gridTemplateRows:`repeat(5,1fr)`,
                 gap:"1px",padding:"0 1px 1px"}}>
-                {evts.slice(0,8).map((e,ei)=>{
+                {evts.slice(0,5).map((e,ei)=>{
                   const nodes = [];
                   if(e.protPagFine) nodes.push({label:"PR PAG",color:"#8b5cf6"});
                   if(e.protRecFine) nodes.push({label:"PR REC",color:"#64748b"});
