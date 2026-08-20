@@ -353,15 +353,15 @@ export default function VistaCalendario({ C }){
                   return (
                     <Fragment key={e.id+ei}>
                       <div style={{background:e.color,borderRadius:3,padding:"0 4px",
-                        fontSize:evtFontSize,fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
-                        whiteSpace:"nowrap",minHeight:0,display:"flex",alignItems:"center",lineHeight:1,
+                        fontSize:10,fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
+                        whiteSpace:"nowrap",display:"flex",alignItems:"center",lineHeight:1,
                         textShadow:getContrastTextColor(e.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>
                         {e.label}
                       </div>
                       {nodes.map((n,ni)=>(
                         <div key={ni} style={{background:n.color,borderRadius:3,padding:"0 4px",
-                          fontSize:evtFontSize,fontWeight:800,color:getContrastTextColor(n.color),overflow:"hidden",textOverflow:"ellipsis",
-                          whiteSpace:"nowrap",minHeight:0,display:"flex",alignItems:"center",lineHeight:1,
+                          fontSize:10,fontWeight:800,color:getContrastTextColor(n.color),overflow:"hidden",textOverflow:"ellipsis",
+                          whiteSpace:"nowrap",display:"flex",alignItems:"center",lineHeight:1,
                           textShadow:getContrastTextColor(n.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>
                           {n.label}
                         </div>
