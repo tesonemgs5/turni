@@ -9,7 +9,7 @@ import {
   minutiTurnoModello, normalizzaOraHHMM, oraInMinuti, registraListenerCodaErrori, registraProblemiImport,
   sameData, saveToLocalStorage, scriviCodaSync, segnalaErrore, segnalaErroreSoloLog,
   uid, withEventoAggiornato, withEventoAggiunto, withEventoRimosso,
-} from "./utilsRotazione";
+} from "./4.Rotazione";
 
 // ═══════════════════════════════════════════════════════════════
 // useAppCore.js — Custom hook che concentra tutto lo stato e la

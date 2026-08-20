@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef, useMemo, Fragment } from "react";
-import { useAppCore } from "./statoLogicaApp";
-import VistaCalendario from "./vistaCalendario";
-import VistaModelli from "./vistaModelli";
-import { ModaleErroriMultipli } from "./uiComuni";
+import { useAppCore } from "./6.Logica";
+import VistaCalendario from "./3.Calendario";
+import VistaModelli from "./2.Modelli";
+import { ModaleErroriMultipli } from "./5.Comuni";
 import {
   getContrastTextColor, NOMI_MESI_IT, calcFine6h15, calcFine6h30, calcDurata,
   fmtDataIT, impostaSilenziamentoErrore,
-} from "./utilsRotazione";
+} from "./4.Rotazione";
 
 // ═══════════════════════════════════════════════════════════════
 // App.jsx — INDICE dell'app.
