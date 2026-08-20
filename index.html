@@ -13,6 +13,33 @@
   </head>
   <body style="overscroll-behavior:none;overflow:hidden;">
     <div id="root"></div>
+    <div id="static-nav" style="position:fixed;left:0;right:0;bottom:0;max-width:480px;margin:0 auto;
+      display:flex;border-top:1px solid #e2e8f0;background:#ffffff;z-index:100000;">
+      <button onclick="window.__navGo && window.__navGo('cal')"
+        style="flex:1;background:none;border:none;padding:8px 0;cursor:pointer;
+        display:flex;flex-direction:column;align-items:center;gap:1px;font-family:system-ui,sans-serif;">
+        <span style="font-size:18px;color:#64748b;">▦</span>
+        <span style="font-size:9px;font-weight:700;color:#64748b;">Calendario</span>
+      </button>
+      <button onclick="window.__navGo && window.__navGo('report')"
+        style="flex:1;background:none;border:none;padding:8px 0;cursor:pointer;
+        display:flex;flex-direction:column;align-items:center;gap:1px;font-family:system-ui,sans-serif;">
+        <span style="font-size:18px;color:#64748b;">📊</span>
+        <span style="font-size:9px;font-weight:700;color:#64748b;">Report</span>
+      </button>
+      <button onclick="window.__navGo && window.__navGo('modelli')"
+        style="flex:1;background:none;border:none;padding:8px 0;cursor:pointer;
+        display:flex;flex-direction:column;align-items:center;gap:1px;font-family:system-ui,sans-serif;">
+        <span style="font-size:18px;color:#64748b;">📋</span>
+        <span style="font-size:9px;font-weight:700;color:#64748b;">Modelli</span>
+      </button>
+      <button onclick="window.__navGo && window.__navGo('settings')"
+        style="flex:1;background:none;border:none;padding:8px 0;cursor:pointer;
+        display:flex;flex-direction:column;align-items:center;gap:1px;font-family:system-ui,sans-serif;">
+        <span style="font-size:18px;color:#64748b;">⚙</span>
+        <span style="font-size:9px;font-weight:700;color:#64748b;">Impostazioni</span>
+      </button>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
