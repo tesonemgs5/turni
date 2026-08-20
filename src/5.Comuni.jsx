@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, Fragment } from "react";
-import { COLORE_H24, getColorByTime, getContrastTextColor } from "./utilsRotazione";
+import { COLORE_H24, getColorByTime, getContrastTextColor } from "./4.Rotazione";
 
 // ═══════════════════════════════════════════════════════════════
 // uiComuni.jsx — Componenti UI condivisi: badge calendario, input

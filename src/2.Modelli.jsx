@@ -8,13 +8,13 @@ import {
   loadFromLocalStorage, clearLocalStorageCache, resolveFestivitaCatalogo,
   leggiLogErrori, leggiErroriSilenziati, impostaSilenziamentoErrore,
   cancellaLogErrori, segnalaErrore,
-} from "./utilsRotazione";
+} from "./4.Rotazione";
 import { CalBadge, SmartTimeInput, AutocompleteInput, ColorPickerModal,
   ModaleErroriMultipli, FasceExpand, ConteggioConfigCard, TurnazioneConfigCard,
-  IndennitaConfig, OrePerTurnoView, StraordinariView, GuadagniView, Sec, SecCollapsible } from "./uiComuni";
+  IndennitaConfig, OrePerTurnoView, StraordinariView, GuadagniView, Sec, SecCollapsible } from "./5.Comuni";
 import { ModelloCard, ModelForm, RotazioneCard, RotazioneForm, ModelloSelector,
-  GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView } from "./utilsRotazione";
-import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./importTurni";
+  GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView } from "./4.Rotazione";
+import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./7.Turni";
 
 // ═══════════════════════════════════════════════════════════════
 // core2.jsx — Modelli, Rotazioni e Impostazioni: qui dentro trovi
