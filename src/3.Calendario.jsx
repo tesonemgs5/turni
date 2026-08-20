@@ -300,11 +300,11 @@ export default function VistaCalendario({ C }){
                       {evts.length>5&&<span style={{fontSize:11,fontWeight:800,color:T.sub}}>+{evts.length-5}</span>}
                     </div>
                   </div>
-                  <div style={{flex:1,overflow:"hidden",display:"grid",gridTemplateRows:"repeat(5,minmax(14px,1fr))",gap:"1px",padding:"0 1px 1px"}}>
+                  <div style={{flex:1,overflowY:"auto",overflowX:"hidden",display:"grid",gridTemplateRows:"repeat(5,minmax(16px,1fr))",gap:"1px",padding:"0 1px 1px"}}>
                     {evts.slice(0,5).map((e,ei)=>(
                       <div key={e.id+ei} style={{background:e.color,borderRadius:3,padding:"1px 4px",
                         fontSize:evtFontSize,fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
-                        whiteSpace:"nowrap",minHeight:0,display:"flex",alignItems:"center",
+                        whiteSpace:"nowrap",display:"flex",alignItems:"center",
                         textShadow:getContrastTextColor(e.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>{e.label}</div>
                     ))}
                   </div>
