@@ -1268,6 +1268,24 @@ export default function App({ session }){
   }
 
   const [reportInterval, setReportInterval] = useState("mese");
+  // Mese selezionato per il report (persistente su localStorage, come
+  // syncMode sopra): prima "1 mese" usava sempre new Date(), quindi il
+  // report mostrava sempre il mese corrente e "dimenticava" la scelta ad
+  // ogni uscita dall'app. Ora resta fissato al mese scelto finché l'utente
+  // non lo cambia di nuovo, indipendentemente da quando riapre l'app.
+  const [reportMeseSel, setReportMeseSel] = useState(()=>{
+    try{
+      const salvato = localStorage.getItem('reportMeseSel');
+      if(salvato){ const [y,m]=salvato.split("-").map(Number); if(y&&m) return {anno:y,mese:m}; }
+    }catch(e){}
+    const now = new Date();
+    return { anno: now.getFullYear(), mese: now.getMonth()+1 }; // mese 1-12
+  });
+  function selezionaReportMese(anno, mese){
+    setReportMeseSel({anno, mese});
+    try{ localStorage.setItem('reportMeseSel', `${anno}-${mese}`); }catch(e){}
+  }
+  const [showMeseReportPicker, setShowMeseReportPicker] = useState(false);
   const [reportDateFrom, setReportDateFrom] = useState("");
   const [reportDateTo, setReportDateTo] = useState("");
   const [openReportConfig, setOpenReportConfig] = useState(null);
@@ -3432,46 +3450,82 @@ const importsRecenti = useMemo(()=>{
 // #region SEZIONE 14: REPORT HELPERS
 // ═══════════════════════════════════════════════════════════════
   function getReportRange(){
-    const now = new Date();
     if(reportInterval==="mese"){
-      const y=now.getFullYear(), m=now.getMonth();
-      const from=`${y}-${String(m+1).padStart(2,"0")}-01`;
-      const to=`${y}-${String(m+1).padStart(2,"0")}-${String(daysInMonth(y,m)).padStart(2,"0")}`;
-      return {from, to, label: MONTHS[m]+" "+y};
+      const y=reportMeseSel.anno, mIdx=reportMeseSel.mese-1; // mIdx 0-based per daysInMonth/MONTHS
+      const from=`${y}-${String(mIdx+1).padStart(2,"0")}-01`;
+      const to=`${y}-${String(mIdx+1).padStart(2,"0")}-${String(daysInMonth(y,mIdx)).padStart(2,"0")}`;
+      return {from, to, label: MONTHS[mIdx]+" "+y};
     }
     if(reportInterval==="anno"){
-      return {from:`${now.getFullYear()}-01-01`, to:`${now.getFullYear()}-12-31`, label: now.getFullYear().toString()};
+      return {from:`${reportMeseSel.anno}-01-01`, to:`${reportMeseSel.anno}-12-31`, label: reportMeseSel.anno.toString()};
     }
     return {from:reportDateFrom, to:reportDateTo, label:reportDateFrom+" → "+reportDateTo};
   }
 
+  // Splitta il campo libero "collega" (testo multilinea, spesso con
+  // "NOME1, NOME2" sulla stessa riga) in singoli nomi puliti.
+  function splitColleghi(testo){
+    if(!testo) return [];
+    return testo.split(/\r?\n|,/).map(s=>s.trim()).filter(Boolean);
+  }
+
   function computeConteggioForReport(cfg){
     const {from, to} = getReportRange();
-    const result = { totale:0, primo:0, secondo:0, h24:0, app:0, auto:0 };
+    const result = { totale:0 };
     const perModello = {};
+    const perCollega = {};
     const modelliInclusi = cfg?.modelliInclusi || [];
-    const fasceManuali = cfg?.fasceManuali || {};
-    const fasceFiltro = cfg?.fasceFiltro || [];
+    const filtraCollega = (cfg?.filtraCollega||"").trim().toUpperCase();
+    const sottomenu = cfg?.sottomenu || [];
+    // perSottomenu[sottomenuId][gruppoKey][modelloId] = {count, dates}
+    const perSottomenu = {};
+    sottomenu.forEach(sm=>{ perSottomenu[sm.id] = {}; });
+
     for(const [dateKey, calMap] of Object.entries(store.events)){
       if(dateKey < from || dateKey > to) continue;
       for(const [cid, evts] of Object.entries(calMap)){
         if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
         for(const e of evts){
           if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
-          const fascia = e.modelloId ? (fasceManuali[e.modelloId]||"") : "";
-          if(fasceFiltro.length>0 && !fasceFiltro.includes(fascia||"nessuna")) continue;
+          const collegList = splitColleghi(e.collega);
+          if(filtraCollega && !collegList.some(c=>c.toUpperCase().includes(filtraCollega))) continue;
+
           result.totale++;
-          if(fascia==="primo"||fascia==="secondo") result[fascia]=(result[fascia]||0)+1;
-          else result.h24++;
-          if(e.modelloId) perModello[e.modelloId]=(perModello[e.modelloId]||0)+1;
-          const modelloEvt = e.modelloId ? modelli.find(mm=>mm.id===e.modelloId) : null;
-          const titoloEvt = (modelloEvt?.titolo||"").toUpperCase();
-          if(titoloEvt.includes("APP")) result.app=(result.app||0)+1;
-          else if(titoloEvt.includes("AUTO")) result.auto=(result.auto||0)+1;
+          if(e.modelloId){
+            if(!perModello[e.modelloId]) perModello[e.modelloId] = { count:0, dates:[] };
+            perModello[e.modelloId].count++;
+            perModello[e.modelloId].dates.push(dateKey);
+          }
+          collegList.forEach(c=>{
+            if(!perCollega[c]) perCollega[c] = { count:0, dates:[] };
+            perCollega[c].count++;
+            perCollega[c].dates.push(dateKey);
+          });
+
+          // Ogni sottomenu libero è un asse indipendente: raggruppa i modelli
+          // secondo l'assegnazione manuale salvata su quel sottomenu
+          // (cfg.sottomenu[i].assegnazioni: {modelloId: gruppoKey}). Un
+          // modello senza assegnazione in quel sottomenu semplicemente non
+          // compare in nessun gruppo di quell'asse (comportamento identico a
+          // "escluso" nei report esistenti: niente auto-classificazione).
+          sottomenu.forEach(sm=>{
+            if(sm.tipo!=="libero" || !e.modelloId) return;
+            const gruppoKey = (sm.assegnazioni||{})[e.modelloId];
+            if(!gruppoKey) return;
+            if(!perSottomenu[sm.id][gruppoKey]) perSottomenu[sm.id][gruppoKey] = {};
+            if(!perSottomenu[sm.id][gruppoKey][e.modelloId]) perSottomenu[sm.id][gruppoKey][e.modelloId] = { count:0, dates:[] };
+            perSottomenu[sm.id][gruppoKey][e.modelloId].count++;
+            perSottomenu[sm.id][gruppoKey][e.modelloId].dates.push(dateKey);
+          });
         }
       }
     }
-    return {...result, perModello};
+    Object.values(perModello).forEach(v=>v.dates.sort());
+    Object.values(perCollega).forEach(v=>v.dates.sort());
+    Object.values(perSottomenu).forEach(gruppi=>
+      Object.values(gruppi).forEach(perMod=>
+        Object.values(perMod).forEach(v=>v.dates.sort())));
+    return {...result, perModello, perCollega, perSottomenu};
   }
 
 
@@ -3482,8 +3536,10 @@ const importsRecenti = useMemo(()=>{
     const default6h15 = modelli.filter(m=>isModelloTurnazioneDefault(m) && !esclusi.includes(m.id)).map(m=>m.id);
     const modelliInclusi = [...new Set([...default6h15, ...aggiunti])];
     const gruppiManuali = cfg?.gruppiManuali || {}; // { modelloId: "primo"|"secondo", "modelloId_appauto": "app"|"auto" }
+    const filtraCollega = (cfg?.filtraCollega||"").trim().toUpperCase();
     const result = { totale:0, primo:0, secondo:0, app:0, auto:0 };
     const perModello = {};
+    const perCollega = {};
     const perGruppo = { primo:{}, secondo:{}, app:{}, auto:{} };
     for(const [dateKey, calMap] of Object.entries(store.events)){
       if(dateKey < from || dateKey > to) continue;
@@ -3491,6 +3547,8 @@ const importsRecenti = useMemo(()=>{
         if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
         for(const e of evts){
           if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
+          const collegList = splitColleghi(e.collega);
+          if(filtraCollega && !collegList.some(c=>c.toUpperCase().includes(filtraCollega))) continue;
           result.totale++;
           const modelloEvt = e.modelloId ? modelli.find(mm=>mm.id===e.modelloId) : null;
           const overrideTurnoRaw = e.modelloId ? gruppiManuali[e.modelloId] : null;
@@ -3522,6 +3580,11 @@ const importsRecenti = useMemo(()=>{
             perModello[e.modelloId].count++;
             perModello[e.modelloId].dates.push(dateKey);
           }
+          collegList.forEach(c=>{
+            if(!perCollega[c]) perCollega[c] = { count:0, dates:[] };
+            perCollega[c].count++;
+            perCollega[c].dates.push(dateKey);
+          });
           if(gruppoTurno){
             result[gruppoTurno] = (result[gruppoTurno]||0)+1;
             if(e.modelloId){
@@ -3542,8 +3605,9 @@ const importsRecenti = useMemo(()=>{
       }
     }
     Object.values(perModello).forEach(v=>v.dates.sort());
+    Object.values(perCollega).forEach(v=>v.dates.sort());
     Object.values(perGruppo).forEach(g=>Object.values(g).forEach(v=>v.dates.sort()));
-    return {...result, perModello, perGruppo, modelliInclusiEffettivi:modelliInclusi};
+    return {...result, perModello, perCollega, perGruppo, modelliInclusiEffettivi:modelliInclusi};
   }
 
   function computeConteggio(){
@@ -3627,7 +3691,7 @@ const importsRecenti = useMemo(()=>{
     if(reportType==="turnazione"){
       return { fasceFiltro:[], modelliEsclusi:[], modelliAggiunti:[] };
     }
-    return { fasceFiltro:[], modelliInclusi:[] };
+    return { fasceFiltro:[], modelliInclusi:[], sottomenu:[] };
   }
 
   function updateConteggioConfig(reportId, cfg){
@@ -3967,19 +4031,7 @@ const importsRecenti = useMemo(()=>{
             <div style={{fontSize:22,fontWeight:700,color:T.text,overflow:"hidden",
               textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.label}</div>
             {r.type==="conteggio_turni"&&(
-              <div style={{fontSize:17,color:T.sub}}>
-                {data.totale} turni
-                {data.totale>0&&(()=>{
-                  const pct1=Math.round(((data.primo||0)/data.totale)*100);
-                  const pct2=Math.round(((data.secondo||0)/data.totale)*100);
-                  return (
-                    <span style={{marginLeft:4}}>
-                      {data.primo>0&&<span style={{color:"#f59e0b",marginLeft:4}}>1°T {pct1}%</span>}
-                      {data.secondo>0&&<span style={{color:"#f97316",marginLeft:4}}>2°T {pct2}%</span>}
-                    </span>
-                  );
-                })()}
-              </div>
+              <div style={{fontSize:17,color:T.sub}}>{data.totale} turni</div>
             )}
           </div>
           <div style={{display:"flex",flexDirection:"row",gap:10,marginRight:10,alignItems:"center"}} onClick={e=>e.stopPropagation()}>
@@ -4116,6 +4168,47 @@ const importsRecenti = useMemo(()=>{
         );
       })()}
 
+      {showMeseReportPicker && (()=>{
+        // Picker rapido mese/anno: un tap sceglie il mese direttamente,
+        // invece di scorrere un mese alla volta con le frecce. L'anno si
+        // cambia con ‹ › sopra la griglia dei 12 mesi.
+        const annoTmp = reportMeseSel.anno;
+        return (
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:410,
+            display:"flex",alignItems:"flex-end"}} onClick={()=>setShowMeseReportPicker(false)}>
+            <div style={{background:T.surface,borderRadius:"18px 18px 0 0",width:"100%",
+              maxWidth:480,margin:"0 auto",padding:"16px 14px 30px"}}
+              onClick={e=>e.stopPropagation()}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+                <button onClick={()=>selezionaReportMese(annoTmp-1, reportMeseSel.mese)}
+                  style={{width:34,height:34,borderRadius:8,border:`1px solid ${T.border}`,
+                    background:T.s2,color:T.text,fontSize:15,fontWeight:800,cursor:"pointer"}}>‹</button>
+                <div style={{fontSize:16,fontWeight:900,color:T.text}}>{annoTmp}</div>
+                <button onClick={()=>selezionaReportMese(annoTmp+1, reportMeseSel.mese)}
+                  style={{width:34,height:34,borderRadius:8,border:`1px solid ${T.border}`,
+                    background:T.s2,color:T.text,fontSize:15,fontWeight:800,cursor:"pointer"}}>›</button>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+                {MONTHS.map((nomeMese,idx)=>{
+                  const meseNum = idx+1;
+                  const selezionato = reportMeseSel.mese===meseNum && reportMeseSel.anno===annoTmp;
+                  return (
+                    <button key={nomeMese}
+                      onClick={()=>{ selezionaReportMese(annoTmp, meseNum); setShowMeseReportPicker(false); }}
+                      style={{padding:"12px 0",borderRadius:10,cursor:"pointer",fontSize:13,fontWeight:800,
+                        border:`1px solid ${selezionato?accent:T.border}`,
+                        background:selezionato?accent:T.s2,
+                        color:selezionato?getContrastTextColor(accent):T.text}}>
+                      {nomeMese.slice(0,3)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {showIntervalPicker && (
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:400,
           display:"flex",alignItems:"flex-end"}} onClick={()=>setShowIntervalPicker(false)}>
@@ -4135,6 +4228,47 @@ const importsRecenti = useMemo(()=>{
                 </div>
               ))}
             </div>
+            {reportInterval==="mese" && (
+              <div style={{marginTop:12}}>
+                <div style={{fontSize:12,color:"#0f172a",marginBottom:6}}>MESE SELEZIONATO</div>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <button onClick={()=>{
+                      let {anno,mese}=reportMeseSel; mese--; if(mese<1){mese=12;anno--;}
+                      selezionaReportMese(anno,mese);
+                    }}
+                    style={{width:38,height:38,borderRadius:8,border:`1px solid ${T.border}`,
+                      background:T.s2,color:T.text,fontSize:16,fontWeight:800,cursor:"pointer",flexShrink:0}}>‹</button>
+                  <button onClick={()=>setShowMeseReportPicker(true)}
+                    style={{flex:1,background:accent+"18",border:`1px solid ${accent}55`,borderRadius:8,
+                      padding:"9px 0",color:accent,fontSize:14,fontWeight:800,cursor:"pointer"}}>
+                    {MONTHS[reportMeseSel.mese-1]} {reportMeseSel.anno}
+                  </button>
+                  <button onClick={()=>{
+                      let {anno,mese}=reportMeseSel; mese++; if(mese>12){mese=1;anno++;}
+                      selezionaReportMese(anno,mese);
+                    }}
+                    style={{width:38,height:38,borderRadius:8,border:`1px solid ${T.border}`,
+                      background:T.s2,color:T.text,fontSize:16,fontWeight:800,cursor:"pointer",flexShrink:0}}>›</button>
+                </div>
+              </div>
+            )}
+            {reportInterval==="anno" && (
+              <div style={{marginTop:12}}>
+                <div style={{fontSize:12,color:"#0f172a",marginBottom:6}}>ANNO SELEZIONATO</div>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <button onClick={()=>selezionaReportMese(reportMeseSel.anno-1, reportMeseSel.mese)}
+                    style={{width:38,height:38,borderRadius:8,border:`1px solid ${T.border}`,
+                      background:T.s2,color:T.text,fontSize:16,fontWeight:800,cursor:"pointer",flexShrink:0}}>‹</button>
+                  <div style={{flex:1,background:accent+"18",border:`1px solid ${accent}55`,borderRadius:8,
+                    padding:"9px 0",color:accent,fontSize:14,fontWeight:800,textAlign:"center"}}>
+                    {reportMeseSel.anno}
+                  </div>
+                  <button onClick={()=>selezionaReportMese(reportMeseSel.anno+1, reportMeseSel.mese)}
+                    style={{width:38,height:38,borderRadius:8,border:`1px solid ${T.border}`,
+                      background:T.s2,color:T.text,fontSize:16,fontWeight:800,cursor:"pointer",flexShrink:0}}>›</button>
+                </div>
+              </div>
+            )}
             {reportInterval==="custom" && (
               <div style={{display:"flex",gap:10,marginTop:12}}>
                 <div style={{flex:1}}>
@@ -6893,10 +7027,42 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, fas
   const [editingName, setEditingName] = useState(false);
   const [tmpName, setTmpName] = useState(r.label);
   const pct = totaleTurni>0 ? Math.round((data.totale/totaleTurni)*100) : 0;
-  const [showTurniList, setShowTurniList] = useState(false);
+  const [openSottomenu, setOpenSottomenu] = useState(null);
+  const [openGruppoDentro, setOpenGruppoDentro] = useState(null); // `${sottomenuId}:${gruppoKey}`
+  const [showAggiungiMenu, setShowAggiungiMenu] = useState(false);
 
-  const pct1 = data.totale>0 ? Math.round(((data.primo||0)/data.totale)*100) : 0;
-  const pct2 = data.totale>0 ? Math.round(((data.secondo||0)/data.totale)*100) : 0;
+  const sottomenu = cfg.sottomenu || [];
+
+  function fmtData(dateKey){
+    const [y,m,d] = dateKey.split("-");
+    return `${d}/${m}/${y}`;
+  }
+
+  function aggiungiSottomenu(tipo){
+    const id = "sm_"+Date.now()+"_"+Math.random().toString(36).slice(2,7);
+    let nuovo;
+    if(tipo==="collega"){
+      nuovo = { id, tipo:"collega", nome:"Per collega" };
+    } else if(tipo==="modello"){
+      nuovo = { id, tipo:"modello", nome:"Per modello" };
+    } else {
+      // "libero": due gruppi di partenza modificabili, come punto di
+      // partenza minimo utile — l'utente può rinominarli/aggiungerne altri.
+      nuovo = { id, tipo:"libero", nome:"Nuovo sottomenu",
+        gruppi:[{key:"a",label:"Gruppo A",color:"#3b82f6"},{key:"b",label:"Gruppo B",color:"#8b5cf6"}],
+        assegnazioni:{} };
+    }
+    onUpdateCfg({...cfg, sottomenu:[...sottomenu, nuovo]});
+    setShowAggiungiMenu(false);
+    setOpenSottomenu(id);
+  }
+  function aggiornaSottomenu(id, patch){
+    onUpdateCfg({...cfg, sottomenu: sottomenu.map(sm=>sm.id===id?{...sm,...patch}:sm)});
+  }
+  function rimuoviSottomenu(id){
+    onUpdateCfg({...cfg, sottomenu: sottomenu.filter(sm=>sm.id!==id)});
+    if(openSottomenu===id) setOpenSottomenu(null);
+  }
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
@@ -6922,140 +7088,229 @@ function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, fas
 
       <div style={{background:T.surface,borderRadius:10,padding:"10px 12px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-          <div onClick={()=>setShowTurniList(s=>!s)}
-  style={{fontSize:12,color:"#0f172a",fontWeight:700,cursor:"pointer",
-    display:"flex",alignItems:"center",gap:4}}>
-  TOTALE TURNI {showTurniList?"▲":"▼"}
-</div>
-          <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <span style={{fontSize:20,fontWeight:900,color:T.text}}>{data.totale}</span>
-
-          </div>
+          <span style={{fontSize:12,color:"#0f172a",fontWeight:700}}>TOTALE TURNI</span>
+          <span style={{fontSize:20,fontWeight:900,color:T.text}}>{data.totale}</span>
         </div>
-        {showTurniList&&(
-  <div style={{background:T.s2,borderRadius:8,padding:"8px 10px",marginBottom:8}}>
-    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
-      <div style={{fontSize:10,color:T.sub,fontWeight:700}}>
-        Assegna manualmente ogni modello al 1° o 2° TURNO
-      </div>
-      <button onClick={()=>{
-          const next={...(cfg.fasceManuali||{})};
-          Object.keys(data.perModello||{}).forEach(mid=>{
-            const m=modelli.find(x=>x.id===mid);
-            if(!m || m.tempo==="h24") return;
-            const mins=oraInMinuti(m.inizio);
-            if(mins===null) return;
-            next[mid] = mins<720 ? "primo" : "secondo"; // prima delle 12:00 -> 1°, dopo -> 2°
-          });
-          onUpdateCfg({...cfg,fasceManuali:next});
-        }}
-        style={{fontSize:10,fontWeight:800,padding:"4px 8px",borderRadius:6,cursor:"pointer",
-          background:accent,color:getContrastTextColor(accent),border:"none"}}>
-        Assegna automaticamente
-      </button>
-    </div>
-    {Object.entries(data.perModello||{}).map(([mid,cnt])=>{
-      const m=modelli.find(x=>x.id===mid);
-      if(!m) return null;
-      const c=m.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
-      const fasceManuali=cfg.fasceManuali||{};
-      const faseCorrente=fasceManuali[mid]||"";
-      function setFascia(val){
-        const next={...fasceManuali};
-        if(val==="") delete next[mid];
-        else next[mid]=val;
-        onUpdateCfg({...cfg,fasceManuali:next});
-      }
-      return (
-        <div key={mid} style={{display:"flex",alignItems:"center",gap:8,
-          padding:"6px 8px",borderRadius:6,marginBottom:4,
-          background:c+"10",border:`1px solid ${T.border}`}}>
-          <div style={{width:8,height:8,borderRadius:"50%",background:c,flexShrink:0}}/>
-          <div style={{flex:1}}>
-            <span style={{fontSize:12,fontWeight:700,color:T.text}}>{m.titolo}</span>
-            <span style={{fontSize:10,color:T.sub,marginLeft:6}}>
-              {m.tempo==="h24"?"H24":m.tempo==="6h15"&&m.inizio?`${m.inizio} - ${calcFine6h15(m.inizio)}`:m.tempo==="6h30"&&m.inizio?`${m.inizio} - ${calcFine6h30(m.inizio)}`:m.inizio&&m.fine?`${m.inizio} - ${m.fine}`:m.inizio||""}
-            </span>
-          </div>
-          <span style={{fontSize:12,fontWeight:800,color:T.sub}}>{cnt}</span>
-          <div style={{display:"flex",gap:3}}>
-            <button onClick={()=>setFascia("primo")}
-              style={{fontSize:10,fontWeight:800,padding:"4px 7px",borderRadius:6,cursor:"pointer",
-                background:faseCorrente==="primo"?"#f59e0b":"transparent",
-                color:faseCorrente==="primo"?"#fff":T.sub,
-                border:`1px solid ${faseCorrente==="primo"?"#f59e0b":T.border}`}}>1°</button>
-            <button onClick={()=>setFascia("secondo")}
-              style={{fontSize:10,fontWeight:800,padding:"4px 7px",borderRadius:6,cursor:"pointer",
-                background:faseCorrente==="secondo"?"#f97316":"transparent",
-                color:faseCorrente==="secondo"?"#fff":T.sub,
-                border:`1px solid ${faseCorrente==="secondo"?"#f97316":T.border}`}}>2°</button>
-            <button onClick={()=>setFascia("")}
-              style={{fontSize:10,fontWeight:800,padding:"4px 7px",borderRadius:6,cursor:"pointer",
-                background:faseCorrente===""?T.sub:"transparent",
-                color:faseCorrente===""?"#fff":T.sub,
-                border:`1px solid ${T.border}`}}>—</button>
-          </div>
-        </div>
-      );
-    })}
-  </div>
-)}
         {totaleTurni>0&&(
-          <div style={{height:6,background:T.s2,borderRadius:3,marginBottom:10,overflow:"hidden"}}>
+          <div style={{height:6,background:T.s2,borderRadius:3,overflow:"hidden"}}>
             <div style={{width:`${pct}%`,height:"100%",background:accent,borderRadius:3,transition:"width 0.3s"}}/>
           </div>
         )}
-        <FasceExpand data={data} pct1={pct1} pct2={pct2} T={T} modelli={modelli} accent={accent} cfg={cfg}/>
       </div>
 
-      <div style={{background:T.surface,borderRadius:10,padding:12}}>
-        <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:8}}>APP / AUTO</div>
-        <div style={{display:"flex",flexDirection:"column",gap:6}}>
-          {[
-            {key:"app",  label:"APP",  color:"#3b82f6", count:data.app||0},
-            {key:"auto", label:"AUTO", color:"#8b5cf6", count:data.auto||0},
-          ].map(g=>(
-            <div key={g.key} style={{display:"flex",justifyContent:"space-between",alignItems:"center",
-              padding:"8px 10px",background:g.color+"22",borderRadius:8,border:`1px solid ${g.color}44`}}>
-              <span style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>{g.label}</span>
-              <span style={{fontSize:16,fontWeight:900,color:"#0f172a"}}>{g.count}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>FILTRA PER COLLEGA</div>
-        <input
-          type="text"
-          value={cfg.filtraCollega||""}
-          onChange={e=>onUpdateCfg({...cfg,filtraCollega:e.target.value})}
-          placeholder="Nome collega..."
-          style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
-            borderRadius:10,padding:"10px 14px",color:T.text,fontSize:13,
-            outline:"none",boxSizing:"border-box"}}/>
-      </div>
-
-      {modelli.length>0&&data.perModello&&Object.keys(data.perModello).length>0&&(
-        <div style={{background:T.surface,borderRadius:10,padding:12}}>
-          <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:8}}>PER MODELLO</div>
-          {Object.entries(data.perModello).map(([mid,cnt])=>{
-            const m=modelli.find(x=>x.id===mid);
-            if(!m) return null;
-            const c=m.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
-            const mp=data.totale>0?Math.round((cnt/data.totale)*100):0;
-            return (
-              <div key={mid} style={{display:"flex",alignItems:"center",gap:8,
-                padding:"6px 8px",background:T.s2,borderRadius:6,marginBottom:4}}>
-                <div style={{width:10,height:10,borderRadius:"50%",background:c}}/>
-                <span style={{flex:1,fontSize:12,color:T.text}}>{m.titolo}</span>
-                <span style={{fontSize:11,color:T.sub}}>{mp}%</span>
-                <span style={{fontSize:14,fontWeight:800,color:T.text}}>{cnt}</span>
+      {/* Sottomenu: 0, 1 o N, tutti a scelta dell'utente. Nessuno preimpostato.
+          "Per collega" e "Per modello" sono scorciatoie predefinite (si
+          auto-popolano dai dati); "Sottomenu libero" lascia definire gruppi
+          a piacere con assegnazione manuale dei modelli, come 1°/2° Turno e
+          APP/AUTO fanno in Turnazione. */}
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {sottomenu.map(sm=>{
+          const isOpen = openSottomenu===sm.id;
+          return (
+            <div key={sm.id} style={{background:T.surface,borderRadius:10,overflow:"hidden"}}>
+              <div onClick={()=>setOpenSottomenu(isOpen?null:sm.id)}
+                style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+                  padding:"10px 12px",cursor:"pointer"}}>
+                <span style={{fontSize:12,fontWeight:700,color:T.text}}>{sm.nome}</span>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <button onClick={e=>{e.stopPropagation();rimuoviSottomenu(sm.id);}}
+                    style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:13,padding:"2px 4px"}}>🗑️</button>
+                  <span style={{fontSize:12,color:T.sub}}>{isOpen?"▲":"▼"}</span>
+                </div>
               </div>
-            );
-          })}
+              {isOpen && (
+                <div style={{padding:"0 12px 12px"}}>
+                  {sm.tipo==="libero" && (
+                    <div style={{marginBottom:8,display:"flex",gap:6}}>
+                      <input value={sm.nome} onChange={e=>aggiornaSottomenu(sm.id,{nome:e.target.value})}
+                        style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
+                          borderRadius:8,padding:"6px 10px",color:T.text,fontSize:12,outline:"none"}}/>
+                    </div>
+                  )}
+
+                  {/* Tipo "collega": elenco automatico di tutti i colleghi, come PER COLLEGA di Turnazione */}
+                  {sm.tipo==="collega" && (
+                    Object.keys(data.perCollega||{}).length===0 ? (
+                      <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"10px 0"}}>Nessun collega nel periodo</div>
+                    ) : Object.entries(data.perCollega).sort((a,b)=>b[1].count-a[1].count).map(([nome,info])=>{
+                      const gk = sm.id+":"+nome;
+                      const isOpenG = openGruppoDentro===gk;
+                      return (
+                        <div key={nome} style={{marginBottom:4}}>
+                          <div onClick={()=>setOpenGruppoDentro(isOpenG?null:gk)}
+                            style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",
+                              background:T.s2,borderRadius:isOpenG?"6px 6px 0 0":6,cursor:"pointer"}}>
+                            <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>{nome}</span>
+                            <span style={{fontSize:13,fontWeight:800,color:T.text}}>{info.count}</span>
+                            <span style={{fontSize:11,color:T.sub}}>{isOpenG?"▲":"▼"}</span>
+                          </div>
+                          {isOpenG && (
+                            <div style={{background:T.surface,border:`1px solid ${T.border}`,borderTop:"none",
+                              borderRadius:"0 0 6px 6px",padding:"8px 10px",display:"flex",flexWrap:"wrap",gap:6}}>
+                              {info.dates.map(dk=>(
+                                <span key={dk} style={{fontSize:11,fontWeight:600,color:T.text,
+                                  background:accent+"18",border:`1px solid ${accent}44`,borderRadius:6,padding:"3px 7px"}}>
+                                  {fmtData(dk)}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+
+                  {/* Tipo "modello": elenco automatico dei modelli inclusi nel report, come PER MODELLO */}
+                  {sm.tipo==="modello" && (
+                    !data.perModello||Object.keys(data.perModello).length===0 ? (
+                      <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"10px 0"}}>Nessun turno nel periodo</div>
+                    ) : Object.entries(data.perModello).map(([mid,info])=>{
+                      const m=modelli.find(x=>x.id===mid);
+                      if(!m) return null;
+                      const c=m.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
+                      const gk = sm.id+":"+mid;
+                      const isOpenG = openGruppoDentro===gk;
+                      return (
+                        <div key={mid} style={{marginBottom:4}}>
+                          <div onClick={()=>setOpenGruppoDentro(isOpenG?null:gk)}
+                            style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",
+                              background:T.s2,borderRadius:isOpenG?"6px 6px 0 0":6,cursor:"pointer"}}>
+                            <div style={{width:10,height:10,borderRadius:"50%",background:c}}/>
+                            <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>{m.titolo}</span>
+                            <span style={{fontSize:13,fontWeight:800,color:T.text}}>{info.count}</span>
+                            <span style={{fontSize:11,color:T.sub}}>{isOpenG?"▲":"▼"}</span>
+                          </div>
+                          {isOpenG && (
+                            <div style={{background:T.surface,border:`1px solid ${T.border}`,borderTop:"none",
+                              borderRadius:"0 0 6px 6px",padding:"8px 10px",display:"flex",flexWrap:"wrap",gap:6}}>
+                              {info.dates.map(dk=>(
+                                <span key={dk} style={{fontSize:11,fontWeight:600,color:T.text,
+                                  background:c+"18",border:`1px solid ${c}44`,borderRadius:6,padding:"3px 7px"}}>
+                                  {fmtData(dk)}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+
+                  {/* Tipo "libero": gruppi definiti dall'utente, con assegnazione
+                      manuale dei modelli a ciascun gruppo — stesso meccanismo di
+                      1°/2° Turno e APP/AUTO in Turnazione, ma quanti gruppi vuole
+                      l'utente, con nomi a scelta. */}
+                  {sm.tipo==="libero" && (()=>{
+                    const gruppi = sm.gruppi||[];
+                    const assegnazioni = sm.assegnazioni||{};
+                    const perGruppoSm = data.perSottomenu?.[sm.id] || {};
+                    function setAssegnazione(mid, gruppoKey){
+                      const next = {...assegnazioni};
+                      if(next[mid]===gruppoKey) delete next[mid]; else next[mid]=gruppoKey;
+                      aggiornaSottomenu(sm.id, {assegnazioni:next});
+                    }
+                    function aggiungiGruppo(){
+                      const key = "g"+Date.now().toString(36);
+                      aggiornaSottomenu(sm.id, {gruppi:[...gruppi, {key,label:"Nuovo gruppo",color:"#10b981"}]});
+                    }
+                    function rinominaGruppo(key, label){
+                      aggiornaSottomenu(sm.id, {gruppi:gruppi.map(g=>g.key===key?{...g,label}:g)});
+                    }
+                    function rimuoviGruppo(key){
+                      const nextAsseg = {...assegnazioni};
+                      Object.keys(nextAsseg).forEach(mid=>{ if(nextAsseg[mid]===key) delete nextAsseg[mid]; });
+                      aggiornaSottomenu(sm.id, {gruppi:gruppi.filter(g=>g.key!==key), assegnazioni:nextAsseg});
+                    }
+                    return (
+                      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                        {gruppi.map(g=>{
+                          const gk = sm.id+":"+g.key;
+                          const isOpenG = openGruppoDentro===gk;
+                          const count = Object.values(perGruppoSm[g.key]||{}).reduce((s,v)=>s+v.count,0);
+                          return (
+                            <div key={g.key}>
+                              <div style={{display:"flex",alignItems:"center",gap:6,
+                                padding:"8px 10px",background:g.color+"22",borderRadius:isOpenG?"8px 8px 0 0":8,
+                                border:`1px solid ${g.color}44`}}>
+                                <input value={g.label} onChange={e=>rinominaGruppo(g.key,e.target.value)}
+                                  style={{flex:1,background:"transparent",border:"none",outline:"none",
+                                    fontSize:13,fontWeight:800,color:"#0f172a"}}/>
+                                <span style={{fontSize:14,fontWeight:900,color:"#0f172a"}}>{count}</span>
+                                <span onClick={()=>rimuoviGruppo(g.key)} style={{cursor:"pointer",fontSize:12,color:"#ef4444"}}>🗑️</span>
+                                <span onClick={()=>setOpenGruppoDentro(isOpenG?null:gk)} style={{cursor:"pointer",fontSize:12,color:"#0f172a"}}>{isOpenG?"▲":"▼"}</span>
+                              </div>
+                              {isOpenG && (
+                                <div style={{background:T.s2,borderRadius:"0 0 8px 8px",border:`1px solid ${g.color}44`,
+                                  borderTop:"none",padding:"8px 10px"}}>
+                                  {modelli.length===0?(
+                                    <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"6px 0"}}>Nessun modello</div>
+                                  ):modelli.map(m=>{
+                                    const attivo = assegnazioni[m.id]===g.key;
+                                    const c=m.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
+                                    const info = perGruppoSm[g.key]?.[m.id];
+                                    return (
+                                      <div key={m.id} style={{display:"flex",flexDirection:"column",marginBottom:3}}>
+                                        <div style={{display:"flex",alignItems:"center",gap:8,
+                                          padding:"5px 6px",borderRadius:6,background:T.surface}}>
+                                          <input type="checkbox" checked={attivo}
+                                            onChange={()=>setAssegnazione(m.id,g.key)}
+                                            style={{cursor:"pointer",flexShrink:0}}/>
+                                          <div style={{width:8,height:8,borderRadius:"50%",background:c,flexShrink:0}}/>
+                                          <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>{m.titolo}</span>
+                                          <span style={{fontSize:13,fontWeight:800,color:T.text}}>{info?.count||0}</span>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                        <button onClick={aggiungiGruppo}
+                          style={{padding:"8px 0",borderRadius:8,border:`1px dashed ${T.border}`,
+                            background:"transparent",color:accent,fontWeight:700,fontSize:12,cursor:"pointer"}}>
+                          + Aggiungi gruppo
+                        </button>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {/* + Aggiungi sottomenu: apre la scelta fra i tre tipi. Nessun limite
+            al numero di sottomenu: 0 se non servono, quanti se ne vogliono
+            se servono. */}
+        <div style={{background:T.surface,borderRadius:10,overflow:"hidden"}}>
+          <div onClick={()=>setShowAggiungiMenu(s=>!s)}
+            style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,
+              padding:"10px 12px",cursor:"pointer",color:accent,fontWeight:700,fontSize:13}}>
+            + Aggiungi sottomenu {showAggiungiMenu?"▲":"▼"}
+          </div>
+          {showAggiungiMenu && (
+            <div style={{padding:"0 12px 12px",display:"flex",flexDirection:"column",gap:6}}>
+              <button onClick={()=>aggiungiSottomenu("collega")}
+                style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,
+                  background:T.s2,color:T.text,textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:700}}>
+                Per collega <span style={{fontWeight:400,color:T.sub}}>— elenco automatico, con date</span>
+              </button>
+              <button onClick={()=>aggiungiSottomenu("modello")}
+                style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,
+                  background:T.s2,color:T.text,textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:700}}>
+                Per modello <span style={{fontWeight:400,color:T.sub}}>— elenco automatico, con date</span>
+              </button>
+              <button onClick={()=>aggiungiSottomenu("libero")}
+                style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,
+                  background:T.s2,color:T.text,textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:700}}>
+                Sottomenu libero <span style={{fontWeight:400,color:T.sub}}>— gruppi a scelta, assegnazione manuale</span>
+              </button>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -7065,6 +7320,7 @@ function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati, accent
   const [editingName, setEditingName] = useState(false);
   const [tmpName, setTmpName] = useState(r.label);
   const [openModello, setOpenModello] = useState(null);
+  const [openCollega, setOpenCollega] = useState(null);
   const [openGruppo, setOpenGruppo] = useState(null);
   const pct1 = data.totale>0 ? Math.round(((data.primo||0)/data.totale)*100) : 0;
   const pct2 = data.totale>0 ? Math.round(((data.secondo||0)/data.totale)*100) : 0;
@@ -7206,6 +7462,41 @@ function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati, accent
                     {info.dates.map(dk=>(
                       <span key={dk} style={{fontSize:11,fontWeight:600,color:T.text,
                         background:c+"18",border:`1px solid ${c}44`,borderRadius:6,padding:"3px 7px"}}>
+                        {fmtData(dk)}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* PER COLLEGA: elenco di tutti i colleghi con cui si è lavorato nel
+          periodo, con espansione date come "PER MODELLO" sopra. Prima questo
+          blocco non esisteva affatto in Turnazione: "FILTRA PER COLLEGA" era
+          solo un campo di testo senza nessun elenco sotto da consultare. */}
+      {data.perCollega&&Object.keys(data.perCollega).length>0&&(
+        <div style={{background:T.surface,borderRadius:10,padding:12}}>
+          <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:8}}>PER COLLEGA</div>
+          {Object.entries(data.perCollega).sort((a,b)=>b[1].count-a[1].count).map(([nome,info])=>{
+            const isOpen = openCollega===nome;
+            return (
+              <div key={nome} style={{marginBottom:4}}>
+                <div onClick={()=>setOpenCollega(isOpen?null:nome)}
+                  style={{display:"flex",alignItems:"center",gap:8,
+                    padding:"6px 8px",background:T.s2,borderRadius:isOpen?"6px 6px 0 0":6,cursor:"pointer"}}>
+                  <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>{nome}</span>
+                  <span style={{fontSize:14,fontWeight:800,color:T.text}}>{info.count}</span>
+                  <span style={{fontSize:11,color:T.sub}}>{isOpen?"▲":"▼"}</span>
+                </div>
+                {isOpen&&(
+                  <div style={{background:T.surface,border:`1px solid ${T.border}`,borderTop:"none",
+                    borderRadius:"0 0 6px 6px",padding:"8px 10px",display:"flex",flexWrap:"wrap",gap:6}}>
+                    {info.dates.map(dk=>(
+                      <span key={dk} style={{fontSize:11,fontWeight:600,color:T.text,
+                        background:accent+"18",border:`1px solid ${accent}44`,borderRadius:6,padding:"3px 7px"}}>
                         {fmtData(dk)}
                       </span>
                     ))}
@@ -8038,11 +8329,14 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[]
                   }
                 };
                 const espanso = reportEspanso===r.id;
+                const isConteggio = r.type==="conteggio_turni";
+                const sottomenuLiberi = isConteggio ? (cfg.sottomenu||[]).filter(sm=>sm.tipo==="libero") : [];
+                const espandibile = isTurnazione || (isConteggio && sottomenuLiberi.length>0);
                 return (
                   <div key={r.id} style={{background:incluso?accent+"1f":T.s2,borderRadius:10,overflow:"hidden"}}>
                     <button onClick={()=>{
                         toggle();
-                        if(isTurnazione) setReportEspanso(espanso?null:r.id);
+                        if(espandibile) setReportEspanso(espanso?null:r.id);
                       }}
                       style={{display:"flex",alignItems:"center",justifyContent:"space-between",
                         width:"100%",padding:"9px 12px",borderRadius:0,border:"none",cursor:"pointer",
@@ -8052,7 +8346,7 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[]
                         <span style={{fontSize:11,fontWeight:800,color:incluso?accent:T.sub}}>
                           {incluso?"✓ Incluso":"Escluso"}
                         </span>
-                        {isTurnazione&&(
+                        {espandibile&&(
                           <span onClick={e=>{e.stopPropagation();setReportEspanso(espanso?null:r.id);}}
                             style={{fontSize:11,color:T.sub,padding:"2px 4px"}}>{espanso?"▲":"▼"}</span>
                         )}
@@ -8104,6 +8398,46 @@ function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, modelli=[]
                       </div>
                       );
                     })()}
+                    {isConteggio&&espanso&&sottomenuLiberi.length>0&&(
+                      // Ogni sottomenu libero del report (es. "PIANO INCENTIVANTE"
+                      // rinominato con dentro un sottomenu "1° turno") elenca i
+                      // suoi gruppi qui, con un tasto per modello per assegnarlo:
+                      // prima questa sezione non esisteva affatto, quindi non
+                      // c'era modo di includere il modello nei gruppi liberi
+                      // di un report Conteggio turni dal form del modello.
+                      <div style={{padding:"0 12px 12px",display:"flex",flexDirection:"column",gap:10}}>
+                        {sottomenuLiberi.map(sm=>{
+                          const assegnazioni = sm.assegnazioni||{};
+                          const gruppoAttuale = assegnazioni[form.id]||"";
+                          function setGruppo(key){
+                            const nextAsseg = {...assegnazioni};
+                            if(nextAsseg[form.id]===key) delete nextAsseg[form.id];
+                            else nextAsseg[form.id]=key;
+                            const nextSottomenu = (cfg.sottomenu||[]).map(x=>x.id===sm.id?{...x,assegnazioni:nextAsseg}:x);
+                            updateConteggioConfig(r.id, {...cfg, sottomenu:nextSottomenu});
+                          }
+                          return (
+                            <div key={sm.id}>
+                              <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>{sm.nome}</div>
+                              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                                <button onClick={()=>setGruppo("")}
+                                  style={{padding:"7px 10px",borderRadius:8,cursor:"pointer",
+                                    fontWeight:700,fontSize:11,border:"none",
+                                    background:gruppoAttuale===""?T.sub:T.surface,
+                                    color:gruppoAttuale===""?"#fff":T.sub}}>Nessuno</button>
+                                {(sm.gruppi||[]).map(g=>(
+                                  <button key={g.key} onClick={()=>setGruppo(g.key)}
+                                    style={{padding:"7px 10px",borderRadius:8,cursor:"pointer",
+                                      fontWeight:700,fontSize:11,border:"none",
+                                      background:gruppoAttuale===g.key?(g.color||accent):T.surface,
+                                      color:gruppoAttuale===g.key?"#fff":T.sub}}>{g.label}</button>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 );
               })}
