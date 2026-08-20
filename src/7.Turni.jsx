@@ -3,7 +3,7 @@ import {
   NOMI_MESI_IT, cancellaRegistroImportProblemi, estraiJsonDaTesto, fmtDataIT,
   getContrastTextColor, leggiRegistroImportProblemi, normalizzaRigheImportGrezzo,
   normalizzaTestoGrezzoTurni, oraInMinuti, registraProblemiImport, segnalaErroreSoloLog
-} from "./utilsRotazione";
+} from "./4.Rotazione";
 
 // ═══════════════════════════════════════════════════════════════
 // importTurni.jsx — Dialog di importazione turni: da JSON e da
