@@ -11,7 +11,7 @@ import {
 } from "./utilsRotazione";
 import { CalBadge, SmartTimeInput, AutocompleteInput, ColorPickerModal,
   ModaleErroriMultipli, FasceExpand, ConteggioConfigCard, TurnazioneConfigCard,
-  IndennitaConfig, OrePerTurnoView, StraordinariView, GuadagniView, Sec, SecCollapsible } from "./uiComuni";
+  IndennitaConfig, OrePerTurnoView, StraordinariView, GuadagniView } from "./uiComuni";
 import { ModelloCard, ModelForm, RotazioneCard, RotazioneForm, ModelloSelector,
   GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView } from "./utilsRotazione";
 import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./importTurni";
@@ -109,9 +109,6 @@ export default function VistaModelli({ C }){
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px 8px"}}>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
               <div style={{fontSize:24,fontWeight:900,fontFamily:"Georgia,serif",color:T.text}}>Modelli</div>
-              <CalBadge calId={calId} calAttivo={calAttivo} coloreCal={coloreCal}
-                testoContrasto={testoContrasto} T={T} store={store} setStore={setStore}
-                updateCalendar={updateCalendar} accent={accent} setCalId={setCalId}/>
             </div>
             <div style={{display:"flex",gap:8,alignItems:"center",position:"relative"}}>
               {modelliTab==="turni"&&(
@@ -123,6 +120,29 @@ export default function VistaModelli({ C }){
                   color:modalitaSpostamento?"#fff":T.sub,
                   transition:"background 0.12s ease, border-color 0.12s ease"}}>↑↓</button>
               )}
+              <button onClick={()=>{
+                let dati, nomeFile;
+                if(modelliTab==="turni"){
+                  dati = modelli;
+                  nomeFile = "modelli_turni.json";
+                } else if(modelliTab==="rotazioni"){
+                  dati = rotazioni;
+                  nomeFile = "modelli_rotazioni.json";
+                } else {
+                  dati = coloriExtra;
+                  nomeFile = "modelli_colori.json";
+                }
+                const blob = new Blob([JSON.stringify(dati,null,2)], {type:"application/json"});
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url; a.download = nomeFile;
+                document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+              }}
+                title="Scarica i dati di questa pagina"
+                style={{background:T.s2,border:`1.5px solid ${T.border}`,borderRadius:8,
+                  padding:"6px 10px",fontSize:16,fontWeight:700,cursor:"pointer",
+                  color:T.sub}}>⬇</button>
               {modelliTab!=="colori"&&(
               <button onClick={()=>{
                 if(modelliTab==="turni"){
@@ -168,14 +188,30 @@ export default function VistaModelli({ C }){
               boxShadow:modelliTab===v?"0 2px 8px rgba(0,0,0,0.12)":"none"}}>{l}</button>
         ))}
       </div>
-      {store.calendars.length>0&&calId&&(
-        <div style={{margin:"0 12px 10px",background:store.calendars.find(c=>c.id===calId)?.color+"22"||"#3b82f622",
-          border:`1px solid ${store.calendars.find(c=>c.id===calId)?.color+"55"||"#3b82f655"}`,
-          borderRadius:10,padding:"6px 12px",fontSize:12,
-          color:store.calendars.find(c=>c.id===calId)?.color||accent,fontWeight:700}}>
-           Modelli di: {store.calendars.find(c=>c.id===calId)?.name||""}
-        </div>
-      )}
+      {calId&&(()=>{
+        const calAttivo2 = store.calendars.find(c=>c.id===calId);
+        const coloreCal2 = calAttivo2?.color||accent;
+        function hexToRgb2(hex){
+          const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
+          return {r,g,b};
+        }
+        function luminance2({r,g,b}){
+          const a=[r,g,b].map(v=>{ v/=255; return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4); });
+          return 0.2126*a[0]+0.7152*a[1]+0.0722*a[2];
+        }
+        function contrastColor2(hex){
+          try { return luminance2(hexToRgb2(hex)) < 0.35 ? "#ffffff" : "#0f172a"; }
+          catch(e){ return "#ffffff"; }
+        }
+        const testoContrasto2 = contrastColor2(coloreCal2);
+        return (
+          <div style={{margin:"0 12px 10px",display:"flex"}}>
+            <CalBadge calId={calId} calAttivo={calAttivo2} coloreCal={coloreCal2}
+              testoContrasto={testoContrasto2} T={T} store={store} setStore={setStore}
+              updateCalendar={updateCalendar} accent={accent} setCalId={setCalId}/>
+          </div>
+        );
+      })()}
 
       <div ref={modelliScrollRef} style={{flex:1,overflowY:"auto",padding:"0 12px 80px"}}>
         {modelliTab==="turni"&&(()=>{
