@@ -77,12 +77,38 @@ export default function App({ session }){
     setPrevGrid, REPORT_TEMPLATES, calcolaOrdineModelli, updateFascia,
   } = C;
 
+  // NAV_ITEMS: la barra di navigazione ora vive in index.html come HTML
+  // statico fisso (#static-nav), indipendente dal ciclo di vita di React.
+  // Questo la rende immune a reload parziali / caricamenti incompleti su
+  // mobile: anche se React si sta rimontando, la barra resta sempre visibile
+  // e cliccabile. Qui sotto la teniamo sincronizzata (tab attiva evidenziata)
+  // ed esponiamo window.__navGo perché i bottoni HTML possano chiamare setScreen.
   const NAV_ITEMS = [
     { id:"cal",      icon:"▦",  label:"Calendario" },
     { id:"report",   icon:"📊", label:"Report" },
     { id:"modelli",  icon:"📋", label:"Modelli" },
     { id:"settings", icon:"⚙", label:"Impostazioni" },
   ];
+
+  useEffect(()=>{
+    window.__navGo = (id)=>setScreen(id);
+    return ()=>{ delete window.__navGo; };
+  }, [setScreen]);
+
+  useEffect(()=>{
+    const nav = document.getElementById("static-nav");
+    if(!nav) return;
+    nav.style.background = T.surface;
+    nav.style.borderTop = `1px solid ${T.border}`;
+    const buttons = nav.querySelectorAll("button");
+    NAV_ITEMS.forEach((item,i)=>{
+      const btn = buttons[i];
+      if(!btn) return;
+      const isActive = screen===item.id;
+      const spans = btn.querySelectorAll("span");
+      spans.forEach(s=>{ s.style.color = isActive?accent:T.sub; });
+    });
+  }, [screen, T, accent]);
 
   return (
     <div style={{display:"flex",flexDirection:"column",height:"100vh",height:"100dvh",background:T.bg,
@@ -167,21 +193,11 @@ export default function App({ session }){
           <span style={{cursor:"pointer",opacity:0.8}}>✕</span>
         </div>
       )}
-      <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>
+      <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",paddingBottom:52}}>
         {screen==="cal"      && calView}
         {screen==="report"   && reportView}
         {screen==="modelli"  && modelliView}
         {screen==="settings" && settingsView}
-      </div>
-      <div style={{display:"flex",borderTop:`1px solid ${T.border}`,background:T.surface,flexShrink:0}}>
-        {NAV_ITEMS.map(({id,icon,label})=>(
-          <button key={id} onClick={()=>setScreen(id)}
-            style={{flex:1,background:"none",border:"none",padding:"8px 0",cursor:"pointer",
-              display:"flex",flexDirection:"column",alignItems:"center",gap:1}}>
-            <span style={{fontSize:18,color:screen===id?accent:T.sub}}>{icon}</span>
-            <span style={{fontSize:9,fontWeight:700,color:screen===id?accent:T.sub}}>{label}</span>
-          </button>
-        ))}
       </div>
       {banner&&<div style={{position:"fixed",bottom:20,left:"50%",transform:"translateX(-50%)",
         background:"rgba(0,0,0,0.75)",color:"#fff",padding:"6px 16px",
