@@ -179,7 +179,7 @@ export function leggiLogErrori(){
   try{ return JSON.parse(localStorage.getItem(LOG_ERRORI_KEY)||'[]'); }
   catch(e){ return []; }
 }
-function cancellaLogErrori(){
+export function cancellaLogErrori(){
   try{ localStorage.removeItem(LOG_ERRORI_KEY); }catch(e){}
 }
 export function leggiErroriSilenziati(){
@@ -259,7 +259,7 @@ export function registraProblemiImport(mancanti, sospetti){
 export function cancellaRegistroImportProblemi(){
   try{ localStorage.removeItem(LOG_IMPORT_KEY); }catch(e){}
 }
-function clearLocalStorageCache(){
+export function clearLocalStorageCache(){
   localStorage.removeItem('cache_events');
   localStorage.removeItem('cache_calendars');
   localStorage.removeItem('cache_modelli');
@@ -300,7 +300,7 @@ export function withEventoRimosso(store, dayKey, calId, evtId){
 // #region SEZIONE 3: UTILITY FUNCTIONS (date/festivi)
 // ═══════════════════════════════════════════════════════════════
 export function daysInMonth(y,m){ return new Date(y,m+1,0).getDate(); }
-function firstDay(y,m){ const d=new Date(y,m,1).getDay(); return d===0?6:d-1; }
+export function firstDay(y,m){ const d=new Date(y,m,1).getDay(); return d===0?6:d-1; }
 export function dkey(y,m,d){ return `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`; }
 export function fmtDataIT(input){
   // Accetta una date_key "YYYY-MM-DD" oppure un oggetto Date, restituisce "GG-MM-AAAA"
@@ -772,7 +772,7 @@ const FESTIVITA_CATALOGO = [
 export const FESTIVITA_DEFAULT_ATTIVE = ["capodanno","epifania","pasqua","pasquetta","liberazione",
   "lavoro","repubblica","ferragosto","sangennaro","sanfrancesco","ognissanti","immacolata","natale","santostefano"];
 
-function resolveFestivitaCatalogo(y){
+export function resolveFestivitaCatalogo(y){
   const e=easter(y);
   const easterDate = new Date(y,e.m,e.d);
   return FESTIVITA_CATALOGO.map(f=>{
@@ -850,7 +850,7 @@ export function calcFineModello(mod){
   if(mod.tempo==="6h30") return calcFine6h30(mod.inizio)||"";
   return mod.fine||"";
 }
-function calcDurata(tIn,tOut){
+export function calcDurata(tIn,tOut){
   const m1=oraInMinuti(tIn), m2=oraInMinuti(tOut);
   if(m1===null||m2===null) return "";
   let mins=m2-m1;
