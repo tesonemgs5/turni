@@ -11,7 +11,7 @@ import {
 } from "./utilsRotazione";
 import { CalBadge, SmartTimeInput, AutocompleteInput, ColorPickerModal,
   ModaleErroriMultipli, FasceExpand, ConteggioConfigCard, TurnazioneConfigCard,
-  IndennitaConfig, OrePerTurnoView, StraordinariView, GuadagniView, Sec } from "./uiComuni";
+  IndennitaConfig, OrePerTurnoView, StraordinariView, GuadagniView, Sec, SecCollapsible } from "./uiComuni";
 import { ModelloCard, ModelForm, RotazioneCard, RotazioneForm, ModelloSelector,
   GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView } from "./utilsRotazione";
 import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./importTurni";
