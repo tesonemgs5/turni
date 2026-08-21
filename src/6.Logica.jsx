@@ -2418,11 +2418,18 @@ const importsRecenti = useMemo(()=>{
   const modelloProtrazioneCache = {};
   async function trovaOCreaModelloProtrazione(tipo, targetCalId){
     const titolo = tipo==="recupero" ? "PROTRAZIONE RECUPERO" : "PROTRAZIONE PAGAMENTO";
+    // Titoli storici con refusi: i modelli creati a mano tempo fa usano
+    // questi titoli invece di quello "corretto". Vanno riconosciuti come
+    // lo stesso modello, altrimenti la find sotto non trova mai un match
+    // e ne viene creato uno nuovo ogni volta (doppioni + eventi sganciati).
+    const titoliValidi = tipo==="recupero"
+      ? ["PROTRAZIONE RECUPERO", "PR PROTAZIONE RECUPERO"]
+      : ["PROTRAZIONE PAGAMENTO", "PP ROTAZIONE PAGAMENTO"];
     const cacheKey = `${targetCalId}::${titolo}`;
     if(modelloProtrazioneCache[cacheKey]) return modelloProtrazioneCache[cacheKey];
 
     const esistente = modelli.find(m=>
-      (m.titolo||"").trim().toUpperCase()===titolo &&
+      titoliValidi.includes((m.titolo||"").trim().toUpperCase()) &&
       (m.calendarId||mainCalId)===targetCalId
     );
     if(esistente){
