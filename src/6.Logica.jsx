@@ -2415,7 +2415,7 @@ const importsRecenti = useMemo(()=>{
   // e.modelloId, vedi computeConteggioForReport/computeTurnazioneForReport).
   // Un solo modello per tipo, riusato sempre: l'orario resta specifico
   // dell'evento (tIn/tOut), non del modello.
-  const modelloProtrazioneCache = {};
+  const modelloProtrazioneCacheRef = useRef({});
   async function trovaOCreaModelloProtrazione(tipo, targetCalId){
     const titolo = tipo==="recupero" ? "PROTRAZIONE RECUPERO" : "PROTRAZIONE PAGAMENTO";
     // Titoli storici con refusi: i modelli creati a mano tempo fa usano
@@ -2426,14 +2426,21 @@ const importsRecenti = useMemo(()=>{
       ? ["PROTRAZIONE RECUPERO", "PR PROTAZIONE RECUPERO"]
       : ["PROTRAZIONE PAGAMENTO", "PP ROTAZIONE PAGAMENTO"];
     const cacheKey = `${targetCalId}::${titolo}`;
-    if(modelloProtrazioneCache[cacheKey]) return modelloProtrazioneCache[cacheKey];
+    if(modelloProtrazioneCacheRef.current[cacheKey]) return modelloProtrazioneCacheRef.current[cacheKey];
 
-    const esistente = modelli.find(m=>
+    // IMPORTANTE: uso modelliRef.current, non la variabile "modelli" chiusa
+    // nella closure di questo render. Se questa funzione viene invocata da
+    // un callback async subito dopo un altro salvataggio (es. due protrazioni
+    // di seguito, o saveEvt+sincronizzaEventiProtrazione in rapida
+    // successione), "modelli" può ancora essere la fotografia di un render
+    // precedente e non contenere il modello appena creato/esistente:
+    // la find fallirebbe e ne creerebbe un doppione anche col titolo giusto.
+    const esistente = modelliRef.current.find(m=>
       titoliValidi.includes((m.titolo||"").trim().toUpperCase()) &&
       (m.calendarId||mainCalId)===targetCalId
     );
     if(esistente){
-      modelloProtrazioneCache[cacheKey] = esistente;
+      modelloProtrazioneCacheRef.current[cacheKey] = esistente;
       return esistente;
     }
 
@@ -2449,7 +2456,7 @@ const importsRecenti = useMemo(()=>{
     // condition: il modello poteva risultare "non trovato" e la
     // protrazione restava senza modello agganciato).
     const creato = esito?.modello || null;
-    if(creato) modelloProtrazioneCache[cacheKey] = creato;
+    if(creato) modelloProtrazioneCacheRef.current[cacheKey] = creato;
     else {
       segnalaErroreSoloLog(`Impossibile creare/recuperare il modello "${titolo}" per il calendario ${targetCalId}: saveModello non ha ritornato l'oggetto atteso.`, "trovaOCreaModelloProtrazione");
     }
