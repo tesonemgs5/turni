@@ -1,9 +1,7 @@
 import { useState, useEffect, useRef, useMemo, Fragment } from "react";
 // NOTA: COLORE_H24, getColorByTime e getContrastTextColor sono copiate qui
 // (invece di importate da 4.Rotazione) per evitare un import circolare
-// 4.Rotazione <-> 5.Comuni, che in build minificata poteva lasciare
-// componenti esportati più in basso in 4.Rotazione (es. ModelForm)
-// indefiniti a runtime. Se cambi la formula del contrasto o le fasce
+// 4.Rotazione <-> 5.Comuni. Se cambi la formula del contrasto o le fasce
 // orarie in 4.Rotazione, aggiorna anche qui.
 const COLORE_H24 = "#64748b";
 const FASCE_AUTOMATICHE_DEFAULT_LOCALE = [
