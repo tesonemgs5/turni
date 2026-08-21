@@ -1996,10 +1996,11 @@ const importsRecenti = useMemo(()=>{
       });
       let modelliAggiornati;
       let modelloAggiornato;
+      const { silenzioso: _silenziosoUpd, ...datiUpdatePuliti } = data;
       setModelli(prev=>{
         const updated=prev.map(m=>{
           if(m.id!==data.id) return m;
-          const nuovo = {...m,...data,colore:coloreEff,calendarId:targetCalId};
+          const nuovo = {...m,...datiUpdatePuliti,colore:coloreEff,calendarId:targetCalId};
           modelloAggiornato = nuovo;
           return nuovo;
         });
@@ -2081,13 +2082,21 @@ const importsRecenti = useMemo(()=>{
             const messaggio = indiciStessoOrario.length===0
               ? `Non ci sono altri modelli con l'orario ${nuovoOrarioKey} in questo calendario, quindi non ho un riferimento per posizionarlo: ho messo "${(data.titolo||"il nuovo modello").toUpperCase()}" in fondo alla lista. Spostalo manualmente quando vuoi.`
               : `Ci sono già più modelli con l'orario ${nuovoOrarioKey} ma in posizioni diverse della lista, quindi non posso capire automaticamente dove raggrupparlo: ho messo "${(data.titolo||"il nuovo modello").toUpperCase()}" in fondo alla lista. Spostalo manualmente quando vuoi.`;
-            window.alert(messaggio);
+            // Le creazioni automatiche (es. modello di protrazione generato
+            // al volo da trovaOCreaModelloProtrazione) non devono mai
+            // interrompere l'utente con un popup bloccante: non è
+            // un'azione manuale sua, quindi finisce solo nei log.
+            if(data.silenzioso) segnalaErroreSoloLog(messaggio, "Creazione automatica modello");
+            else window.alert(messaggio);
           }
         }
       }
 
       // Subito in locale: nuovo modello + rinumerazioni già visibili all'istante.
-      const modelloCreato = {...data,id:idLocale,colore:coloreEff,sortOrder:nuovoSortOrder,posizione:"",calendarId:targetCalId};
+      // (silenzioso è solo un flag interno per sopprimere l'alert sopra:
+      // non deve restare agganciato all'oggetto modello salvato in stato.)
+      const { silenzioso: _silenzioso, ...datiModelloPuliti } = data;
+      const modelloCreato = {...datiModelloPuliti,id:idLocale,colore:coloreEff,sortOrder:nuovoSortOrder,posizione:"",calendarId:targetCalId};
       let modelliAggiornati;
       setModelli(prev=>{
         const rinumerazioniMap = new Map(rinumerazioniApplicate.map(r=>[r.id, r.nuovoVal]));
@@ -2425,6 +2434,7 @@ const importsRecenti = useMemo(()=>{
       titolo, tempo:"personalizzato",
       coloreCustom: tipo==="recupero" ? "#8b5cf6" : "#a855f7",
       calendarId: targetCalId,
+      silenzioso: true,
     });
     // saveModello ora ritorna direttamente l'oggetto appena creato: niente
     // più bisogno di rileggere modelliRef.current dopo un setTimeout(0),
