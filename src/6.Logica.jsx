@@ -248,6 +248,11 @@ export function useAppCore(session){
 
   const [modelliTab, setModelliTab] = useState("turni");
   const [modelli, setModelli] = useState([]);
+  // Ref sincrono per leggere l'ultimo valore di modelli dentro callback
+  // async (es. subito dopo un saveModello, prima che il re-render abbia
+  // aggiornato la closure di questa funzione).
+  const modelliRef = useRef([]);
+  useEffect(()=>{ modelliRef.current = modelli; }, [modelli]);
   const [modelliSort, setModelliSort] = useState("orario");
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [showModelForm, setShowModelForm] = useState(false);
@@ -2157,13 +2162,20 @@ const importsRecenti = useMemo(()=>{
 
   async function inserisciEventoGenerico(mod, dataEv, rotazioneId, nuoviEventiLocali, labelOverride=null, extra={}){
     if(!mod && !labelOverride) return;
-    const { note="", collega="", auto="", importId=null, protPagFine=null, protRecFine=null } = extra;
+    const {
+      note="", collega="", auto="", importId=null, protPagFine=null, protRecFine=null,
+      oraInizioOverride=null, oraFineOverride=null,
+    } = extra;
     const dateKey = dkey(dataEv.getFullYear(), dataEv.getMonth(), dataEv.getDate());
     const color = mod ? (mod.coloreCustom || (mod.tempo==="h24" ? "#64748b" : colByTime(mod.inizio))) : "#94a3b8";
     const label = (labelOverride || mod?.label || mod?.titolo || "").toUpperCase();
     const allDay = mod ? mod.tempo==="h24" : true;
-    const tIn = (!mod || allDay) ? "" : (mod.inizio || "");
-    const tOut = (!mod || allDay) ? "" : calcFineModello(mod);
+    // oraInizioOverride/oraFineOverride: usati per eventi come la
+    // protrazione, dove l'orario è specifico di quel giorno e non quello
+    // fisso del modello (il modello "PROTRAZIONE PAGAMENTO" è riusato
+    // sempre, ma l'orario cambia turno per turno).
+    const tIn = oraInizioOverride!=null ? oraInizioOverride : ((!mod || allDay) ? "" : (mod.inizio || ""));
+    const tOut = oraFineOverride!=null ? oraFineOverride : ((!mod || allDay) ? "" : calcFineModello(mod));
 
     const { data, error } = await creaEventoSupabase({
       userId, calId, dateKey, label, color, allDay,
@@ -2250,7 +2262,47 @@ const importsRecenti = useMemo(()=>{
     const t = (r.titolo||"").toUpperCase() + " " + (r.note||"").toUpperCase();
     if(t.includes("RECUPERO")) return "recupero";
     if(t.includes("PAGAMENTO")) return "pagamento";
-    return "pagamento"; // default: le protrazioni straordinarie/elettorali sono tipicamente a pagamento
+    return "pagamento"; // default: le protrazioni straordinarie/elettuali sono tipicamente a pagamento
+  }
+
+  // Trova (o crea al volo) il modello dedicato "PROTRAZIONE PAGAMENTO" /
+  // "PROTRAZIONE RECUPERO" nel calendario indicato. Serve perché la
+  // protrazione, oltre a comparire come campo prot*Fine sull'evento del
+  // turno base, deve anche generare un evento reale agganciato a un
+  // modelloId: solo così entra nei report (che raggruppano tutto per
+  // e.modelloId, vedi computeConteggioForReport/computeTurnazioneForReport).
+  // Un solo modello per tipo, riusato sempre: l'orario resta specifico
+  // dell'evento (tIn/tOut), non del modello.
+  const modelloProtrazioneCache = {};
+  async function trovaOCreaModelloProtrazione(tipo, targetCalId){
+    const titolo = tipo==="recupero" ? "PROTRAZIONE RECUPERO" : "PROTRAZIONE PAGAMENTO";
+    const cacheKey = `${targetCalId}::${titolo}`;
+    if(modelloProtrazioneCache[cacheKey]) return modelloProtrazioneCache[cacheKey];
+
+    const esistente = modelli.find(m=>
+      (m.titolo||"").trim().toUpperCase()===titolo &&
+      (m.calendarId||mainCalId)===targetCalId
+    );
+    if(esistente){
+      modelloProtrazioneCache[cacheKey] = esistente;
+      return esistente;
+    }
+
+    await saveModello({
+      titolo, tempo:"personalizzato",
+      coloreCustom: tipo==="recupero" ? "#8b5cf6" : "#a855f7",
+      calendarId: targetCalId,
+    });
+    // saveModello scrive subito in locale via setModelli, ma questa è una
+    // callback async: leggo lo stato aggiornato al prossimo tick per
+    // recuperare l'id appena generato.
+    await new Promise(res=>setTimeout(res,0));
+    const creato = modelliRef.current.find(m=>
+      (m.titolo||"").trim().toUpperCase()===titolo &&
+      (m.calendarId||mainCalId)===targetCalId
+    );
+    if(creato) modelloProtrazioneCache[cacheKey] = creato;
+    return creato || null;
   }
 
   async function importaTurniPdfJson(righeJson){
@@ -2341,6 +2393,23 @@ const importsRecenti = useMemo(()=>{
       const [yy,mm,dd] = dateKey.split("-").map(Number);
       const dataEv = new Date(yy, mm-1, dd);
       await inserisciEventoGenerico(mod, dataEv, null, nuoviEventiLocali, null, { note, collega, auto, importId, protPagFine, protRecFine });
+
+      // Oltre al campo prot*Fine sull'evento del turno base (sopra), genero
+      // anche un evento reale agganciato al modello dedicato "PROTRAZIONE
+      // PAGAMENTO/RECUPERO": è l'unico modo perché la protrazione entri nei
+      // report, che contano tutto per e.modelloId.
+      if(prot){
+        const tipoProt = tipoProtrazione(prot);
+        const modProtrazione = await trovaOCreaModelloProtrazione(tipoProt, mod.calendarId||calId);
+        if(modProtrazione){
+          const oraInizioProt = r.oraFine; // uscita del turno base = inizio protrazione
+          const oraFineProt = tipoProt==="recupero" ? protRecFine : protPagFine;
+          await inserisciEventoGenerico(modProtrazione, dataEv, null, nuoviEventiLocali, null, {
+            note, collega, auto, importId,
+            oraInizioOverride: oraInizioProt, oraFineOverride: oraFineProt,
+          });
+        }
+      }
     }
 
     // Righe di protrazione che non hanno trovato un turno base con
