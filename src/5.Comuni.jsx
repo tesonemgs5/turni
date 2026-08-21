@@ -1,5 +1,46 @@
 import { useState, useEffect, useRef, useMemo, Fragment } from "react";
-import { COLORE_H24, getColorByTime, getContrastTextColor } from "./4.Rotazione";
+// NOTA: COLORE_H24, getColorByTime e getContrastTextColor sono copiate qui
+// (invece di importate da 4.Rotazione) per evitare un import circolare
+// 4.Rotazione <-> 5.Comuni, che in build minificata poteva lasciare
+// componenti esportati più in basso in 4.Rotazione (es. ModelForm)
+// indefiniti a runtime. Se cambi la formula del contrasto o le fasce
+// orarie in 4.Rotazione, aggiorna anche qui.
+const COLORE_H24 = "#64748b";
+const FASCE_AUTOMATICHE_DEFAULT_LOCALE = [
+  { key:"mattina",     label:"PRIMO",       color:"#f59e0b", from:360,  to:705  },
+  { key:"pomeriggio",  label:"SECONDO",     color:"#f97316", from:705,  to:1035 },
+  { key:"terzo_turno", label:"3° TURNO",    color:"#8b5cf6", from:1035, to:1080 },
+  { key:"notte",       label:"NOTTE",       color:"#1e40af", from:1080, to:360  },
+];
+function minsOfLocale(tIn){
+  if(!tIn) return 0;
+  let s=String(tIn).trim().replace(/["']/g,"").trim();
+  let m=s.match(/^(\d{1,2})[:.,](\d{1,2})/);
+  if(!m){
+    const digits=s.match(/^(\d{3,4})$/);
+    if(digits){ const d=digits[1].padStart(4,"0"); m=[null,d.slice(0,2),d.slice(2,4)]; }
+  }
+  if(!m) return 0;
+  const h=parseInt(m[1],10), mi=parseInt(m[2],10);
+  if(!Number.isFinite(h)||!Number.isFinite(mi)) return 0;
+  return h*60+mi;
+}
+function inRangeLocale(mins, from, to){ return from<=to ? (mins>=from && mins<to) : (mins>=from || mins<to); }
+function getColorByTime(tIn, fasce=FASCE_AUTOMATICHE_DEFAULT_LOCALE){
+  if(!tIn) return COLORE_H24;
+  const mins=minsOfLocale(tIn);
+  for(const f of fasce) if(inRangeLocale(mins, f.from, f.to)) return f.color;
+  return fasce[fasce.length-1]?.color||COLORE_H24;
+}
+function getContrastTextColor(hex){
+  if(!hex) return "#ffffff";
+  try {
+    const h=hex.replace("#","");
+    const r=parseInt(h.substring(0,2),16), g=parseInt(h.substring(2,4),16), b=parseInt(h.substring(4,6),16);
+    const yiq = (r*299 + g*587 + b*114) / 1000;
+    return yiq >= 140 ? "#0f172a" : "#ffffff";
+  } catch(e){ return "#ffffff"; }
+}
 
 // ═══════════════════════════════════════════════════════════════
 // uiComuni.jsx — Componenti UI condivisi: badge calendario, input
