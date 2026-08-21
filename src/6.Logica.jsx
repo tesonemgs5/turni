@@ -864,6 +864,100 @@ export function useAppCore(session){
     return { color, label, tInFinal, tOutFinal, extraNote };
   }
 
+  // Marcatore usato per ritrovare l'evento "figlio" di protrazione
+  // agganciato a un turno base, riusando la colonna import_id (già
+  // esistente su Supabase) invece di aggiungere una colonna nuova.
+  function idProtrazioneFiglio(idEventoBase, tipo){
+    return `protrazione_di_${idEventoBase}_${tipo}`;
+  }
+
+  // Crea/aggiorna/rimuove gli eventi "figli" di protrazione (a pagamento
+  // e/o a recupero) agganciati a un turno base. Ogni figlio è un evento
+  // reale collegato al modello dedicato "PROTRAZIONE PAGAMENTO"/
+  // "PROTRAZIONE RECUPERO" (trovato o creato al volo), con orario
+  // inizio = uscita del turno base e orario fine = protPagFine/protRecFine:
+  // questo lo fa entrare nei report che raggruppano per modelloId, esattamente
+  // come già avviene per le protrazioni importate da PDF.
+  async function sincronizzaEventiProtrazione({ idEventoBase, dayKey, calId, tOutBase, protPagFine, protRecFine }){
+    if(!idEventoBase||!dayKey||!calId||!userId) return;
+    const richieste = [
+      { tipo:"pagamento", oraFine: protPagFine },
+      { tipo:"recupero",  oraFine: protRecFine },
+    ];
+    const evtiGiorno = store.events?.[dayKey]?.[calId]||[];
+
+    for(const { tipo, oraFine } of richieste){
+      const marker = idProtrazioneFiglio(idEventoBase, tipo);
+      const esistente = evtiGiorno.find(e=>e.importId===marker);
+
+      // Campo vuoto o orario non valido/non successivo alla base: se
+      // esisteva un figlio da una modifica precedente, lo rimuovo.
+      const durataMin = calcMinuti(tOutBase, oraFine);
+      if(!oraFine || durataMin<=0){
+        if(esistente) await delEvt(dayKey, calId, esistente.id);
+        continue;
+      }
+
+      const mod = await trovaOCreaModelloProtrazione(tipo, calId);
+      if(!mod) continue;
+      const color = mod.coloreCustom || (tipo==="recupero" ? "#64748b" : "#8b5cf6");
+      const label = (mod.titolo||mod.label||"").toUpperCase();
+
+      if(esistente){
+        // Aggiorno l'evento figlio esistente (stesso pattern di updateEvt).
+        const payload = {
+          label, color, all_day:false,
+          time_in: tOutBase||"", time_out: oraFine,
+          modello_id: mod.id||null,
+        };
+        setStore(prev=>{
+          const patch = { label, color, allDay:false, tIn: tOutBase||"", tOut: oraFine, modelloId: mod.id||null };
+          const ns = withEventoAggiornato(prev, dayKey, calId, esistente.id, patch);
+          saveToLocalStorage(ns.events, ns.calendars, modelli);
+          return ns;
+        });
+        const match = { id: esistente.id, user_id: userId };
+        await scriviConBackup({
+          tipo:"update", table:"events", payload, matchObj:match,
+          contesto:`Aggiornamento protrazione ${tipo}`, ts:new Date().toISOString(),
+          eventsPerSheets: store.events, calendarsPerSheets: store.calendars,
+          opzioni:{ soloLog:true },
+        });
+      } else {
+        // Creo il nuovo evento figlio.
+        const idLocale = generaIdLocale();
+        const payload = {
+          id: idLocale,
+          user_id: userId, calendar_id: calId, date_key: dayKey,
+          label, color, all_day:false,
+          time_in: tOutBase||"", time_out: oraFine,
+          place:"", map_url:"", note:"",
+          modello_id: mod.id||null, rotazione_id:null,
+          collega:"", auto:"",
+          prot_pag_fine:null, prot_rec_fine:null,
+          import_id: marker,
+        };
+        const evt = {
+          id: idLocale, color, label, allDay:false,
+          tIn: tOutBase||"", tOut: oraFine,
+          place:"", map:"", note:"", modelloId: mod.id||null, rotazioneId:null,
+          collega:"", auto:"", importId: marker,
+        };
+        setStore(prev=>{
+          const ns = withEventoAggiunto(prev, dayKey, calId, evt);
+          saveToLocalStorage(ns.events, ns.calendars, modelli);
+          return ns;
+        });
+        await scriviConBackup({
+          tipo:"insert", table:"events", payload, matchObj:null,
+          contesto:`Creazione protrazione ${tipo}`, ts:new Date().toISOString(),
+          eventsPerSheets: store.events, calendarsPerSheets: store.calendars,
+          opzioni:{ soloLog:true },
+        });
+      }
+    }
+  }
+
   async function saveEvt(){
     if(!form||!dayKey||!calId||!userId) return;
     const cal = store.calendars.find(c=>c.id===calId);
@@ -914,6 +1008,15 @@ export function useAppCore(session){
       tipo:"insert", table:"events", payload, matchObj:null,
       contesto:"Creazione turno", ts:new Date().toISOString(),
       eventsPerSheets: nuovoStore.events, calendarsPerSheets: nuovoStore.calendars,
+    });
+
+    // 3) Se il turno porta una protrazione (a pagamento e/o a recupero),
+    // genero/aggiorno anche i rispettivi eventi "figli" agganciati ai
+    // modelli dedicati PROTRAZIONE PAGAMENTO/RECUPERO, così le ore di
+    // protrazione entrano nei report (che raggruppano per modelloId).
+    await sincronizzaEventiProtrazione({
+      idEventoBase: idLocale, dayKey, calId,
+      tOutBase: tOutFinal, protPagFine: form.protPagFine||"", protRecFine: form.protRecFine||"",
     });
   }
 
@@ -966,13 +1069,28 @@ export function useAppCore(session){
       contesto:"Modifica turno", ts:new Date().toISOString(),
       eventsPerSheets: nuovoStore.events, calendarsPerSheets: nuovoStore.calendars,
     });
+
+    // 3) Sincronizzo (crea/aggiorna/rimuove) gli eventi "figli" di
+    // protrazione, allo stesso modo di saveEvt.
+    await sincronizzaEventiProtrazione({
+      idEventoBase: form.editId, dayKey, calId: editCalId,
+      tOutBase: tOutFinal, protPagFine: form.protPagFine||"", protRecFine: form.protRecFine||"",
+    });
   }
 
   async function delEvt(dKey, cId, evtId){
+    // Se il turno che sto eliminando ha figli di protrazione agganciati
+    // (import_id "protrazione_di_<evtId>_pagamento/recupero"), li elimino
+    // a cascata: altrimenti resterebbero orfani nel calendario e nei report.
+    const evtiGiorno = store.events?.[dKey]?.[cId]||[];
+    const prefissoFigli = `protrazione_di_${evtId}_`;
+    const figli = evtiGiorno.filter(e=>(e.importId||"").startsWith(prefissoFigli));
+
     // 1) SUBITO in locale.
     let nuovoStore;
     setStore(prev=>{
-      const ns = withEventoRimosso(prev, dKey, cId, evtId);
+      let ns = withEventoRimosso(prev, dKey, cId, evtId);
+      for(const f of figli) ns = withEventoRimosso(ns, dKey, cId, f.id);
       saveToLocalStorage(ns.events, ns.calendars, modelli);
       nuovoStore = ns;
       return ns;
@@ -984,6 +1102,14 @@ export function useAppCore(session){
       contesto:"Eliminazione turno", ts:new Date().toISOString(),
       eventsPerSheets: nuovoStore.events, calendarsPerSheets: nuovoStore.calendars,
     });
+    for(const f of figli){
+      await scriviConBackup({
+        tipo:"delete", table:"events", payload:null, matchObj:{ id:f.id, user_id:userId },
+        contesto:"Eliminazione protrazione figlia", ts:new Date().toISOString(),
+        eventsPerSheets: nuovoStore.events, calendarsPerSheets: nuovoStore.calendars,
+        opzioni:{ soloLog:true },
+      });
+    }
   }
 
   async function delEvtiRotazioneDaData(rotazioneId, fromDateKey, cId, limit=null){
@@ -3117,6 +3243,7 @@ const importsRecenti = useMemo(()=>{
     trovaModelloPerTitoloOrario,
     isRigaProtrazione,
     tipoProtrazione,
+    sincronizzaEventiProtrazione,
     importaTurniPdfJson,
     delTuttiEventiImport,
     importaEventiSingoli,
