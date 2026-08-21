@@ -6,7 +6,9 @@ import { ModaleErroriMultipli } from "./5.Comuni";
 import {
   getContrastTextColor, NOMI_MESI_IT, calcFine6h15, calcFine6h30, calcDurata,
   fmtDataIT, impostaSilenziamentoErrore,
+  ModelForm, GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView,
 } from "./4.Rotazione";
+import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./7.Turni";
 
 // ═══════════════════════════════════════════════════════════════
 // App.jsx — INDICE dell'app.
