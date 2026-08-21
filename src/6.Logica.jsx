@@ -1995,8 +1995,14 @@ const importsRecenti = useMemo(()=>{
         return ns;
       });
       let modelliAggiornati;
+      let modelloAggiornato;
       setModelli(prev=>{
-        const updated=prev.map(m=>m.id===data.id?{...m,...data,colore:coloreEff,calendarId:targetCalId}:m);
+        const updated=prev.map(m=>{
+          if(m.id!==data.id) return m;
+          const nuovo = {...m,...data,colore:coloreEff,calendarId:targetCalId};
+          modelloAggiornato = nuovo;
+          return nuovo;
+        });
         modelliAggiornati = updated;
         return updated;
       });
@@ -2032,7 +2038,7 @@ const importsRecenti = useMemo(()=>{
           segnalaErroreDb(risModello?.errore || risEventi?.errore, "Salvataggio modello");
         }
       })();
-      return { ok:true };
+      return { ok:true, modello: modelloAggiornato };
     } else {
       // INSERT: il calcolo del posizionamento usa solo dati già in memoria
       // (modelli, calcolaOrdineModelli) — non serve aspettare Supabase per
@@ -2081,13 +2087,14 @@ const importsRecenti = useMemo(()=>{
       }
 
       // Subito in locale: nuovo modello + rinumerazioni già visibili all'istante.
+      const modelloCreato = {...data,id:idLocale,colore:coloreEff,sortOrder:nuovoSortOrder,posizione:"",calendarId:targetCalId};
       let modelliAggiornati;
       setModelli(prev=>{
         const rinumerazioniMap = new Map(rinumerazioniApplicate.map(r=>[r.id, r.nuovoVal]));
         const conRinumerazioni = prev.map(m=>
           rinumerazioniMap.has(m.id) ? {...m, sortOrder:rinumerazioniMap.get(m.id)} : m
         );
-        const updated=[...conRinumerazioni,{...data,id:idLocale,colore:coloreEff,sortOrder:nuovoSortOrder,posizione:"",calendarId:targetCalId}];
+        const updated=[...conRinumerazioni, modelloCreato];
         modelliAggiornati = updated;
         return updated;
       });
@@ -2112,7 +2119,7 @@ const importsRecenti = useMemo(()=>{
           });
         }
       })();
-      return { ok:true };
+      return { ok:true, modello: modelloCreato };
     }
   }
 
@@ -2414,21 +2421,22 @@ const importsRecenti = useMemo(()=>{
       return esistente;
     }
 
-    await saveModello({
+    const esito = await saveModello({
       titolo, tempo:"personalizzato",
       coloreCustom: tipo==="recupero" ? "#8b5cf6" : "#a855f7",
       calendarId: targetCalId,
     });
-    // saveModello scrive subito in locale via setModelli, ma questa è una
-    // callback async: leggo lo stato aggiornato al prossimo tick per
-    // recuperare l'id appena generato.
-    await new Promise(res=>setTimeout(res,0));
-    const creato = modelliRef.current.find(m=>
-      (m.titolo||"").trim().toUpperCase()===titolo &&
-      (m.calendarId||mainCalId)===targetCalId
-    );
+    // saveModello ora ritorna direttamente l'oggetto appena creato: niente
+    // più bisogno di rileggere modelliRef.current dopo un setTimeout(0),
+    // che non garantiva l'ordine rispetto agli effect di React (race
+    // condition: il modello poteva risultare "non trovato" e la
+    // protrazione restava senza modello agganciato).
+    const creato = esito?.modello || null;
     if(creato) modelloProtrazioneCache[cacheKey] = creato;
-    return creato || null;
+    else {
+      segnalaErroreSoloLog(`Impossibile creare/recuperare il modello "${titolo}" per il calendario ${targetCalId}: saveModello non ha ritornato l'oggetto atteso.`, "trovaOCreaModelloProtrazione");
+    }
+    return creato;
   }
 
   async function importaTurniPdfJson(righeJson){
