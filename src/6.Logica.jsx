@@ -871,6 +871,18 @@ export function useAppCore(session){
     return `protrazione_di_${idEventoBase}_${tipo}`;
   }
 
+  // Decodifica il marker import_id di un evento: se l'evento È esso stesso
+  // una protrazione-figlia (creata da sincronizzaEventiProtrazione), restituisce
+  // { idEventoBase, tipo }, altrimenti null. Serve per la sincronizzazione
+  // inversa: quando l'utente modifica/elimina la protrazione direttamente
+  // dal calendario, dobbiamo risalire al turno AUTO padre e aggiornarlo.
+  function decodificaProtrazioneFiglio(importId){
+    if(!importId) return null;
+    const m = /^protrazione_di_(.+)_(pagamento|recupero)$/.exec(importId);
+    if(!m) return null;
+    return { idEventoBase: m[1], tipo: m[2] };
+  }
+
   // Crea/aggiorna/rimuove gli eventi "figli" di protrazione (a pagamento
   // e/o a recupero) agganciati a un turno base. Ogni figlio è un evento
   // reale collegato al modello dedicato "PROTRAZIONE PAGAMENTO"/
@@ -1027,6 +1039,36 @@ export function useAppCore(session){
     if(!cal) return;
     const { color, label, tInFinal, tOutFinal } = computeEventFields(form, cal, modelli);
 
+    // Sincronizzazione inversa: se l'evento che sto modificando È esso
+    // stesso una protrazione-figlia (l'utente ha cambiato l'orario
+    // direttamente sulla card PROTRAZIONE nel calendario, non sul campo
+    // dentro AUTO), propago il nuovo orario di fine al campo
+    // protPagFine/protRecFine del turno AUTO padre, così restano sempre
+    // allineati indipendentemente da dove viene fatta la modifica.
+    const evtiGiornoCorrente = store.events?.[dayKey]?.[editCalId]||[];
+    const evtCorrente = evtiGiornoCorrente.find(e=>e.id===form.editId);
+    const decodificaMod = decodificaProtrazioneFiglio(evtCorrente?.importId);
+    if(decodificaMod){
+      const { idEventoBase, tipo } = decodificaMod;
+      const campoDaAggiornare = tipo==="pagamento" ? "protPagFine" : "protRecFine";
+      const campoDbDaAggiornare = tipo==="pagamento" ? "prot_pag_fine" : "prot_rec_fine";
+      const padreEsiste = evtiGiornoCorrente.some(e=>e.id===idEventoBase);
+      if(padreEsiste){
+        setStore(prev=>{
+          const ns = withEventoAggiornato(prev, dayKey, editCalId, idEventoBase, { [campoDaAggiornare]: tOutFinal||"" });
+          saveToLocalStorage(ns.events, ns.calendars, modelli);
+          return ns;
+        });
+        await scriviConBackup({
+          tipo:"update", table:"events", payload:{ [campoDbDaAggiornare]: tOutFinal||null },
+          matchObj:{ id: idEventoBase, user_id: userId },
+          contesto:`Propagazione orario protrazione ${tipo} sul turno base`, ts:new Date().toISOString(),
+          eventsPerSheets: store.events, calendarsPerSheets: store.calendars,
+          opzioni:{ soloLog:true },
+        });
+      }
+    }
+
     const payload = {
       label, color, all_day: form.dur==="allday",
       time_in: tInFinal, time_out: tOutFinal,
@@ -1071,11 +1113,15 @@ export function useAppCore(session){
     });
 
     // 3) Sincronizzo (crea/aggiorna/rimuove) gli eventi "figli" di
-    // protrazione, allo stesso modo di saveEvt.
-    await sincronizzaEventiProtrazione({
-      idEventoBase: form.editId, dayKey, calId: editCalId,
-      tOutBase: tOutFinal, protPagFine: form.protPagFine||"", protRecFine: form.protRecFine||"",
-    });
+    // protrazione, allo stesso modo di saveEvt — solo se l'evento
+    // modificato è un turno base e non una protrazione-figlia (nel
+    // secondo caso l'aggiornamento è già stato propagato sopra, punto 3bis).
+    if(!decodificaMod){
+      await sincronizzaEventiProtrazione({
+        idEventoBase: form.editId, dayKey, calId: editCalId,
+        tOutBase: tOutFinal, protPagFine: form.protPagFine||"", protRecFine: form.protRecFine||"",
+      });
+    }
   }
 
   async function delEvt(dKey, cId, evtId){
@@ -1085,6 +1131,35 @@ export function useAppCore(session){
     const evtiGiorno = store.events?.[dKey]?.[cId]||[];
     const prefissoFigli = `protrazione_di_${evtId}_`;
     const figli = evtiGiorno.filter(e=>(e.importId||"").startsWith(prefissoFigli));
+
+    // Sincronizzazione inversa: se l'evento che sto eliminando È esso
+    // stesso una protrazione-figlia (l'utente l'ha cancellata direttamente
+    // dal calendario, non svuotando il campo su AUTO), risalgo al turno
+    // AUTO padre e pulisco il campo protPagFine/protRecFine corrispondente,
+    // altrimenti il padre resterebbe con un riferimento a un orario
+    // di protrazione che in calendario non esiste più.
+    const evtCorrente = evtiGiorno.find(e=>e.id===evtId);
+    const decodifica = decodificaProtrazioneFiglio(evtCorrente?.importId);
+    if(decodifica){
+      const { idEventoBase, tipo } = decodifica;
+      const campoDaPulire = tipo==="pagamento" ? "protPagFine" : "protRecFine";
+      const campoDbDaPulire = tipo==="pagamento" ? "prot_pag_fine" : "prot_rec_fine";
+      const padreEsiste = evtiGiorno.some(e=>e.id===idEventoBase);
+      if(padreEsiste){
+        setStore(prev=>{
+          const ns = withEventoAggiornato(prev, dKey, cId, idEventoBase, { [campoDaPulire]: "" });
+          saveToLocalStorage(ns.events, ns.calendars, modelli);
+          return ns;
+        });
+        await scriviConBackup({
+          tipo:"update", table:"events", payload:{ [campoDbDaPulire]: null },
+          matchObj:{ id: idEventoBase, user_id: userId },
+          contesto:`Pulizia campo protrazione ${tipo} sul turno base`, ts:new Date().toISOString(),
+          eventsPerSheets: store.events, calendarsPerSheets: store.calendars,
+          opzioni:{ soloLog:true },
+        });
+      }
+    }
 
     // 1) SUBITO in locale.
     let nuovoStore;
