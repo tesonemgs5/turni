@@ -653,7 +653,14 @@ export function useAppCore(session){
             for(const [cid, gruppo] of perCalendarioModelli){
               for(const { parolaChiave, titoloCorretto } of tipiDaUnificare){
                 const candidati = gruppo.filter(m=>eModelloProtrazione(m.titolo, parolaChiave));
-                if(candidati.length===0) continue;
+                // Nessun doppione reale (0 o 1 solo modello per questo tipo/
+                // calendario): non c'è nulla da unificare. IMPORTANTE non
+                // toccare/rinominare comunque l'unico modello rimasto: farlo
+                // ad ogni avvio, anche a doppioni già risolti, rischia di
+                // ricaricare i modelli da una query fatta in parallelo a un
+                // salvataggio dell'utente e "riportare indietro" le sue
+                // ultime modifiche (tempo/orario/colore) appena fatte.
+                if(candidati.length<=1) continue;
                 const ordinatiPerId = [...candidati].sort((a,b)=>(a.id>b.id?1:-1));
                 const superstite = ordinatiPerId[0];
                 if((superstite.titolo||"").trim()!==titoloCorretto){
@@ -707,6 +714,60 @@ export function useAppCore(session){
               }
             }
           } catch(e){ segnalaErrore(e, "Unificazione automatica modelli protrazione all'avvio"); }
+
+          // Fix "una tantum" (eseguito una sola volta per utente, mai più
+          // dopo — vedi flag in localStorage sotto): i modelli PROTRAZIONE
+          // PAGAMENTO/RECUPERO creati da versioni precedenti avevano
+          // tempo:"personalizzato" con un orario fittizio (es. 09:00-09:00)
+          // invece di "h24", e un colore non allineato a quello scelto
+          // dall'utente per PAGAMENTO (rosa). Corregge SOLO tempo/inizio/
+          // fine, mai il colore se l'utente ne ha già impostato uno
+          // (colore_custom valorizzato): dopo la prima esecuzione il flag
+          // impedisce di rieseguirlo, così eventuali scelte successive
+          // dell'utente su questi modelli non vengono più toccate.
+          try {
+            const FLAG_KEY = "fix_protrazione_h24_v1";
+            const giaEseguito = (()=>{ try{ return localStorage.getItem(FLAG_KEY)==="1"; }catch(e){ return false; } })();
+            if(!giaEseguito){
+              function tipoModelloProtrazioneRaw(titolo){
+                const n = (titolo||"").trim().toUpperCase().replace(/\s+/g,"").replace(/^-+/,"");
+                const haRadice = n.includes("PROTRAZIONE") || n.includes("PROTAZIONE");
+                if(!haRadice) return null;
+                if(n.includes("RECUPERO")) return "recupero";
+                if(n.includes("PAGAMENTO")) return "pagamento";
+                return null;
+              }
+              const daCorreggere = [];
+              for(const m of (modelliDb||[])){
+                const tipo = tipoModelloProtrazioneRaw(m.titolo);
+                if(!tipo) continue;
+                if(m.tempo==="h24") continue; // già corretto, non tocco nulla
+                const payloadFix = { tempo:"h24", inizio:null, fine:null };
+                if(!m.colore_custom){
+                  // Solo se l'utente non ha MAI scelto un colore custom:
+                  // imposto un rosa di default (più chiaro per recupero, più
+                  // acceso per pagamento), coerente con quanto richiesto.
+                  payloadFix.colore_custom = tipo==="recupero" ? "#f9a8d4" : "#ec4899";
+                  payloadFix.colore = payloadFix.colore_custom;
+                }
+                daCorreggere.push({ id:m.id, payloadFix });
+              }
+              if(daCorreggere.length>0){
+                await Promise.all(daCorreggere.map(({id,payloadFix})=>
+                  supabase.from("modelli").update(payloadFix).eq("id",id).eq("user_id",userId)
+                ));
+                const {data:modelliDbAggiornati2}=await supabase.from("modelli").select("*").eq("user_id",userId).order("sort_order").order("id");
+                setModelli((modelliDbAggiornati2||[]).map(m=>({
+                  id:m.id,titolo:m.titolo,label:m.label||"",tempo:m.tempo,
+                  inizio:m.inizio||"",fine:m.fine||"",
+                  colore:m.colore,coloreCustom:m.colore_custom||null,
+                  calendarId:m.calendar_id||null,
+                  posizione:m.posizione||"",sortOrder:m.sort_order||0,
+                })));
+              }
+              try{ localStorage.setItem(FLAG_KEY, "1"); }catch(e){}
+            }
+          } catch(e){ segnalaErrore(e, "Correzione automatica modelli protrazione (h24/colore) all'avvio"); }
 
           // Fix "una tantum": elimina eventi PROTRAZIONE duplicati residui
           // (stesso turno base + stesso tipo pagamento/recupero, marcati con
@@ -2808,8 +2869,8 @@ const importsRecenti = useMemo(()=>{
     }
 
     const esito = await saveModello({
-      titolo, tempo:"personalizzato",
-      coloreCustom: tipo==="recupero" ? "#8b5cf6" : "#a855f7",
+      titolo, tempo:"h24",
+      coloreCustom: tipo==="recupero" ? "#f9a8d4" : "#ec4899",
       calendarId: targetCalId,
       silenzioso: true,
     });
