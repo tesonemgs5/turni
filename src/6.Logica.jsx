@@ -616,6 +616,98 @@ export function useAppCore(session){
             }
           } catch(e){ segnalaErrore(e, "Correzione automatica ordine modelli all'avvio"); }
 
+          // Fix "una tantum": unifica i modelli PROTRAZIONE PAGAMENTO/RECUPERO
+          // duplicati o scritti con refusi storici (es. "PP ROTAZIONE
+          // PAGAMENTO", "PR PROTAZIONE RECUPERO", "- PR PROTAZIONE
+          // RECUPERO"...). Per ogni calendario e ogni tipo (pagamento/
+          // recupero): trova tutti i modelli la cui radice normalizzata
+          // contiene PROTRAZIONE/PROTAZIONE + PAGAMENTO o RECUPERO, ne
+          // sceglie UNO come "superstite" (il più vecchio, cioè id più
+          // basso), corregge il suo titolo nella forma scritta giusta,
+          // sposta su di lui tutti gli eventi agganciati agli altri
+          // doppioni, e infine cancella i modelli doppioni. Così in Modelli
+          // resta un solo "PROTRAZIONE PAGAMENTO" e un solo "PROTRAZIONE
+          // RECUPERO" per calendario, con l'ortografia corretta.
+          try {
+            function normRadiceProtrazione(t){
+              return (t||"").trim().toUpperCase().replace(/\s+/g,"").replace(/^-+/,"");
+            }
+            function eModelloProtrazione(titolo, parolaChiaveTipo){
+              const n = normRadiceProtrazione(titolo);
+              const haRadice = n.includes("PROTRAZIONE") || n.includes("PROTAZIONE");
+              return haRadice && n.includes(parolaChiaveTipo);
+            }
+            const tipiDaUnificare = [
+              { parolaChiave:"PAGAMENTO", titoloCorretto:"PROTRAZIONE PAGAMENTO" },
+              { parolaChiave:"RECUPERO",  titoloCorretto:"PROTRAZIONE RECUPERO" },
+            ];
+            const perCalendarioModelli = new Map();
+            for(const m of (modelliDb||[])){
+              const cid = m.calendar_id || "null";
+              if(!perCalendarioModelli.has(cid)) perCalendarioModelli.set(cid, []);
+              perCalendarioModelli.get(cid).push(m);
+            }
+            const modelliDaRimappare = new Map(); // vecchioId -> nuovoId (superstite)
+            const modelliIdDaEliminare = [];
+            const modelliDaRinominare = []; // {id, titoloCorretto}
+            for(const [cid, gruppo] of perCalendarioModelli){
+              for(const { parolaChiave, titoloCorretto } of tipiDaUnificare){
+                const candidati = gruppo.filter(m=>eModelloProtrazione(m.titolo, parolaChiave));
+                if(candidati.length===0) continue;
+                const ordinatiPerId = [...candidati].sort((a,b)=>(a.id>b.id?1:-1));
+                const superstite = ordinatiPerId[0];
+                if((superstite.titolo||"").trim()!==titoloCorretto){
+                  modelliDaRinominare.push({ id:superstite.id, titoloCorretto });
+                }
+                for(let i=1;i<ordinatiPerId.length;i++){
+                  modelliDaRimappare.set(ordinatiPerId[i].id, superstite.id);
+                  modelliIdDaEliminare.push(ordinatiPerId[i].id);
+                }
+              }
+            }
+            if(modelliDaRinominare.length>0){
+              await Promise.all(modelliDaRinominare.map(({id,titoloCorretto})=>
+                supabase.from("modelli").update({titolo:titoloCorretto}).eq("id",id).eq("user_id",userId)
+              ));
+            }
+            if(modelliDaRimappare.size>0){
+              // Sposta ogni evento agganciato a un modello doppione sul modello superstite.
+              for(const [vecchioId, nuovoId] of modelliDaRimappare){
+                await supabase.from("events").update({modello_id:nuovoId}).eq("modello_id",vecchioId).eq("user_id",userId);
+              }
+            }
+            if(modelliIdDaEliminare.length>0){
+              await supabase.from("modelli").delete().in("id", modelliIdDaEliminare).eq("user_id", userId);
+            }
+            if(modelliDaRinominare.length>0 || modelliIdDaEliminare.length>0){
+              // Ricarico i modelli aggiornati (titolo corretto + doppioni rimossi)
+              // e aggiorno anche gli eventi in memoria/localStorage che
+              // puntavano ai modelli doppioni, così sparisce subito dalla UI.
+              const {data:modelliDbAggiornati}=await supabase.from("modelli").select("*").eq("user_id",userId).order("sort_order").order("id");
+              setModelli((modelliDbAggiornati||[]).map(m=>({
+                id:m.id,titolo:m.titolo,label:m.label||"",tempo:m.tempo,
+                inizio:m.inizio||"",fine:m.fine||"",
+                colore:m.colore,coloreCustom:m.colore_custom||null,
+                calendarId:m.calendar_id||null,
+                posizione:m.posizione||"",sortOrder:m.sort_order||0,
+              })));
+              if(modelliDaRimappare.size>0){
+                setStore(prev=>{
+                  const ns = JSON.parse(JSON.stringify(prev));
+                  for(const dKey of Object.keys(ns.events||{})){
+                    for(const cid of Object.keys(ns.events[dKey]||{})){
+                      ns.events[dKey][cid] = (ns.events[dKey][cid]||[]).map(e=>
+                        modelliDaRimappare.has(e.modelloId) ? {...e, modelloId: modelliDaRimappare.get(e.modelloId)} : e
+                      );
+                    }
+                  }
+                  saveToLocalStorage(ns.events, ns.calendars, modelli);
+                  return ns;
+                });
+              }
+            }
+          } catch(e){ segnalaErrore(e, "Unificazione automatica modelli protrazione all'avvio"); }
+
           // Fix "una tantum": elimina eventi PROTRAZIONE duplicati residui
           // (stesso turno base + stesso tipo pagamento/recupero, marcati con
           // lo stesso import_id "protrazione_di_<idBase>_<tipo>"), retaggio
@@ -786,7 +878,7 @@ export function useAppCore(session){
     const calOrderIdx = new Map(store.calendars.map((c,i)=>[c.id,i]));
     // Ordine modello: posizione del modello nella schermata Modelli
     const modOrderIdx = new Map(modelliOrdinati.map((m,i)=>[m.id,i]));
-    return res.sort((a,b)=>{
+    const ordinati = res.sort((a,b)=>{
       const ca = calOrderIdx.has(a._cid) ? calOrderIdx.get(a._cid) : 999;
       const cb = calOrderIdx.has(b._cid) ? calOrderIdx.get(b._cid) : 999;
       if(ca!==cb) return ca-cb;
@@ -794,6 +886,33 @@ export function useAppCore(session){
       const mb = b.modelloId && modOrderIdx.has(b.modelloId) ? modOrderIdx.get(b.modelloId) : 9999;
       return ma-mb;
     });
+    // Una protrazione-figlia (PROTRAZIONE PAGAMENTO/RECUPERO agganciata a un
+    // turno base) va SEMPRE mostrata subito dopo il proprio turno base,
+    // indipendentemente da dove si trova il modello PROTRAZIONE nella lista
+    // Modelli: senza questo passaggio, se il modello PROTRAZIONE è prima di
+    // AUTO in quella lista, la card della protrazione appare sopra invece
+    // che sotto il turno a cui è collegata.
+    const idxById = new Map(ordinati.map((e,i)=>[e.id,i]));
+    const basiGiaPiazzate = new Set();
+    const risultatoFinale = [];
+    for(const e of ordinati){
+      const decodifica = decodificaProtrazioneFiglio(e.importId);
+      if(decodifica){
+        // Salta qui: la protrazione-figlia viene inserita subito dopo il
+        // suo turno base quando processiamo il base stesso (sotto). Se il
+        // base non è (più) presente in questo elenco, la protrazione va
+        // comunque mostrata, altrove non salterebbe fuori da nessuna parte.
+        if(idxById.has(decodifica.idEventoBase)) continue;
+      }
+      risultatoFinale.push(e);
+      if(!decodifica && !basiGiaPiazzate.has(e.id)){
+        basiGiaPiazzate.add(e.id);
+        const prefissoFigli = `protrazione_di_${e.id}_`;
+        const figli = ordinati.filter(f=>(f.importId||"").startsWith(prefissoFigli));
+        risultatoFinale.push(...figli);
+      }
+    }
+    return risultatoFinale;
   }
   function dots(key){ return store.calendars.filter(c=>getEvts(key,c.id).length>0); }
 
