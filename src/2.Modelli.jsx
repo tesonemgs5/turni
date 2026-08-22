@@ -16,6 +16,32 @@ import { ModelloCard, ModelForm, RotazioneCard, RotazioneForm, ModelloSelector,
   GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView } from "./4.Rotazione";
 import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./7.Turni";
 
+// Riga della lista Colori: mostra il pallino colore, etichetta, sottotitolo,
+// contatore di modelli che lo usano e (se applicabile) un pulsante per rimuoverlo.
+function ColorRow({ T, hex, label, sub, count, onClick, onRemove }) {
+  return (
+    <div onClick={onClick}
+      style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",cursor:"pointer"}}>
+      <div style={{width:26,height:26,borderRadius:"50%",background:hex,
+        border:`2px solid ${T.border}`,flexShrink:0}}/>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:14,fontWeight:700,color:T.text,
+          overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}</div>
+        {sub&&<div style={{fontSize:11,color:T.sub,marginTop:1}}>{sub}</div>}
+      </div>
+      {typeof count==="number"&&count>0&&(
+        <span style={{fontSize:11,fontWeight:700,color:T.sub,background:T.s2,
+          borderRadius:10,padding:"2px 8px",flexShrink:0}}>{count}</span>
+      )}
+      {onRemove&&(
+        <button onClick={(e)=>{e.stopPropagation();onRemove();}}
+          style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",
+            fontSize:18,padding:"0 4px",flexShrink:0}}>×</button>
+      )}
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════
 // core2.jsx — Modelli, Rotazioni e Impostazioni: qui dentro trovi
 // tutto quello che riguarda la VISTA MODELLI (turni, rotazioni),
