@@ -1244,7 +1244,7 @@ export function useAppCore(session){
 
       const mod = await trovaOCreaModelloProtrazione(tipo, calId);
       if(!mod) continue;
-      const color = mod.coloreCustom || (tipo==="recupero" ? "#64748b" : "#8b5cf6");
+      const color = mod.coloreCustom || (tipo==="recupero" ? "#f9a8d4" : "#ec4899");
       const label = (mod.titolo||mod.label||"").toUpperCase();
 
       if(esistente){
@@ -2846,7 +2846,6 @@ const importsRecenti = useMemo(()=>{
       return haRadiceProtrazione && n.includes(parolaChiaveTipo);
     }
     const cacheKey = `${targetCalId}::${titolo}`;
-    if(modelloProtrazioneCacheRef.current[cacheKey]) return modelloProtrazioneCacheRef.current[cacheKey];
 
     // IMPORTANTE: uso modelliRef.current, non la variabile "modelli" chiusa
     // nella closure di questo render. Se questa funzione viene invocata da
@@ -2864,9 +2863,18 @@ const importsRecenti = useMemo(()=>{
     );
     const esistente = candidatiEsistenti[0] || null;
     if(esistente){
+      // Aggiorno SEMPRE la cache con l'ultima versione letta da
+      // modelliRef.current (mai un vecchio snapshot): se il colore o il
+      // tempo del modello sono cambiati nel frattempo — es. per una
+      // modifica manuale dell'utente in Modelli, o per il fix automatico
+      // una-tantum che corregge tempo/colore all'avvio — la prossima
+      // protrazione creata/aggiornata userà subito il valore corrente,
+      // senza restare bloccata sul colore preso al primo utilizzo di
+      // questa sessione.
       modelloProtrazioneCacheRef.current[cacheKey] = esistente;
       return esistente;
     }
+    if(modelloProtrazioneCacheRef.current[cacheKey]) return modelloProtrazioneCacheRef.current[cacheKey];
 
     const esito = await saveModello({
       titolo, tempo:"h24",
