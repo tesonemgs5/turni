@@ -347,9 +347,6 @@ export default function VistaCalendario({ C }){
                 gridTemplateRows:`repeat(5,1fr)`,
                 gap:"1px",padding:"0 1px 1px"}}>
                 {evts.slice(0,5).map((e,ei)=>{
-                  const nodes = [];
-                  if(e.protPagFine) nodes.push({label:"PR PAG",color:"#8b5cf6"});
-                  if(e.protRecFine) nodes.push({label:"PR REC",color:"#64748b"});
                   return (
                     <Fragment key={e.id+ei}>
                       <div style={{background:e.color,borderRadius:3,padding:"0 4px",
@@ -358,14 +355,6 @@ export default function VistaCalendario({ C }){
                         textShadow:getContrastTextColor(e.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>
                         {e.label}
                       </div>
-                      {nodes.map((n,ni)=>(
-                        <div key={ni} style={{background:n.color,borderRadius:3,padding:"0 4px",
-                          fontSize:evtFontSize,fontWeight:800,color:getContrastTextColor(n.color),overflow:"hidden",textOverflow:"ellipsis",
-                          whiteSpace:"nowrap",display:"flex",alignItems:"center",lineHeight:1,
-                          textShadow:getContrastTextColor(n.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>
-                          {n.label}
-                        </div>
-                      ))}
                     </Fragment>
                   );
                 })}

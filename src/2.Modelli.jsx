@@ -1409,27 +1409,6 @@ export default function VistaModelli({ C }){
               {(e.auto||e.collega)&&<div style={{color:cardSubColor,fontSize:17,marginTop:3}}>
                 {e.auto&&<>🚗 {e.auto}</>}{e.collega&&e.auto?"  ·  ":""}{e.collega&&<>👮 {e.collega}</>}
               </div>}
-              {(e.protPagFine||e.protRecFine)&&(()=>{
-                function calcDurProt(tBase, oraFine){
-                  const m1=oraInMinuti(tBase), m2=oraInMinuti(oraFine);
-                  if(m1===null||m2===null) return "";
-                  let d=m2-m1;
-                  if(d<0) d+=24*60;
-                  return d>0?Math.floor(d/60)+"h"+(d%60>0?" "+d%60+"m":""):"";
-                }
-                const tBase = e.tOut||calcFine6h15(e.tIn)||"";
-                const protC=getContrastTextColor(e.color)==="#ffffff"?"rgba(255,255,255,0.9)":"rgba(15,23,42,0.8)";
-                return (
-                  <div style={{marginTop:4,display:"flex",flexDirection:"column",gap:2}}>
-                    {e.protPagFine&&<div style={{color:protC,fontSize:16}}>
-                      💜 PAG → {e.protPagFine}{calcDurProt(tBase,e.protPagFine)?" ("+calcDurProt(tBase,e.protPagFine)+")":""}
-                    </div>}
-                    {e.protRecFine&&<div style={{color:protC,fontSize:16}}>
-                      ⚙️ REC → {e.protRecFine}{calcDurProt(tBase,e.protRecFine)?" ("+calcDurProt(tBase,e.protRecFine)+")":""}
-                    </div>}
-                  </div>
-                );
-              })()}
 
             </div>
             <button onClick={e2=>{e2.stopPropagation();setForm({
