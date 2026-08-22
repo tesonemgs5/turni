@@ -754,6 +754,71 @@ export function useAppCore(session){
               }
             }
           } catch(e){ segnalaErrore(e, "Pulizia automatica protrazioni duplicate all'avvio"); }
+
+          // Fix "una tantum": elimina eventi PROTRAZIONE "orfani" residui —
+          // cioè un evento agganciato al modello PROTRAZIONE PAGAMENTO o
+          // PROTRAZIONE RECUPERO (per marker import_id, o per modello+orario
+          // quando il marker manca) il cui turno base collegato ha però il
+          // campo prot_pag_fine/prot_rec_fine corrispondente VUOTO: significa
+          // che l'utente ha svuotato/cambiato quel campo ma il vecchio
+          // evento protrazione non era mai stato ripulito di conseguenza
+          // (retaggio di versioni precedenti). Esempio tipico: campo
+          // "PROTRAZIONE A PAGAMENTO" vuoto su AUTO, ma esiste ancora un
+          // evento "PROTRAZIONE PAGAMENTO" nel calendario per quel giorno.
+          try {
+            function tipoDaModelloId(modId){
+              if(!modId) return null;
+              const mod = (modelliDb||[]).find(m=>m.id===modId);
+              if(!mod) return null;
+              const n = (mod.titolo||"").trim().toUpperCase().replace(/\s+/g,"").replace(/^-+/,"");
+              const haRadice = n.includes("PROTRAZIONE") || n.includes("PROTAZIONE");
+              if(!haRadice) return null;
+              if(n.includes("RECUPERO")) return "recupero";
+              if(n.includes("PAGAMENTO")) return "pagamento";
+              return null;
+            }
+            const idsOrfaniDaEliminare = [];
+            for(const e of (evts||[])){
+              const decodifica = decodificaProtrazioneFiglio(e.import_id);
+              const tipo = decodifica ? decodifica.tipo : tipoDaModelloId(e.modello_id);
+              if(!tipo) continue;
+              // Trova il turno base: per marker, l'id esplicito; altrimenti
+              // stesso giorno/calendario con tOut base = tIn di questa riga.
+              let base = null;
+              if(decodifica){
+                base = (evts||[]).find(b=>b.id===decodifica.idEventoBase);
+              } else {
+                base = (evts||[]).find(b=>
+                  b.id!==e.id && b.date_key===e.date_key && b.calendar_id===e.calendar_id &&
+                  !decodificaProtrazioneFiglio(b.import_id) && !tipoDaModelloId(b.modello_id) &&
+                  b.time_out && b.time_out===e.time_in
+                );
+              }
+              // Nessun base trovato, oppure base trovato ma col campo
+              // prot*Fine corrispondente vuoto: la protrazione è orfana.
+              const campoAtteso = tipo==="pagamento" ? "prot_pag_fine" : "prot_rec_fine";
+              const orfana = !base || !base[campoAtteso];
+              if(orfana) idsOrfaniDaEliminare.push(e.id);
+            }
+            if(idsOrfaniDaEliminare.length>0){
+              const { error: delOrfErr } = await supabase.from("events").delete().in("id", idsOrfaniDaEliminare).eq("user_id", userId);
+              if(delOrfErr){
+                segnalaErroreSoloLog(delOrfErr, "Pulizia automatica protrazioni orfane");
+              } else {
+                const idSet = new Set(idsOrfaniDaEliminare);
+                setStore(prev=>{
+                  const ns = JSON.parse(JSON.stringify(prev));
+                  for(const dKey of Object.keys(ns.events||{})){
+                    for(const cid of Object.keys(ns.events[dKey]||{})){
+                      ns.events[dKey][cid] = (ns.events[dKey][cid]||[]).filter(e=>!idSet.has(e.id));
+                    }
+                  }
+                  saveToLocalStorage(ns.events, ns.calendars, modelli);
+                  return ns;
+                });
+              }
+            }
+          } catch(e){ segnalaErrore(e, "Pulizia automatica protrazioni orfane all'avvio"); }
         })();
       } catch(e){ segnalaErrore(e, "Avvio applicazione (caricamento dati iniziale)"); setLoading(false); }
     })();
@@ -868,6 +933,23 @@ export function useAppCore(session){
     return isSun?sundayColor:isH?holidayColor:null;
   }
   function getEvts(key,cid){ return store.events?.[key]?.[cid]||[]; }
+  // Riconosce se un modelloId punta a un modello "PROTRAZIONE
+  // PAGAMENTO"/"PROTRAZIONE RECUPERO" (in qualunque variante/refuso di
+  // scrittura storica), guardando il titolo del modello stesso. Usata per
+  // riconoscere una protrazione-figlia anche quando l'evento non ha (o ha
+  // perso) il marker import_id "protrazione_di_...", tipico di eventi
+  // creati a mano dal form invece che da un import PDF.
+  function tipoModelloProtrazione(modelloId){
+    if(!modelloId) return null;
+    const mod = modelli.find(m=>m.id===modelloId);
+    if(!mod) return null;
+    const n = (mod.titolo||"").trim().toUpperCase().replace(/\s+/g,"").replace(/^-+/,"");
+    const haRadice = n.includes("PROTRAZIONE") || n.includes("PROTAZIONE");
+    if(!haRadice) return null;
+    if(n.includes("RECUPERO")) return "recupero";
+    if(n.includes("PAGAMENTO")) return "pagamento";
+    return null;
+  }
   function allEvts(key){
     const res=[];
     const soloCal = selectedCalIds.length>0 ? selectedCalIds : null; // visibilità eventi: sempre tutti i calendari selezionati, editMode o no
@@ -892,23 +974,46 @@ export function useAppCore(session){
     // Modelli: senza questo passaggio, se il modello PROTRAZIONE è prima di
     // AUTO in quella lista, la card della protrazione appare sopra invece
     // che sotto il turno a cui è collegata.
+    // Riconoscimento su DUE binari, perché non tutti gli eventi hanno il
+    // marker import_id (quelli creati/modificati a mano dal form spesso non
+    // ce l'hanno): 1) marker "protrazione_di_<id>_<tipo>" quando presente;
+    // 2) altrimenti per modello+orario, cioè l'evento usa un modello
+    // PROTRAZIONE e il suo orario di inizio coincide con l'uscita di un
+    // turno base dello stesso giorno/calendario.
+    function trovaBasePerModelloOrario(evt){
+      if(evt.modelloId===null||evt.modelloId===undefined) return null;
+      const tipo = tipoModelloProtrazione(evt.modelloId);
+      if(!tipo || !evt.tIn) return null;
+      const base = ordinati.find(b=>
+        b.id!==evt.id && b._cid===evt._cid &&
+        !decodificaProtrazioneFiglio(b.importId) && !tipoModelloProtrazione(b.modelloId) &&
+        b.tOut && b.tOut===evt.tIn
+      );
+      return base ? base.id : null;
+    }
     const idxById = new Map(ordinati.map((e,i)=>[e.id,i]));
     const basiGiaPiazzate = new Set();
     const risultatoFinale = [];
     for(const e of ordinati){
       const decodifica = decodificaProtrazioneFiglio(e.importId);
-      if(decodifica){
+      const baseIdPerOrario = !decodifica ? trovaBasePerModelloOrario(e) : null;
+      if(decodifica || baseIdPerOrario){
         // Salta qui: la protrazione-figlia viene inserita subito dopo il
         // suo turno base quando processiamo il base stesso (sotto). Se il
         // base non è (più) presente in questo elenco, la protrazione va
         // comunque mostrata, altrove non salterebbe fuori da nessuna parte.
-        if(idxById.has(decodifica.idEventoBase)) continue;
+        const idBaseRiferimento = decodifica ? decodifica.idEventoBase : baseIdPerOrario;
+        if(idxById.has(idBaseRiferimento)) continue;
       }
       risultatoFinale.push(e);
-      if(!decodifica && !basiGiaPiazzate.has(e.id)){
+      if(!decodifica && !baseIdPerOrario && !basiGiaPiazzate.has(e.id)){
         basiGiaPiazzate.add(e.id);
         const prefissoFigli = `protrazione_di_${e.id}_`;
-        const figli = ordinati.filter(f=>(f.importId||"").startsWith(prefissoFigli));
+        const figli = ordinati.filter(f=>{
+          if((f.importId||"").startsWith(prefissoFigli)) return true;
+          if(decodificaProtrazioneFiglio(f.importId)) return false; // già gestito dal marker
+          return trovaBasePerModelloOrario(f)===e.id;
+        });
         risultatoFinale.push(...figli);
       }
     }
