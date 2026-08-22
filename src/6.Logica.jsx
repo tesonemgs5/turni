@@ -2491,15 +2491,28 @@ const importsRecenti = useMemo(()=>{
   // Un solo modello per tipo, riusato sempre: l'orario resta specifico
   // dell'evento (tIn/tOut), non del modello.
   const modelloProtrazioneCacheRef = useRef({});
+  // Normalizza un titolo per il confronto "fuzzy" dei modelli PROTRAZIONE:
+  // maiuscolo, spazi collassati, così "PP ROTAZIONE PAGAMENTO", "PR
+  // PROTAZIONE RECUPERO" o qualunque altra variante con spazio spostato
+  // vengono trattate come lo stesso testo.
+  function normTitoloProtrazione(t){
+    return (t||"").trim().toUpperCase().replace(/\s+/g,"");
+  }
   async function trovaOCreaModelloProtrazione(tipo, targetCalId){
     const titolo = tipo==="recupero" ? "PROTRAZIONE RECUPERO" : "PROTRAZIONE PAGAMENTO";
-    // Titoli storici con refusi: i modelli creati a mano tempo fa usano
-    // questi titoli invece di quello "corretto". Vanno riconosciuti come
-    // lo stesso modello, altrimenti la find sotto non trova mai un match
-    // e ne viene creato uno nuovo ogni volta (doppioni + eventi sganciati).
-    const titoliValidi = tipo==="recupero"
-      ? ["PROTRAZIONE RECUPERO", "PR PROTAZIONE RECUPERO"]
-      : ["PROTRAZIONE PAGAMENTO", "PP ROTAZIONE PAGAMENTO"];
+    // Riconoscimento per PAROLE CHIAVE anziché lista fissa di refusi: un
+    // titolo storico è considerato lo stesso modello PROTRAZIONE se, una
+    // volta normalizzato (spazi collassati), contiene sia la radice
+    // "PROT(R)AZIONE" (copre anche il refuso comune) sia "PAGAMENTO" o
+    // "RECUPERO" a seconda del tipo. Così qualunque variante con spazio
+    // spostato o refuso di battitura viene riconosciuta come lo stesso
+    // modello, e non se ne crea mai un doppione.
+    const parolaChiaveTipo = tipo==="recupero" ? "RECUPERO" : "PAGAMENTO";
+    function eStessoModelloProtrazione(titoloModello){
+      const n = normTitoloProtrazione(titoloModello);
+      const haRadiceProtrazione = n.includes("PROTRAZIONE") || n.includes("PROTAZIONE");
+      return haRadiceProtrazione && n.includes(parolaChiaveTipo);
+    }
     const cacheKey = `${targetCalId}::${titolo}`;
     if(modelloProtrazioneCacheRef.current[cacheKey]) return modelloProtrazioneCacheRef.current[cacheKey];
 
@@ -2510,10 +2523,14 @@ const importsRecenti = useMemo(()=>{
     // successione), "modelli" può ancora essere la fotografia di un render
     // precedente e non contenere il modello appena creato/esistente:
     // la find fallirebbe e ne creerebbe un doppione anche col titolo giusto.
-    const esistente = modelliRef.current.find(m=>
-      titoliValidi.includes((m.titolo||"").trim().toUpperCase()) &&
-      (m.calendarId||mainCalId)===targetCalId
+    // Se esistono più modelli storici duplicati per lo stesso tipo/calendario
+    // (retaggio del vecchio bug), si prende sempre il PRIMO trovato, così
+    // tutti i punti del codice convergono sullo stesso modello invece di
+    // sceglierne uno diverso ogni volta.
+    const candidatiEsistenti = modelliRef.current.filter(m=>
+      eStessoModelloProtrazione(m.titolo) && (m.calendarId||mainCalId)===targetCalId
     );
+    const esistente = candidatiEsistenti[0] || null;
     if(esistente){
       modelloProtrazioneCacheRef.current[cacheKey] = esistente;
       return esistente;
