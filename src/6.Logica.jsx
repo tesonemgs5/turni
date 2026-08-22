@@ -615,6 +615,53 @@ export function useAppCore(session){
               })));
             }
           } catch(e){ segnalaErrore(e, "Correzione automatica ordine modelli all'avvio"); }
+
+          // Fix "una tantum": elimina eventi PROTRAZIONE duplicati residui
+          // (stesso turno base + stesso tipo pagamento/recupero, marcati con
+          // lo stesso import_id "protrazione_di_<idBase>_<tipo>"), retaggio
+          // del vecchio bug che poteva crearne più di uno per lo stesso
+          // turno. Tiene sempre il più recente (created_at più alto, o id
+          // più alto in mancanza di quel campo) e cancella gli altri, sia
+          // da Supabase che dallo stato locale, così spariscono subito dal
+          // calendario e dalla vista giorno senza bisogno di refresh.
+          try {
+            const perMarker = new Map();
+            for(const e of (evts||[])){
+              const marker = e.import_id;
+              if(!marker || !/^protrazione_di_.+_(pagamento|recupero)$/.test(marker)) continue;
+              if(!perMarker.has(marker)) perMarker.set(marker, []);
+              perMarker.get(marker).push(e);
+            }
+            const idsDaEliminare = [];
+            for(const [, righe] of perMarker){
+              if(righe.length<=1) continue;
+              const ordinate = [...righe].sort((a,b)=>{
+                const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+                const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+                if(ta!==tb) return tb-ta;
+                return (b.id>a.id?1:-1);
+              });
+              for(let i=1;i<ordinate.length;i++) idsDaEliminare.push(ordinate[i].id);
+            }
+            if(idsDaEliminare.length>0){
+              const { error: delDupErr } = await supabase.from("events").delete().in("id", idsDaEliminare).eq("user_id", userId);
+              if(delDupErr){
+                segnalaErroreSoloLog(delDupErr, "Pulizia automatica protrazioni duplicate");
+              } else {
+                const idSet = new Set(idsDaEliminare);
+                setStore(prev=>{
+                  const ns = JSON.parse(JSON.stringify(prev));
+                  for(const dKey of Object.keys(ns.events||{})){
+                    for(const cid of Object.keys(ns.events[dKey]||{})){
+                      ns.events[dKey][cid] = (ns.events[dKey][cid]||[]).filter(e=>!idSet.has(e.id));
+                    }
+                  }
+                  saveToLocalStorage(ns.events, ns.calendars, modelli);
+                  return ns;
+                });
+              }
+            }
+          } catch(e){ segnalaErrore(e, "Pulizia automatica protrazioni duplicate all'avvio"); }
         })();
       } catch(e){ segnalaErrore(e, "Avvio applicazione (caricamento dati iniziale)"); setLoading(false); }
     })();
