@@ -1,6 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import App from './1_App.jsx'
+import App from './1.App.jsx'
 import Auth from './auth.jsx'
 import { supabase } from './supabase.js'
 import { useState, useEffect } from 'react'
