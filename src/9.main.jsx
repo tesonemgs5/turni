@@ -37,14 +37,26 @@ function Root() {
     }, 4000);
 
     supabase.auth.getSession().then(({ data: { session: sessioneOnline } }) => {
-      if (risolto) {
-        if (sessioneOnline) setSession(sessioneOnline);
-        return;
+      // Non sovrascrivere MAI una sessione locale valida con null: se
+      // avevamo già una sessioneLocale (da leggiSessioneLocale) e questa
+      // chiamata torna senza sessione (latenza, token in fase di refresh,
+      // blip di rete), non è un logout — è solo che il server non ha
+      // ancora risposto. Buttare via la sessione qui smonterebbe <App/>
+      // e rimonterebbe <Auth/>, azzerando userId e facendo ripartire da
+      // capo il caricamento dati in useAppCore (con effetti a cascata:
+      // eventi appena salvati in locale che sembrano "sparire").
+      if (sessioneOnline || !sessioneLocale) {
+        if (risolto) {
+          if (sessioneOnline) setSession(sessioneOnline);
+        } else {
+          setSession(sessioneOnline);
+        }
       }
-      risolto = true;
-      clearTimeout(timeoutId);
-      setSession(sessioneOnline);
-      setLoading(false);
+      if (!risolto) {
+        risolto = true;
+        clearTimeout(timeoutId);
+        setLoading(false);
+      }
     }).catch(() => {
       if (risolto) return;
       risolto = true;
@@ -53,7 +65,15 @@ function Root() {
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, sessioneOnline) => {
-      setSession(sessioneOnline);
+      // Stesso principio qui: onAuthStateChange può emettere eventi con
+      // sessioneOnline null anche per motivi non di logout vero (es. un
+      // TOKEN_REFRESHED fallito temporaneamente). Un vero logout arriva
+      // sempre con _event === "SIGNED_OUT": solo in quel caso azzeriamo
+      // davvero la sessione. Negli altri casi con sessione null, ignoriamo
+      // l'aggiornamento e teniamo quella che avevamo.
+      if (sessioneOnline || _event === "SIGNED_OUT") {
+        setSession(sessioneOnline);
+      }
       setLoading(false);
     });
 
