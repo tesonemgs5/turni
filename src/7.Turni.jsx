@@ -454,10 +454,18 @@ export function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClos
   function trovaModelloPerTesto(testoLetto){
     const t = (testoLetto||"").toLowerCase();
     const match = MAPPING_TURNI.find(m=>t.includes(m.radice));
-    if(!match) return null; // nessuna radice riconosciuta -> lasciato vuoto
-    const titoloMod = (m)=>(m.titolo||"").toUpperCase();
-    const mod = modelli.find(m=>match.titoli.some(tit=>titoloMod(m).includes(tit)));
-    return mod || null;
+    if(match){
+      const titoloMod = (m)=>(m.titolo||"").toUpperCase();
+      const mod = modelli.find(m=>match.titoli.some(tit=>titoloMod(m).includes(tit)));
+      if(mod) return mod;
+    }
+    // Nessuna radice testuale (Primo/Secondo/3°/Notte) riconosciuta: prova a
+    // leggere il testo come orario di inizio (es. "17.45-24.00", "06:00-12:15")
+    // e a trovare il modello per vicinanza di orario, riusando la stessa
+    // logica già usata per le fasce raggruppate.
+    const minutiInizio = estraiMinutiInizioFascia(t);
+    if(minutiInizio!=null) return trovaModelloPerOrarioInizio(minutiInizio);
+    return null;
   }
 
   // Confidenza media Tesseract, calcolata solo sulle parole i cui caratteri
