@@ -11,36 +11,36 @@ import {
   uid, withEventoAggiornato, withEventoAggiunto, withEventoRimosso,
 } from "./4.Rotazione";
 
-// ═══════════════════════════════════════════════════════════════
-// useAppCore.js — Custom hook che concentra tutto lo stato e la
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// useAppCore.js â€” Custom hook che concentra tutto lo stato e la
 // logica dell'app: init, CRUD calendari/eventi, sync Google Sheets
 // + Supabase, CRUD modelli/colori/rotazioni, report helpers.
 // Provenienza: App.jsx originale, sezioni 5-14.
 //
 // Uso: nel componente App, `const C = useAppCore(session);` poi si
 // passa C (o le chiavi che servono) alle viste.
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 // #region SEZIONE 5: REPORT TEMPLATES + INIT STATE
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 const REPORT_TEMPLATES = [
   { type:"conteggio_turni", label:"Conteggio turni", desc:"Conta i turni per fascia oraria" },
-  { type:"turnazione",      label:"Turnazione", desc:"Turni per modello con date, 1°/2° turno automatico" },
-  { type:"indennita",       label:"Indennità di servizio", desc:"Calcola le indennità per fascia" },
+  { type:"turnazione",      label:"Turnazione", desc:"Turni per modello con date, 1Â°/2Â° turno automatico" },
+  { type:"indennita",       label:"IndennitÃ  di servizio", desc:"Calcola le indennitÃ  per fascia" },
   { type:"ore_turno",       label:"Ore per turno", desc:"Stima ore lavorate" },
   { type:"straordinari",    label:"Straordinari", desc:"Protrazioni e straordinari" },
-  { type:"guadagni",        label:"Guadagni", desc:"Stima guadagni da indennità" },
+  { type:"guadagni",        label:"Guadagni", desc:"Stima guadagni da indennitÃ " },
 ];
 
 const INIT = { calendars:[], events:{}, theme:"auto", extraHols:[], reports:[], reportSettings:{}, fasceAutomatiche: FASCE_AUTOMATICHE_DEFAULT, sundayColor:"", holidayColor:"", nationalHolsEnabled:FESTIVITA_DEFAULT_ATTIVE };
 
 export function useAppCore(session){
   const today = new Date();
-  // ← AGGANCIO: qui aggiungo un <style> globale con @keyframes calFadeIn, iniettato una sola volta nel render finale
+  // â† AGGANCIO: qui aggiungo un <style> globale con @keyframes calFadeIn, iniettato una sola volta nel render finale
 // #endregion
 
 // #region SEZIONE 6: USESTATE HOOKS
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   const [store, setStore] = useState(INIT);
   const [loading, setLoading] = useState(true);
   const [year,  setYear]  = useState(today.getFullYear());
@@ -49,10 +49,10 @@ export function useAppCore(session){
   useEffect(()=>{
     if(calId){ try{ localStorage.setItem('cache_calId', calId); }catch(e){} }
   }, [calId]);
-  const [editMode, setEditMode] = useState(false); // "M" — ON = modifica singola, OFF = selezione multipla
+  const [editMode, setEditMode] = useState(false); // "M" â€” ON = modifica singola, OFF = selezione multipla
   const [selectedCalIds, setSelectedCalIds] = useState(()=>{
     try{ return JSON.parse(localStorage.getItem('cache_selectedCalIds')||'[]'); }catch(e){ return []; }
-  }); // selezione multipla calendari — determina anche cosa resta visibile in editMode. Persistita: al refresh/riavvio resta quella scelta dall'utente, non torna a "tutti".
+  }); // selezione multipla calendari â€” determina anche cosa resta visibile in editMode. Persistita: al refresh/riavvio resta quella scelta dall'utente, non torna a "tutti".
   useEffect(()=>{
     try{ localStorage.setItem('cache_selectedCalIds', JSON.stringify(selectedCalIds)); }catch(e){}
   }, [selectedCalIds]);
@@ -87,9 +87,9 @@ export function useAppCore(session){
   const dbErrorTimer = useRef(null);
   // Coda degli errori accodati da segnalaErrore() in qualsiasi punto
   // dell'app (anche fuori da questo componente). Mostrati uno alla volta:
-  // un solo bottone OK (chiude sempre) + checkbox "non mostrare più" per
+  // un solo bottone OK (chiude sempre) + checkbox "non mostrare piÃ¹" per
   // quel contesto specifico (silenziamento persistente, riattivabile da
-  // Impostazioni → Log).
+  // Impostazioni â†’ Log).
   const [codaErrori, setCodaErrori] = useState([]);
   // Dati per la sezione "Log" in Impostazioni: caricati solo quando la
   // sezione viene aperta (leggiLogErrori/leggiErroriSilenziati leggono da
@@ -105,18 +105,18 @@ export function useAppCore(session){
   function segnalaErroreDb(error, contesto){
     segnalaErrore(error, contesto);
     const msg = error?.message || "Errore sconosciuto";
-    setDbError(`⚠️ ${contesto}: ${msg}`);
+    setDbError(`âš ï¸ ${contesto}: ${msg}`);
     if(dbErrorTimer.current) clearTimeout(dbErrorTimer.current);
     dbErrorTimer.current = setTimeout(()=>setDbError(""), 6000);
   }
-  // ─── Wrapper per il pattern Supabase+gestione errore, ripetuto in tutto
+  // â”€â”€â”€ Wrapper per il pattern Supabase+gestione errore, ripetuto in tutto
   // il file: query, controlla error, segnala se fallisce. Un solo posto da
   // toccare se cambia come viene gestito un errore di scrittura; e soprattutto
-  // impossibile dimenticare il controllo dell'errore, perché è già dentro
+  // impossibile dimenticare il controllo dell'errore, perchÃ© Ã¨ giÃ  dentro
   // il wrapper stesso invece di doverlo scrivere ogni volta a mano.
   // matchObj: oggetto di filtri applicati con .match() (es. {id, user_id}).
   // opzioni.soloLog: se true, l'errore va solo nel Log senza aprire il
-  // modale — per i casi dentro un ciclo dove un riepilogo unico basta
+  // modale â€” per i casi dentro un ciclo dove un riepilogo unico basta
   // (vedi eseguiNormalizzazione).
   async function dbUpdate(table, payload, matchObj, contesto, opzioni={}){
     const { data, error } = await supabase.from(table).update(payload).match(matchObj).select();
@@ -143,28 +143,28 @@ export function useAppCore(session){
     return { data, error };
   }
 
-  // ─── Wrapper unico per OGNI operazione di scrittura CRUD (turni, modelli,
-  // rotazioni, calendari...). Il locale è la fonte di verità: il chiamante
+  // â”€â”€â”€ Wrapper unico per OGNI operazione di scrittura CRUD (turni, modelli,
+  // rotazioni, calendari...). Il locale Ã¨ la fonte di veritÃ : il chiamante
   // aggiorna SEMPRE lo stato React + localStorage PRIMA di chiamare questa
   // funzione (quella parte resta specifica di ogni CRUD, cambia da caso a
-  // caso). Da qui in poi, il comportamento è identico per tutti:
+  // caso). Da qui in poi, il comportamento Ã¨ identico per tutti:
   //
   //   1) Prova Supabase. Se la tabella rifiuta una colonna che non esiste
   //      ancora (schema non ancora allineato al codice), la toglie dal
-  //      payload e riprova in automatico (fino a 10 volte) — stesso
+  //      payload e riprova in automatico (fino a 10 volte) â€” stesso
   //      comportamento che aveva supabaseUpsertConRetry, riportato qui.
   //   2) In PARALLELO (non in sequenza), backup su Sheets con la stessa
   //      istantanea di dati passata dal chiamante.
   //   3) Se Supabase fallisce per un'eccezione di rete (offline), l'intera
-  //      operazione (con il suo timestamp) va in coda: verrà ritentata
+  //      operazione (con il suo timestamp) va in coda: verrÃ  ritentata
   //      identica al ritorno della connessione. Se invece Supabase risponde
   //      con un errore "vero" (non di rete: validazione, permessi...), non
-  //      va in coda — si segnala e basta, ritentarla non la farebbe passare.
+  //      va in coda â€” si segnala e basta, ritentarla non la farebbe passare.
   //
   // ts: timestamp ISO dell'istante in cui l'utente ha fatto la modifica
-  // (non di quando questa funzione viene eseguita) — usato per decidere la
+  // (non di quando questa funzione viene eseguita) â€” usato per decidere la
   // precedenza se due dispositivi modificano la stessa riga mentre uno era
-  // offline: vince sempre la modifica con ts più recente.
+  // offline: vince sempre la modifica con ts piÃ¹ recente.
   async function scriviConBackup({ tipo, table, payload, matchObj, contesto, ts, eventsPerSheets, calendarsPerSheets, modelliPerSheets, opzioni={} }){
     async function provaSupabase(payloadCorrente, tentativi=0){
       if(tentativi>=10) return { error:{message:"Troppi tentativi di retry sullo schema"} };
@@ -188,10 +188,10 @@ export function useAppCore(session){
         (eventsPerSheets!==undefined) ? syncSeAttivo(eventsPerSheets, calendarsPerSheets, modelliPerSheets) : Promise.resolve(),
       ]);
       if(risSupabase.error){
-        // soloLog: il locale è comunque già scritto dal chiamante prima di
+        // soloLog: il locale Ã¨ comunque giÃ  scritto dal chiamante prima di
         // arrivare qui, quindi un modale bloccante per un errore di solo
-        // backup remoto non aggiunge nulla — resta nel log tecnico e basta.
-        // Il chiamante che ha bisogno di un riepilogo (es. più scritture
+        // backup remoto non aggiunge nulla â€” resta nel log tecnico e basta.
+        // Il chiamante che ha bisogno di un riepilogo (es. piÃ¹ scritture
         // della stessa azione utente) lo mostra lui stesso, una volta sola.
         if(opzioni.soloLog) segnalaErroreSoloLog(risSupabase.error, `${contesto} (backup su Supabase)`);
         else segnalaErroreDb(risSupabase.error, `${contesto} (backup su Supabase)`);
@@ -203,7 +203,7 @@ export function useAppCore(session){
       const coda = leggiCodaSync();
       coda.push({ id: generaIdLocale(), ts: ts||new Date().toISOString(), tipo, table, payload, match: matchObj, contesto });
       scriviCodaSync(coda);
-      return { ok:true, accodato:true, errore:null }; // ok:true perché il locale è comunque salvato, è solo il backup remoto in sospeso
+      return { ok:true, accodato:true, errore:null }; // ok:true perchÃ© il locale Ã¨ comunque salvato, Ã¨ solo il backup remoto in sospeso
     }
   }
   // Normalizza un campo testo in maiuscolo, gestendo null/undefined.
@@ -212,7 +212,7 @@ export function useAppCore(session){
 
   // Crea un evento su Supabase con i 13 campi standard della tabella
   // "events" e ne restituisce { data, error }, senza toccare lo stato
-  // locale (quello resta a carico del chiamante, che sa già come
+  // locale (quello resta a carico del chiamante, che sa giÃ  come
   // aggiornare la UI nel proprio contesto specifico).
   // Accorpa in un solo punto i 3 inserimenti quasi identici che
   // c'erano prima sparsi nel file (salvataggio da form, inserimento
@@ -256,7 +256,7 @@ export function useAppCore(session){
   const [modelliSort, setModelliSort] = useState("orario");
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [showModelForm, setShowModelForm] = useState(false);
-  // Da dove è stato aperto il form "Nuovo/Modifica modello": determina dove
+  // Da dove Ã¨ stato aperto il form "Nuovo/Modifica modello": determina dove
   // tornare dopo il salvataggio (lista Modelli, o il picker "Scegli modello"
   // se si stava scegliendo un modello per un evento). Senza questo, il
   // salvataggio riportava sempre al picker anche partendo dalla lista.
@@ -264,14 +264,14 @@ export function useAppCore(session){
   const [editModello, setEditModello] = useState(null);
   const [modelForm, setModelForm] = useState({ titolo:"", tempo:"personalizzato", inizio:"", fine:"", coloreCustom:null, posizione:"" });
 
-  // ── Colori: popup assegnazione modelli + palette colori extra creati dall'utente
+  // â”€â”€ Colori: popup assegnazione modelli + palette colori extra creati dall'utente
   const [showColorAssignPicker, setShowColorAssignPicker] = useState(null); // colore hex attualmente aperto nel popup
   const [colorAssignCalFiltro, setColorAssignCalFiltro] = useState(null); // calendari selezionati per filtrare la lista modelli nel popup colore (null = tutti)
   const [showAddColorPicker, setShowAddColorPicker] = useState(false); // popup "+" per aggiungere un colore alla sezione
   const [coloriExtra, setColoriExtra] = useState([]); // colori aggiunti manualmente o generati da modelli: array di {hex, label}
-  // ── Autocomplete: 5 liste dedicate, sincronizzate su Supabase (tabella
+  // â”€â”€ Autocomplete: 5 liste dedicate, sincronizzate su Supabase (tabella
   // autocomplete_valori), una per campo. Caricate una volta all'avvio;
-  // l'autocomplete legge SOLO da qui, mai scansionando eventi/modelli —
+  // l'autocomplete legge SOLO da qui, mai scansionando eventi/modelli â€”
   // niente rumore da valori sporadici, sempre veloce indipendentemente da
   // quanti eventi/modelli esistono.
   const [autocompleteValori, setAutocompleteValori] = useState({
@@ -299,7 +299,7 @@ export function useAppCore(session){
   const touchStartY = useRef(null);
   const [prevGrid, setPrevGrid] = useState(null);
 
-  // ── Drag & drop modelli: scroll container + autoscroll a velocità variabile + preview ordine live
+  // â”€â”€ Drag & drop modelli: scroll container + autoscroll a velocitÃ  variabile + preview ordine live
   const modelliScrollRef = useRef(null);
   const autoScrollRAF = useRef(null);
   const autoScrollSpeed = useRef(0);
@@ -313,8 +313,8 @@ export function useAppCore(session){
 
   // Autoscroll della lista modelli durante il trascinamento: quando il dito
   // (o il cursore) si avvicina al bordo superiore o inferiore del contenitore
-  // scrollabile, la lista scorre automaticamente, a velocità proporzionale
-  // alla vicinanza al bordo. clientY è la coordinata verticale del dito/mouse
+  // scrollabile, la lista scorre automaticamente, a velocitÃ  proporzionale
+  // alla vicinanza al bordo. clientY Ã¨ la coordinata verticale del dito/mouse
   // nella viewport (non relativa al contenitore).
   function updateAutoScroll(clientY){
     const container = modelliScrollRef.current;
@@ -350,7 +350,7 @@ export function useAppCore(session){
   // Mese selezionato per il report (persistente su localStorage, come
   // syncMode sopra): prima "1 mese" usava sempre new Date(), quindi il
   // report mostrava sempre il mese corrente e "dimenticava" la scelta ad
-  // ogni uscita dall'app. Ora resta fissato al mese scelto finché l'utente
+  // ogni uscita dall'app. Ora resta fissato al mese scelto finchÃ© l'utente
   // non lo cambia di nuovo, indipendentemente da quando riapre l'app.
   const [reportMeseSel, setReportMeseSel] = useState(()=>{
     try{
@@ -382,14 +382,14 @@ export function useAppCore(session){
 // #endregion
 
 // #region SEZIONE 7: USEEFFECT INIT + LOAD DA SUPABASE
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     if(!userId) return;
     (async()=>{
       try {
         // Mostra subito i dati da localStorage, incluse le impostazioni
         // visive (colori, tema, fasce): senza queste, il calendario partiva
         // con i colori di default e "scattava" al colore vero dopo che
-        // Supabase rispondeva — il flash visibile ad ogni apertura dell'app.
+        // Supabase rispondeva â€” il flash visibile ad ogni apertura dell'app.
         const cached = loadFromLocalStorage();
         if(cached && cached.calendars.length > 0){
           setStore(s=>({...s, calendars:cached.calendars, events:cached.events, ...(cached.impostazioni||{})}));
@@ -405,11 +405,11 @@ export function useAppCore(session){
         // Una sola chiamata al database: la funzione get_user_data (creata su
         // Supabase) legge le 6 tabelle internamente e restituisce tutto insieme.
         // Se fallisce (rete instabile, timeout), NON ci si arrende subito:
-        // prima si prova un piccolo numero di retry, perché un fallimento
+        // prima si prova un piccolo numero di retry, perchÃ© un fallimento
         // silenzioso qui lasciava l'utente con la cache locale mostrata in
-        // precedenza — che può essere vuota (es. subito dopo "svuota cache")
+        // precedenza â€” che puÃ² essere vuota (es. subito dopo "svuota cache")
         // dando la falsa impressione che i modelli/dati siano stati persi,
-        // quando in realtà sono ancora sul server e il problema era solo di
+        // quando in realtÃ  sono ancora sul server e il problema era solo di
         // rete/caricamento.
         let all, rpcErr;
         for(let tentativo=0; tentativo<3; tentativo++){
@@ -422,7 +422,7 @@ export function useAppCore(session){
           // Tutti i tentativi falliti: avviso VISIBILE invece di lasciare la
           // UI silenziosamente con la cache (che potrebbe sembrare "dati
           // spariti" mentre sono solo non ancora ricaricati).
-          setBanner("⚠️ Impossibile caricare i dati dal server. Controlla la connessione e riprova (i tuoi dati sono al sicuro, non sono stati toccati).");
+          setBanner("âš ï¸ Impossibile caricare i dati dal server. Controlla la connessione e riprova (i tuoi dati sono al sicuro, non sono stati toccati).");
           setTimeout(()=>setBanner(null), 8000);
           setLoading(false);
           return;
@@ -435,8 +435,8 @@ export function useAppCore(session){
         const coloriDb = all?.colori || [];
         const rotazioniDb = all?.rotazioni || [];
 
-        // Ordino i calendari secondo sort_order (posizione scelta in Impostazioni con ↑↓),
-        // così l'ordine con cui vengono mostrati gli eventi resta coerente anche dopo un refresh.
+        // Ordino i calendari secondo sort_order (posizione scelta in Impostazioni con â†‘â†“),
+        // cosÃ¬ l'ordine con cui vengono mostrati gli eventi resta coerente anche dopo un refresh.
         const calsOrdinati = [...cals].sort((a,b)=>{
           const sa = a.sort_order, sb = b.sort_order;
           if(sa==null && sb==null) return 0;
@@ -496,7 +496,7 @@ export function useAppCore(session){
           griglia:r.griglia||{},
         }));
 
-        // Applico TUTTO insieme, in un solo giro di render: niente più
+        // Applico TUTTO insieme, in un solo giro di render: niente piÃ¹
         // calendario che appare prima e modelli/colori che arrivano dopo.
         const calendariUguali = cached && sameData(cached.calendars, calendars);
         const eventiUguali = cached && sameData(cached.events, events);
@@ -507,8 +507,8 @@ export function useAppCore(session){
         } else {
           setStore(s=>({ ...s, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings, fasceAutomatiche: savedFasce, sundayColor: savedSundayColor, holidayColor: savedHolidayColor, nationalHolsEnabled: savedNationalHolsEnabled }));
         }
-        // Aggiorno anche la cache delle impostazioni visive, così il
-        // prossimo avvio dell'app parte già col colore giusto, senza flash.
+        // Aggiorno anche la cache delle impostazioni visive, cosÃ¬ il
+        // prossimo avvio dell'app parte giÃ  col colore giusto, senza flash.
         saveToLocalStorage(events, calendars, modelliMappati, calId, {
           theme, extraHols, sundayColor: savedSundayColor, holidayColor: savedHolidayColor,
           fasceAutomatiche: savedFasce, nationalHolsEnabled: savedNationalHolsEnabled,
@@ -543,8 +543,8 @@ export function useAppCore(session){
         isInitialized.current = true;
         setLoading(false);
 
-        // ── Da qui in giù: sola manutenzione in background. Non serve per
-        // mostrare il calendario, quindi non blocca né ridisegna la UI a meno
+        // â”€â”€ Da qui in giÃ¹: sola manutenzione in background. Non serve per
+        // mostrare il calendario, quindi non blocca nÃ© ridisegna la UI a meno
         // che trovi davvero qualcosa da correggere (casi rari).
         (async()=>{
           try {
@@ -553,7 +553,7 @@ export function useAppCore(session){
             await supabase.from("usage_stats").upsert({ user_id: userId, last_active: new Date().toISOString(), login_count: newCount });
           } catch(statErr) { segnalaErrore(statErr, "Aggiornamento statistiche di utilizzo"); }
 
-          // Sincronizza i colori custom già presenti sui modelli con la tabella "colori"
+          // Sincronizza i colori custom giÃ  presenti sui modelli con la tabella "colori"
           try {
             const coloriUsati = [...new Set((modelliDb||[]).map(m=>m.colore_custom).filter(Boolean))];
             const coloriGiaSalvati = new Set((coloriDb||[]).map(c=>c.hex));
@@ -575,10 +575,10 @@ export function useAppCore(session){
           // Inizializza sortOrder per modelli H24 che hanno tutti 0
           try {
             // Fix "una tantum": normalizza i sort_order duplicati ALL'INTERNO
-            // DI OGNI SINGOLO CALENDARIO. Con più modelli che condividono lo
+            // DI OGNI SINGOLO CALENDARIO. Con piÃ¹ modelli che condividono lo
             // stesso sort_order (es. mai assegnato correttamente in passato,
             // o residuo di versioni precedenti dell'app), l'ordinamento
-            // diventa ambiguo: la posizione calcolata di un modello può non
+            // diventa ambiguo: la posizione calcolata di un modello puÃ² non
             // corrispondere a quella reale, con l'effetto pratico di frecce
             // che sembrano disabilitate o spostamenti che non hanno effetto
             // visibile. Il fix raggruppa i modelli per calendario e, solo
@@ -622,10 +622,10 @@ export function useAppCore(session){
           // RECUPERO"...). Per ogni calendario e ogni tipo (pagamento/
           // recupero): trova tutti i modelli la cui radice normalizzata
           // contiene PROTRAZIONE/PROTAZIONE + PAGAMENTO o RECUPERO, ne
-          // sceglie UNO come "superstite" (il più vecchio, cioè id più
+          // sceglie UNO come "superstite" (il piÃ¹ vecchio, cioÃ¨ id piÃ¹
           // basso), corregge il suo titolo nella forma scritta giusta,
           // sposta su di lui tutti gli eventi agganciati agli altri
-          // doppioni, e infine cancella i modelli doppioni. Così in Modelli
+          // doppioni, e infine cancella i modelli doppioni. CosÃ¬ in Modelli
           // resta un solo "PROTRAZIONE PAGAMENTO" e un solo "PROTRAZIONE
           // RECUPERO" per calendario, con l'ortografia corretta.
           try {
@@ -654,9 +654,9 @@ export function useAppCore(session){
               for(const { parolaChiave, titoloCorretto } of tipiDaUnificare){
                 const candidati = gruppo.filter(m=>eModelloProtrazione(m.titolo, parolaChiave));
                 // Nessun doppione reale (0 o 1 solo modello per questo tipo/
-                // calendario): non c'è nulla da unificare. IMPORTANTE non
+                // calendario): non c'Ã¨ nulla da unificare. IMPORTANTE non
                 // toccare/rinominare comunque l'unico modello rimasto: farlo
-                // ad ogni avvio, anche a doppioni già risolti, rischia di
+                // ad ogni avvio, anche a doppioni giÃ  risolti, rischia di
                 // ricaricare i modelli da una query fatta in parallelo a un
                 // salvataggio dell'utente e "riportare indietro" le sue
                 // ultime modifiche (tempo/orario/colore) appena fatte.
@@ -689,7 +689,7 @@ export function useAppCore(session){
             if(modelliDaRinominare.length>0 || modelliIdDaEliminare.length>0){
               // Ricarico i modelli aggiornati (titolo corretto + doppioni rimossi)
               // e aggiorno anche gli eventi in memoria/localStorage che
-              // puntavano ai modelli doppioni, così sparisce subito dalla UI.
+              // puntavano ai modelli doppioni, cosÃ¬ sparisce subito dalla UI.
               const {data:modelliDbAggiornati}=await supabase.from("modelli").select("*").eq("user_id",userId).order("sort_order").order("id");
               setModelli((modelliDbAggiornati||[]).map(m=>({
                 id:m.id,titolo:m.titolo,label:m.label||"",tempo:m.tempo,
@@ -715,16 +715,16 @@ export function useAppCore(session){
             }
           } catch(e){ segnalaErrore(e, "Unificazione automatica modelli protrazione all'avvio"); }
 
-          // Fix "una tantum" (eseguito una sola volta per utente, mai più
-          // dopo — vedi flag in localStorage sotto): i modelli PROTRAZIONE
+          // Fix "una tantum" (eseguito una sola volta per utente, mai piÃ¹
+          // dopo â€” vedi flag in localStorage sotto): i modelli PROTRAZIONE
           // PAGAMENTO/RECUPERO creati da versioni precedenti avevano
           // tempo:"personalizzato" con un orario fittizio (es. 09:00-09:00)
           // invece di "h24", e un colore non allineato a quello scelto
           // dall'utente per PAGAMENTO (rosa). Corregge SOLO tempo/inizio/
-          // fine, mai il colore se l'utente ne ha già impostato uno
+          // fine, mai il colore se l'utente ne ha giÃ  impostato uno
           // (colore_custom valorizzato): dopo la prima esecuzione il flag
-          // impedisce di rieseguirlo, così eventuali scelte successive
-          // dell'utente su questi modelli non vengono più toccate.
+          // impedisce di rieseguirlo, cosÃ¬ eventuali scelte successive
+          // dell'utente su questi modelli non vengono piÃ¹ toccate.
           try {
             const FLAG_KEY = "fix_protrazione_h24_v1";
             const giaEseguito = (()=>{ try{ return localStorage.getItem(FLAG_KEY)==="1"; }catch(e){ return false; } })();
@@ -741,11 +741,11 @@ export function useAppCore(session){
               for(const m of (modelliDb||[])){
                 const tipo = tipoModelloProtrazioneRaw(m.titolo);
                 if(!tipo) continue;
-                if(m.tempo==="h24") continue; // già corretto, non tocco nulla
+                if(m.tempo==="h24") continue; // giÃ  corretto, non tocco nulla
                 const payloadFix = { tempo:"h24", inizio:null, fine:null };
                 if(!m.colore_custom){
                   // Solo se l'utente non ha MAI scelto un colore custom:
-                  // imposto un rosa di default (più chiaro per recupero, più
+                  // imposto un rosa di default (piÃ¹ chiaro per recupero, piÃ¹
                   // acceso per pagamento), coerente con quanto richiesto.
                   payloadFix.colore_custom = tipo==="recupero" ? "#f9a8d4" : "#ec4899";
                   payloadFix.colore = payloadFix.colore_custom;
@@ -772,10 +772,10 @@ export function useAppCore(session){
           // Fix "una tantum": elimina eventi PROTRAZIONE duplicati residui
           // (stesso turno base + stesso tipo pagamento/recupero, marcati con
           // lo stesso import_id "protrazione_di_<idBase>_<tipo>"), retaggio
-          // del vecchio bug che poteva crearne più di uno per lo stesso
-          // turno. Tiene sempre il più recente (created_at più alto, o id
-          // più alto in mancanza di quel campo) e cancella gli altri, sia
-          // da Supabase che dallo stato locale, così spariscono subito dal
+          // del vecchio bug che poteva crearne piÃ¹ di uno per lo stesso
+          // turno. Tiene sempre il piÃ¹ recente (created_at piÃ¹ alto, o id
+          // piÃ¹ alto in mancanza di quel campo) e cancella gli altri, sia
+          // da Supabase che dallo stato locale, cosÃ¬ spariscono subito dal
           // calendario e dalla vista giorno senza bisogno di refresh.
           try {
             const perMarker = new Map();
@@ -816,10 +816,10 @@ export function useAppCore(session){
             }
           } catch(e){ segnalaErrore(e, "Pulizia automatica protrazioni duplicate all'avvio"); }
 
-          // Fix "una tantum": elimina eventi PROTRAZIONE "orfani" residui —
-          // cioè un evento agganciato al modello PROTRAZIONE PAGAMENTO o
+          // Fix "una tantum": elimina eventi PROTRAZIONE "orfani" residui â€”
+          // cioÃ¨ un evento agganciato al modello PROTRAZIONE PAGAMENTO o
           // PROTRAZIONE RECUPERO (per marker import_id, o per modello+orario
-          // quando il marker manca) il cui turno base collegato ha però il
+          // quando il marker manca) il cui turno base collegato ha perÃ² il
           // campo prot_pag_fine/prot_rec_fine corrispondente VUOTO: significa
           // che l'utente ha svuotato/cambiato quel campo ma il vecchio
           // evento protrazione non era mai stato ripulito di conseguenza
@@ -856,7 +856,7 @@ export function useAppCore(session){
                 );
               }
               // Nessun base trovato, oppure base trovato ma col campo
-              // prot*Fine corrispondente vuoto: la protrazione è orfana.
+              // prot*Fine corrispondente vuoto: la protrazione Ã¨ orfana.
               const campoAtteso = tipo==="pagamento" ? "prot_pag_fine" : "prot_rec_fine";
               const orfana = !base || !base[campoAtteso];
               if(orfana) idsOrfaniDaEliminare.push(e.id);
@@ -887,20 +887,20 @@ export function useAppCore(session){
 // #endregion
 
 // #region SEZIONE 8: USEEFFECT OVERSCROLL + ONLINE/OFFLINE
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // Svuota la coda di sincronizzazione offline: prova ogni operazione in
   // ordine (crea/modifica/elimina), la toglie dalla coda solo se riesce.
   // Se un'operazione fallisce di nuovo (rete ancora instabile, o un errore
-  // reale stavolta), resta in coda per il prossimo tentativo — tranne se
-  // l'errore non è di rete, nel qual caso viene comunque segnalata
+  // reale stavolta), resta in coda per il prossimo tentativo â€” tranne se
+  // l'errore non Ã¨ di rete, nel qual caso viene comunque segnalata
   // all'utente (stesso comportamento di sempre per gli errori "veri").
   async function processaCodaSync(){
     const coda = leggiCodaSync();
     if(coda.length===0) return;
-    // Le operazioni più vecchie (ts più basso) vanno riprovate per prime:
+    // Le operazioni piÃ¹ vecchie (ts piÃ¹ basso) vanno riprovate per prime:
     // se due dispositivi hanno modificato la stessa riga mentre uno era
-    // offline, applicarle in ordine cronologico fa sì che l'ultima
-    // scrittura (quella con ts più recente) sia quella che resta valida.
+    // offline, applicarle in ordine cronologico fa sÃ¬ che l'ultima
+    // scrittura (quella con ts piÃ¹ recente) sia quella che resta valida.
     const ordinata = [...coda].sort((a,b)=>(a.ts||"").localeCompare(b.ts||""));
     const rimasti = [];
     for(const op of ordinata){
@@ -925,21 +925,21 @@ export function useAppCore(session){
         if(res.error){
           // Errore non di connessione (es. validazione, permessi): non ha
           // senso ritentarlo all'infinito, si segnala e si scarta.
-          segnalaErrore(res.error, `Sincronizzazione in sospeso — ${op.contesto}`);
+          segnalaErrore(res.error, `Sincronizzazione in sospeso â€” ${op.contesto}`);
         } else {
-          rimasti.push(null); // marcato come completato, verrà filtrato sotto
+          rimasti.push(null); // marcato come completato, verrÃ  filtrato sotto
         }
       } catch(e){
         // Eccezione di rete (offline di nuovo, timeout...): resta in coda,
-        // si ritenterà al prossimo giro. Nessun alert per questo caso —
-        // è lo scenario normale "sto ancora aspettando la connessione".
+        // si ritenterÃ  al prossimo giro. Nessun alert per questo caso â€”
+        // Ã¨ lo scenario normale "sto ancora aspettando la connessione".
         rimasti.push(op);
       }
     }
     scriviCodaSync(rimasti.filter(Boolean));
     // Backup su Sheets con l'istantanea corrente (dopo aver smaltito la
     // coda Supabase): un solo invio per l'intero batch, invece di uno per
-    // ogni operazione — Sheets riceve sempre lo stato completo, non un
+    // ogni operazione â€” Sheets riceve sempre lo stato completo, non un
     // incremento, quindi rimandarlo N volte non porterebbe beneficio.
     if(ordinata.length>0) syncSeAttivo(store.events, store.calendars, modelli);
   }
@@ -949,7 +949,7 @@ export function useAppCore(session){
     window.addEventListener('online', goOnline);
     window.addEventListener('offline', goOffline);
     // Anche all'avvio: se erano rimaste operazioni in coda da una sessione
-    // precedente (es. l'app è stata chiusa mentre era offline), si prova
+    // precedente (es. l'app Ã¨ stata chiusa mentre era offline), si prova
     // subito a smaltirle.
     if(navigator.onLine) processaCodaSync();
     return ()=>{ window.removeEventListener('online', goOnline); window.removeEventListener('offline', goOffline); };
@@ -957,7 +957,7 @@ export function useAppCore(session){
 // #endregion
 
 // #region SEZIONE 9: THEME & COLORS
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   const sysDark = window.matchMedia?.("(prefers-color-scheme:dark)").matches??false;
   const dark = store.theme==="auto"?sysDark:store.theme==="dark";
   const T = {
@@ -974,8 +974,8 @@ export function useAppCore(session){
   const mainCal   = store.calendars.find(c=>c.isMain)||null;
   const mainCalId = mainCal?.id||null; // calendario principale: usato come fallback per i modelli/rotazioni senza calendarId esplicito
   // Colore dell'interfaccia (pulsanti, badge, evidenziazioni di selezione): FISSO e indipendente
-  // dal colore scelto per i calendari, così i colori dei calendari/modelli (es. giallo) restano
-  // solo lì dove servono a identificarli, senza "colorare" tutti i menu dell'app.
+  // dal colore scelto per i calendari, cosÃ¬ i colori dei calendari/modelli (es. giallo) restano
+  // solo lÃ¬ dove servono a identificarli, senza "colorare" tutti i menu dell'app.
   const accent    = "#2563eb";
   const accentText = getContrastTextColor(accent);
   const hols      = italianHols(year, store.nationalHolsEnabled);
@@ -1013,7 +1013,7 @@ export function useAppCore(session){
   }
   function allEvts(key){
     const res=[];
-    const soloCal = selectedCalIds.length>0 ? selectedCalIds : null; // visibilità eventi: sempre tutti i calendari selezionati, editMode o no
+    const soloCal = selectedCalIds.length>0 ? selectedCalIds : null; // visibilitÃ  eventi: sempre tutti i calendari selezionati, editMode o no
     if(mainCal && (!soloCal||soloCal.includes(mainCal.id))) getEvts(key,mainCal.id).forEach(e=>res.push({...e,_cid:mainCal.id}));
     store.calendars.filter(c=>!c.isMain && (!soloCal||soloCal.includes(c.id))).forEach(c=>
       getEvts(key,c.id).forEach(e=>res.push({...e,_cid:c.id})));
@@ -1032,13 +1032,13 @@ export function useAppCore(session){
     // Una protrazione-figlia (PROTRAZIONE PAGAMENTO/RECUPERO agganciata a un
     // turno base) va SEMPRE mostrata subito dopo il proprio turno base,
     // indipendentemente da dove si trova il modello PROTRAZIONE nella lista
-    // Modelli: senza questo passaggio, se il modello PROTRAZIONE è prima di
+    // Modelli: senza questo passaggio, se il modello PROTRAZIONE Ã¨ prima di
     // AUTO in quella lista, la card della protrazione appare sopra invece
-    // che sotto il turno a cui è collegata.
-    // Riconoscimento su DUE binari, perché non tutti gli eventi hanno il
+    // che sotto il turno a cui Ã¨ collegata.
+    // Riconoscimento su DUE binari, perchÃ© non tutti gli eventi hanno il
     // marker import_id (quelli creati/modificati a mano dal form spesso non
     // ce l'hanno): 1) marker "protrazione_di_<id>_<tipo>" quando presente;
-    // 2) altrimenti per modello+orario, cioè l'evento usa un modello
+    // 2) altrimenti per modello+orario, cioÃ¨ l'evento usa un modello
     // PROTRAZIONE e il suo orario di inizio coincide con l'uscita di un
     // turno base dello stesso giorno/calendario.
     function trovaBasePerModelloOrario(evt){
@@ -1061,7 +1061,7 @@ export function useAppCore(session){
       if(decodifica || baseIdPerOrario){
         // Salta qui: la protrazione-figlia viene inserita subito dopo il
         // suo turno base quando processiamo il base stesso (sotto). Se il
-        // base non è (più) presente in questo elenco, la protrazione va
+        // base non Ã¨ (piÃ¹) presente in questo elenco, la protrazione va
         // comunque mostrata, altrove non salterebbe fuori da nessuna parte.
         const idBaseRiferimento = decodifica ? decodifica.idEventoBase : baseIdPerOrario;
         if(idxById.has(idBaseRiferimento)) continue;
@@ -1072,7 +1072,7 @@ export function useAppCore(session){
         const prefissoFigli = `protrazione_di_${e.id}_`;
         const figli = ordinati.filter(f=>{
           if((f.importId||"").startsWith(prefissoFigli)) return true;
-          if(decodificaProtrazioneFiglio(f.importId)) return false; // già gestito dal marker
+          if(decodificaProtrazioneFiglio(f.importId)) return false; // giÃ  gestito dal marker
           return trovaBasePerModelloOrario(f)===e.id;
         });
         risultatoFinale.push(...figli);
@@ -1094,7 +1094,7 @@ export function useAppCore(session){
     if(error) segnalaErroreDb(error, "Salvataggio impostazioni");
   }
 
-  // Spostata qui da SEZIONE 18 (Settings View) perché usata anche da
+  // Spostata qui da SEZIONE 18 (Settings View) perchÃ© usata anche da
   // Modelli View: aggiorna una fascia oraria automatica (label/colore/orario).
   function updateFascia(key, updates){
     const nuove = fasceAutomatiche.map(f=>f.key===key?{...f,...updates}:f);
@@ -1104,9 +1104,9 @@ export function useAppCore(session){
 // #endregion
 
 // #region SEZIONE 10: CRUD CALENDARI
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // Genera subito l'id lato client e lo ritorna insieme all'oggetto
-  // calendario completo: il chiamante può aggiornare lo stato locale
+  // calendario completo: il chiamante puÃ² aggiornare lo stato locale
   // all'istante, senza aspettare Supabase. Il backup remoto (con retry
   // colonna) + Sheets avviene in background, con fallback in coda se offline.
   async function addCalendar(name, color, isFirst){
@@ -1144,11 +1144,11 @@ export function useAppCore(session){
 // #endregion
 
 // #region SEZIONE 11: CRUD EVENTI
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // Calcola color/label/orari/shiftId/extraNote a partire dal form corrente.
   // Funzione condivisa (superset) usata sia da saveEvt che da updateEvt: contiene
   // TUTTI i rami di entrambe (gestione modelloId, shiftId, fixed/fixed30, extraNote),
-  // così nessuna delle due perde comportamento. Ogni chiamante decide se usare
+  // cosÃ¬ nessuna delle due perde comportamento. Ogni chiamante decide se usare
   // extraNote o ignorarlo, ma il calcolo avviene sempre allo stesso modo per entrambi.
   function computeEventFields(form, cal, modelli){
     let color = form.colorOvr || cal.color;
@@ -1197,13 +1197,13 @@ export function useAppCore(session){
   }
 
   // Marcatore usato per ritrovare l'evento "figlio" di protrazione
-  // agganciato a un turno base, riusando la colonna import_id (già
+  // agganciato a un turno base, riusando la colonna import_id (giÃ 
   // esistente su Supabase) invece di aggiungere una colonna nuova.
   function idProtrazioneFiglio(idEventoBase, tipo){
     return `protrazione_di_${idEventoBase}_${tipo}`;
   }
 
-  // Decodifica il marker import_id di un evento: se l'evento È esso stesso
+  // Decodifica il marker import_id di un evento: se l'evento Ãˆ esso stesso
   // una protrazione-figlia (creata da sincronizzaEventiProtrazione), restituisce
   // { idEventoBase, tipo }, altrimenti null. Serve per la sincronizzazione
   // inversa: quando l'utente modifica/elimina la protrazione direttamente
@@ -1216,12 +1216,12 @@ export function useAppCore(session){
   }
 
   // Crea/aggiorna/rimuove gli eventi "figli" di protrazione (a pagamento
-  // e/o a recupero) agganciati a un turno base. Ogni figlio è un evento
+  // e/o a recupero) agganciati a un turno base. Ogni figlio Ã¨ un evento
   // reale collegato al modello dedicato "PROTRAZIONE PAGAMENTO"/
   // "PROTRAZIONE RECUPERO" (trovato o creato al volo), con orario
   // inizio = uscita del turno base e orario fine = protPagFine/protRecFine:
   // questo lo fa entrare nei report che raggruppano per modelloId, esattamente
-  // come già avviene per le protrazioni importate da PDF.
+  // come giÃ  avviene per le protrazioni importate da PDF.
   async function sincronizzaEventiProtrazione({ idEventoBase, dayKey, calId, tOutBase, protPagFine, protRecFine }){
     if(!idEventoBase||!dayKey||!calId||!userId) return;
     const richieste = [
@@ -1308,7 +1308,7 @@ export function useAppCore(session){
     if(!cal) return;
     const { color, label, tInFinal, tOutFinal, extraNote } = computeEventFields(form, cal, modelli);
 
-    // L'id viene generato QUI, non più dal database: così l'evento locale
+    // L'id viene generato QUI, non piÃ¹ dal database: cosÃ¬ l'evento locale
     // e quello su Supabase condividono lo stesso id fin dal primo istante,
     // nessuna riconciliazione necessaria dopo che il server risponde.
     const idLocale = generaIdLocale();
@@ -1352,7 +1352,7 @@ export function useAppCore(session){
 
     // 3) Se il turno porta una protrazione (a pagamento e/o a recupero),
     // genero/aggiorno anche i rispettivi eventi "figli" agganciati ai
-    // modelli dedicati PROTRAZIONE PAGAMENTO/RECUPERO, così le ore di
+    // modelli dedicati PROTRAZIONE PAGAMENTO/RECUPERO, cosÃ¬ le ore di
     // protrazione entrano nei report (che raggruppano per modelloId).
     await sincronizzaEventiProtrazione({
       idEventoBase: idLocale, dayKey, calId,
@@ -1367,11 +1367,11 @@ export function useAppCore(session){
     if(!cal) return;
     const { color, label, tInFinal, tOutFinal } = computeEventFields(form, cal, modelli);
 
-    // Sincronizzazione inversa: se l'evento che sto modificando È esso
+    // Sincronizzazione inversa: se l'evento che sto modificando Ãˆ esso
     // stesso una protrazione-figlia (l'utente ha cambiato l'orario
     // direttamente sulla card PROTRAZIONE nel calendario, non sul campo
     // dentro AUTO), propago il nuovo orario di fine al campo
-    // protPagFine/protRecFine del turno AUTO padre, così restano sempre
+    // protPagFine/protRecFine del turno AUTO padre, cosÃ¬ restano sempre
     // allineati indipendentemente da dove viene fatta la modifica.
     const evtiGiornoCorrente = store.events?.[dayKey]?.[editCalId]||[];
     const evtCorrente = evtiGiornoCorrente.find(e=>e.id===form.editId);
@@ -1437,9 +1437,9 @@ export function useAppCore(session){
     });
 
     // 3) Sincronizzo (crea/aggiorna/rimuove) gli eventi "figli" di
-    // protrazione, allo stesso modo di saveEvt — solo se l'evento
-    // modificato è un turno base e non una protrazione-figlia (nel
-    // secondo caso l'aggiornamento è già stato propagato sopra, punto 3bis).
+    // protrazione, allo stesso modo di saveEvt â€” solo se l'evento
+    // modificato Ã¨ un turno base e non una protrazione-figlia (nel
+    // secondo caso l'aggiornamento Ã¨ giÃ  stato propagato sopra, punto 3bis).
     if(!decodificaMod){
       await sincronizzaEventiProtrazione({
         idEventoBase: form.editId, dayKey, calId: editCalId,
@@ -1456,12 +1456,12 @@ export function useAppCore(session){
     const prefissoFigli = `protrazione_di_${evtId}_`;
     const figli = evtiGiorno.filter(e=>(e.importId||"").startsWith(prefissoFigli));
 
-    // Sincronizzazione inversa: se l'evento che sto eliminando È esso
+    // Sincronizzazione inversa: se l'evento che sto eliminando Ãˆ esso
     // stesso una protrazione-figlia (l'utente l'ha cancellata direttamente
     // dal calendario, non svuotando il campo su AUTO), risalgo al turno
     // AUTO padre e pulisco il campo protPagFine/protRecFine corrispondente,
     // altrimenti il padre resterebbe con un riferimento a un orario
-    // di protrazione che in calendario non esiste più.
+    // di protrazione che in calendario non esiste piÃ¹.
     const evtCorrente = evtiGiorno.find(e=>e.id===evtId);
     const decodifica = decodificaProtrazioneFiglio(evtCorrente?.importId);
     if(decodifica){
@@ -1592,9 +1592,9 @@ export function useAppCore(session){
 // #endregion
 
 // #region SEZIONE 12: SYNC GOOGLE SHEETS + SUPABASE BACKUP
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   async function saveToSheets(events, calendars, customUrl=sheetsUrl, customSecret=sheetsSecret, modelliToSave=modelli){
-    if(!customUrl) return "⚠️ Sheets non configurato";
+    if(!customUrl) return "âš ï¸ Sheets non configurato";
     if(!isInitialized.current) return;
     try {
       await fetch("/api/sheets", {
@@ -1610,8 +1610,8 @@ export function useAppCore(session){
           fine: (m.tempo==="6h15"||m.tempo==="6h 15m")&&m.inizio ? calcFine6h15(m.inizio) : (m.tempo==="6h30"||m.tempo==="6h 30m")&&m.inizio ? calcFine6h30(m.inizio) : m.fine||"",
         }))}),
       });
-      return "✅ Esportato su Sheets";
-    } catch(e){ return "❌ Errore connessione Sheets"; }
+      return "âœ… Esportato su Sheets";
+    } catch(e){ return "âŒ Errore connessione Sheets"; }
   }
 
   // Wrapper unico per il sync "automatico" dopo un CRUD: prima erano 15 punti
@@ -1627,8 +1627,8 @@ export function useAppCore(session){
   async function loadFromSheets(customUrl=sheetsUrl, customSecret=sheetsSecret){
     try {
       // Il segreto va nel body (POST), non in query string: la query string
-      // può finire nei log del server o in eventuali proxy/CDN intermedi,
-      // il body no. Coerente con saveToSheets, che già usa POST+body.
+      // puÃ² finire nei log del server o in eventuali proxy/CDN intermedi,
+      // il body no. Coerente con saveToSheets, che giÃ  usa POST+body.
       const res = await fetch(`/api/sheets`, {
         method: "POST",
         headers: {"Content-Type":"application/json"},
@@ -1639,13 +1639,13 @@ export function useAppCore(session){
   }
 
   async function syncFromSheets(cals=store.calendars, evts=store.events, customUrl=sheetsUrl, customSecret=sheetsSecret, isBackground=false){
-    if(!customUrl) return "⚠️ Sincronizzazione non configurata";
+    if(!customUrl) return "âš ï¸ Sincronizzazione non configurata";
     if(isBackground) setBgSyncing(true); else setSyncing(true);
     try {
       const data = await loadFromSheets(customUrl, customSecret);
-      if(!data||!data.data) return "❌ Nessun dato valido da Sheets";
-      const { error: delEvtsErr } = await dbDelete("events", {user_id:userId}, "Sincronizzazione da Sheets — pulizia eventi esistenti", {soloLog:true});
-      if(delEvtsErr){ segnalaErrore("Non sono riuscito a pulire gli eventi esistenti prima di importare da Sheets: l'importazione è stata annullata per evitare duplicati.", "Sincronizzazione da Sheets"); return "❌ Errore durante la sincronizzazione"; }
+      if(!data||!data.data) return "âŒ Nessun dato valido da Sheets";
+      const { error: delEvtsErr } = await dbDelete("events", {user_id:userId}, "Sincronizzazione da Sheets â€” pulizia eventi esistenti", {soloLog:true});
+      if(delEvtsErr){ segnalaErrore("Non sono riuscito a pulire gli eventi esistenti prima di importare da Sheets: l'importazione Ã¨ stata annullata per evitare duplicati.", "Sincronizzazione da Sheets"); return "âŒ Errore durante la sincronizzazione"; }
       const existingNames = cals.map(c=>c.name);
       const newCals = [...cals];
       for(const tabName of (data.tabs||Object.keys(data.data))){
@@ -1697,8 +1697,8 @@ export function useAppCore(session){
         const resMod = await fetch(`${customUrl}?secret=${customSecret}&action=load_modelli`);
         const dataMod = await resMod.json();
         if(dataMod.modelli&&dataMod.modelli.length>0){
-          const { error: delModErr } = await dbDelete("modelli", {user_id:userId}, "Sincronizzazione da Sheets — pulizia modelli esistenti", {soloLog:true});
-          if(delModErr){ segnalaErrore("Non sono riuscito a pulire i modelli esistenti prima di importare da Sheets: l'importazione dei modelli è stata saltata.", "Sincronizzazione da Sheets"); return "✅ Turni importati (modelli non aggiornati, vedi Log)"; }
+          const { error: delModErr } = await dbDelete("modelli", {user_id:userId}, "Sincronizzazione da Sheets â€” pulizia modelli esistenti", {soloLog:true});
+          if(delModErr){ segnalaErrore("Non sono riuscito a pulire i modelli esistenti prima di importare da Sheets: l'importazione dei modelli Ã¨ stata saltata.", "Sincronizzazione da Sheets"); return "âœ… Turni importati (modelli non aggiornati, vedi Log)"; }
           const newModelli=[];
           for(const m of dataMod.modelli){
             const coloreEff=m.tempo==="h24"?"#64748b":colByTime(m.inizio);
@@ -1714,10 +1714,10 @@ export function useAppCore(session){
           setModelli(newModelli);
         }
       } catch(e){ segnalaErrore(e, "Import modelli da Google Sheets"); }
-      return "✅ Importazione completata";
+      return "âœ… Importazione completata";
     } catch(e){
       segnalaErrore(e, "Sincronizzazione con Google Sheets");
-      return "❌ Errore sincronizzazione Sheets";
+      return "âŒ Errore sincronizzazione Sheets";
     } finally {
       if(isBackground) setBgSyncing(false); else setSyncing(false);
     }
@@ -1742,8 +1742,8 @@ export function useAppCore(session){
         updated_at:new Date().toISOString(),
       });
       if(error) throw error;
-      setSyncMsg("✅ Impostazioni Google Sheets salvate");
-    } catch(err){ setSyncMsg("❌ Errore salvataggio: "+err.message); }
+      setSyncMsg("âœ… Impostazioni Google Sheets salvate");
+    } catch(err){ setSyncMsg("âŒ Errore salvataggio: "+err.message); }
     finally { setSyncing(false); }
   }
 
@@ -1784,19 +1784,19 @@ export function useAppCore(session){
   }
 
   async function handleExportSupabase(){
-    setSyncMsg("⏳ Esportazione in corso...");
+    setSyncMsg("â³ Esportazione in corso...");
     try {
       const backup = await buildBackupPayload();
       const {error:insErr} = await supabase.from("backups").insert({
         user_id:userId, data:backup,
       });
       if(insErr) throw insErr;
-      setSyncMsg("✅ Backup salvato su Supabase");
-    } catch(e){ segnalaErrore(e, "Esportazione backup su Supabase"); setSyncMsg("❌ Errore durante l'esportazione: "+e.message); }
+      setSyncMsg("âœ… Backup salvato su Supabase");
+    } catch(e){ segnalaErrore(e, "Esportazione backup su Supabase"); setSyncMsg("âŒ Errore durante l'esportazione: "+e.message); }
   }
 
   async function handleOpenImportSupabase(){
-    setSyncMsg("⏳ Carico elenco backup...");
+    setSyncMsg("â³ Carico elenco backup...");
     try {
       const {data, error} = await supabase.from("backups")
         .select("id, created_at")
@@ -1807,12 +1807,12 @@ export function useAppCore(session){
       setBackupsList(data||[]);
       setShowBackupsModal(true);
       setSyncMsg("");
-    } catch(e){ segnalaErrore(e, "Caricamento elenco backup"); setSyncMsg("❌ Errore nel caricare i backup: "+e.message); }
+    } catch(e){ segnalaErrore(e, "Caricamento elenco backup"); setSyncMsg("âŒ Errore nel caricare i backup: "+e.message); }
   }
 
   async function handleRestoreBackup(backupId){
-    if(!window.confirm("Questo SOVRASCRIVERÀ tutti i dati attuali con quelli del backup selezionato. Continuare?")) return;
-    setSyncMsg("⏳ Importazione in corso...");
+    if(!window.confirm("Questo SOVRASCRIVERÃ€ tutti i dati attuali con quelli del backup selezionato. Continuare?")) return;
+    setSyncMsg("â³ Importazione in corso...");
     setShowBackupsModal(false);
     try {
       const {data:row, error} = await supabase.from("backups").select("data").eq("id", backupId).eq("user_id", userId).maybeSingle();
@@ -1826,16 +1826,16 @@ export function useAppCore(session){
       let erroriRiscontrati = 0;
       const contaErrore = ({error}) => { if(error) erroriRiscontrati++; };
 
-      contaErrore(await dbDelete("events", {user_id:userId}, "Ripristino backup — pulizia eventi esistenti", {soloLog:true}));
-      contaErrore(await dbDelete("calendars", {user_id:userId}, "Ripristino backup — pulizia calendari esistenti", {soloLog:true}));
-      contaErrore(await dbDelete("modelli", {user_id:userId}, "Ripristino backup — pulizia modelli esistenti", {soloLog:true}));
-      contaErrore(await dbDelete("rotazioni", {user_id:userId}, "Ripristino backup — pulizia rotazioni esistenti", {soloLog:true}));
+      contaErrore(await dbDelete("events", {user_id:userId}, "Ripristino backup â€” pulizia eventi esistenti", {soloLog:true}));
+      contaErrore(await dbDelete("calendars", {user_id:userId}, "Ripristino backup â€” pulizia calendari esistenti", {soloLog:true}));
+      contaErrore(await dbDelete("modelli", {user_id:userId}, "Ripristino backup â€” pulizia modelli esistenti", {soloLog:true}));
+      contaErrore(await dbDelete("rotazioni", {user_id:userId}, "Ripristino backup â€” pulizia rotazioni esistenti", {soloLog:true}));
 
       const calIdMap = {};
       for(const c of (backup.calendars||[])){
         const {data, error:errC} = await dbInsert("calendars", {
           user_id:userId, name:c.name, color:c.color, is_main:c.is_main, shifts:c.shifts||[],
-        }, `Ripristino backup — calendario "${c.name}"`, {soloLog:true});
+        }, `Ripristino backup â€” calendario "${c.name}"`, {soloLog:true});
         if(errC) erroriRiscontrati++;
         if(data?.[0]) calIdMap[c.id] = data[0].id;
       }
@@ -1845,7 +1845,7 @@ export function useAppCore(session){
           user_id:userId, titolo:m.titolo, tempo:m.tempo, inizio:m.inizio, fine:m.fine,
           colore:m.colore, colore_custom:m.colore_custom, posizione:m.posizione||"", // flag "manuale"/vuoto, non un id: nessun rimapping necessario
           sort_order:m.sort_order, calendar_id: calIdMap[m.calendar_id]||null,
-        }, `Ripristino backup — modello "${m.titolo}"`, {soloLog:true});
+        }, `Ripristino backup â€” modello "${m.titolo}"`, {soloLog:true});
         if(errM) erroriRiscontrati++;
         if(data?.[0]) modIdMap[m.id] = data[0].id;
       }
@@ -1856,7 +1856,7 @@ export function useAppCore(session){
           time_in:e.time_in, time_out:e.time_out, place:e.place, map_url:e.map_url,
           note:e.note, modello_id: modIdMap[e.modello_id]||null,
           collega:e.collega, auto:e.auto,
-        }, `Ripristino backup — evento "${e.label}" (${e.date_key})`, {soloLog:true});
+        }, `Ripristino backup â€” evento "${e.label}" (${e.date_key})`, {soloLog:true});
         if(errE) erroriRiscontrati++;
       }
       for(const r of (backup.rotazioni||[])){
@@ -1867,43 +1867,43 @@ export function useAppCore(session){
           modello_nl_id: modIdMap[r.modello_nl_id]||null,
           modello_rs_id: modIdMap[r.modello_rs_id]||null,
           griglia:r.griglia||{},
-        }, `Ripristino backup — rotazione "${r.titolo}"`, {soloLog:true});
+        }, `Ripristino backup â€” rotazione "${r.titolo}"`, {soloLog:true});
         if(errR) erroriRiscontrati++;
       }
       if(erroriRiscontrati>0){
-        segnalaErrore(`${erroriRiscontrati} elementi non sono stati ripristinati correttamente (dettaglio nel Log). Il resto del backup è stato importato.`, "Ripristino backup");
+        segnalaErrore(`${erroriRiscontrati} elementi non sono stati ripristinati correttamente (dettaglio nel Log). Il resto del backup Ã¨ stato importato.`, "Ripristino backup");
       }
-      setSyncMsg("✅ Importazione completata — ricarico l'app...");
+      setSyncMsg("âœ… Importazione completata â€” ricarico l'app...");
       setTimeout(()=>window.location.reload(), 1500);
-    } catch(e){ segnalaErrore(e, "Ripristino backup (sovrascrittura dati)"); setSyncMsg("❌ Errore durante l'importazione: "+e.message); }
+    } catch(e){ segnalaErrore(e, "Ripristino backup (sovrascrittura dati)"); setSyncMsg("âŒ Errore durante l'importazione: "+e.message); }
   }
 
   async function handleLogout(){ await supabase.auth.signOut(); }
 
-  // ─── Scheletro condiviso per gli script di manutenzione "una tantum" ───
+  // â”€â”€â”€ Scheletro condiviso per gli script di manutenzione "una tantum" â”€â”€â”€
   // Entrambe le normalizzazioni (modelli e eventi) seguono sempre la stessa
   // sequenza: calcola cosa andrebbe cambiato -> se dryRun, mostra l'anteprima
   // e si ferma -> altrimenti scrive su Supabase riga per riga, contando
-  // successi/errori -> stampa il messaggio finale. Questa sequenza è scritta
+  // successi/errori -> stampa il messaggio finale. Questa sequenza Ã¨ scritta
   // UNA sola volta qui: se in futuro cambia (es. il formato dei log, o si
   // vuole scrivere in batch invece che riga per riga), la si cambia in un
   // solo posto e sia normalizzaModelliTempo che normalizzaEventiTempo la
-  // seguono automaticamente — non esiste una seconda copia da dimenticare.
+  // seguono automaticamente â€” non esiste una seconda copia da dimenticare.
   //
   // Parametri:
   //   nomeOperazione: stringa per i messaggi di log (es. "modelli", "eventi")
-  //   trovaDaSistemare: () => [{...}] — calcola l'elenco delle righe da
-  //     cambiare, ciascuna deve avere almeno {id} più i campi target
+  //   trovaDaSistemare: () => [{...}] â€” calcola l'elenco delle righe da
+  //     cambiare, ciascuna deve avere almeno {id} piÃ¹ i campi target
   //   formatoTabella: (item) => oggetto per console.table (colonne attuale/nuovo)
-  //   applicaSuDb: (item) => Promise — esegue l'update Supabase per un item
-  //   applicaSuStatoLocale: (itemsSistemati) => void — aggiorna lo state React
+  //   applicaSuDb: (item) => Promise â€” esegue l'update Supabase per un item
+  //   applicaSuStatoLocale: (itemsSistemati) => void â€” aggiorna lo state React
   //     (facoltativo: se assente, serve un refresh manuale per vedere i dati)
   async function eseguiNormalizzazione({ nomeOperazione, trovaDaSistemare, formatoTabella, applicaSuDb, applicaSuStatoLocale, dryRun }){
     const daSistemare = trovaDaSistemare();
-    if(daSistemare.length===0){ console.log(`✅ Nessun elemento (${nomeOperazione}) da normalizzare, sono già tutti in formato standard.`); return; }
+    if(daSistemare.length===0){ console.log(`âœ… Nessun elemento (${nomeOperazione}) da normalizzare, sono giÃ  tutti in formato standard.`); return; }
     console.table(daSistemare.map(formatoTabella));
     if(dryRun){
-      console.log(`ℹ️ Anteprima (${nomeOperazione}): ${daSistemare.length} elementi verrebbero normalizzati. Richiama con {dryRun:false} per applicare davvero su Supabase.`);
+      console.log(`â„¹ï¸ Anteprima (${nomeOperazione}): ${daSistemare.length} elementi verrebbero normalizzati. Richiama con {dryRun:false} per applicare davvero su Supabase.`);
       return daSistemare;
     }
     let ok=0, ko=0;
@@ -1912,21 +1912,21 @@ export function useAppCore(session){
       try{
         const { error } = await applicaSuDb(item);
         // Ogni singolo fallimento va comunque nel Log (per tracciare quale
-        // riga esatta non è passata), ma qui NON si accoda un modale per
-        // ognuno: in un ciclo con più righe sarebbe una sequenza di N popup
+        // riga esatta non Ã¨ passata), ma qui NON si accoda un modale per
+        // ognuno: in un ciclo con piÃ¹ righe sarebbe una sequenza di N popup
         // da chiudere uno a uno. Un solo alert riassuntivo compare alla fine.
-        if(error){ segnalaErroreSoloLog(error, `Normalizzazione ${nomeOperazione} — elemento "${item.id}"`); ko++; }
+        if(error){ segnalaErroreSoloLog(error, `Normalizzazione ${nomeOperazione} â€” elemento "${item.id}"`); ko++; }
         else { ok++; sistematiConSuccesso.push(item); }
-      } catch(err){ segnalaErroreSoloLog(err, `Normalizzazione ${nomeOperazione} — elemento "${item.id}"`); ko++; }
+      } catch(err){ segnalaErroreSoloLog(err, `Normalizzazione ${nomeOperazione} â€” elemento "${item.id}"`); ko++; }
     }
-    console.log(`✅ Normalizzati ${ok} elementi (${nomeOperazione}) su Supabase${ko>0?`, ${ko} da controllare a mano`:""}. Ricarica la pagina per vedere i dati aggiornati.`);
+    console.log(`âœ… Normalizzati ${ok} elementi (${nomeOperazione}) su Supabase${ko>0?`, ${ko} da controllare a mano`:""}. Ricarica la pagina per vedere i dati aggiornati.`);
     if(ko>0) segnalaErrore(`${ko} elementi su ${daSistemare.length} non sono stati normalizzati (dettaglio nel Log). ${ok} completati con successo.`, `Normalizzazione ${nomeOperazione}`);
     if(applicaSuStatoLocale) applicaSuStatoLocale(sistematiConSuccesso);
   }
 
-  // ─── Manutenzione: standardizza tempo/inizio/fine di tutti i modelli ───
+  // â”€â”€â”€ Manutenzione: standardizza tempo/inizio/fine di tutti i modelli â”€â”€â”€
   // Riscrive su Supabase, per ogni modello con formato "sporco", i campi:
-  //   - tempo: "6h15" quando la durata è 6h15/6h30 (qualunque fosse la scrittura originale)
+  //   - tempo: "6h15" quando la durata Ã¨ 6h15/6h30 (qualunque fosse la scrittura originale)
   //   - inizio: sempre in "HH:MM" pulito (es. "6.15" -> "06:15")
   //   - fine: ricalcolata da inizio via calcFine6h15 per i modelli 6h15/6h30,
   //           altrimenti solo normalizzata in "HH:MM" per i modelli personalizzati
@@ -1977,15 +1977,15 @@ export function useAppCore(session){
       },
     });
   }
-  // Non più esposta su window: era uno script di migrazione una tantum,
-  // già eseguito. La funzione resta definita sopra se dovesse servire ancora
+  // Non piÃ¹ esposta su window: era uno script di migrazione una tantum,
+  // giÃ  eseguito. La funzione resta definita sopra se dovesse servire ancora
   // (richiamabile riattivando temporaneamente l'useEffect qui sotto),
-  // ma non è più raggiungibile dalla console di chiunque apra l'app pubblica.
+  // ma non Ã¨ piÃ¹ raggiungibile dalla console di chiunque apra l'app pubblica.
   // useEffect(()=>{
   //   if(typeof window!=="undefined") window.normalizzaModelliTempo = normalizzaModelliTempo;
   // }, [modelli, userId]);
 
-  // ─── Manutenzione: sistema eventi storici con orario di uscita mancante ───
+  // â”€â”€â”€ Manutenzione: sistema eventi storici con orario di uscita mancante â”€â”€â”€
   // Prima del fix, un evento con modello 6h15/6h30 (o INGRESSO digitato a mano)
   // poteva salvare time_out vuoto pur mostrandolo calcolato in UI.
   // Per ogni evento con time_in valorizzato e time_out vuoto:
@@ -1997,9 +1997,9 @@ export function useAppCore(session){
     if(!userId){ segnalaErrore("Utente non loggato", "Normalizzazione eventi (manutenzione)"); return; }
     const { data: evts, error: fetchErr } = await supabase.from("events")
       .select("id,date_key,time_in,time_out,modello_id,label").eq("user_id", userId);
-    if(fetchErr){ segnalaErrore(fetchErr, "Normalizzazione eventi — lettura dati"); return; }
-    // Il fetch iniziale è asincrono e serve prima di poter calcolare
-    // daSistemare: lo scheletro condiviso assume la lista già pronta, quindi
+    if(fetchErr){ segnalaErrore(fetchErr, "Normalizzazione eventi â€” lettura dati"); return; }
+    // Il fetch iniziale Ã¨ asincrono e serve prima di poter calcolare
+    // daSistemare: lo scheletro condiviso assume la lista giÃ  pronta, quindi
     // il fetch resta qui fuori (unica differenza reale tra le due periferiche)
     // e si passa allo scheletro solo il calcolo che segue.
     const daSistemare = (evts||[])
@@ -2025,32 +2025,32 @@ export function useAppCore(session){
         await supabase.from("events").update({ time_out: fineCalcolata }).eq("id", e.id).eq("user_id", userId),
       // Nessun applicaSuStatoLocale qui: comportamento invariato rispetto a
       // prima (lo stato locale degli eventi non veniva aggiornato in memoria,
-      // serviva ricaricare la pagina — lo dice già il messaggio finale).
+      // serviva ricaricare la pagina â€” lo dice giÃ  il messaggio finale).
     });
   }
-  // Stesso discorso: script di migrazione una tantum, non più esposto su window.
+  // Stesso discorso: script di migrazione una tantum, non piÃ¹ esposto su window.
   // useEffect(()=>{
   //   if(typeof window!=="undefined") window.normalizzaEventiTempo = normalizzaEventiTempo;
   // }, [modelli, userId]);
 // #endregion
 
 // #region SEZIONE 13: CRUD MODELLI + COLORI
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // Memoizzato: prima veniva ricalcolato (sort completo) ad ogni singolo
 // render dell'app, anche quando i modelli non erano cambiati.
 // Flag salvato nel campo "posizione" (riusato come semplice stringa, niente
-// nuove colonne Supabase): "manuale" se il modello è stato spostato almeno
-// una volta dall'utente (freccia o drag), stringa vuota se è ancora nella
+// nuove colonne Supabase): "manuale" se il modello Ã¨ stato spostato almeno
+// una volta dall'utente (freccia o drag), stringa vuota se Ã¨ ancora nella
 // lista automatica per orario. Sostituisce il vecchio sistema di riferimenti
 // a catena (un modello agganciato "sopra" un altro id), che era la causa
-// architetturale dell'instabilità: un riferimento relativo può creare cicli,
-// asimmetrie tra "su" e "giù", casi limite in testa/coda alla lista. Con un
-// flag + una posizione numerica scoped per calendario, ogni operazione è un
+// architetturale dell'instabilitÃ : un riferimento relativo puÃ² creare cicli,
+// asimmetrie tra "su" e "giÃ¹", casi limite in testa/coda alla lista. Con un
+// flag + una posizione numerica scoped per calendario, ogni operazione Ã¨ un
 // semplice shift di interi, sempre reversibile, senza casi speciali nascosti.
 const FLAG_MANUALE = "manuale";
 
-// ── Calcola l'ordine dei modelli PER UN DATO SOTTOINSIEME (già filtrato per
-// calendario dal chiamante — mai calcolato sull'insieme completo di più
+// â”€â”€ Calcola l'ordine dei modelli PER UN DATO SOTTOINSIEME (giÃ  filtrato per
+// calendario dal chiamante â€” mai calcolato sull'insieme completo di piÃ¹
 // calendari insieme, altrimenti un modello potrebbe confrontarsi con
 // "vicini" che nella vista reale non esistono).
 //
@@ -2058,7 +2058,7 @@ const FLAG_MANUALE = "manuale";
 // 1) Lista AUTOMATICA per orario: tutti i modelli con flag!==FLAG_MANUALE,
 //    ordinati per orario di inizio (h24/senza orario sempre in cima).
 // 2) Lista MANUALE/libera: tutti i modelli con flag===FLAG_MANUALE, ordinati
-//    semplicemente per sort_order crescente — un numero intero, niente
+//    semplicemente per sort_order crescente â€” un numero intero, niente
 //    riferimenti relativi tra modelli.
 // 3) Le due liste si "intrecciano" leggendo sort_order come UNA POSIZIONE
 //    ASSOLUTA CONDIVISA: ogni modello (automatico o manuale) occupa lo slot
@@ -2066,14 +2066,14 @@ const FLAG_MANUALE = "manuale";
 //    calcolando il suo sort_order in base all'orario rispetto agli altri
 //    automatici, e chi viene dopo (automatico O manuale) scala di uno.
 function calcolaOrdineModelli(sottoinsieme){
-  // sort_order è semplicemente la posizione finale: ordino tutto insieme,
-  // un solo criterio, nessuna eccezione — la stabilità viene proprio dal
-  // non avere più casi speciali da conciliare tra loro.
+  // sort_order Ã¨ semplicemente la posizione finale: ordino tutto insieme,
+  // un solo criterio, nessuna eccezione â€” la stabilitÃ  viene proprio dal
+  // non avere piÃ¹ casi speciali da conciliare tra loro.
   return [...sottoinsieme].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
 }
 
 // Elenco completo (tutti i calendari insieme), usato dove serve una vista
-// globale — es. il ripristino da backup, o quando calId===null ("tutti").
+// globale â€” es. il ripristino da backup, o quando calId===null ("tutti").
 const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
 
 const importsRecenti = useMemo(()=>{
@@ -2093,23 +2093,23 @@ const importsRecenti = useMemo(()=>{
 
 
   // Pinna un modello: lo aggancia "sopra" il modello che si trova alla
-  // posizione newIdx nell'elenco visivo corrente (già senza il modello
-  // stesso). Se newIdx è oltre la fine della lista (va portato in fondo),
+  // posizione newIdx nell'elenco visivo corrente (giÃ  senza il modello
+  // stesso). Se newIdx Ã¨ oltre la fine della lista (va portato in fondo),
   // lo spinna senza riferimento (torna automatico, va in fondo per orario
   // di default 99999 se non ha inizio, altrimenti resta comunque ultimo tra
-  // i pari-orario) — nel nostro caso pratico c'è sempre un vicino di sotto
-  // perché non permettiamo di superare i confini della lista.
-  // ── pinnaSoprapPuro: funzione PURA (nessuna lettura di state esterno, nessun
+  // i pari-orario) â€” nel nostro caso pratico c'Ã¨ sempre un vicino di sotto
+  // perchÃ© non permettiamo di superare i confini della lista.
+  // â”€â”€ pinnaSoprapPuro: funzione PURA (nessuna lettura di state esterno, nessun
   // side-effect) che calcola il nuovo elenco modelli dato lo stato attuale
   // (prev). Prima questa logica leggeva "modelli" (lo state catturato al
   // momento della creazione della funzione) invece di "prev": con click
   // ravvicinati sulle frecce, la seconda chiamata poteva ancora vedere lo
   // stato PRIMA del primo spostamento, calcolando sortOrder e controllo
-  // anti-ciclo su dati superati — causa architetturale dei blocchi e salti
-  // imprevedibili. Ora tutto il calcolo avviene sullo stato più recente,
+  // anti-ciclo su dati superati â€” causa architetturale dei blocchi e salti
+  // imprevedibili. Ora tutto il calcolo avviene sullo stato piÃ¹ recente,
   // dentro un'unica operazione atomica di setModelli.
-  // ── Sottoinsieme dei modelli appartenenti a un dato calendario (o tutti,
-  // se calIdFiltro è null). Sempre calcolato da "prev" (lo stato più
+  // â”€â”€ Sottoinsieme dei modelli appartenenti a un dato calendario (o tutti,
+  // se calIdFiltro Ã¨ null). Sempre calcolato da "prev" (lo stato piÃ¹
   // recente), mai da uno snapshot esterno del render, per evitare le
   // desincronizzazioni con click ravvicinati viste nell'architettura precedente.
   function modelliDelCalendario(prev, calIdFiltro){
@@ -2117,15 +2117,15 @@ const importsRecenti = useMemo(()=>{
     return prev.filter(m=>(m.calendarId||mainCalId)===calIdFiltro);
   }
 
-  // ── Sposta un modello di UNA posizione (freccia ▲▼) all'interno del suo
+  // â”€â”€ Sposta un modello di UNA posizione (freccia â–²â–¼) all'interno del suo
   // calendario. Operazione: scambio diretto del sort_order con il vicino
-  // immediato nella direzione scelta — un semplice swap fra due interi,
+  // immediato nella direzione scelta â€” un semplice swap fra due interi,
   // sempre reversibile e senza casi limite nascosti (a differenza del vecchio
   // sistema a riferimenti relativi, che poteva creare cicli e asimmetrie tra
-  // "su" e "giù"). Il modello spostato viene marcato FLAG_MANUALE: da questo
-  // momento appartiene alla lista libera e non torna più a riordinarsi da
+  // "su" e "giÃ¹"). Il modello spostato viene marcato FLAG_MANUALE: da questo
+  // momento appartiene alla lista libera e non torna piÃ¹ a riordinarsi da
   // solo per orario.
-  // Riassegna sort_order 0,10,20... a un sottoinsieme già riordinato,
+  // Riassegna sort_order 0,10,20... a un sottoinsieme giÃ  riordinato,
   // aggiornando solo i modelli coinvolti sull'elenco completo "prev".
   // idsManuali: quali di questi modelli diventano FLAG_MANUALE (gli altri
   // vengono solo rinumerati, restando automatici se non toccati direttamente).
@@ -2146,17 +2146,17 @@ const importsRecenti = useMemo(()=>{
     const idx = sottoinsieme.findIndex(m=>m.id===id);
     if(idx===-1) return prev;
     const vicinoIdx = dir==="up" ? idx-1 : idx+1;
-    if(vicinoIdx<0 || vicinoIdx>=sottoinsieme.length) return prev; // già al limite, nessun movimento
+    if(vicinoIdx<0 || vicinoIdx>=sottoinsieme.length) return prev; // giÃ  al limite, nessun movimento
     // Scambio le POSIZIONI nell'array ordinato (non i valori di sortOrder:
-    // se due o più modelli del sottoinsieme condividessero già lo stesso
-    // sortOrder — es. modelli automatici mai "toccati" prima, o dati
-    // storici da uno schema precedente — uno swap puntuale dei soli due
-    // valori coinvolti può lasciare duplicati residui altrove nella lista.
-    // Con duplicati, l'ordine risulta corretto solo finché resta in
+    // se due o piÃ¹ modelli del sottoinsieme condividessero giÃ  lo stesso
+    // sortOrder â€” es. modelli automatici mai "toccati" prima, o dati
+    // storici da uno schema precedente â€” uno swap puntuale dei soli due
+    // valori coinvolti puÃ² lasciare duplicati residui altrove nella lista.
+    // Con duplicati, l'ordine risulta corretto solo finchÃ© resta in
     // memoria: dopo un refresh, la query dal server (senza ORDER BY
-    // secondario) può restituire le righe pari-valore in un ordine diverso,
+    // secondario) puÃ² restituire le righe pari-valore in un ordine diverso,
     // facendo "saltare" il modello in una posizione inattesa. Rinumerando
-    // l'intero sottoinsieme con passo fisso ad ogni spostamento, come già
+    // l'intero sottoinsieme con passo fisso ad ogni spostamento, come giÃ 
     // fa trascinaModelloPuro, eliminiamo qui i duplicati alla fonte invece
     // di limitarci a scambiare due numeri potenzialmente ambigui.
     const riordinato = [...sottoinsieme];
@@ -2169,13 +2169,13 @@ const importsRecenti = useMemo(()=>{
     return rinumeraSottoinsieme(prev, riordinato, idsManuali);
   }
 
-  // ── Trascina un modello (drag & drop) fino alla posizione esatta di
+  // â”€â”€ Trascina un modello (drag & drop) fino alla posizione esatta di
   // dstId, all'interno dello stesso calendario. Operazione: rimuovo il
   // modello dalla sua posizione, lo reinserisco nell'indice di destinazione,
-  // e riassegno sort_order 0,1,2... a tutto il sottoinsieme in ordine —
+  // e riassegno sort_order 0,1,2... a tutto il sottoinsieme in ordine â€”
   // uno shift completo ma su un insieme piccolo (i modelli di un calendario),
   // quindi economico, e soprattutto sempre corretto per costruzione: non
-  // c'è modo che questo produca cicli o incoerenze, perché non uso mai
+  // c'Ã¨ modo che questo produca cicli o incoerenze, perchÃ© non uso mai
   // riferimenti tra modelli, solo una rinumerazione sequenziale.
   function trascinaModelloPuro(prev, srcId, dstId, calIdFiltro){
     if(!srcId || !dstId || srcId===dstId){
@@ -2213,11 +2213,11 @@ const importsRecenti = useMemo(()=>{
     for(const m of daSalvare){
       // .select() dopo l'update: se Supabase risponde error:null ma restituisce
       // un array VUOTO, significa che l'update ha toccato zero righe pur senza
-      // segnalare un errore esplicito — il sintomo tipico di una riga esclusa
+      // segnalare un errore esplicito â€” il sintomo tipico di una riga esclusa
       // da una policy RLS di UPDATE (o USING/WITH CHECK troppo restrittiva).
       // In quel caso l'ordine sembra salvato lato client, ma il server non ha
       // scritto nulla: al refresh torna quello vecchio. Senza questo controllo
-      // il caso passava inosservato perché `error` da solo non lo rileva.
+      // il caso passava inosservato perchÃ© `error` da solo non lo rileva.
       const { data, error } = await supabase.from("modelli")
         .update({sort_order:m.sortOrder, posizione:m.posizione||""})
         .eq("id",m.id).eq("user_id",userId)
@@ -2226,7 +2226,7 @@ const importsRecenti = useMemo(()=>{
       else if(!error && (!data || data.length===0)) bloccatoDaPolicy = true;
     }
     if(primoErrore){
-      // Il salvataggio su Supabase è fallito: lo stato locale mostra il nuovo
+      // Il salvataggio su Supabase Ã¨ fallito: lo stato locale mostra il nuovo
       // ordine, ma al prossimo caricamento dati tornerebbe quello vecchio
       // (sort_order non aggiornato sul server). Avviso subito invece di
       // lasciare che l'utente scopra il problema solo dopo un refresh.
@@ -2241,7 +2241,7 @@ const importsRecenti = useMemo(()=>{
 
   async function moveH24(id, dir, calIdFiltro){
     // Tutto il calcolo avviene dentro il callback funzionale di setModelli,
-    // sempre sullo stato più recente anche con click ravvicinati.
+    // sempre sullo stato piÃ¹ recente anche con click ravvicinati.
     let prevSnapshot = null, nuovoElenco = null;
     setModelli(prev=>{
       prevSnapshot = prev;
@@ -2264,10 +2264,10 @@ const importsRecenti = useMemo(()=>{
   }
 
 
-  // ── FIX: quando un modello riceve un coloreCustom, quel colore viene
-  // salvato subito nella tabella "colori" (se non già presente), così
-  // compare istantaneamente nella tab Modelli → Colori senza dover
-  // ricaricare l'app, e può essere associato ad altri modelli da lì.
+  // â”€â”€ FIX: quando un modello riceve un coloreCustom, quel colore viene
+  // salvato subito nella tabella "colori" (se non giÃ  presente), cosÃ¬
+  // compare istantaneamente nella tab Modelli â†’ Colori senza dover
+  // ricaricare l'app, e puÃ² essere associato ad altri modelli da lÃ¬.
   async function ensureColoreRegistrato(hex){
     if(!userId || !hex) return;
     if(coloriExtra.some(c=>c.hex===hex)) return;
@@ -2281,11 +2281,11 @@ const importsRecenti = useMemo(()=>{
     });
   }
 
-  // ── Autocomplete: registra un valore nuovo in una delle 5 liste dedicate
+  // â”€â”€ Autocomplete: registra un valore nuovo in una delle 5 liste dedicate
   // (titolo, nome_visualizzato, auto, luogo, collega), sincronizzata su
   // Supabase e condivisa fra tutti i dispositivi dell'utente. Chiamata al
-  // salvataggio di eventi/modelli — mai durante la digitazione, solo a
-  // conferma, per non riempire la lista di valori a metà scritti.
+  // salvataggio di eventi/modelli â€” mai durante la digitazione, solo a
+  // conferma, per non riempire la lista di valori a metÃ  scritti.
   async function registraValoreAutocomplete(campo, valore){
     if(!userId || !valore) return;
     const v = valore.trim();
@@ -2294,8 +2294,8 @@ const importsRecenti = useMemo(()=>{
     try {
       const { error } = await supabase.from("autocomplete_valori")
         .insert({ user_id:userId, campo, valore:v });
-      // Violazione unique (valore già presente per un altro motivo, es. race
-      // condition fra dispositivi) non è un errore reale: il valore è comunque lì.
+      // Violazione unique (valore giÃ  presente per un altro motivo, es. race
+      // condition fra dispositivi) non Ã¨ un errore reale: il valore Ã¨ comunque lÃ¬.
       if(error && error.code!=="23505") { segnalaErrore(error, `Registrazione valore autocomplete (${campo})`); return; }
       setAutocompleteValori(prev=>({
         ...prev,
@@ -2304,16 +2304,16 @@ const importsRecenti = useMemo(()=>{
     } catch(e){ segnalaErrore(e, `Registrazione valore autocomplete (${campo})`); }
   }
 
-  // Registra più valori insieme (es. il campo collega, multi-riga: ogni riga
-  // è un nome a sé che deve entrare nella lista come voce indipendente).
+  // Registra piÃ¹ valori insieme (es. il campo collega, multi-riga: ogni riga
+  // Ã¨ un nome a sÃ© che deve entrare nella lista come voce indipendente).
   async function registraValoriAutocomplete(campo, valori){
     for(const v of (valori||[])) await registraValoreAutocomplete(campo, v);
   }
 
-  // Rimuove un valore da una lista autocomplete — SOLO dalla lista dei
-  // suggerimenti: non tocca in alcun modo eventi o modelli già salvati con
+  // Rimuove un valore da una lista autocomplete â€” SOLO dalla lista dei
+  // suggerimenti: non tocca in alcun modo eventi o modelli giÃ  salvati con
   // quel valore, che restano intatti. Serve a ripulire refusi o valori che
-  // non si vogliono più vedere proposti in digitazione.
+  // non si vogliono piÃ¹ vedere proposti in digitazione.
   async function rimuoviValoreAutocomplete(campo, valore){
     if(!userId) return;
     try {
@@ -2325,8 +2325,8 @@ const importsRecenti = useMemo(()=>{
   }
 
   // Prova a salvare; se Supabase segnala una colonna mancante nello schema,
-  // la rimuove dal payload e riprova, finché va a buon fine o non c'è più nulla da togliere.
-  // Così l'app resta funzionante anche se lo schema del DB non è ancora aggiornato.
+  // la rimuove dal payload e riprova, finchÃ© va a buon fine o non c'Ã¨ piÃ¹ nulla da togliere.
+  // CosÃ¬ l'app resta funzionante anche se lo schema del DB non Ã¨ ancora aggiornato.
   async function supabaseUpsertConRetry(query, payloadIniziale, isInsert){
     let payload = {...payloadIniziale};
     for(let tentativi=0; tentativi<10; tentativi++){
@@ -2363,7 +2363,7 @@ const importsRecenti = useMemo(()=>{
       categoria_turno_vuoto: !!data.turnoVuoto,
       categoria_app_auto_vuoto: !!data.appAutoVuoto,
     };
-    if(data.coloreCustom) ensureColoreRegistrato(data.coloreCustom); // non bloccante: colore già visibile localmente comunque
+    if(data.coloreCustom) ensureColoreRegistrato(data.coloreCustom); // non bloccante: colore giÃ  visibile localmente comunque
     if(data.titolo) registraValoreAutocomplete("titolo", (data.titolo||"").toUpperCase());
     if(data.label) registraValoreAutocomplete("nome_visualizzato", (data.label||"").toUpperCase());
     const ts = new Date().toISOString();
@@ -2400,9 +2400,9 @@ const importsRecenti = useMemo(()=>{
       });
 
       // Il form aspetta questa funzione per chiudersi (await saveModello in
-      // onSave): il locale è già scritto sopra, quindi da qui si ritorna
+      // onSave): il locale Ã¨ giÃ  scritto sopra, quindi da qui si ritorna
       // SUBITO. Il backup su Supabase/Sheets parte in background (senza
-      // await) — se resta appeso per rete lenta o altro, non blocca più il
+      // await) â€” se resta appeso per rete lenta o altro, non blocca piÃ¹ il
       // form sulla schermata di salvataggio senza via d'uscita.
       (async()=>{
         const risModello = await scriviConBackup({
@@ -2412,29 +2412,29 @@ const importsRecenti = useMemo(()=>{
           opzioni:{soloLog:true},
         });
         // Propagazione agli eventi collegati: stessa logica, operazione separata
-        // (tabella diversa) ma stesso timestamp, così in coda mantiene l'ordine
+        // (tabella diversa) ma stesso timestamp, cosÃ¬ in coda mantiene l'ordine
         // corretto rispetto all'update del modello.
         const risEventi = await scriviConBackup({
           tipo:"update", table:"events",
           payload:{ label: labelNuova, color: coloreEff, time_in: tInNuovo, time_out: tOutNuovo },
           matchObj:{modello_id:data.id, user_id:userId},
-          contesto:"Aggiornamento modello — propagazione agli eventi già in calendario", ts,
+          contesto:"Aggiornamento modello â€” propagazione agli eventi giÃ  in calendario", ts,
           eventsPerSheets: nuovoStore.events, calendarsPerSheets: nuovoStore.calendars, modelliPerSheets: modelliAggiornati,
           opzioni:{soloLog:true},
         });
         // Un solo popup per l'intero salvataggio invece di uno per ogni tabella
-        // toccata: il locale è comunque già scritto in entrambi i casi, quindi
+        // toccata: il locale Ã¨ comunque giÃ  scritto in entrambi i casi, quindi
         // due modali di fila per la stessa azione utente erano solo fastidiosi,
-        // non un'informazione in più.
+        // non un'informazione in piÃ¹.
         if(risModello?.errore || risEventi?.errore){
           segnalaErroreDb(risModello?.errore || risEventi?.errore, "Salvataggio modello");
         }
       })();
       return { ok:true, modello: modelloAggiornato };
     } else {
-      // INSERT: il calcolo del posizionamento usa solo dati già in memoria
-      // (modelli, calcolaOrdineModelli) — non serve aspettare Supabase per
-      // deciderlo. L'id è generato qui, subito, come per gli eventi.
+      // INSERT: il calcolo del posizionamento usa solo dati giÃ  in memoria
+      // (modelli, calcolaOrdineModelli) â€” non serve aspettare Supabase per
+      // deciderlo. L'id Ã¨ generato qui, subito, come per gli eventi.
       const idLocale = generaIdLocale();
       const calendarioModelli = modelli.filter(m=>(m.calendarId||mainCalId)===targetCalId);
       const tutti = calcolaOrdineModelli(calendarioModelli);
@@ -2472,10 +2472,10 @@ const importsRecenti = useMemo(()=>{
           if(esistonoAltriModelliConOrario){
             const messaggio = indiciStessoOrario.length===0
               ? `Non ci sono altri modelli con l'orario ${nuovoOrarioKey} in questo calendario, quindi non ho un riferimento per posizionarlo: ho messo "${(data.titolo||"il nuovo modello").toUpperCase()}" in fondo alla lista. Spostalo manualmente quando vuoi.`
-              : `Ci sono già più modelli con l'orario ${nuovoOrarioKey} ma in posizioni diverse della lista, quindi non posso capire automaticamente dove raggrupparlo: ho messo "${(data.titolo||"il nuovo modello").toUpperCase()}" in fondo alla lista. Spostalo manualmente quando vuoi.`;
+              : `Ci sono giÃ  piÃ¹ modelli con l'orario ${nuovoOrarioKey} ma in posizioni diverse della lista, quindi non posso capire automaticamente dove raggrupparlo: ho messo "${(data.titolo||"il nuovo modello").toUpperCase()}" in fondo alla lista. Spostalo manualmente quando vuoi.`;
             // Le creazioni automatiche (es. modello di protrazione generato
             // al volo da trovaOCreaModelloProtrazione) non devono mai
-            // interrompere l'utente con un popup bloccante: non è
+            // interrompere l'utente con un popup bloccante: non Ã¨
             // un'azione manuale sua, quindi finisce solo nei log.
             if(data.silenzioso) segnalaErroreSoloLog(messaggio, "Creazione automatica modello");
             else window.alert(messaggio);
@@ -2483,8 +2483,8 @@ const importsRecenti = useMemo(()=>{
         }
       }
 
-      // Subito in locale: nuovo modello + rinumerazioni già visibili all'istante.
-      // (silenzioso è solo un flag interno per sopprimere l'alert sopra:
+      // Subito in locale: nuovo modello + rinumerazioni giÃ  visibili all'istante.
+      // (silenzioso Ã¨ solo un flag interno per sopprimere l'alert sopra:
       // non deve restare agganciato all'oggetto modello salvato in stato.)
       const { silenzioso: _silenzioso, ...datiModelloPuliti } = data;
       const modelloCreato = {...datiModelloPuliti,id:idLocale,colore:coloreEff,sortOrder:nuovoSortOrder,posizione:"",calendarId:targetCalId};
@@ -2499,7 +2499,7 @@ const importsRecenti = useMemo(()=>{
         return updated;
       });
 
-      // Come per l'update: locale già scritto sopra, si ritorna subito e il
+      // Come per l'update: locale giÃ  scritto sopra, si ritorna subito e il
       // backup Supabase/Sheets parte in background senza bloccare il form.
       (async()=>{
         await scriviConBackup({
@@ -2508,12 +2508,12 @@ const importsRecenti = useMemo(()=>{
           eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelliAggiornati,
           opzioni:{soloLog:true},
         });
-        // Rinumerazioni: stesso timestamp, così restano in ordine in coda
+        // Rinumerazioni: stesso timestamp, cosÃ¬ restano in ordine in coda
         // rispetto all'insert del nuovo modello se si finisce offline.
         for(const {id,nuovoVal} of rinumerazioniApplicate){
           await scriviConBackup({
             tipo:"update", table:"modelli", payload:{sort_order:nuovoVal}, matchObj:{id, user_id:userId},
-            contesto:"Creazione modello — rinumerazione posizioni esistenti", ts,
+            contesto:"Creazione modello â€” rinumerazione posizioni esistenti", ts,
             eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelliAggiornati,
             opzioni:{soloLog:true},
           });
@@ -2525,7 +2525,7 @@ const importsRecenti = useMemo(()=>{
 
   async function deleteModello(id){
     // Con la nuova architettura (posizioni assolute, non riferimenti tra
-    // modelli) l'eliminazione è semplice: nessun altro modello punta a
+    // modelli) l'eliminazione Ã¨ semplice: nessun altro modello punta a
     // questo tramite id, quindi non serve "riparare" nessun riferimento.
     // 1) SUBITO in locale.
     let modelliAggiornati;
@@ -2543,7 +2543,7 @@ const importsRecenti = useMemo(()=>{
     });
   }
 
-  // ── COLORI: aggiunta/rimozione dalla sezione + assegnazione esclusiva ai modelli
+  // â”€â”€ COLORI: aggiunta/rimozione dalla sezione + assegnazione esclusiva ai modelli
   async function addColoreExtra(hex){
     if(!userId || coloriExtra.some(c=>c.hex===hex)) return;
     // 1) SUBITO in locale.
@@ -2575,7 +2575,7 @@ const importsRecenti = useMemo(()=>{
   // Salva/aggiorna il nome (label) di un colore extra. Prova ad aggiornare la
   // colonna "label" su Supabase; se la colonna non esiste ancora sullo schema
   // (serve un ALTER TABLE colori ADD COLUMN label text;), fallisce in modo
-  // silenzioso lato server ma aggiorna comunque lo stato locale, così l'app
+  // silenzioso lato server ma aggiorna comunque lo stato locale, cosÃ¬ l'app
   // resta utilizzabile nel frattempo.
   async function updateColoreExtraLabel(hex, label){
     setColoriExtra(prev=>prev.map(c=>c.hex===hex?{...c,label}:c));
@@ -2587,7 +2587,7 @@ const importsRecenti = useMemo(()=>{
     });
   }
 
-  // ── FIX: sostituisce l'hex di un colore ovunque sia usato (modelli +
+  // â”€â”€ FIX: sostituisce l'hex di un colore ovunque sia usato (modelli +
   // registro colori), permettendo di editare liberamente anche i colori
   // delle fasce automatiche (es. #F59E0B "mattina") con la palette
   // condivisa, invece di lasciarli fissi.
@@ -2704,8 +2704,8 @@ const importsRecenti = useMemo(()=>{
     const label = (labelOverride || mod?.label || mod?.titolo || "").toUpperCase();
     const allDay = mod ? mod.tempo==="h24" : true;
     // oraInizioOverride/oraFineOverride: usati per eventi come la
-    // protrazione, dove l'orario è specifico di quel giorno e non quello
-    // fisso del modello (il modello "PROTRAZIONE PAGAMENTO" è riusato
+    // protrazione, dove l'orario Ã¨ specifico di quel giorno e non quello
+    // fisso del modello (il modello "PROTRAZIONE PAGAMENTO" Ã¨ riusato
     // sempre, ma l'orario cambia turno per turno).
     const tIn = oraInizioOverride!=null ? oraInizioOverride : ((!mod || allDay) ? "" : (mod.inizio || ""));
     const tOut = oraFineOverride!=null ? oraFineOverride : ((!mod || allDay) ? "" : calcFineModello(mod));
@@ -2757,7 +2757,7 @@ const importsRecenti = useMemo(()=>{
     // inclusi): un modello omonimo H24 in un altro calendario vinceva il
     // confronto su quello giusto in TURNI ogni volta che l'orario
     // importato era vuoto (oraInizio/oraFine vuoti combaciano solo con un
-    // modello che ha anch'esso inizio/fine vuoti, cioè un H24).
+    // modello che ha anch'esso inizio/fine vuoti, cioÃ¨ un H24).
     const candidati = modelli.filter(m=>
       (m.titolo||"").trim().toLowerCase()===titolo &&
       (m.calendarId||mainCalId)===calId
@@ -2770,23 +2770,23 @@ const importsRecenti = useMemo(()=>{
       const esatto = candidati.find(m=>minsOf(m.inizio)===minsOf(oraInizioRaw) && minsOf(m.fine)===minsOf(oraFineRaw));
       if(esatto) return { mod:esatto, esito:"esatto" };
       // Titolo trovato in questo calendario ma con un orario diverso da
-      // quello nel file importato: è una discordanza da segnalare, non un
+      // quello nel file importato: Ã¨ una discordanza da segnalare, non un
       // modello mancante.
       return { mod:null, esito:"orario_diverso" };
     }
     // Il file non porta un orario per questa riga (tipico se il PDF di
     // origine indicava solo il codice turno). Se il titolo individua UN
     // SOLO modello in questo calendario ci fidiamo del titolo; se ne
-    // individua più di uno non possiamo scegliere da soli.
+    // individua piÃ¹ di uno non possiamo scegliere da soli.
     if(candidati.length===1) return { mod:candidati[0], esito:"solo_titolo" };
     return { mod:null, esito:"ambiguo" };
   }
 
-  // Una riga JSON è una "protrazione" (non un turno a sé) se il titolo
+  // Una riga JSON Ã¨ una "protrazione" (non un turno a sÃ©) se il titolo
   // contiene PROTAZIONE/PROTRAZIONE (copre anche il refuso comune) e porta
-  // sia ora_inizio che ora_fine: verrà agganciata al turno base dello
+  // sia ora_inizio che ora_fine: verrÃ  agganciata al turno base dello
   // stesso giorno il cui orario di uscita coincide con l'inizio di questa
-  // riga, invece di generare un evento "mancante" a sé stante.
+  // riga, invece di generare un evento "mancante" a sÃ© stante.
   function isRigaProtrazione(r){
     const t = (r.titolo||"").toUpperCase();
     return (t.includes("PROTAZIONE") || t.includes("PROTRAZIONE")) && !!(r.oraInizio && r.oraFine);
@@ -2799,16 +2799,16 @@ const importsRecenti = useMemo(()=>{
   }
 
   // Trova (o crea al volo) il modello dedicato "PROTRAZIONE PAGAMENTO" /
-  // "PROTRAZIONE RECUPERO" nel calendario indicato. Serve perché la
+  // "PROTRAZIONE RECUPERO" nel calendario indicato. Serve perchÃ© la
   // protrazione, oltre a comparire come campo prot*Fine sull'evento del
   // turno base, deve anche generare un evento reale agganciato a un
-  // modelloId: solo così entra nei report (che raggruppano tutto per
+  // modelloId: solo cosÃ¬ entra nei report (che raggruppano tutto per
   // e.modelloId, vedi computeConteggioForReport/computeTurnazioneForReport).
   // Un solo modello per tipo, riusato sempre: l'orario resta specifico
   // dell'evento (tIn/tOut), non del modello.
   const modelloProtrazioneCacheRef = useRef({});
   // Normalizza un titolo per il confronto "fuzzy" dei modelli PROTRAZIONE:
-  // maiuscolo, spazi collassati, così "PP ROTAZIONE PAGAMENTO", "PR
+  // maiuscolo, spazi collassati, cosÃ¬ "PP ROTAZIONE PAGAMENTO", "PR
   // PROTAZIONE RECUPERO" o qualunque altra variante con spazio spostato
   // vengono trattate come lo stesso testo.
   function normTitoloProtrazione(t){
@@ -2816,11 +2816,11 @@ const importsRecenti = useMemo(()=>{
   }
   async function trovaOCreaModelloProtrazione(tipo, targetCalId){
     const titolo = tipo==="recupero" ? "PROTRAZIONE RECUPERO" : "PROTRAZIONE PAGAMENTO";
-    // Riconoscimento per PAROLE CHIAVE anziché lista fissa di refusi: un
-    // titolo storico è considerato lo stesso modello PROTRAZIONE se, una
+    // Riconoscimento per PAROLE CHIAVE anzichÃ© lista fissa di refusi: un
+    // titolo storico Ã¨ considerato lo stesso modello PROTRAZIONE se, una
     // volta normalizzato (spazi collassati), contiene sia la radice
     // "PROT(R)AZIONE" (copre anche il refuso comune) sia "PAGAMENTO" o
-    // "RECUPERO" a seconda del tipo. Così qualunque variante con spazio
+    // "RECUPERO" a seconda del tipo. CosÃ¬ qualunque variante con spazio
     // spostato o refuso di battitura viene riconosciuta come lo stesso
     // modello, e non se ne crea mai un doppione.
     const parolaChiaveTipo = tipo==="recupero" ? "RECUPERO" : "PAGAMENTO";
@@ -2835,11 +2835,11 @@ const importsRecenti = useMemo(()=>{
     // nella closure di questo render. Se questa funzione viene invocata da
     // un callback async subito dopo un altro salvataggio (es. due protrazioni
     // di seguito, o saveEvt+sincronizzaEventiProtrazione in rapida
-    // successione), "modelli" può ancora essere la fotografia di un render
+    // successione), "modelli" puÃ² ancora essere la fotografia di un render
     // precedente e non contenere il modello appena creato/esistente:
     // la find fallirebbe e ne creerebbe un doppione anche col titolo giusto.
-    // Se esistono più modelli storici duplicati per lo stesso tipo/calendario
-    // (retaggio del vecchio bug), si prende sempre il PRIMO trovato, così
+    // Se esistono piÃ¹ modelli storici duplicati per lo stesso tipo/calendario
+    // (retaggio del vecchio bug), si prende sempre il PRIMO trovato, cosÃ¬
     // tutti i punti del codice convergono sullo stesso modello invece di
     // sceglierne uno diverso ogni volta.
     const candidatiEsistenti = modelliRef.current.filter(m=>
@@ -2849,10 +2849,10 @@ const importsRecenti = useMemo(()=>{
     if(esistente){
       // Aggiorno SEMPRE la cache con l'ultima versione letta da
       // modelliRef.current (mai un vecchio snapshot): se il colore o il
-      // tempo del modello sono cambiati nel frattempo — es. per una
+      // tempo del modello sono cambiati nel frattempo â€” es. per una
       // modifica manuale dell'utente in Modelli, o per il fix automatico
-      // una-tantum che corregge tempo/colore all'avvio — la prossima
-      // protrazione creata/aggiornata userà subito il valore corrente,
+      // una-tantum che corregge tempo/colore all'avvio â€” la prossima
+      // protrazione creata/aggiornata userÃ  subito il valore corrente,
       // senza restare bloccata sul colore preso al primo utilizzo di
       // questa sessione.
       modelloProtrazioneCacheRef.current[cacheKey] = esistente;
@@ -2867,7 +2867,7 @@ const importsRecenti = useMemo(()=>{
       silenzioso: true,
     });
     // saveModello ora ritorna direttamente l'oggetto appena creato: niente
-    // più bisogno di rileggere modelliRef.current dopo un setTimeout(0),
+    // piÃ¹ bisogno di rileggere modelliRef.current dopo un setTimeout(0),
     // che non garantiva l'ordine rispetto agli effect di React (race
     // condition: il modello poteva risultare "non trovato" e la
     // protrazione restava senza modello agganciato).
@@ -2926,7 +2926,7 @@ const importsRecenti = useMemo(()=>{
 
       // Se esiste una riga di protrazione agganciata a questo turno base
       // (stesso giorno, orario di inizio = orario di uscita del turno),
-      // la fondo qui invece di farla comparire come evento a sé o come
+      // la fondo qui invece di farla comparire come evento a sÃ© o come
       // riga "mancante".
       const prot = trovaProtrazionePerRigaBase(r);
       const protPagFine = prot && tipoProtrazione(prot)==="pagamento" ? prot.oraFine : null;
@@ -2941,7 +2941,7 @@ const importsRecenti = useMemo(()=>{
         if(invariato){ nInvariati++; continue; }
         const [yy,mm,dd] = dateKey.split("-").map(Number);
         const giornoSett = NOMI_GIORNI_IT[new Date(yy,mm-1,dd).getDay()];
-        // Niente più alert() per ogni singola riga: si accoda il dettaglio
+        // Niente piÃ¹ alert() per ogni singola riga: si accoda il dettaglio
         // (titolo vecchio -> nuovo, e stesso per orario/auto/collega/note se
         // cambiati) e si mostra tutto insieme nel riepilogo finale, un solo
         // popup con l'elenco completo invece di un click per ogni turno.
@@ -2970,7 +2970,7 @@ const importsRecenti = useMemo(()=>{
 
       // Oltre al campo prot*Fine sull'evento del turno base (sopra), genero
       // anche un evento reale agganciato al modello dedicato "PROTRAZIONE
-      // PAGAMENTO/RECUPERO": è l'unico modo perché la protrazione entri nei
+      // PAGAMENTO/RECUPERO": Ã¨ l'unico modo perchÃ© la protrazione entri nei
       // report, che contano tutto per e.modelloId.
       if(prot){
         const tipoProt = tipoProtrazione(prot);
@@ -2988,7 +2988,7 @@ const importsRecenti = useMemo(()=>{
 
     // Righe di protrazione che non hanno trovato un turno base con
     // orario di uscita coincidente restano "mancanti" come prima,
-    // nessuna invenzione di eventi a sé stanti.
+    // nessuna invenzione di eventi a sÃ© stanti.
     for(const p of righeProtrazione){
       mancanti.push({ data:(p.data||"").trim(), titolo: p.titolo||"", oraInizio: p.oraInizio||"", oraFine: p.oraFine||"" });
     }
@@ -3050,7 +3050,7 @@ const importsRecenti = useMemo(()=>{
   async function importaEventiSingoli(righe){
     // righe: [{ dateKey, modelloId }] -- righe senza modelloId vengono ignorate
     // Restituisce il numero di righe EFFETTIVAMENTE scritte (esclude modelloId
-    // mancante, modello inesistente, e duplicati già presenti sullo stesso giorno).
+    // mancante, modello inesistente, e duplicati giÃ  presenti sullo stesso giorno).
     if(!userId || !calId || !righe?.length) return 0;
     const nuoviEventiLocali = {};
     let nScritte = 0;
@@ -3058,7 +3058,7 @@ const importsRecenti = useMemo(()=>{
       if(!r.modelloId) continue;
       const mod = modelli.find(m=>m.id===r.modelloId);
       if(!mod) continue;
-      // Se il giorno ha già un evento con lo stesso modello, non duplicare.
+      // Se il giorno ha giÃ  un evento con lo stesso modello, non duplicare.
       // Se ha eventi con modelli diversi, aggiungi sotto (non sovrascrivere).
       // Se non ha eventi, aggiungi normalmente.
       const eventiEsistenti = store.events?.[r.dateKey]?.[calId] || [];
@@ -3091,7 +3091,7 @@ const importsRecenti = useMemo(()=>{
     if(!rot) return;
 
     const { error } = await dbUpdate("rotazioni", {dataInizio:startDayKey, nSettimane:numRipetizioni}, {id:rotId, user_id:userId}, "Applicazione rotazione", {soloLog:true});
-    if(error) segnalaErrore("La rotazione è stata applicata al calendario ma il salvataggio della configurazione potrebbe non essere andato a buon fine.", "Applicazione rotazione");
+    if(error) segnalaErrore("La rotazione Ã¨ stata applicata al calendario ma il salvataggio della configurazione potrebbe non essere andato a buon fine.", "Applicazione rotazione");
     setRotazioni(prev=>prev.map(r=>r.id===rotId?{...r,dataInizio:startDayKey,nSettimane:numRipetizioni}:r));
 
     const nuoviEventiLocali = {};
@@ -3165,7 +3165,7 @@ const importsRecenti = useMemo(()=>{
 // #endregion
 
 // #region SEZIONE 14: REPORT HELPERS
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   function getReportRange(){
     if(reportInterval==="mese"){
       const y=reportMeseSel.anno, mIdx=reportMeseSel.mese-1; // mIdx 0-based per daysInMonth/MONTHS
@@ -3176,7 +3176,7 @@ const importsRecenti = useMemo(()=>{
     if(reportInterval==="anno"){
       return {from:`${reportMeseSel.anno}-01-01`, to:`${reportMeseSel.anno}-12-31`, label: reportMeseSel.anno.toString()};
     }
-    return {from:reportDateFrom, to:reportDateTo, label:reportDateFrom+" → "+reportDateTo};
+    return {from:reportDateFrom, to:reportDateTo, label:reportDateFrom+" â†’ "+reportDateTo};
   }
 
   // Splitta il campo libero "collega" (testo multilinea, spesso con
@@ -3219,7 +3219,7 @@ const importsRecenti = useMemo(()=>{
             perCollega[c].dates.push(dateKey);
           });
 
-          // Ogni sottomenu libero è un asse indipendente: raggruppa i modelli
+          // Ogni sottomenu libero Ã¨ un asse indipendente: raggruppa i modelli
           // secondo l'assegnazione manuale salvata su quel sottomenu
           // (cfg.sottomenu[i].assegnazioni: {modelloId: gruppoKey}). Un
           // modello senza assegnazione in quel sottomenu semplicemente non
@@ -3275,7 +3275,7 @@ const importsRecenti = useMemo(()=>{
           const escludiAppAuto = overrideAppAutoRaw==="escluso";
           const overrideAppAuto = (overrideAppAutoRaw==="app"||overrideAppAutoRaw==="auto") ? overrideAppAutoRaw : null;
 
-          // ── Asse 1: TURNO (1°/2°) — indipendente, decide su categoria manuale del
+          // â”€â”€ Asse 1: TURNO (1Â°/2Â°) â€” indipendente, decide su categoria manuale del
           // modello, poi override di questo report, poi automatico per orario.
           // Se l'utente ha esplicitamente deselezionato questo asse (modello o report), niente auto: nessun gruppo.
           const gruppoTurno = (modelloEvt?.turnoVuoto || escludiTurno)
@@ -3284,7 +3284,7 @@ const importsRecenti = useMemo(()=>{
               ? modelloEvt.categoria
               : (overrideTurno || categoriaTurnoAutomatica(modelloEvt)));
 
-          // ── Asse 2: APP/AUTO — indipendente, stessa priorità ma decide su titolo.
+          // â”€â”€ Asse 2: APP/AUTO â€” indipendente, stessa prioritÃ  ma decide su titolo.
           // Se l'utente ha esplicitamente deselezionato questo asse (modello o report), niente auto: nessun gruppo.
           const gruppoAppAuto = (modelloEvt?.appAutoVuoto || escludiAppAuto)
             ? null
