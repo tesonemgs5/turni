@@ -1337,13 +1337,9 @@ export function useAppCore(session){
     if(form.auto) registraValoreAutocomplete("auto", form.auto);
     if(form.place) registraValoreAutocomplete("luogo", form.place);
     if(form.collega) registraValoriAutocomplete("collega", form.collega.split(/\r?\n/));
-    let nuovoStore;
-    setStore(prev=>{
-      const ns = withEventoAggiunto(prev, dayKey, calId, evt);
-      saveToLocalStorage(ns.events, ns.calendars, modelli);
-      nuovoStore = ns;
-      return ns;
-    });
+    const nuovoStore = withEventoAggiunto(store, dayKey, calId, evt);
+    saveToLocalStorage(nuovoStore.events, nuovoStore.calendars, modelli);
+    setStore(nuovoStore);
     setForm(null); setDayKey(null);
 
     // 2) Backup su Supabase (con retry colonna) + Sheets in parallelo.
@@ -1421,20 +1417,16 @@ export function useAppCore(session){
     if(form.collega) registraValoriAutocomplete("collega", (form.collega||"").toUpperCase().split(/\r?\n/));
 
     // 1) SUBITO in locale.
-    let nuovoStore;
-    setStore(prev=>{
-      const patch = {label, color,
-        allDay: form.dur==="allday", tIn: tInFinal, tOut: tOutFinal,
-        place: (form.place||"").toUpperCase(), map: form.map||"",
-        note: (form.note||"").toUpperCase(), modelloId: form.modelloId||null,
-        collega: (form.collega||"").toUpperCase(), auto: (form.auto||"").toUpperCase(),
-        protPagFine: form.protPagFine||"", protRecFine: form.protRecFine||"",
-      };
-      const ns = withEventoAggiornato(prev, dayKey, editCalId, form.editId, patch);
-      saveToLocalStorage(ns.events, ns.calendars, modelli);
-      nuovoStore = ns;
-      return ns;
-    });
+    const patch = {label, color,
+      allDay: form.dur==="allday", tIn: tInFinal, tOut: tOutFinal,
+      place: (form.place||"").toUpperCase(), map: form.map||"",
+      note: (form.note||"").toUpperCase(), modelloId: form.modelloId||null,
+      collega: (form.collega||"").toUpperCase(), auto: (form.auto||"").toUpperCase(),
+      protPagFine: form.protPagFine||"", protRecFine: form.protRecFine||"",
+    };
+    const nuovoStore = withEventoAggiornato(store, dayKey, editCalId, form.editId, patch);
+    saveToLocalStorage(nuovoStore.events, nuovoStore.calendars, modelli);
+    setStore(nuovoStore);
     setForm(null); setDayKey(null);
 
     // 2) Backup su Supabase (con retry colonna) + Sheets in parallelo.
@@ -1494,14 +1486,10 @@ export function useAppCore(session){
     }
 
     // 1) SUBITO in locale.
-    let nuovoStore;
-    setStore(prev=>{
-      let ns = withEventoRimosso(prev, dKey, cId, evtId);
-      for(const f of figli) ns = withEventoRimosso(ns, dKey, cId, f.id);
-      saveToLocalStorage(ns.events, ns.calendars, modelli);
-      nuovoStore = ns;
-      return ns;
-    });
+    let nuovoStore = withEventoRimosso(store, dKey, cId, evtId);
+    for(const f of figli) nuovoStore = withEventoRimosso(nuovoStore, dKey, cId, f.id);
+    saveToLocalStorage(nuovoStore.events, nuovoStore.calendars, modelli);
+    setStore(nuovoStore);
     // 2) Backup su Supabase (con retry colonna) + Sheets in parallelo.
     const match = { id: evtId, user_id: userId };
     await scriviConBackup({
@@ -2385,22 +2373,18 @@ const importsRecenti = useMemo(()=>{
       const labelNuova = (data.label||data.titolo||"").toUpperCase();
       const tInNuovo = data.tempo==="h24" ? "" : (data.inizio||"");
       const tOutNuovo = calcFineModello(data);
-      let nuovoStore;
-      setStore(prev=>{
-        const ns = JSON.parse(JSON.stringify(prev));
-        Object.keys(ns.events||{}).forEach(dk=>{
-          Object.keys(ns.events[dk]||{}).forEach(cid=>{
-            ns.events[dk][cid] = (ns.events[dk][cid]||[]).map(e=>
-              e.modelloId===data.id
-                ? {...e, label:labelNuova, color:coloreEff, tIn:tInNuovo, tOut:tOutNuovo}
-                : e
-            );
-          });
+      const nuovoStore = JSON.parse(JSON.stringify(store));
+      Object.keys(nuovoStore.events||{}).forEach(dk=>{
+        Object.keys(nuovoStore.events[dk]||{}).forEach(cid=>{
+          nuovoStore.events[dk][cid] = (nuovoStore.events[dk][cid]||[]).map(e=>
+            e.modelloId===data.id
+              ? {...e, label:labelNuova, color:coloreEff, tIn:tInNuovo, tOut:tOutNuovo}
+              : e
+          );
         });
-        saveToLocalStorage(ns.events, ns.calendars, modelli);
-        nuovoStore = ns;
-        return ns;
       });
+      saveToLocalStorage(nuovoStore.events, nuovoStore.calendars, modelli);
+      setStore(nuovoStore);
       let modelliAggiornati;
       let modelloAggiornato;
       const { silenzioso: _silenziosoUpd, ...datiUpdatePuliti } = data;
