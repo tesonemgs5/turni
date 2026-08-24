@@ -841,17 +841,17 @@ export function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClos
     if(Array.isArray(parsed)){
       // Formato "piatto": [{"data":"2026-07-01","turno":"Primo"}, ...]
       for(const t of parsed){
-        if(!t || typeof t.data!=="string" || typeof t.turno!=="string"){
-          sospetti.push({ data:t?.data||"", titolo:t?.turno||"(riga malformata)", oraInizio:"", oraFine:"", motivo:"formato_riga_non_valido" });
+        if(!t || typeof t.data!=="string" || typeof t.titolo!=="string"){
+          sospetti.push({ data:t?.data||"", titolo:t?.titolo||"(riga malformata)", oraInizio:"", oraFine:"", motivo:"formato_riga_non_valido" });
           continue;
         }
         if(!/^\d{4}-\d{2}-\d{2}$/.test(t.data)){
-          sospetti.push({ data:t.data, titolo:t.turno, oraInizio:"", oraFine:"", motivo:"data_non_valida" });
+          sospetti.push({ data:t.data, titolo:t.titolo, oraInizio:"", oraFine:"", motivo:"data_non_valida" });
           continue;
         }
-        const mod = trovaModelloPerTesto(t.turno);
+        const mod = trovaModelloPerTesto(t.titolo);
         if(!mod){
-          mancanti.push({ data:t.data, titolo:t.turno, oraInizio:"", oraFine:"" });
+          mancanti.push({ data:t.data, titolo:t.titolo, oraInizio:"", oraFine:"" });
           continue;
         }
         righeElaborate.push({ dateKey: t.data, modelloId: mod.id });
