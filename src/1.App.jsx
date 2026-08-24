@@ -558,7 +558,7 @@ export default function App({ session }){
       )}
       {showImportaFotoDialog && (
         <ImportaFotoDialog T={T} accent={accent} dark={dark}
-          modelli={modelliOrdinati.filter(m=>!m.calendarId || m.calendarId===calId)}
+          modelli={modelliOrdinati.filter(m=>(m.calendarId||mainCalId)===calId)}
           year={year} month={month}
           onClose={()=>setShowImportaFotoDialog(false)}
           onConfirm={async(righeValide)=>{
