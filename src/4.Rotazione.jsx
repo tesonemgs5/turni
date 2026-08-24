@@ -281,19 +281,22 @@ export function sameData(a, b){
 // le operazioni bulk (rotazioni, import, cancellazioni massive) continuano
 // a usare il deep-clone completo perché toccano molti giorni sparsi insieme.
 export function withEventoAggiunto(store, dayKey, calId, evt){
-  const dayEvents = { ...(store.events[dayKey]||{}) };
+  const eventsBase = store?.events||{};
+  const dayEvents = { ...(eventsBase[dayKey]||{}) };
   dayEvents[calId] = [...(dayEvents[calId]||[]), evt];
-  return { ...store, events: { ...store.events, [dayKey]: dayEvents } };
+  return { ...store, events: { ...eventsBase, [dayKey]: dayEvents } };
 }
 export function withEventoAggiornato(store, dayKey, calId, evtId, patch){
-  const dayEvents = { ...(store.events[dayKey]||{}) };
+  const eventsBase = store?.events||{};
+  const dayEvents = { ...(eventsBase[dayKey]||{}) };
   dayEvents[calId] = (dayEvents[calId]||[]).map(e=>e.id===evtId?{...e,...patch}:e);
-  return { ...store, events: { ...store.events, [dayKey]: dayEvents } };
+  return { ...store, events: { ...eventsBase, [dayKey]: dayEvents } };
 }
 export function withEventoRimosso(store, dayKey, calId, evtId){
-  const dayEvents = { ...(store.events[dayKey]||{}) };
+  const eventsBase = store?.events||{};
+  const dayEvents = { ...(eventsBase[dayKey]||{}) };
   dayEvents[calId] = (dayEvents[calId]||[]).filter(e=>e.id!==evtId);
-  return { ...store, events: { ...store.events, [dayKey]: dayEvents } };
+  return { ...store, events: { ...eventsBase, [dayKey]: dayEvents } };
 }
 // #endregion
 
