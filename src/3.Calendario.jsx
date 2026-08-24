@@ -4,7 +4,7 @@ import {
   FASCE_AUTOMATICHE_DEFAULT, FESTIVITA_DEFAULT_ATTIVE,
   getContrastTextColor, daysInMonth, firstDay, fmtDataIT, dkey, uid,
   oraInMinuti, calcFine6h15, calcFine6h30, calcFineModello, calcDurata,
-  isModelloTurnazioneDefault, withEventoAggiunto, saveToLocalStorage,
+  isModelloTurnazioneDefault, withEventoAggiunto, saveToLocalStorage, generaIdLocale,
   loadFromLocalStorage, clearLocalStorageCache, resolveFestivitaCatalogo,
   leggiLogErrori, leggiErroriSilenziati, impostaSilenziamentoErrore,
   cancellaLogErrori, segnalaErrore,
@@ -90,18 +90,42 @@ export default function VistaCalendario({ C }){
     const allDay = mod.tempo==="h24";
     const tIn = allDay?"":(mod.inizio||"");
     const tOut = allDay?"":calcFineModello(mod);
-    const { data, error } = await creaEventoSupabase({
-      userId, calId, dateKey: key, label, color,
-      allDay, tIn, tOut, modelloId: mod.id,
-    });
-    if(error){ segnalaErroreDb(error, "Inserimento rapido turno"); return; }
-    const evt = { id:data.id, color, label, allDay, tIn, tOut, place:"", map:"", note:"",
+
+    // Stesso pattern di saveEvt: l'id viene generato QUI, in locale, non
+    // dal database. Così l'evento locale e quello su Supabase condividono
+    // lo stesso id fin dal primo istante, e la scrittura locale (fonte di
+    // verità immediata) non dipende dalla riuscita della chiamata remota.
+    const idLocale = generaIdLocale();
+    const payload = {
+      id: idLocale,
+      user_id: userId, calendar_id: calId, date_key: key,
+      label, color, all_day: allDay,
+      time_in: tIn, time_out: tOut,
+      place:"", map_url:"", note:"",
+      modello_id: mod.id||null, rotazione_id:null,
+      collega:"", auto:"",
+      prot_pag_fine:null, prot_rec_fine:null, import_id:null,
+    };
+
+    // 1) SUBITO in locale: l'utente vede il turno all'istante, online o offline.
+    const evt = { id:idLocale, color, label, allDay, tIn, tOut, place:"", map:"", note:"",
       modelloId:mod.id, collega:"", auto:"" };
+    let nuovoStore;
     setStore(prev=>{
       const ns = withEventoAggiunto(prev, key, calId, evt);
       saveToLocalStorage(ns.events, ns.calendars, modelli);
-      syncSeAttivo(ns.events, ns.calendars);
+      nuovoStore = ns;
       return ns;
+    });
+
+    // 2) Backup su Supabase (con retry colonna) + Sheets in parallelo.
+    // Se offline, o se la scrittura fallisce per un motivo di rete, va in
+    // coda e riparte da sola al ritorno online — l'evento locale, già
+    // scritto sopra, non viene perso né rimosso in caso di errore remoto.
+    await scriviConBackup({
+      tipo:"insert", table:"events", payload, matchObj:null,
+      contesto:"Inserimento rapido turno", ts:new Date().toISOString(),
+      eventsPerSheets: nuovoStore.events, calendarsPerSheets: nuovoStore.calendars,
     });
   }
 
