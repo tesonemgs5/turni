@@ -306,6 +306,7 @@ export default function VistaCalendario({ C }){
         const pCells=[...Array(pFd).fill(null), ...Array.from({length:pTotalDays},(_,i)=>i+1)];
         return (
           <div key={"prev-"+prevGrid.month+"-"+prevGrid.year}
+            className={`calSlideOut${prevGrid.dir==="next"?"Left":"Right"}`}
             style={{position:"absolute",inset:0,display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",
               gridAutoRows:"minmax(54px,1fr)",gap:"1px 0px",background:T.gap,
               animation:`calSlideOut${prevGrid.dir==="next"?"Left":"Right"} 0.35s ease forwards`}}>
@@ -340,7 +341,9 @@ export default function VistaCalendario({ C }){
           </div>
         );
       })()}
-      <div key={month+"-"+year} style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",
+      <div key={month+"-"+year}
+        className={prevGrid?`calSlideIn${prevGrid.dir==="next"?"Left":"Right"}`:""}
+        style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",
         gridAutoRows:"minmax(54px,1fr)",gap:"1px 0px",background:T.gap,
         position:prevGrid?"absolute":"relative",inset:0,height:"100%",
         animation:prevGrid?`calSlideIn${prevGrid.dir==="next"?"Left":"Right"} 0.35s ease forwards`:"none"}}>

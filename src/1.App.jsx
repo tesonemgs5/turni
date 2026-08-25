@@ -171,8 +171,18 @@ export default function App({ session }){
         @keyframes calSlideOutRight { from { transform:translateX(0); opacity:1; } to { transform:translateX(100%); opacity:0; } }
         @keyframes calSlideInLeft { from { transform:translateX(100%); opacity:0; } to { transform:translateX(0); opacity:1; } }
         @keyframes calSlideInRight { from { transform:translateX(-100%); opacity:0; } to { transform:translateX(0); opacity:1; } }
+        @keyframes calSlideOutUp { from { transform:translateY(0); opacity:1; } to { transform:translateY(-100%); opacity:0; } }
+        @keyframes calSlideOutDown { from { transform:translateY(0); opacity:1; } to { transform:translateY(100%); opacity:0; } }
+        @keyframes calSlideInUp { from { transform:translateY(100%); opacity:0; } to { transform:translateY(0); opacity:1; } }
+        @keyframes calSlideInDown { from { transform:translateY(-100%); opacity:0; } to { transform:translateY(0); opacity:1; } }
         .calOuterArrow{display:flex}
-        @media (hover:none), (max-width:640px) { .calOuterArrow{display:none} }
+        @media (hover:none), (max-width:640px) {
+          .calOuterArrow{display:none}
+          .calSlideOutLeft { animation-name:calSlideOutUp !important; }
+          .calSlideOutRight { animation-name:calSlideOutDown !important; }
+          .calSlideInLeft { animation-name:calSlideInUp !important; }
+          .calSlideInRight { animation-name:calSlideInDown !important; }
+        }
       `}</style>
       {screen==="cal" && (
         <>
