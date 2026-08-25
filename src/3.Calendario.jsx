@@ -166,8 +166,10 @@ export default function VistaCalendario({ C }){
         if(touchStartX.current===null) return;
         const dx = e.changedTouches[0].clientX - touchStartX.current;
         const dy = e.changedTouches[0].clientY - touchStartY.current;
-        if(Math.abs(dx)>50 && Math.abs(dx)>Math.abs(dy)){
-          if(dx<0) goNextMonth(); else goPrevMonth();
+        // Su mobile lo swipe è verticale (su=mese succ., giù=mese prec.);
+        // da desktop restano le frecce ‹ › (stesso metodo, solo asse cambiato).
+        if(Math.abs(dy)>50 && Math.abs(dy)>Math.abs(dx)){
+          if(dy<0) goNextMonth(); else goPrevMonth();
         }
         touchStartX.current=null; touchStartY.current=null;
       }}
