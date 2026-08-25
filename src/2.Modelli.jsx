@@ -1337,7 +1337,27 @@ export default function VistaModelli({ C }){
         onClick={e=>e.stopPropagation()}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
           <div>
-            <div style={{fontSize:19,fontWeight:900,color:T.text}}>{fmtDataIT(dayKey)}</div>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <button onClick={()=>{
+                  const [y,m,d]=dayKey.split("-").map(Number);
+                  const prev=new Date(y,m-1,d-1);
+                  setDayKey(dkey(prev.getFullYear(),prev.getMonth(),prev.getDate()));
+                  setForm(null); setPal(null);
+                }}
+                style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
+                  color:T.text,width:28,height:28,cursor:"pointer",fontSize:15,
+                  display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>‹</button>
+              <div style={{fontSize:19,fontWeight:900,color:T.text}}>{fmtDataIT(dayKey)}</div>
+              <button onClick={()=>{
+                  const [y,m,d]=dayKey.split("-").map(Number);
+                  const next=new Date(y,m-1,d+1);
+                  setDayKey(dkey(next.getFullYear(),next.getMonth(),next.getDate()));
+                  setForm(null); setPal(null);
+                }}
+                style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
+                  color:T.text,width:28,height:28,cursor:"pointer",fontSize:15,
+                  display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>›</button>
+            </div>
             <div style={{fontSize:13,color:accent,fontWeight:700}}>{activeCal?.name||"Seleziona un calendario"}</div>
           </div>
           <div style={{display:"flex",gap:8}}>
