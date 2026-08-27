@@ -58,7 +58,7 @@ function ColorRow({ T, hex, label, sub, count, onClick, onRemove }) {
 
 export default function VistaModelli({ C }){
   const {
-    today, store, setStore, loading, setLoading, year,
+    today, tipoModelloProtrazione, store, setStore, loading, setLoading, year,
     setYear, month, setMonth, calId, setCalId, editMode,
     setEditMode, selectedCalIds, setSelectedCalIds, reportCalIds, setReportCalIds, selectedModelloIds,
     setSelectedModelloIds, screen, setScreen, dayKey, setDayKey, form,
@@ -1405,7 +1405,7 @@ export default function VistaModelli({ C }){
           <div key={e.id} onClick={()=>{
               if(soloConsultazione) return;
               if(form?.editId===e.id){ setForm(null); return; }
-              setForm({ editId:e.id, editCid:e._cid||calId, modelloId:null, shiftId:null, label:e.label,
+              setForm({ editId:e.id, editCid:e._cid||calId, modelloId:null, evtModelloId:e.modelloId||null, shiftId:null, label:e.label,
                 colorOvr:e.color, dur:e.allDay?"allday":(e.tIn&&e.tOut&&e.tOut===calcFine6h15(e.tIn))?"fixed":(e.tIn&&e.tOut&&e.tOut===calcFine6h30(e.tIn))?"fixed30":"custom", tIn:e.tIn||"", tOut:e.tOut||"",
                 place:e.place||"", map:e.map||"", note:e.note||"", collega:e.collega||"", auto:e.auto||"",
                 protPagFine:e.protPagFine||"", protRecFine:e.protRecFine||"" });
@@ -1432,7 +1432,7 @@ export default function VistaModelli({ C }){
 
             </div>
             <button onClick={e2=>{e2.stopPropagation();setForm({
-                editId:e.id,editCid:e._cid||calId,modelloId:null,shiftId:null,label:e.label,colorOvr:e.color,
+                editId:e.id,editCid:e._cid||calId,modelloId:null,evtModelloId:e.modelloId||null,shiftId:null,label:e.label,colorOvr:e.color,
                 dur:e.allDay?"allday":(e.tIn&&e.tOut&&e.tOut===calcFine6h15(e.tIn))?"fixed":(e.tIn&&e.tOut&&e.tOut===calcFine6h30(e.tIn))?"fixed30":"custom",tIn:e.tIn||"",tOut:e.tOut||"",place:e.place||"",
                 map:e.map||"",note:e.note||"",collega:e.collega||"",auto:e.auto||"",
                 protPagFine:e.protPagFine||"",protRecFine:e.protRecFine||"",
@@ -1643,6 +1643,38 @@ export default function VistaModelli({ C }){
         let d=m2-m1;
         if(d<0) d+=24*60;
         return d>0?Math.floor(d/60)+"h"+(d%60>0?" "+d%60+"m":""):"";
+      }
+      // Se l'evento in modifica Ã¨ esso stesso un evento di protrazione
+      // (creato a partire dai campi PROTRAZIONE A PAGAMENTO/RECUPERO di un
+      // turno base), non ha senso mostrargli di nuovo quegli stessi campi:
+      // qui mostriamo solo la durata effettiva (ingresso/uscita di questo
+      // evento), che Ã¨ l'unica informazione rilevante per lui.
+      const tipoQuestoEvento = form.editId ? tipoModelloProtrazione(form.evtModelloId) : null;
+      if(tipoQuestoEvento){
+        const m1=oraInMinuti(form.tIn), m2=oraInMinuti(form.tOut);
+        let durataEvento = "";
+        if(m1!==null&&m2!==null){
+          let d=m2-m1; if(d<0) d+=24*60;
+          durataEvento = d>0?Math.floor(d/60)+"h"+(d%60>0?" "+d%60+"m":""):"";
+        }
+        const colore = tipoQuestoEvento==="recupero" ? "#64748b" : "#8b5cf6";
+        const etichetta = tipoQuestoEvento==="recupero" ? "PROTRAZIONE A RECUPERO" : "PROTRAZIONE A PAGAMENTO";
+        return (
+          <div style={{marginBottom:4}}>
+            <div style={{width:"100%",padding:"5px 8px",borderRadius:8,
+              fontSize:9,fontWeight:800,textAlign:"center",
+              background:colore,color:"#fff",marginBottom:4}}>
+              {etichetta}
+            </div>
+            <div style={{background:T.surface,border:`1.5px solid ${colore}`,borderRadius:8,
+              padding:"8px 8px",textAlign:"center"}}>
+              <div style={{fontSize:16,fontWeight:900,color:colore}}>{durataEvento||"—"}</div>
+            </div>
+            {/* TODO: qui andrÃ  la sezione "giorni e minuti stornati" per il
+                tipo RECUPERO (credito consumato da eventi -PR RECUPERO
+                collegati) â€” logica ancora da costruire. */}
+          </div>
+        );
       }
       const durPag = calcDur(form.protPagFine||"");
       const durRec = calcDur(form.protRecFine||"");
