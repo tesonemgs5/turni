@@ -3430,6 +3430,7 @@ const importsRecenti = useMemo(()=>{
 
   return {
     today,
+    tipoModelloProtrazione,
     store,
     setStore,
     loading,
