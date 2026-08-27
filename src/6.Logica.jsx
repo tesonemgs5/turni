@@ -616,31 +616,38 @@ export function useAppCore(session){
             }
           } catch(e){ segnalaErrore(e, "Correzione automatica ordine modelli all'avvio"); }
 
-          // Fix "una tantum": unifica i modelli PROTRAZIONE PAGAMENTO/RECUPERO
-          // duplicati o scritti con refusi storici (es. "PP ROTAZIONE
-          // PAGAMENTO", "PR PROTAZIONE RECUPERO", "- PR PROTAZIONE
-          // RECUPERO"...). Per ogni calendario e ogni tipo (pagamento/
-          // recupero): trova tutti i modelli la cui radice normalizzata
-          // contiene PROTRAZIONE/PROTAZIONE + PAGAMENTO o RECUPERO, ne
-          // sceglie UNO come "superstite" (il piÃ¹ vecchio, cioÃ¨ id piÃ¹
-          // basso), corregge il suo titolo nella forma scritta giusta,
-          // sposta su di lui tutti gli eventi agganciati agli altri
-          // doppioni, e infine cancella i modelli doppioni. CosÃ¬ in Modelli
-          // resta un solo "PROTRAZIONE PAGAMENTO" e un solo "PROTRAZIONE
-          // RECUPERO" per calendario, con l'ortografia corretta.
+          // Fix "una tantum": unifica SOLO modelli realmente duplicati â€”
+          // cioÃ¨ identici in ogni campo rilevante (titolo, nome mostrato,
+          // tipo tempo, e se non h24 anche inizio/fine). NON unifica piÃ¹ per
+          // "somiglianza" del titolo (es. contiene "PROTRAZIONE" +
+          // "RECUPERO"): quel criterio unificava per errore modelli
+          // DIVERSI creati apposta con nomi simili (es. "PROTRAZIONE
+          // RECUPERO" e "- PROTRAZIONE A RECUPERO" sono due modelli
+          // distinti, non un refuso dello stesso), cancellando quello piÃ¹
+          // recente ad ogni avvio. Ora due modelli sono considerati
+          // doppioni ESCLUSIVAMENTE se coincidono esattamente su tutti i
+          // campi che li definiscono: una virgola, uno spazio o un minuto
+          // di differenza bastano a considerarli modelli diversi e a non
+          // toccarli.
           try {
-            function normRadiceProtrazione(t){
-              return (t||"").trim().toUpperCase().replace(/\s+/g,"").replace(/^-+/,"");
+            function normEsatta(t){
+              return (t||"").trim().toUpperCase().replace(/\s+/g," ");
             }
-            function eModelloProtrazione(titolo, parolaChiaveTipo){
-              const n = normRadiceProtrazione(titolo);
-              const haRadice = n.includes("PROTRAZIONE") || n.includes("PROTAZIONE");
-              return haRadice && n.includes(parolaChiaveTipo);
+            function chiaveDuplicato(m){
+              const tempo = m.tempo||"";
+              // Per h24 l'orario non ha senso/non Ã¨ significativo: due h24
+              // con stesso titolo/label sono duplicati a prescindere da
+              // inizio/fine (che dovrebbero comunque essere vuoti).
+              const inizio = tempo==="h24" ? "" : normEsatta(m.inizio);
+              const fine = tempo==="h24" ? "" : normEsatta(m.fine);
+              return [
+                normEsatta(m.titolo),
+                normEsatta(m.label),
+                normEsatta(tempo),
+                inizio,
+                fine,
+              ].join("\u0001");
             }
-            const tipiDaUnificare = [
-              { parolaChiave:"PAGAMENTO", titoloCorretto:"PROTRAZIONE PAGAMENTO" },
-              { parolaChiave:"RECUPERO",  titoloCorretto:"PROTRAZIONE RECUPERO" },
-            ];
             const perCalendarioModelli = new Map();
             for(const m of (modelliDb||[])){
               const cid = m.calendar_id || "null";
@@ -649,33 +656,24 @@ export function useAppCore(session){
             }
             const modelliDaRimappare = new Map(); // vecchioId -> nuovoId (superstite)
             const modelliIdDaEliminare = [];
-            const modelliDaRinominare = []; // {id, titoloCorretto}
             for(const [cid, gruppo] of perCalendarioModelli){
-              for(const { parolaChiave, titoloCorretto } of tipiDaUnificare){
-                const candidati = gruppo.filter(m=>eModelloProtrazione(m.titolo, parolaChiave));
-                // Nessun doppione reale (0 o 1 solo modello per questo tipo/
-                // calendario): non c'Ã¨ nulla da unificare. IMPORTANTE non
-                // toccare/rinominare comunque l'unico modello rimasto: farlo
-                // ad ogni avvio, anche a doppioni giÃ  risolti, rischia di
-                // ricaricare i modelli da una query fatta in parallelo a un
-                // salvataggio dell'utente e "riportare indietro" le sue
-                // ultime modifiche (tempo/orario/colore) appena fatte.
+              const perChiave = new Map();
+              for(const m of gruppo){
+                const k = chiaveDuplicato(m);
+                if(!perChiave.has(k)) perChiave.set(k, []);
+                perChiave.get(k).push(m);
+              }
+              for(const candidati of perChiave.values()){
+                // Nessun doppione reale (0 o 1 solo modello identico in
+                // tutto per questa chiave): non c'Ã¨ nulla da unificare.
                 if(candidati.length<=1) continue;
                 const ordinatiPerId = [...candidati].sort((a,b)=>(a.id>b.id?1:-1));
                 const superstite = ordinatiPerId[0];
-                if((superstite.titolo||"").trim()!==titoloCorretto){
-                  modelliDaRinominare.push({ id:superstite.id, titoloCorretto });
-                }
                 for(let i=1;i<ordinatiPerId.length;i++){
                   modelliDaRimappare.set(ordinatiPerId[i].id, superstite.id);
                   modelliIdDaEliminare.push(ordinatiPerId[i].id);
                 }
               }
-            }
-            if(modelliDaRinominare.length>0){
-              await Promise.all(modelliDaRinominare.map(({id,titoloCorretto})=>
-                supabase.from("modelli").update({titolo:titoloCorretto}).eq("id",id).eq("user_id",userId)
-              ));
             }
             if(modelliDaRimappare.size>0){
               // Sposta ogni evento agganciato a un modello doppione sul modello superstite.
@@ -686,10 +684,10 @@ export function useAppCore(session){
             if(modelliIdDaEliminare.length>0){
               await supabase.from("modelli").delete().in("id", modelliIdDaEliminare).eq("user_id", userId);
             }
-            if(modelliDaRinominare.length>0 || modelliIdDaEliminare.length>0){
-              // Ricarico i modelli aggiornati (titolo corretto + doppioni rimossi)
-              // e aggiorno anche gli eventi in memoria/localStorage che
-              // puntavano ai modelli doppioni, cosÃ¬ sparisce subito dalla UI.
+            if(modelliIdDaEliminare.length>0){
+              // Ricarico i modelli aggiornati (doppioni rimossi) e aggiorno
+              // anche gli eventi in memoria/localStorage che puntavano ai
+              // modelli doppioni, cosÃ¬ sparisce subito dalla UI.
               const {data:modelliDbAggiornati}=await supabase.from("modelli").select("*").eq("user_id",userId).order("sort_order").order("id");
               setModelli((modelliDbAggiornati||[]).map(m=>({
                 id:m.id,titolo:m.titolo,label:m.label||"",tempo:m.tempo,
@@ -2498,6 +2496,15 @@ const importsRecenti = useMemo(()=>{
         modelliAggiornati = updated;
         return updated;
       });
+      // FIX: a differenza del ramo UPDATE, qui la cache locale non veniva
+      // mai riscritta con il nuovo modello. Risultato: il modello compariva
+      // subito in UI (setModelli) e veniva salvato su Supabase, ma al
+      // refresh l'app ripartiva da loadFromLocalStorage() leggendo ancora
+      // la vecchia cache_modelli senza il nuovo modello, facendolo
+      // "sparire" finchÃ© Supabase non rispondeva (o restava invisibile se
+      // nel frattempo la risposta Supabase veniva considerata "uguale" alla
+      // cache). Ora la cache viene aggiornata subito, come per l'update.
+      saveToLocalStorage(store.events, store.calendars, modelliAggiornati, calId);
 
       // Come per l'update: locale giÃ  scritto sopra, si ritorna subito e il
       // backup Supabase/Sheets parte in background senza bloccare il form.
