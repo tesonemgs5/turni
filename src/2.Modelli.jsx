@@ -58,7 +58,7 @@ function ColorRow({ T, hex, label, sub, count, onClick, onRemove }) {
 
 export default function VistaModelli({ C }){
   const {
-    today, tipoModelloProtrazione, store, setStore, loading, setLoading, year,
+    today, tipoModelloProtrazione, computeStornoRecupero, store, setStore, loading, setLoading, year,
     setYear, month, setMonth, calId, setCalId, editMode,
     setEditMode, selectedCalIds, setSelectedCalIds, reportCalIds, setReportCalIds, selectedModelloIds,
     setSelectedModelloIds, screen, setScreen, dayKey, setDayKey, form,
@@ -1408,7 +1408,8 @@ export default function VistaModelli({ C }){
               setForm({ editId:e.id, editCid:e._cid||calId, modelloId:null, evtModelloId:e.modelloId||null, shiftId:null, label:e.label,
                 colorOvr:e.color, dur:e.allDay?"allday":(e.tIn&&e.tOut&&e.tOut===calcFine6h15(e.tIn))?"fixed":(e.tIn&&e.tOut&&e.tOut===calcFine6h30(e.tIn))?"fixed30":"custom", tIn:e.tIn||"", tOut:e.tOut||"",
                 place:e.place||"", map:e.map||"", note:e.note||"", collega:e.collega||"", auto:e.auto||"",
-                protPagFine:e.protPagFine||"", protRecFine:e.protRecFine||"" });
+                protPagFine:e.protPagFine||"", protRecFine:e.protRecFine||"",
+                protMenoRecIn:e.protMenoRecIn||"", protMenoRecOut:e.protMenoRecOut||"" });
             }}
             style={{background:e.color,borderRadius:10,padding:"10px 12px",marginBottom:8,cursor:"pointer",
               display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
@@ -1417,10 +1418,19 @@ export default function VistaModelli({ C }){
               const cardSubColor=cardTextColor==="#ffffff"?"rgba(255,255,255,0.85)":"rgba(15,23,42,0.75)";
               const cardShadow=cardTextColor==="#ffffff"?"0 1px 3px rgba(0,0,0,0.3)":"none";
               const durataEvt=(!e.allDay&&e.tIn&&e.tOut)?calcDurata(e.tIn,e.tOut):"";
+              // Le protrazioni sono eventi generati automaticamente dal
+              // sistema: il loro titolo visualizzato deve sempre riflettere
+              // il nome ATTUALE del modello collegato, non quello salvato
+              // sull'evento al momento della creazione (che altrimenti
+              // resta "congelato" alla vecchia label se l'utente rinomina
+              // il modello PROTRAZIONE in un secondo momento).
+              const tipoProtQuestoEvento = tipoModelloProtrazione(e.modelloId);
+              const modelloCollegato = tipoProtQuestoEvento ? modelli.find(m=>m.id===e.modelloId) : null;
+              const labelDaMostrare = (modelloCollegato ? (modelloCollegato.titolo||modelloCollegato.label||e.label) : e.label);
               return (
               <>
             <div style={{flex:1}}>
-              <div style={{color:cardTextColor,fontSize:20,fontWeight:800,textShadow:cardShadow}}>{e.label}</div>
+              <div style={{color:cardTextColor,fontSize:20,fontWeight:800,textShadow:cardShadow}}>{labelDaMostrare}</div>
               {!e.allDay&&e.tIn&&(
                 <div style={{color:cardSubColor,fontSize:17,marginTop:2}}>
                   🕐 {e.tIn}{e.tOut?` → ${e.tOut}`:""}{durataEvt?` · ${durataEvt}`:""}
@@ -1436,6 +1446,7 @@ export default function VistaModelli({ C }){
                 dur:e.allDay?"allday":(e.tIn&&e.tOut&&e.tOut===calcFine6h15(e.tIn))?"fixed":(e.tIn&&e.tOut&&e.tOut===calcFine6h30(e.tIn))?"fixed30":"custom",tIn:e.tIn||"",tOut:e.tOut||"",place:e.place||"",
                 map:e.map||"",note:e.note||"",collega:e.collega||"",auto:e.auto||"",
                 protPagFine:e.protPagFine||"",protRecFine:e.protRecFine||"",
+                protMenoRecIn:e.protMenoRecIn||"",protMenoRecOut:e.protMenoRecOut||"",
               });}}
               style={{background:cardTextColor==="#ffffff"?"rgba(0,0,0,0.2)":"rgba(255,255,255,0.35)",border:"none",borderRadius:6,
                 color:cardTextColor,width:26,height:26,cursor:"pointer",fontSize:14,marginLeft:4,flexShrink:0,
@@ -1657,8 +1668,55 @@ export default function VistaModelli({ C }){
           let d=m2-m1; if(d<0) d+=24*60;
           durataEvento = d>0?Math.floor(d/60)+"h"+(d%60>0?" "+d%60+"m":""):"";
         }
-        const colore = tipoQuestoEvento==="recupero" ? "#64748b" : "#8b5cf6";
-        const etichetta = tipoQuestoEvento==="recupero" ? "PROTRAZIONE A RECUPERO" : "PROTRAZIONE A PAGAMENTO";
+        const colore = tipoQuestoEvento==="recupero" ? "#64748b" : tipoQuestoEvento==="meno_recupero" ? "#dc2626" : "#8b5cf6";
+        const etichetta = tipoQuestoEvento==="recupero" ? "PROTRAZIONE A RECUPERO" : tipoQuestoEvento==="meno_recupero" ? "-PROTRAZIONE A RECUPERO" : "PROTRAZIONE A PAGAMENTO";
+
+        // Sezione storni: solo per RECUPERO e MENO_RECUPERO (il PAGAMENTO
+        // non entra nel meccanismo di credito/consumo). Ricalcolo dinamico
+        // ogni volta che il form Ã¨ aperto, cosÃ¬ riflette sempre lo stato
+        // corrente del calendario.
+        let sezioneStorni = null;
+        if((tipoQuestoEvento==="recupero" || tipoQuestoEvento==="meno_recupero") && form.editId){
+          const { perEvento } = computeStornoRecupero();
+          const info = perEvento[form.editId];
+          function fmtData(dateKey){
+            const [y,mm,d] = dateKey.split("-");
+            return `${d}/${mm}/${y}`;
+          }
+          function fmtMin(m){
+            if(m<=0) return "0m";
+            return Math.floor(m/60)+"h"+(m%60>0?" "+(m%60)+"m":"");
+          }
+          if(info){
+            const etichettaResiduo = tipoQuestoEvento==="recupero" ? "Credito residuo" : "Non coperto";
+            const etichettaLista = tipoQuestoEvento==="recupero" ? "Usato da" : "Coperto da";
+            sezioneStorni = (
+              <div style={{marginTop:6,background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 10px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:info.storni.length>0?6:0}}>
+                  <span style={{fontSize:11,color:T.sub,fontWeight:700}}>{etichettaResiduo}</span>
+                  <span style={{fontSize:12,fontWeight:900,
+                    color:info.minutiResidui>0?(tipoQuestoEvento==="recupero"?"#16a34a":"#dc2626"):T.sub}}>
+                    {fmtMin(info.minutiResidui)}
+                  </span>
+                </div>
+                {info.storni.length>0 && (
+                  <div>
+                    <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:4}}>{etichettaLista}</div>
+                    <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                      {info.storni.map((s,i)=>(
+                        <div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:11}}>
+                          <span style={{color:T.text,fontWeight:600}}>{fmtData(s.dateKey)}</span>
+                          <span style={{color:colore,fontWeight:800}}>{fmtMin(s.minuti)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          }
+        }
+
         return (
           <div style={{marginBottom:4}}>
             <div style={{width:"100%",padding:"5px 8px",borderRadius:8,
@@ -1670,45 +1728,96 @@ export default function VistaModelli({ C }){
               padding:"8px 8px",textAlign:"center"}}>
               <div style={{fontSize:16,fontWeight:900,color:colore}}>{durataEvento||"—"}</div>
             </div>
-            {/* TODO: qui andrÃ  la sezione "giorni e minuti stornati" per il
-                tipo RECUPERO (credito consumato da eventi -PR RECUPERO
-                collegati) â€” logica ancora da costruire. */}
+            {sezioneStorni}
           </div>
         );
       }
       const durPag = calcDur(form.protPagFine||"");
       const durRec = calcDur(form.protRecFine||"");
+      // -PROTRAZIONE A RECUPERO: due campi indipendenti, entrata effettiva e
+      // uscita effettiva. Se l'entrata effettiva Ã¨ DOPO l'ingresso previsto
+      // (form.tIn) sono minuti persi in ritardo; se l'uscita effettiva Ã¨
+      // PRIMA dell'uscita prevista (tBase) sono minuti persi in anticipo.
+      // Si sommano entrambi (ognuno solo se >0) nel totale da stornare.
+      function minutiRitardoEntrata(entrataEffettiva){
+        const previsto = oraInMinuti(form.tIn), effettivo = oraInMinuti(entrataEffettiva);
+        if(previsto===null||effettivo===null) return 0;
+        let d = effettivo-previsto;
+        if(d<0) d+=24*60;
+        return Math.max(0,d);
+      }
+      function minutiAnticipoUscita(uscitaEffettiva){
+        const previsto = oraInMinuti(tBase), effettivo = oraInMinuti(uscitaEffettiva);
+        if(previsto===null||effettivo===null) return 0;
+        let d = previsto-effettivo;
+        if(d<0) d+=24*60;
+        return Math.max(0,d);
+      }
+      const minRitardo = minutiRitardoEntrata(form.protMenoRecIn||"");
+      const minAnticipo = minutiAnticipoUscita(form.protMenoRecOut||"");
+      const minTotaleMenoRec = minRitardo + minAnticipo;
+      function fmtMinNegativi(m){
+        if(m<=0) return "";
+        return "-"+Math.floor(m/60)+"h"+(m%60>0?" "+(m%60)+"m":"");
+      }
       return (
-        <div style={{display:"flex",gap:8}}>
-          <div style={{flex:1}}>
-            <div style={{width:"100%",padding:"5px 8px",borderRadius:8,
-              fontSize:9,fontWeight:800,textAlign:"center",
-              background:"#8b5cf6",color:"#fff",marginBottom:4}}>
-              PROTRAZIONE A PAGAMENTO
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          <div style={{display:"flex",gap:8}}>
+            <div style={{flex:1}}>
+              <div style={{width:"100%",padding:"5px 8px",borderRadius:8,
+                fontSize:9,fontWeight:800,textAlign:"center",
+                background:"#8b5cf6",color:"#fff",marginBottom:4}}>
+                PROTRAZIONE A PAGAMENTO
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <SmartTimeInput value={form.protPagFine||""} onChange={v=>setForm(f=>({...f,protPagFine:v}))}
+                  style={{width:64,background:T.surface,border:`1.5px solid #8b5cf6`,
+                    borderRadius:8,padding:"5px 6px",color:T.text,fontSize:12,outline:"none"}}/>
+                <div style={{background:T.surface,border:"1.5px solid #8b5cf6",borderRadius:8,
+                  padding:"5px 8px",flex:1,textAlign:"center"}}>
+                  <div style={{fontSize:12,fontWeight:900,color:"#8b5cf6"}}>{durPag||"—"}</div>
+                </div>
+              </div>
             </div>
-            <div style={{display:"flex",alignItems:"center",gap:6}}>
-              <SmartTimeInput value={form.protPagFine||""} onChange={v=>setForm(f=>({...f,protPagFine:v}))}
-                style={{width:64,background:T.surface,border:`1.5px solid #8b5cf6`,
-                  borderRadius:8,padding:"5px 6px",color:T.text,fontSize:12,outline:"none"}}/>
-              <div style={{background:T.surface,border:"1.5px solid #8b5cf6",borderRadius:8,
-                padding:"5px 8px",flex:1,textAlign:"center"}}>
-                <div style={{fontSize:12,fontWeight:900,color:"#8b5cf6"}}>{durPag||"—"}</div>
+            <div style={{flex:1}}>
+              <div style={{width:"100%",padding:"5px 8px",borderRadius:8,
+                fontSize:9,fontWeight:800,textAlign:"center",
+                background:"#64748b",color:"#fff",marginBottom:4}}>
+                PROTRAZIONE A RECUPERO
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <SmartTimeInput value={form.protRecFine||""} onChange={v=>setForm(f=>({...f,protRecFine:v}))}
+                  style={{width:64,background:T.surface,border:`1.5px solid #64748b`,
+                    borderRadius:8,padding:"5px 6px",color:T.text,fontSize:12,outline:"none"}}/>
+                <div style={{background:T.surface,border:"1.5px solid #64748b",borderRadius:8,
+                  padding:"5px 8px",flex:1,textAlign:"center"}}>
+                  <div style={{fontSize:12,fontWeight:900,color:"#64748b"}}>{durRec||"—"}</div>
+                </div>
               </div>
             </div>
           </div>
-          <div style={{flex:1}}>
+          <div>
             <div style={{width:"100%",padding:"5px 8px",borderRadius:8,
               fontSize:9,fontWeight:800,textAlign:"center",
-              background:"#64748b",color:"#fff",marginBottom:4}}>
-              PROTRAZIONE A RECUPERO
+              background:"#dc2626",color:"#fff",marginBottom:4}}>
+              -PROTRAZIONE A RECUPERO
             </div>
             <div style={{display:"flex",alignItems:"center",gap:6}}>
-              <SmartTimeInput value={form.protRecFine||""} onChange={v=>setForm(f=>({...f,protRecFine:v}))}
-                style={{width:64,background:T.surface,border:`1.5px solid #64748b`,
-                  borderRadius:8,padding:"5px 6px",color:T.text,fontSize:12,outline:"none"}}/>
-              <div style={{background:T.surface,border:"1.5px solid #64748b",borderRadius:8,
-                padding:"5px 8px",flex:1,textAlign:"center"}}>
-                <div style={{fontSize:12,fontWeight:900,color:"#64748b"}}>{durRec||"—"}</div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:9,color:T.sub,marginBottom:2,textAlign:"center"}}>Entrata effettiva</div>
+                <SmartTimeInput value={form.protMenoRecIn||""} onChange={v=>setForm(f=>({...f,protMenoRecIn:v}))}
+                  style={{width:"100%",background:T.surface,border:`1.5px solid #dc2626`,
+                    borderRadius:8,padding:"5px 6px",color:T.text,fontSize:12,outline:"none",boxSizing:"border-box"}}/>
+              </div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:9,color:T.sub,marginBottom:2,textAlign:"center"}}>Uscita effettiva</div>
+                <SmartTimeInput value={form.protMenoRecOut||""} onChange={v=>setForm(f=>({...f,protMenoRecOut:v}))}
+                  style={{width:"100%",background:T.surface,border:`1.5px solid #dc2626`,
+                    borderRadius:8,padding:"5px 6px",color:T.text,fontSize:12,outline:"none",boxSizing:"border-box"}}/>
+              </div>
+              <div style={{background:T.surface,border:"1.5px solid #dc2626",borderRadius:8,
+                padding:"5px 8px",minWidth:56,textAlign:"center"}}>
+                <div style={{fontSize:12,fontWeight:900,color:"#dc2626"}}>{fmtMinNegativi(minTotaleMenoRec)||"—"}</div>
               </div>
             </div>
           </div>

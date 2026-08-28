@@ -668,6 +668,299 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, acce
   );
 }
 
+// Formatta un totale di minuti come "Xh" o "Xh Ym" (mai "NaN": minuti non
+// numerici o negativi diventano 0h). Usato da OreTurnoConfigCard, che
+// sostituisce la vecchia OrePerTurnoView (assumeva sempre 6h15 fisse a
+// turno, sbagliato per modelli come le protrazioni con durata variabile).
+export function fmtOreMin(mins){
+  const m = Number.isFinite(mins) ? Math.max(0, Math.round(mins)) : 0;
+  const h = Math.floor(m/60), rest = m%60;
+  return h+"h"+(rest>0?" "+rest+"m":"");
+}
+
+// Gemella di ConteggioConfigCard: stessa struttura (nome modificabile,
+// sottomenu liberi/per collega/per modello, filtro modelli), ma al posto di
+// contare eventi mostra ore/minuti sommati (data viene da
+// computeMinutiForReport, non computeConteggioForReport). Sostituisce la
+// vecchia "Ore per turno" (OrePerTurnoView), che era fissa su 1Â°/2Â° Turno a
+// 6h15 ciascuno, non rinominabile, senza sottomenu e senza modo di togliere
+// le due righe 1Â°/2Â° Turno che non servono per tutti i report.
+export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, accent, fasceAutomatiche, onRename, onUpdateCfg}){
+  const [editingName, setEditingName] = useState(false);
+  const [tmpName, setTmpName] = useState(r.label);
+  const pct = totaleMinPeriodo>0 ? Math.round((data.totaleMin/totaleMinPeriodo)*100) : 0;
+  const [openSottomenu, setOpenSottomenu] = useState(null);
+  const [openGruppoDentro, setOpenGruppoDentro] = useState(null);
+  const [showAggiungiMenu, setShowAggiungiMenu] = useState(false);
+
+  const sottomenu = cfg.sottomenu || [];
+
+  function fmtData(dateKey){
+    const [y,m,d] = dateKey.split("-");
+    return `${d}/${m}/${y}`;
+  }
+
+  function aggiungiSottomenu(tipo){
+    const id = "sm_"+Date.now()+"_"+Math.random().toString(36).slice(2,7);
+    let nuovo;
+    if(tipo==="collega"){
+      nuovo = { id, tipo:"collega", nome:"Per collega" };
+    } else if(tipo==="modello"){
+      nuovo = { id, tipo:"modello", nome:"Per modello" };
+    } else {
+      nuovo = { id, tipo:"libero", nome:"Nuovo sottomenu",
+        gruppi:[{key:"a",label:"Gruppo A",color:"#3b82f6"},{key:"b",label:"Gruppo B",color:"#8b5cf6"}],
+        assegnazioni:{} };
+    }
+    onUpdateCfg({...cfg, sottomenu:[...sottomenu, nuovo]});
+    setShowAggiungiMenu(false);
+    setOpenSottomenu(id);
+  }
+  function aggiornaSottomenu(id, patch){
+    onUpdateCfg({...cfg, sottomenu: sottomenu.map(sm=>sm.id===id?{...sm,...patch}:sm)});
+  }
+  function rimuoviSottomenu(id){
+    onUpdateCfg({...cfg, sottomenu: sottomenu.filter(sm=>sm.id!==id)});
+    if(openSottomenu===id) setOpenSottomenu(null);
+  }
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      <div style={{background:T.surface,borderRadius:10,padding:"10px 12px"}}>
+        <div style={{fontSize:12,color:"#0f172a",marginBottom:4}}>NOME REPORT</div>
+        {editingName?(
+          <div style={{display:"flex",gap:6}}>
+            <input value={tmpName} onChange={e=>setTmpName(e.target.value)}
+              style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
+                borderRadius:8,padding:"6px 10px",color:T.text,fontSize:13,outline:"none"}}/>
+            <button onClick={()=>{onRename(tmpName);setEditingName(false);}}
+              style={{background:accent,border:"none",borderRadius:8,color:getContrastTextColor(accent),
+                padding:"6px 12px",cursor:"pointer",fontWeight:800,fontSize:12}}>✓</button>
+          </div>
+        ):(
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontSize:14,fontWeight:700,color:T.text,flex:1}}>{r.label}</span>
+            <button onClick={()=>setEditingName(true)}
+              style={{background:"none",border:"none",color:accent,cursor:"pointer",fontSize:16,padding:"0 4px"}}>✏️</button>
+          </div>
+        )}
+      </div>
+
+      <div style={{background:T.surface,borderRadius:10,padding:"10px 12px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <span style={{fontSize:12,color:"#0f172a",fontWeight:700}}>TOTALE ORE</span>
+          <span style={{fontSize:20,fontWeight:900,color:T.text}}>{fmtOreMin(data.totaleMin)}</span>
+        </div>
+        {totaleMinPeriodo>0&&(
+          <div style={{height:6,background:T.s2,borderRadius:3,overflow:"hidden"}}>
+            <div style={{width:`${pct}%`,height:"100%",background:accent,borderRadius:3,transition:"width 0.3s"}}/>
+          </div>
+        )}
+      </div>
+
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {sottomenu.map(sm=>{
+          const isOpen = openSottomenu===sm.id;
+          return (
+            <div key={sm.id} style={{background:T.surface,borderRadius:10,overflow:"hidden"}}>
+              <div onClick={()=>setOpenSottomenu(isOpen?null:sm.id)}
+                style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+                  padding:"10px 12px",cursor:"pointer"}}>
+                <span style={{fontSize:12,fontWeight:700,color:T.text}}>{sm.nome}</span>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <button onClick={e=>{e.stopPropagation();rimuoviSottomenu(sm.id);}}
+                    style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:13,padding:"2px 4px"}}>🗑️</button>
+                  <span style={{fontSize:12,color:T.sub}}>{isOpen?"▲":"▼"}</span>
+                </div>
+              </div>
+              {isOpen && (
+                <div style={{padding:"0 12px 12px"}}>
+                  {sm.tipo==="libero" && (
+                    <div style={{marginBottom:8,display:"flex",gap:6}}>
+                      <input value={sm.nome} onChange={e=>aggiornaSottomenu(sm.id,{nome:e.target.value})}
+                        style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
+                          borderRadius:8,padding:"6px 10px",color:T.text,fontSize:12,outline:"none"}}/>
+                    </div>
+                  )}
+
+                  {sm.tipo==="collega" && (
+                    Object.keys(data.perCollega||{}).length===0 ? (
+                      <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"10px 0"}}>Nessun collega nel periodo</div>
+                    ) : Object.entries(data.perCollega).sort((a,b)=>b[1].minuti-a[1].minuti).map(([nome,info])=>{
+                      const gk = sm.id+":"+nome;
+                      const isOpenG = openGruppoDentro===gk;
+                      return (
+                        <div key={nome} style={{marginBottom:4}}>
+                          <div onClick={()=>setOpenGruppoDentro(isOpenG?null:gk)}
+                            style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",
+                              background:T.s2,borderRadius:isOpenG?"6px 6px 0 0":6,cursor:"pointer"}}>
+                            <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>{nome}</span>
+                            <span style={{fontSize:13,fontWeight:800,color:T.text}}>{fmtOreMin(info.minuti)}</span>
+                            <span style={{fontSize:11,color:T.sub}}>{isOpenG?"▲":"▼"}</span>
+                          </div>
+                          {isOpenG && (
+                            <div style={{background:T.surface,border:`1px solid ${T.border}`,borderTop:"none",
+                              borderRadius:"0 0 6px 6px",padding:"8px 10px",display:"flex",flexWrap:"wrap",gap:6}}>
+                              {info.dates.map(dk=>(
+                                <span key={dk} style={{fontSize:11,fontWeight:600,color:T.text,
+                                  background:accent+"18",border:`1px solid ${accent}44`,borderRadius:6,padding:"3px 7px"}}>
+                                  {fmtData(dk)}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+
+                  {sm.tipo==="modello" && (
+                    !data.perModello||Object.keys(data.perModello).length===0 ? (
+                      <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"10px 0"}}>Nessun turno nel periodo</div>
+                    ) : Object.entries(data.perModello).map(([mid,info])=>{
+                      const m=modelli.find(x=>x.id===mid);
+                      if(!m) return null;
+                      const c=m.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
+                      const gk = sm.id+":"+mid;
+                      const isOpenG = openGruppoDentro===gk;
+                      return (
+                        <div key={mid} style={{marginBottom:4}}>
+                          <div onClick={()=>setOpenGruppoDentro(isOpenG?null:gk)}
+                            style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",
+                              background:T.s2,borderRadius:isOpenG?"6px 6px 0 0":6,cursor:"pointer"}}>
+                            <div style={{width:10,height:10,borderRadius:"50%",background:c}}/>
+                            <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>{m.titolo}</span>
+                            <span style={{fontSize:13,fontWeight:800,color:T.text}}>{fmtOreMin(info.minuti)}</span>
+                            <span style={{fontSize:11,color:T.sub}}>{isOpenG?"▲":"▼"}</span>
+                          </div>
+                          {isOpenG && (
+                            <div style={{background:T.surface,border:`1px solid ${T.border}`,borderTop:"none",
+                              borderRadius:"0 0 6px 6px",padding:"8px 10px",display:"flex",flexWrap:"wrap",gap:6}}>
+                              {info.dates.map(dk=>(
+                                <span key={dk} style={{fontSize:11,fontWeight:600,color:T.text,
+                                  background:c+"18",border:`1px solid ${c}44`,borderRadius:6,padding:"3px 7px"}}>
+                                  {fmtData(dk)}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+
+                  {sm.tipo==="libero" && (()=>{
+                    const gruppi = sm.gruppi||[];
+                    const assegnazioni = sm.assegnazioni||{};
+                    const perGruppoSm = data.perSottomenu?.[sm.id] || {};
+                    function setAssegnazione(mid, gruppoKey){
+                      const next = {...assegnazioni};
+                      if(next[mid]===gruppoKey) delete next[mid]; else next[mid]=gruppoKey;
+                      aggiornaSottomenu(sm.id, {assegnazioni:next});
+                    }
+                    function aggiungiGruppo(){
+                      const key = "g"+Date.now().toString(36);
+                      aggiornaSottomenu(sm.id, {gruppi:[...gruppi, {key,label:"Nuovo gruppo",color:"#10b981"}]});
+                    }
+                    function rinominaGruppo(key, label){
+                      aggiornaSottomenu(sm.id, {gruppi:gruppi.map(g=>g.key===key?{...g,label}:g)});
+                    }
+                    function rimuoviGruppo(key){
+                      const nextAsseg = {...assegnazioni};
+                      Object.keys(nextAsseg).forEach(mid=>{ if(nextAsseg[mid]===key) delete nextAsseg[mid]; });
+                      aggiornaSottomenu(sm.id, {gruppi:gruppi.filter(g=>g.key!==key), assegnazioni:nextAsseg});
+                    }
+                    return (
+                      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                        {gruppi.map(g=>{
+                          const gk = sm.id+":"+g.key;
+                          const isOpenG = openGruppoDentro===gk;
+                          const minutiGruppo = Object.values(perGruppoSm[g.key]||{}).reduce((s,v)=>s+v.minuti,0);
+                          return (
+                            <div key={g.key}>
+                              <div style={{display:"flex",alignItems:"center",gap:6,
+                                padding:"8px 10px",background:g.color+"22",borderRadius:isOpenG?"8px 8px 0 0":8,
+                                border:`1px solid ${g.color}44`}}>
+                                <input value={g.label} onChange={e=>rinominaGruppo(g.key,e.target.value)}
+                                  style={{flex:1,background:"transparent",border:"none",outline:"none",
+                                    fontSize:13,fontWeight:800,color:"#0f172a"}}/>
+                                <span style={{fontSize:14,fontWeight:900,color:"#0f172a"}}>{fmtOreMin(minutiGruppo)}</span>
+                                <span onClick={()=>rimuoviGruppo(g.key)} style={{cursor:"pointer",fontSize:12,color:"#ef4444"}}>🗑️</span>
+                                <span onClick={()=>setOpenGruppoDentro(isOpenG?null:gk)} style={{cursor:"pointer",fontSize:12,color:"#0f172a"}}>{isOpenG?"▲":"▼"}</span>
+                              </div>
+                              {isOpenG && (
+                                <div style={{background:T.s2,borderRadius:"0 0 8px 8px",border:`1px solid ${g.color}44`,
+                                  borderTop:"none",padding:"8px 10px"}}>
+                                  {modelli.length===0?(
+                                    <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"6px 0"}}>Nessun modello</div>
+                                  ):modelli.map(m=>{
+                                    const attivo = assegnazioni[m.id]===g.key;
+                                    const c=m.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
+                                    const info = perGruppoSm[g.key]?.[m.id];
+                                    return (
+                                      <div key={m.id} style={{display:"flex",flexDirection:"column",marginBottom:3}}>
+                                        <div style={{display:"flex",alignItems:"center",gap:8,
+                                          padding:"5px 6px",borderRadius:6,background:T.surface}}>
+                                          <input type="checkbox" checked={attivo}
+                                            onChange={()=>setAssegnazione(m.id,g.key)}
+                                            style={{cursor:"pointer",flexShrink:0}}/>
+                                          <div style={{width:8,height:8,borderRadius:"50%",background:c,flexShrink:0}}/>
+                                          <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>{m.titolo}</span>
+                                          <span style={{fontSize:13,fontWeight:800,color:T.text}}>{fmtOreMin(info?.minuti||0)}</span>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                        <button onClick={aggiungiGruppo}
+                          style={{padding:"8px 0",borderRadius:8,border:`1px dashed ${T.border}`,
+                            background:"transparent",color:accent,fontWeight:700,fontSize:12,cursor:"pointer"}}>
+                          + Aggiungi gruppo
+                        </button>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        <div style={{background:T.surface,borderRadius:10,overflow:"hidden"}}>
+          <div onClick={()=>setShowAggiungiMenu(s=>!s)}
+            style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,
+              padding:"10px 12px",cursor:"pointer",color:accent,fontWeight:700,fontSize:13}}>
+            + Aggiungi sottomenu {showAggiungiMenu?"▲":"▼"}
+          </div>
+          {showAggiungiMenu && (
+            <div style={{padding:"0 12px 12px",display:"flex",flexDirection:"column",gap:6}}>
+              <button onClick={()=>aggiungiSottomenu("collega")}
+                style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,
+                  background:T.s2,color:T.text,textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:700}}>
+                Per collega <span style={{fontWeight:400,color:T.sub}}>— elenco automatico, con date</span>
+              </button>
+              <button onClick={()=>aggiungiSottomenu("modello")}
+                style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,
+                  background:T.s2,color:T.text,textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:700}}>
+                Per modello <span style={{fontWeight:400,color:T.sub}}>— elenco automatico, con date</span>
+              </button>
+              <button onClick={()=>aggiungiSottomenu("libero")}
+                style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,
+                  background:T.s2,color:T.text,textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:700}}>
+                Sottomenu libero <span style={{fontWeight:400,color:T.sub}}>— gruppi a scelta, assegnazione manuale</span>
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati, accent, fasceAutomatiche, onRename, onUpdateCfg}){
   const modelliPerLista = modelliOrdinati || modelli;
   const [editingName, setEditingName] = useState(false);
@@ -1005,6 +1298,109 @@ export function StraordinariView({T, data, store, reportRange, modelliInclusi=[]
             </span>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// Report dedicato allo storno PROTRAZIONE A RECUPERO / -PROTRAZIONE A
+// RECUPERO: mostra il credito totale ancora disponibile e, evento per
+// evento, quali date sono state usate per compensare cosa (con minuti e
+// ore), esattamente come richiesto: "nella statistica deve risultare 30m
+// con le date e i minuti e ore". "storno" viene giÃ  calcolato da
+// computeStornoRecupero() e passato qui come prop "storno".
+export function StornoRecuperoView({T, storno, store, modelli}){
+  const { perEvento, creditoResiduoTotale } = storno;
+
+  function fmtMin(m){
+    if(m<=0) return "0m";
+    return Math.floor(m/60)+"h"+(m%60>0?" "+(m%60)+"m":"");
+  }
+  function fmtData(dateKey){
+    const [y,mm,d] = dateKey.split("-");
+    return `${d}/${mm}/${y}`;
+  }
+  // Ricostruisco l'elenco date/calId per ogni evento coinvolto, leggendo
+  // store.events (perEvento non porta la dateKey dell'evento stesso, solo
+  // quella degli storni collegati).
+  const infoDateEvento = {};
+  for(const [dateKey, calMap] of Object.entries(store?.events||{})){
+    for(const evts of Object.values(calMap)){
+      for(const e of evts){
+        if(perEvento[e.id]) infoDateEvento[e.id] = dateKey;
+      }
+    }
+  }
+  const idsRecupero = Object.keys(perEvento).filter(id=>perEvento[id].tipo==="recupero")
+    .sort((a,b)=>(infoDateEvento[a]||"").localeCompare(infoDateEvento[b]||""));
+  const idsConsumo = Object.keys(perEvento).filter(id=>perEvento[id].tipo==="meno_recupero")
+    .sort((a,b)=>(infoDateEvento[a]||"").localeCompare(infoDateEvento[b]||""));
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      <div style={{background:T.surface,borderRadius:10,padding:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <span style={{fontSize:12,color:T.sub,fontWeight:700}}>CREDITO RESIDUO TOTALE</span>
+          <span style={{fontSize:20,fontWeight:900,color:creditoResiduoTotale>0?"#16a34a":T.text}}>
+            {fmtMin(creditoResiduoTotale)}
+          </span>
+        </div>
+      </div>
+
+      <div style={{background:T.surface,borderRadius:10,padding:12}}>
+        <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8}}>PROTRAZIONE A RECUPERO (credito)</div>
+        {idsRecupero.length===0?(
+          <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"8px 0"}}>Nessun evento nel periodo</div>
+        ):idsRecupero.map(id=>{
+          const info = perEvento[id];
+          return (
+            <div key={id} style={{marginBottom:8,paddingBottom:8,borderBottom:`1px solid ${T.border}`}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:info.storni.length>0?4:0}}>
+                <span style={{fontSize:12,fontWeight:700,color:T.text}}>{fmtData(infoDateEvento[id]||"")}</span>
+                <span style={{fontSize:12,color:T.sub}}>
+                  {fmtMin(info.minutiTotali)} totali ·{" "}
+                  <span style={{fontWeight:800,color:info.minutiResidui>0?"#16a34a":T.sub}}>
+                    {fmtMin(info.minutiResidui)} residui
+                  </span>
+                </span>
+              </div>
+              {info.storni.map((s,i)=>(
+                <div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:11,paddingLeft:8,color:T.sub}}>
+                  <span>↳ usato da {fmtData(s.dateKey)}</span>
+                  <span style={{fontWeight:700,color:"#dc2626"}}>{fmtMin(s.minuti)}</span>
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{background:T.surface,borderRadius:10,padding:12}}>
+        <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8}}>-PROTRAZIONE A RECUPERO (consumo)</div>
+        {idsConsumo.length===0?(
+          <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"8px 0"}}>Nessun evento nel periodo</div>
+        ):idsConsumo.map(id=>{
+          const info = perEvento[id];
+          return (
+            <div key={id} style={{marginBottom:8,paddingBottom:8,borderBottom:`1px solid ${T.border}`}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:info.storni.length>0?4:0}}>
+                <span style={{fontSize:12,fontWeight:700,color:T.text}}>{fmtData(infoDateEvento[id]||"")}</span>
+                <span style={{fontSize:12,color:T.sub}}>
+                  {fmtMin(info.minutiTotali)} totali ·{" "}
+                  <span style={{fontWeight:800,color:info.minutiResidui>0?"#dc2626":T.sub}}>
+                    {info.minutiResidui>0?fmtMin(info.minutiResidui)+" non coperti":"coperto"}
+                  </span>
+                </span>
+              </div>
+              {info.storni.map((s,i)=>(
+                <div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:11,paddingLeft:8,color:T.sub}}>
+                  <span>↳ coperto da {fmtData(s.dateKey)}</span>
+                  <span style={{fontWeight:700,color:"#16a34a"}}>{fmtMin(s.minuti)}</span>
+                </div>
+              ))}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

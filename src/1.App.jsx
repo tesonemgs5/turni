@@ -347,6 +347,7 @@ export default function App({ session }){
                     tOut:modelloScelto.fine||"",
                     place:"",map:"",colorOvr:null,collega:"",auto:"",
                     protPagFine:"",protRecFine:"",
+                    protMenoRecIn:"",protMenoRecOut:"",
                   });
                   setShowRotDetail(null);
                   setShowRotazionePicker(false);
