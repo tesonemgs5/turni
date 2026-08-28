@@ -830,7 +830,7 @@ export function useAppCore(session){
             const perMarker = new Map();
             for(const e of (evts||[])){
               const marker = e.import_id;
-              if(!marker || !/^protrazione_di_.+_(pagamento|recupero)$/.test(marker)) continue;
+              if(!marker || !/^protrazione_di_.+_(pagamento|recupero|meno_recupero)$/.test(marker)) continue;
               if(!perMarker.has(marker)) perMarker.set(marker, []);
               perMarker.get(marker).push(e);
             }
@@ -3159,6 +3159,30 @@ const importsRecenti = useMemo(()=>{
     // nessuna invenzione di eventi a sÃ© stanti.
     for(const p of righeProtrazione){
       mancanti.push({ data:(p.data||"").trim(), titolo: p.titolo||"", oraInizio: p.oraInizio||"", oraFine: p.oraFine||"" });
+    }
+
+    // I turni base sostituiti (idsDaCancellare) possono avere figli
+    // "-PROTRAZIONE A RECUPERO" agganciati (marker
+    // "protrazione_di_<vecchioId>_meno_recupero", creati manualmente
+    // dall'utente compilando Entrata/Uscita effettiva): questi NON
+    // vengono mai toccati dalla logica sopra (che gestisce solo
+    // protPagFine/protRecFine letti dal PDF), quindi senza questa pulizia
+    // resterebbero orfani per sempre quando il turno base viene
+    // ricreato con un nuovo id, e il prossimo salvataggio manuale ne
+    // genererebbe un secondo agganciato al nuovo id: risultato, due
+    // eventi "-PROTRAZIONE" nello stesso giorno invece di uno solo.
+    if(idsDaCancellare.length){
+      const idSetBase = new Set(idsDaCancellare);
+      const idsFigliOrfani = [];
+      for(const calMap of Object.values(store.events||{})){
+        for(const evts of Object.values(calMap||{})){
+          for(const e of (evts||[])){
+            const decodifica = decodificaProtrazioneFiglio(e.importId);
+            if(decodifica && idSetBase.has(decodifica.idEventoBase)) idsFigliOrfani.push(e.id);
+          }
+        }
+      }
+      if(idsFigliOrfani.length) idsDaCancellare.push(...idsFigliOrfani);
     }
 
     if(idsDaCancellare.length){
