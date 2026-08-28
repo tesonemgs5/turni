@@ -59,7 +59,8 @@ export default function VistaCalendario({ C }){
     autoScrollRAF, autoScrollSpeed, dragOverId, setDragOverId, draggingId, setDraggingId,
     modalitaSpostamento, setModalitaSpostamento, updateAutoScroll, stopAutoScroll, reportInterval, setReportInterval,
     reportMeseSel, setReportMeseSel, selezionaReportMese, showMeseReportPicker, setShowMeseReportPicker, reportDateFrom,
-    setReportDateFrom, reportDateTo, setReportDateTo, openReportConfig, setOpenReportConfig, showIntervalPicker,
+    setReportDateFrom, reportDateTo, setReportDateTo, intervalliSalvati, salvaIntervalloCorrente,
+    applicaIntervalloSalvato, rimuoviIntervalloSalvato, openReportConfig, setOpenReportConfig, showIntervalPicker,
     setShowIntervalPicker, indennita, setIndennita, conteggioConfigs, setConteggioConfigs, showReportModelliPicker,
     setShowReportModelliPicker, editFascia, setEditFascia, showFasciaColorPicker, setShowFasciaColorPicker, userId,
     isInitialized, processaCodaSync, sysDark, dark, T, activeCal,
@@ -673,19 +674,49 @@ export default function VistaCalendario({ C }){
               </div>
             )}
             {reportInterval==="custom" && (
-              <div style={{display:"flex",gap:10,marginTop:12}}>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:12,color:"#0f172a",marginBottom:4}}>DA</div>
-                  <input type="date" value={reportDateFrom} onChange={e=>setReportDateFrom(e.target.value)}
-                    style={{width:"100%",background:T.s2,border:`1px solid ${T.border}`,
-                      borderRadius:8,padding:"8px 10px",color:T.text,fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+              <div style={{marginTop:12}}>
+                <div style={{display:"flex",gap:10}}>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:12,color:"#0f172a",marginBottom:4}}>DA</div>
+                    <input type="date" value={reportDateFrom} onChange={e=>setReportDateFrom(e.target.value)}
+                      style={{width:"100%",background:T.s2,border:`1px solid ${T.border}`,
+                        borderRadius:8,padding:"8px 10px",color:T.text,fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+                  </div>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:12,color:"#0f172a",marginBottom:4}}>A</div>
+                    <input type="date" value={reportDateTo} onChange={e=>setReportDateTo(e.target.value)}
+                      style={{width:"100%",background:T.s2,border:`1px solid ${T.border}`,
+                        borderRadius:8,padding:"8px 10px",color:T.text,fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+                  </div>
                 </div>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:12,color:"#0f172a",marginBottom:4}}>A</div>
-                  <input type="date" value={reportDateTo} onChange={e=>setReportDateTo(e.target.value)}
-                    style={{width:"100%",background:T.s2,border:`1px solid ${T.border}`,
-                      borderRadius:8,padding:"8px 10px",color:T.text,fontSize:13,outline:"none",boxSizing:"border-box"}}/>
-                </div>
+                {reportDateFrom&&reportDateTo&&!intervalliSalvati.some(iv=>iv.from===reportDateFrom&&iv.to===reportDateTo)&&(
+                  <button onClick={salvaIntervalloCorrente}
+                    style={{marginTop:8,background:"none",border:`1px dashed ${T.border}`,borderRadius:8,
+                      padding:"6px 10px",color:T.sub,fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                    ★ Memorizza questo intervallo
+                  </button>
+                )}
+                {intervalliSalvati.length>0 && (()=>{
+                  function fmtBreve(d){ if(!d) return ""; const [,m,g]=d.split("-"); return `${g}/${m}`; }
+                  return (
+                    <div style={{marginTop:10}}>
+                      <div style={{fontSize:11,color:"#0f172a",marginBottom:6}}>INTERVALLI SALVATI</div>
+                      <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                        {intervalliSalvati.map(iv=>(
+                          <button key={iv.id}
+                            onClick={()=>{applicaIntervalloSalvato(iv);setShowIntervalPicker(false);}}
+                            style={{display:"flex",alignItems:"center",gap:6,background:T.s2,
+                              border:`1px solid ${T.border}`,borderRadius:20,padding:"6px 6px 6px 12px",
+                              color:T.text,fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                            {fmtBreve(iv.from)} → {fmtBreve(iv.to)}
+                            <span onClick={e=>{e.stopPropagation();rimuoviIntervalloSalvato(iv.id);}}
+                              style={{color:T.sub,fontSize:13,fontWeight:900,padding:"0 3px"}}>×</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             )}
             {reportInterval==="custom"&&reportDateFrom&&reportDateTo&&(
