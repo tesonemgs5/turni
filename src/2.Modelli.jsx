@@ -1426,7 +1426,7 @@ export default function VistaModelli({ C }){
               // il modello PROTRAZIONE in un secondo momento).
               const tipoProtQuestoEvento = tipoModelloProtrazione(e.modelloId);
               const modelloCollegato = tipoProtQuestoEvento ? modelli.find(m=>m.id===e.modelloId) : null;
-              const labelDaMostrare = (modelloCollegato ? (modelloCollegato.titolo||modelloCollegato.label||e.label) : e.label);
+              const labelDaMostrare = (modelloCollegato ? (modelloCollegato.label||modelloCollegato.titolo||e.label) : e.label);
               return (
               <>
             <div style={{flex:1}}>
