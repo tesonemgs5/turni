@@ -30,6 +30,7 @@ const REPORT_TEMPLATES = [
   { type:"ore_turno",       label:"Ore per turno", desc:"Stima ore lavorate" },
   { type:"straordinari",    label:"Straordinari", desc:"Protrazioni e straordinari" },
   { type:"guadagni",        label:"Guadagni", desc:"Stima guadagni da indennitÃ " },
+  { type:"storno_recupero", label:"Storno PROTRAZIONE A RECUPERO", desc:"Credito PROTRAZIONE A RECUPERO e consumo -PROTRAZIONE A RECUPERO, con date e minuti" },
 ];
 
 const INIT = { calendars:[], events:{}, theme:"auto", extraHols:[], reports:[], reportSettings:{}, fasceAutomatiche: FASCE_AUTOMATICHE_DEFAULT, sundayColor:"", holidayColor:"", nationalHolsEnabled:FESTIVITA_DEFAULT_ATTIVE };
@@ -458,6 +459,7 @@ export function useAppCore(session){
             modelloId: e.modello_id||null, rotazioneId: e.rotazione_id||null, collega: e.collega||null,
             auto: e.auto||"", parentId: e.parent_id||null,
             protPagFine: e.prot_pag_fine||"", protRecFine: e.prot_rec_fine||"",
+            protMenoRecIn: e.prot_meno_rec_in||"", protMenoRecOut: e.prot_meno_rec_out||"",
             importId: e.import_id||null,
           });
         });
@@ -829,9 +831,12 @@ export function useAppCore(session){
               if(!modId) return null;
               const mod = (modelliDb||[]).find(m=>m.id===modId);
               if(!mod) return null;
-              const n = (mod.titolo||"").trim().toUpperCase().replace(/\s+/g,"").replace(/^-+/,"");
+              const titoloRaw = (mod.titolo||"").trim();
+              const eMenoRecupero = titoloRaw.startsWith("-");
+              const n = titoloRaw.toUpperCase().replace(/\s+/g,"").replace(/^-+/,"");
               const haRadice = n.includes("PROTRAZIONE") || n.includes("PROTAZIONE");
               if(!haRadice) return null;
+              if(eMenoRecupero && n.includes("RECUPERO")) return "meno_recupero";
               if(n.includes("RECUPERO")) return "recupero";
               if(n.includes("PAGAMENTO")) return "pagamento";
               return null;
@@ -841,6 +846,11 @@ export function useAppCore(session){
               const decodifica = decodificaProtrazioneFiglio(e.import_id);
               const tipo = decodifica ? decodifica.tipo : tipoDaModelloId(e.modello_id);
               if(!tipo) continue;
+              // "meno_recupero" non ha un campo prot_*_fine dedicato sul
+              // padre (due campi indipendenti entrata/uscita, mai scritti
+              // su Supabase): la pulizia automatica orfani non si applica a
+              // questo tipo, altrimenti cancellerebbe eventi validi.
+              if(tipo==="meno_recupero") continue;
               // Trova il turno base: per marker, l'id esplicito; altrimenti
               // stesso giorno/calendario con tOut base = tIn di questa riga.
               let base = null;
@@ -1002,9 +1012,12 @@ export function useAppCore(session){
     if(!modelloId) return null;
     const mod = modelli.find(m=>m.id===modelloId);
     if(!mod) return null;
-    const n = (mod.titolo||"").trim().toUpperCase().replace(/\s+/g,"").replace(/^-+/,"");
+    const titoloRaw = (mod.titolo||"").trim();
+    const eMenoRecupero = titoloRaw.startsWith("-");
+    const n = titoloRaw.toUpperCase().replace(/\s+/g,"").replace(/^-+/,"");
     const haRadice = n.includes("PROTRAZIONE") || n.includes("PROTAZIONE");
     if(!haRadice) return null;
+    if(eMenoRecupero && n.includes("RECUPERO")) return "meno_recupero";
     if(n.includes("RECUPERO")) return "recupero";
     if(n.includes("PAGAMENTO")) return "pagamento";
     return null;
@@ -1208,7 +1221,7 @@ export function useAppCore(session){
   // dal calendario, dobbiamo risalire al turno AUTO padre e aggiornarlo.
   function decodificaProtrazioneFiglio(importId){
     if(!importId) return null;
-    const m = /^protrazione_di_(.+)_(pagamento|recupero)$/.exec(importId);
+    const m = /^protrazione_di_(.+)_(pagamento|recupero|meno_recupero)$/.exec(importId);
     if(!m) return null;
     return { idEventoBase: m[1], tipo: m[2] };
   }
@@ -1220,21 +1233,60 @@ export function useAppCore(session){
   // inizio = uscita del turno base e orario fine = protPagFine/protRecFine:
   // questo lo fa entrare nei report che raggruppano per modelloId, esattamente
   // come giÃ  avviene per le protrazioni importate da PDF.
-  async function sincronizzaEventiProtrazione({ idEventoBase, dayKey, calId, tOutBase, protPagFine, protRecFine }){
+  async function sincronizzaEventiProtrazione({ idEventoBase, dayKey, calId, tInBase, tOutBase, protPagFine, protRecFine, menoRecIn, menoRecOut }){
     if(!idEventoBase||!dayKey||!calId||!userId) return;
+    // Il terzo tipo (-PROTRAZIONE A RECUPERO, consumo del credito) non ha un
+    // singolo range "da->a" come gli altri due: si sommano due scostamenti
+    // indipendenti rispetto al turno base â€” ritardo in entrata (menoRecIn
+    // dopo tInBase) e anticipo in uscita (menoRecOut prima di tOutBase).
+    // L'evento risultante viene comunque rappresentato con un orario
+    // inizio/fine coerente con la durata totale calcolata (a partire da
+    // tOutBase, solo per farlo comparire/durare visivamente in modo
+    // corretto sul calendario), ma il dato che conta Ã¨ la durata in minuti.
+    function minutiRitardoEntrata(){
+      const previsto = oraInMinuti(tInBase||""), effettivo = oraInMinuti(menoRecIn||"");
+      if(previsto===null||effettivo===null) return 0;
+      let d = effettivo-previsto;
+      if(d<0) d+=24*60;
+      return Math.max(0,d);
+    }
+    function minutiAnticipoUscita(){
+      const previsto = oraInMinuti(tOutBase||""), effettivo = oraInMinuti(menoRecOut||"");
+      if(previsto===null||effettivo===null) return 0;
+      let d = previsto-effettivo;
+      if(d<0) d+=24*60;
+      return Math.max(0,d);
+    }
+    const minutiMenoRec = minutiRitardoEntrata() + minutiAnticipoUscita();
+    // Uso un orario fine "virtuale" = tOutBase + minutiMenoRec, solo per dare
+    // all'evento una durata coerente sul calendario (tIn=tOutBase,
+    // tOut=quell'orario virtuale): la lettura corretta per i report resta
+    // sempre la DURATA (differenza tIn/tOut), non l'orario in sÃ©.
+    let oraFineVirtualeMenoRec = "";
+    if(minutiMenoRec>0 && tOutBase){
+      const m1 = oraInMinuti(tOutBase);
+      if(m1!==null){
+        const m2 = (m1 + minutiMenoRec) % (24*60);
+        oraFineVirtualeMenoRec = String(Math.floor(m2/60)).padStart(2,"0")+":"+String(m2%60).padStart(2,"0");
+      }
+    }
+
     const richieste = [
       { tipo:"pagamento", oraFine: protPagFine },
       { tipo:"recupero",  oraFine: protRecFine },
+      { tipo:"meno_recupero", oraFine: minutiMenoRec>0 ? oraFineVirtualeMenoRec : "", durataOverride: minutiMenoRec },
     ];
     const evtiGiorno = store.events?.[dayKey]?.[calId]||[];
 
-    for(const { tipo, oraFine } of richieste){
+    for(const { tipo, oraFine, durataOverride } of richieste){
       const marker = idProtrazioneFiglio(idEventoBase, tipo);
       const esistente = evtiGiorno.find(e=>e.importId===marker);
 
       // Campo vuoto o orario non valido/non successivo alla base: se
       // esisteva un figlio da una modifica precedente, lo rimuovo.
-      const durataMin = calcMinuti(tOutBase, oraFine);
+      // Per "meno_recupero" la durata Ã¨ giÃ  quella calcolata sopra
+      // (durataOverride), non va ricalcolata da tOutBase->oraFine.
+      const durataMin = durataOverride!==undefined ? durataOverride : calcMinuti(tOutBase, oraFine);
       if(!oraFine || durataMin<=0){
         if(esistente) await delEvt(dayKey, calId, esistente.id);
         continue;
@@ -1242,7 +1294,7 @@ export function useAppCore(session){
 
       const mod = await trovaOCreaModelloProtrazione(tipo, calId);
       if(!mod) continue;
-      const color = mod.coloreCustom || (tipo==="recupero" ? "#f9a8d4" : "#ec4899");
+      const color = mod.coloreCustom || (tipo==="recupero" ? "#f9a8d4" : tipo==="meno_recupero" ? "#dc2626" : "#ec4899");
       const label = (mod.titolo||mod.label||"").toUpperCase();
 
       if(esistente){
@@ -1319,6 +1371,7 @@ export function useAppCore(session){
       modello_id: form.modelloId||null, rotazione_id: form.rotazioneId||null,
       collega: up(form.collega), auto: up(form.auto),
       prot_pag_fine: form.protPagFine||null, prot_rec_fine: form.protRecFine||null,
+      prot_meno_rec_in: form.protMenoRecIn||null, prot_meno_rec_out: form.protMenoRecOut||null,
     };
 
     // 1) SUBITO in locale: l'utente vede il turno all'istante, online o offline.
@@ -1330,6 +1383,7 @@ export function useAppCore(session){
       rotazioneId: payload.rotazione_id,
       collega: payload.collega||null, auto: payload.auto||"",
       protPagFine: payload.prot_pag_fine||"", protRecFine: payload.prot_rec_fine||"",
+      protMenoRecIn: payload.prot_meno_rec_in||"", protMenoRecOut: payload.prot_meno_rec_out||"",
     };
     if(!form.modelloId && form.label) registraValoreAutocomplete("titolo", label);
     if(form.auto) registraValoreAutocomplete("auto", form.auto);
@@ -1354,7 +1408,9 @@ export function useAppCore(session){
     // protrazione entrano nei report (che raggruppano per modelloId).
     await sincronizzaEventiProtrazione({
       idEventoBase: idLocale, dayKey, calId,
-      tOutBase: tOutFinal, protPagFine: form.protPagFine||"", protRecFine: form.protRecFine||"",
+      tInBase: tInFinal, tOutBase: tOutFinal,
+      protPagFine: form.protPagFine||"", protRecFine: form.protRecFine||"",
+      menoRecIn: form.protMenoRecIn||"", menoRecOut: form.protMenoRecOut||"",
     });
   }
 
@@ -1374,7 +1430,7 @@ export function useAppCore(session){
     const evtiGiornoCorrente = store.events?.[dayKey]?.[editCalId]||[];
     const evtCorrente = evtiGiornoCorrente.find(e=>e.id===form.editId);
     const decodificaMod = decodificaProtrazioneFiglio(evtCorrente?.importId);
-    if(decodificaMod){
+    if(decodificaMod && decodificaMod.tipo!=="meno_recupero"){
       const { idEventoBase, tipo } = decodificaMod;
       const campoDaAggiornare = tipo==="pagamento" ? "protPagFine" : "protRecFine";
       const campoDbDaAggiornare = tipo==="pagamento" ? "prot_pag_fine" : "prot_rec_fine";
@@ -1406,6 +1462,8 @@ export function useAppCore(session){
       auto: (form.auto||"").toUpperCase(),
       prot_pag_fine: form.protPagFine||null,
       prot_rec_fine: form.protRecFine||null,
+      prot_meno_rec_in: form.protMenoRecIn||null,
+      prot_meno_rec_out: form.protMenoRecOut||null,
     };
     const match = { id: form.editId, user_id: userId };
 
@@ -1421,6 +1479,7 @@ export function useAppCore(session){
       note: (form.note||"").toUpperCase(), modelloId: form.modelloId||null,
       collega: (form.collega||"").toUpperCase(), auto: (form.auto||"").toUpperCase(),
       protPagFine: form.protPagFine||"", protRecFine: form.protRecFine||"",
+      protMenoRecIn: form.protMenoRecIn||"", protMenoRecOut: form.protMenoRecOut||"",
     };
     const nuovoStore = withEventoAggiornato(store, dayKey, editCalId, form.editId, patch);
     saveToLocalStorage(nuovoStore.events, nuovoStore.calendars, modelli);
@@ -1441,7 +1500,9 @@ export function useAppCore(session){
     if(!decodificaMod){
       await sincronizzaEventiProtrazione({
         idEventoBase: form.editId, dayKey, calId: editCalId,
-        tOutBase: tOutFinal, protPagFine: form.protPagFine||"", protRecFine: form.protRecFine||"",
+        tInBase: tInFinal, tOutBase: tOutFinal,
+        protPagFine: form.protPagFine||"", protRecFine: form.protRecFine||"",
+        menoRecIn: form.protMenoRecIn||"", menoRecOut: form.protMenoRecOut||"",
       });
     }
   }
@@ -1462,7 +1523,7 @@ export function useAppCore(session){
     // di protrazione che in calendario non esiste piÃ¹.
     const evtCorrente = evtiGiorno.find(e=>e.id===evtId);
     const decodifica = decodificaProtrazioneFiglio(evtCorrente?.importId);
-    if(decodifica){
+    if(decodifica && decodifica.tipo!=="meno_recupero"){
       const { idEventoBase, tipo } = decodifica;
       const campoDaPulire = tipo==="pagamento" ? "protPagFine" : "protRecFine";
       const campoDbDaPulire = tipo==="pagamento" ? "prot_pag_fine" : "prot_rec_fine";
@@ -2822,7 +2883,9 @@ const importsRecenti = useMemo(()=>{
     return (t||"").trim().toUpperCase().replace(/\s+/g,"");
   }
   async function trovaOCreaModelloProtrazione(tipo, targetCalId){
-    const titolo = tipo==="recupero" ? "PROTRAZIONE RECUPERO" : "PROTRAZIONE PAGAMENTO";
+    const titolo = tipo==="recupero" ? "PROTRAZIONE RECUPERO"
+      : tipo==="meno_recupero" ? "-PROTRAZIONE A RECUPERO"
+      : "PROTRAZIONE PAGAMENTO";
     // Riconoscimento per PAROLE CHIAVE anzichÃ© lista fissa di refusi: un
     // titolo storico Ã¨ considerato lo stesso modello PROTRAZIONE se, una
     // volta normalizzato (spazi collassati), contiene sia la radice
@@ -2830,8 +2893,17 @@ const importsRecenti = useMemo(()=>{
     // "RECUPERO" a seconda del tipo. CosÃ¬ qualunque variante con spazio
     // spostato o refuso di battitura viene riconosciuta come lo stesso
     // modello, e non se ne crea mai un doppione.
-    const parolaChiaveTipo = tipo==="recupero" ? "RECUPERO" : "PAGAMENTO";
+    // "meno_recupero" (consumo del credito, evento -PROTRAZIONE A RECUPERO)
+    // Ã¨ riconosciuto SOLO dal titolo che inizia con "-": altrimenti
+    // coinciderebbe con la stessa radice/parola chiave di "recupero" e li
+    // farebbe considerare lo stesso modello (esattamente il bug giÃ  visto
+    // con l'unificazione "per somiglianza" dei titoli).
+    const parolaChiaveTipo = tipo==="pagamento" ? "PAGAMENTO" : "RECUPERO";
     function eStessoModelloProtrazione(titoloModello){
+      const nRaw = (titoloModello||"").trim();
+      const eMenoRecupero = nRaw.startsWith("-");
+      if(tipo==="meno_recupero" && !eMenoRecupero) return false;
+      if(tipo!=="meno_recupero" && eMenoRecupero) return false;
       const n = normTitoloProtrazione(titoloModello);
       const haRadiceProtrazione = n.includes("PROTRAZIONE") || n.includes("PROTAZIONE");
       return haRadiceProtrazione && n.includes(parolaChiaveTipo);
@@ -3252,6 +3324,165 @@ const importsRecenti = useMemo(()=>{
     return {...result, perModello, perCollega, perSottomenu};
   }
 
+  // Gemella di computeConteggioForReport, stessa struttura (stesso cfg,
+  // stessi filtri, stessi sottomenu liberi/per collega/per modello), ma
+  // invece di CONTARE quanti eventi ci sono (result.totale++, count++) SOMMA
+  // i minuti reali di ciascun evento (ingresso/uscita). Usata dal report
+  // "Ore per turno" riscritto: prima quella vista assumeva sempre 6h15 fisse
+  // per ogni turno classificato 1Â°/2Â°, sbagliato per modelli come le
+  // protrazioni la cui durata varia evento per evento. Qui la durata di ogni
+  // singolo evento viene letta cosÃ¬ com'Ã¨ (e.tIn/e.tOut, giÃ  calcolati a
+  // monte quando l'evento Ã¨ stato creato/salvato) e sommata: non viene
+  // ricalcolata "quanto dura la giornata di lavoro", solo sommati i minuti
+  // che risultano giÃ  sull'evento.
+  function computeMinutiForReport(cfg){
+    const {from, to} = getReportRange();
+    const result = { totaleMin:0 };
+    const perModello = {};
+    const perCollega = {};
+    const modelliInclusi = cfg?.modelliInclusi || [];
+    const filtraCollega = (cfg?.filtraCollega||"").trim().toUpperCase();
+    const sottomenu = cfg?.sottomenu || [];
+    const perSottomenu = {};
+    sottomenu.forEach(sm=>{ perSottomenu[sm.id] = {}; });
+
+    function minutiEvento(e){
+      if(e.allDay) return 24*60; // H24: durata fissa, non ha senso/tIn/tOut
+      return calcMinuti(e.tIn||"", e.tOut||"");
+    }
+
+    for(const [dateKey, calMap] of Object.entries(store.events)){
+      if(dateKey < from || dateKey > to) continue;
+      for(const [cid, evts] of Object.entries(calMap)){
+        if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
+        for(const e of evts){
+          if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
+          const collegList = splitColleghi(e.collega);
+          if(filtraCollega && !collegList.some(c=>c.toUpperCase().includes(filtraCollega))) continue;
+
+          const mins = minutiEvento(e);
+          if(mins<=0) continue; // niente da sommare (evento senza orario valido)
+
+          result.totaleMin += mins;
+          if(e.modelloId){
+            if(!perModello[e.modelloId]) perModello[e.modelloId] = { minuti:0, dates:[] };
+            perModello[e.modelloId].minuti += mins;
+            perModello[e.modelloId].dates.push(dateKey);
+          }
+          collegList.forEach(c=>{
+            if(!perCollega[c]) perCollega[c] = { minuti:0, dates:[] };
+            perCollega[c].minuti += mins;
+            perCollega[c].dates.push(dateKey);
+          });
+
+          sottomenu.forEach(sm=>{
+            if(sm.tipo!=="libero" || !e.modelloId) return;
+            const gruppoKey = (sm.assegnazioni||{})[e.modelloId];
+            if(!gruppoKey) return;
+            if(!perSottomenu[sm.id][gruppoKey]) perSottomenu[sm.id][gruppoKey] = {};
+            if(!perSottomenu[sm.id][gruppoKey][e.modelloId]) perSottomenu[sm.id][gruppoKey][e.modelloId] = { minuti:0, dates:[] };
+            perSottomenu[sm.id][gruppoKey][e.modelloId].minuti += mins;
+            perSottomenu[sm.id][gruppoKey][e.modelloId].dates.push(dateKey);
+          });
+        }
+      }
+    }
+    Object.values(perModello).forEach(v=>v.dates.sort());
+    Object.values(perCollega).forEach(v=>v.dates.sort());
+    Object.values(perSottomenu).forEach(gruppi=>
+      Object.values(gruppi).forEach(perMod=>
+        Object.values(perMod).forEach(v=>v.dates.sort())));
+    return {...result, perModello, perCollega, perSottomenu};
+  }
+
+
+  // Calcola, su TUTTA la storia degli eventi (non solo il periodo del
+  // report corrente: uno storno puo' collegare date lontane fra loro), come
+  // i minuti di ogni evento -PROTRAZIONE A RECUPERO (consumo) vengono
+  // stornati dal credito accumulato dagli eventi PROTRAZIONE RECUPERO
+  // (guadagno), in ordine cronologico e a partire dal credito piu' vecchio
+  // (FIFO), esattamente come nell'esempio: 10/11/12 agosto +20m ciascuno,
+  // 13 agosto -30m consuma tutti i 20m del 10 e 10m dei 20m dell'11,
+  // lasciando 10m residui sull'11 e i 20m del 12 intatti.
+  //
+  // Ã¨ un calcolo dinamico (non salvato da nessuna parte): va rifatto ogni
+  // volta che cambia un evento recupero/meno_recupero, cosÃ¬ resta sempre
+  // coerente con lo stato attuale del calendario.
+  //
+  // Ritorna { perEvento, creditoResiduoTotale } dove perEvento[eventId] =
+  // { tipo: "recupero"|"meno_recupero", minutiTotali, minutiStornati,
+  //   minutiResidui, storni: [{dateKey, altroEventId, minuti}] }
+  // - per un evento "recupero": minutiResidui = credito non ancora
+  //   consumato; storni = elenco di chi (che data, quanti minuti) ha
+  //   consumato parte del suo credito.
+  // - per un evento "meno_recupero": minutiResidui = consumo non ancora
+  //   coperto da credito disponibile (dovrebbe restare 0 se c'e' sempre
+  //   credito a sufficienza); storni = elenco di quali date/eventi
+  //   "recupero" hanno coperto il suo consumo.
+  function computeStornoRecupero(){
+    const eventiRecupero = []; // { id, dateKey, calId, minuti }
+    const eventiConsumo = [];  // { id, dateKey, calId, minuti }
+    for(const [dateKey, calMap] of Object.entries(store.events)){
+      for(const [calId, evts] of Object.entries(calMap)){
+        for(const e of evts){
+          const tipo = tipoModelloProtrazione(e.modelloId);
+          if(tipo==="recupero"){
+            const mins = e.allDay ? 0 : calcMinuti(e.tIn||"", e.tOut||"");
+            if(mins>0) eventiRecupero.push({ id:e.id, dateKey, calId, minuti:mins });
+          } else if(tipo==="meno_recupero"){
+            const mins = e.allDay ? 0 : calcMinuti(e.tIn||"", e.tOut||"");
+            if(mins>0) eventiConsumo.push({ id:e.id, dateKey, calId, minuti:mins });
+          }
+        }
+      }
+    }
+    // Ordine cronologico: prima per data, poi per id (stabile) a paritÃ  di
+    // data, cosÃ¬ il risultato non dipende dall'ordine di iterazione di
+    // store.events (che non Ã¨ garantito).
+    function cmp(a,b){
+      if(a.dateKey!==b.dateKey) return a.dateKey<b.dateKey?-1:1;
+      return a.id<b.id?-1:(a.id>b.id?1:0);
+    }
+    eventiRecupero.sort(cmp);
+    eventiConsumo.sort(cmp);
+
+    const perEvento = {};
+    eventiRecupero.forEach(ev=>{ perEvento[ev.id] = { tipo:"recupero", minutiTotali:ev.minuti, minutiStornati:0, minutiResidui:ev.minuti, storni:[] }; });
+    eventiConsumo.forEach(ev=>{ perEvento[ev.id] = { tipo:"meno_recupero", minutiTotali:ev.minuti, minutiStornati:0, minutiResidui:ev.minuti, storni:[] }; });
+
+    // Puntatore FIFO sul credito: scorro i consumi in ordine cronologico e,
+    // per ciascuno, consumo il credito piÃ¹ vecchio ancora disponibile
+    // (indipendentemente da quando il credito Ã¨ stato generato rispetto al
+    // consumo: anche credito futuro rispetto al consumo puÃ² coprirlo, cosÃ¬
+    // come nell'esempio le date sono tutte consecutive ma l'algoritmo non
+    // richiede che il credito preceda il consumo).
+    let idxCredito = 0;
+    for(const consumo of eventiConsumo){
+      let daConsumare = consumo.minuti;
+      while(daConsumare>0 && idxCredito<eventiRecupero.length){
+        const credito = eventiRecupero[idxCredito];
+        const infoCredito = perEvento[credito.id];
+        if(infoCredito.minutiResidui<=0){ idxCredito++; continue; }
+        const preso = Math.min(daConsumare, infoCredito.minutiResidui);
+        infoCredito.minutiResidui -= preso;
+        infoCredito.minutiStornati += preso;
+        infoCredito.storni.push({ dateKey:consumo.dateKey, altroEventId:consumo.id, minuti:preso });
+        const infoConsumo = perEvento[consumo.id];
+        infoConsumo.minutiStornati += preso;
+        infoConsumo.minutiResidui -= preso;
+        infoConsumo.storni.push({ dateKey:credito.dateKey, altroEventId:credito.id, minuti:preso });
+        daConsumare -= preso;
+        if(infoCredito.minutiResidui<=0) idxCredito++;
+      }
+      // Se daConsumare>0 qui, non c'era abbastanza credito accumulato: il
+      // consumo resta parzialmente "scoperto" (minutiResidui>0 sul
+      // consumo), che segnala uno squilibrio da mostrare all'utente
+      // piuttosto che nasconderlo.
+    }
+
+    const creditoResiduoTotale = eventiRecupero.reduce((s,ev)=>s+perEvento[ev.id].minutiResidui, 0);
+    return { perEvento, creditoResiduoTotale };
+  }
 
   function computeTurnazioneForReport(cfg){
     const {from, to} = getReportRange();
@@ -3425,6 +3656,7 @@ const importsRecenti = useMemo(()=>{
   }
 
   const totaleTurni = computeConteggio().totale;
+  const totaleMinTurni = computeMinutiForReport({fasceFiltro:[]}).totaleMin;
 // #endregion
 
 
@@ -3707,6 +3939,8 @@ const importsRecenti = useMemo(()=>{
     getReportRange,
     splitColleghi,
     computeConteggioForReport,
+    computeMinutiForReport,
+    computeStornoRecupero,
     computeTurnazioneForReport,
     computeConteggio,
     computeIndennita,
@@ -3719,6 +3953,7 @@ const importsRecenti = useMemo(()=>{
     getConteggioConfig,
     updateConteggioConfig,
     totaleTurni,
+    totaleMinTurni,
     setPrevGrid,
     REPORT_TEMPLATES,
     calcolaOrdineModelli,
