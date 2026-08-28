@@ -1492,7 +1492,7 @@ export default function VistaModelli({ C }){
                           dur:m.tempo==="h24"?"allday":m.tempo==="6h15"?"fixed":m.tempo==="6h30"?"fixed30":"custom",
                           tIn:m.inizio||"",
                           tOut:m.tempo==="6h15"&&m.inizio?calcFine6h15(m.inizio):m.tempo==="6h30"&&m.inizio?calcFine6h30(m.inizio):(m.fine||""),
-                          protPagFine:"",protRecFine:"",
+                          protPagFine:"",protRecFine:"",protMenoRecIn:"",protMenoRecOut:"",
                           _showModPicker:false}))}
                         style={{background:form.modelloId===m.id?c:T.surface,
                           border:`2px solid ${form.modelloId===m.id?c:T.border}`,
@@ -1734,7 +1734,24 @@ export default function VistaModelli({ C }){
       }
       const durPag = calcDur(form.protPagFine||"");
       const durRec = calcDur(form.protRecFine||"");
+      // -PROTRAZIONE A RECUPERO: consumo del credito, calcolato come
+      // ritardo in entrata (Entrata effettiva dopo l'ingresso previsto)
+      // + anticipo in uscita (Uscita effettiva prima dell'uscita prevista),
+      // esattamente come in sincronizzaEventiProtrazione. Mostro la durata
+      // totale risultante come riscontro visivo.
+      function calcDurMenoRec(){
+        const tInBase = form.tIn||"", tOutBase = form.tOut||calcFine6h15(form.tIn)||calcFine6h30(form.tIn)||"";
+        const mIn1=oraInMinuti(tInBase), mIn2=oraInMinuti(form.protMenoRecIn||"");
+        const mOut1=oraInMinuti(tOutBase), mOut2=oraInMinuti(form.protMenoRecOut||"");
+        let ritardoEntrata=0, anticipoUscita=0;
+        if(mIn1!==null&&mIn2!==null){ let d=mIn2-mIn1; if(d<0) d+=24*60; ritardoEntrata=Math.max(0,d); }
+        if(mOut1!==null&&mOut2!==null){ let d=mOut1-mOut2; if(d<0) d+=24*60; anticipoUscita=Math.max(0,d); }
+        const tot = ritardoEntrata+anticipoUscita;
+        return tot>0 ? Math.floor(tot/60)+"h"+(tot%60>0?" "+tot%60+"m":"") : "";
+      }
+      const durMenoRec = calcDurMenoRec();
       return (
+        <>
         <div style={{display:"flex",gap:8}}>
           <div style={{flex:1}}>
             <div style={{width:"100%",padding:"5px 8px",borderRadius:8,
@@ -1769,6 +1786,32 @@ export default function VistaModelli({ C }){
             </div>
           </div>
         </div>
+        <div style={{marginTop:8}}>
+          <div style={{width:"100%",padding:"5px 8px",borderRadius:8,
+            fontSize:9,fontWeight:800,textAlign:"center",
+            background:"#dc2626",color:"#fff",marginBottom:4}}>
+            -PROTRAZIONE A RECUPERO
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <div style={{flex:1}}>
+              <div style={{fontSize:9,color:T.sub,marginBottom:3}}>Entrata effettiva</div>
+              <SmartTimeInput value={form.protMenoRecIn||""} onChange={v=>setForm(f=>({...f,protMenoRecIn:v}))}
+                style={{width:"100%",background:T.surface,border:"1.5px solid #dc2626",
+                  borderRadius:8,padding:"5px 6px",color:T.text,fontSize:12,outline:"none",boxSizing:"border-box"}}/>
+            </div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:9,color:T.sub,marginBottom:3}}>Uscita effettiva</div>
+              <SmartTimeInput value={form.protMenoRecOut||""} onChange={v=>setForm(f=>({...f,protMenoRecOut:v}))}
+                style={{width:"100%",background:T.surface,border:"1.5px solid #dc2626",
+                  borderRadius:8,padding:"5px 6px",color:T.text,fontSize:12,outline:"none",boxSizing:"border-box"}}/>
+            </div>
+            <div style={{background:T.surface,border:"1.5px solid #dc2626",borderRadius:8,
+              padding:"5px 8px",minWidth:56,textAlign:"center",alignSelf:"flex-end"}}>
+              <div style={{fontSize:12,fontWeight:900,color:"#dc2626"}}>{durMenoRec?"-"+durMenoRec:"—"}</div>
+            </div>
+          </div>
+        </div>
+        </>
       );
     })()}
   </div>
