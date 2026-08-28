@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+    import { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "./11.supabase";
 import {
   FASCE_AUTOMATICHE_DEFAULT, FESTIVITA_DEFAULT_ATTIVE, MONTHS, NOMI_GIORNI_IT, PALETTE,
@@ -3360,8 +3360,11 @@ const importsRecenti = useMemo(()=>{
           const collegList = splitColleghi(e.collega);
           if(filtraCollega && !collegList.some(c=>c.toUpperCase().includes(filtraCollega))) continue;
 
-          const mins = minutiEvento(e);
+          let mins = minutiEvento(e);
           if(mins<=0) continue; // niente da sommare (evento senza orario valido)
+          // "-PROTRAZIONE A RECUPERO" Ã¨ un CONSUMO di credito, non un altro
+          // turno lavorato: nel totale ore va sottratto, non sommato.
+          if(tipoModelloProtrazione(e.modelloId)==="meno_recupero") mins = -mins;
 
           result.totaleMin += mins;
           if(e.modelloId){
@@ -3961,3 +3964,4 @@ const importsRecenti = useMemo(()=>{
     session
   };
 }
+    
