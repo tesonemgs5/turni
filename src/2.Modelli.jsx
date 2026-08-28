@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, Fragment } from "react";
+    import { useState, useEffect, useRef, useMemo, Fragment } from "react";
 import {
   MONTHS, DAYS, PALETTE, FONT_SIZE, NB, COLORE_H24, NOMI_MESI_IT,
   FASCE_AUTOMATICHE_DEFAULT, FESTIVITA_DEFAULT_ATTIVE,
@@ -1734,91 +1734,38 @@ export default function VistaModelli({ C }){
       }
       const durPag = calcDur(form.protPagFine||"");
       const durRec = calcDur(form.protRecFine||"");
-      // -PROTRAZIONE A RECUPERO: due campi indipendenti, entrata effettiva e
-      // uscita effettiva. Se l'entrata effettiva Ã¨ DOPO l'ingresso previsto
-      // (form.tIn) sono minuti persi in ritardo; se l'uscita effettiva Ã¨
-      // PRIMA dell'uscita prevista (tBase) sono minuti persi in anticipo.
-      // Si sommano entrambi (ognuno solo se >0) nel totale da stornare.
-      function minutiRitardoEntrata(entrataEffettiva){
-        const previsto = oraInMinuti(form.tIn), effettivo = oraInMinuti(entrataEffettiva);
-        if(previsto===null||effettivo===null) return 0;
-        let d = effettivo-previsto;
-        if(d<0) d+=24*60;
-        return Math.max(0,d);
-      }
-      function minutiAnticipoUscita(uscitaEffettiva){
-        const previsto = oraInMinuti(tBase), effettivo = oraInMinuti(uscitaEffettiva);
-        if(previsto===null||effettivo===null) return 0;
-        let d = previsto-effettivo;
-        if(d<0) d+=24*60;
-        return Math.max(0,d);
-      }
-      const minRitardo = minutiRitardoEntrata(form.protMenoRecIn||"");
-      const minAnticipo = minutiAnticipoUscita(form.protMenoRecOut||"");
-      const minTotaleMenoRec = minRitardo + minAnticipo;
-      function fmtMinNegativi(m){
-        if(m<=0) return "";
-        return "-"+Math.floor(m/60)+"h"+(m%60>0?" "+(m%60)+"m":"");
-      }
       return (
-        <div style={{display:"flex",flexDirection:"column",gap:8}}>
-          <div style={{display:"flex",gap:8}}>
-            <div style={{flex:1}}>
-              <div style={{width:"100%",padding:"5px 8px",borderRadius:8,
-                fontSize:9,fontWeight:800,textAlign:"center",
-                background:"#8b5cf6",color:"#fff",marginBottom:4}}>
-                PROTRAZIONE A PAGAMENTO
-              </div>
-              <div style={{display:"flex",alignItems:"center",gap:6}}>
-                <SmartTimeInput value={form.protPagFine||""} onChange={v=>setForm(f=>({...f,protPagFine:v}))}
-                  style={{width:64,background:T.surface,border:`1.5px solid #8b5cf6`,
-                    borderRadius:8,padding:"5px 6px",color:T.text,fontSize:12,outline:"none"}}/>
-                <div style={{background:T.surface,border:"1.5px solid #8b5cf6",borderRadius:8,
-                  padding:"5px 8px",flex:1,textAlign:"center"}}>
-                  <div style={{fontSize:12,fontWeight:900,color:"#8b5cf6"}}>{durPag||"—"}</div>
-                </div>
+        <div style={{display:"flex",gap:8}}>
+          <div style={{flex:1}}>
+            <div style={{width:"100%",padding:"5px 8px",borderRadius:8,
+              fontSize:9,fontWeight:800,textAlign:"center",
+              background:"#8b5cf6",color:"#fff",marginBottom:4}}>
+              PROTRAZIONE A PAGAMENTO
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <SmartTimeInput value={form.protPagFine||""} onChange={v=>setForm(f=>({...f,protPagFine:v}))}
+                style={{width:64,background:T.surface,border:`1.5px solid #8b5cf6`,
+                  borderRadius:8,padding:"5px 6px",color:T.text,fontSize:12,outline:"none"}}/>
+              <div style={{background:T.surface,border:"1.5px solid #8b5cf6",borderRadius:8,
+                padding:"5px 8px",flex:1,textAlign:"center"}}>
+                <div style={{fontSize:12,fontWeight:900,color:"#8b5cf6"}}>{durPag||"—"}</div>
               </div>
             </div>
-            <div style={{flex:1}}>
-              <div style={{width:"100%",padding:"5px 8px",borderRadius:8,
-                fontSize:9,fontWeight:800,textAlign:"center",
-                background:"#64748b",color:"#fff",marginBottom:4}}>
-                PROTRAZIONE A RECUPERO
-              </div>
-              <div style={{display:"flex",alignItems:"center",gap:6}}>
-                <SmartTimeInput value={form.protRecFine||""} onChange={v=>setForm(f=>({...f,protRecFine:v}))}
-                  style={{width:64,background:T.surface,border:`1.5px solid #64748b`,
-                    borderRadius:8,padding:"5px 6px",color:T.text,fontSize:12,outline:"none"}}/>
+          </div>
+          <div style={{flex:1}}>
+            <div style={{width:"100%",padding:"5px 8px",borderRadius:8,
+              fontSize:9,fontWeight:800,textAlign:"center",
+              background:"#64748b",color:"#fff",marginBottom:4}}>
+              PROTRAZIONE A RECUPERO
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <SmartTimeInput value={form.protRecFine||""} onChange={v=>setForm(f=>({...f,protRecFine:v}))}
+                style={{width:64,background:T.surface,border:`1.5px solid #64748b`,
+                  borderRadius:8,padding:"5px 6px",color:T.text,fontSize:12,outline:"none"}}/>
                 <div style={{background:T.surface,border:"1.5px solid #64748b",borderRadius:8,
                   padding:"5px 8px",flex:1,textAlign:"center"}}>
                   <div style={{fontSize:12,fontWeight:900,color:"#64748b"}}>{durRec||"—"}</div>
                 </div>
-              </div>
-            </div>
-          </div>
-          <div>
-            <div style={{width:"100%",padding:"5px 8px",borderRadius:8,
-              fontSize:9,fontWeight:800,textAlign:"center",
-              background:"#dc2626",color:"#fff",marginBottom:4}}>
-              -PROTRAZIONE A RECUPERO
-            </div>
-            <div style={{display:"flex",alignItems:"center",gap:6}}>
-              <div style={{flex:1}}>
-                <div style={{fontSize:9,color:T.sub,marginBottom:2,textAlign:"center"}}>Entrata effettiva</div>
-                <SmartTimeInput value={form.protMenoRecIn||""} onChange={v=>setForm(f=>({...f,protMenoRecIn:v}))}
-                  style={{width:"100%",background:T.surface,border:`1.5px solid #dc2626`,
-                    borderRadius:8,padding:"5px 6px",color:T.text,fontSize:12,outline:"none",boxSizing:"border-box"}}/>
-              </div>
-              <div style={{flex:1}}>
-                <div style={{fontSize:9,color:T.sub,marginBottom:2,textAlign:"center"}}>Uscita effettiva</div>
-                <SmartTimeInput value={form.protMenoRecOut||""} onChange={v=>setForm(f=>({...f,protMenoRecOut:v}))}
-                  style={{width:"100%",background:T.surface,border:`1.5px solid #dc2626`,
-                    borderRadius:8,padding:"5px 6px",color:T.text,fontSize:12,outline:"none",boxSizing:"border-box"}}/>
-              </div>
-              <div style={{background:T.surface,border:"1.5px solid #dc2626",borderRadius:8,
-                padding:"5px 8px",minWidth:56,textAlign:"center"}}>
-                <div style={{fontSize:12,fontWeight:900,color:"#dc2626"}}>{fmtMinNegativi(minTotaleMenoRec)||"—"}</div>
-              </div>
             </div>
           </div>
         </div>
@@ -1951,3 +1898,5 @@ export default function VistaModelli({ C }){
 
   return { modelliView, settingsView, dayModal, dbModal };
 }
+
+    
