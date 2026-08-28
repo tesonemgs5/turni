@@ -830,7 +830,7 @@ export function useAppCore(session){
             const perMarker = new Map();
             for(const e of (evts||[])){
               const marker = e.import_id;
-              if(!marker || !/^protrazione_di_.+_(pagamento|recupero|meno_recupero)$/.test(marker)) continue;
+              if(!marker || !/^protrazione_di_.+_(pagamento|meno_recupero|recupero)$/.test(marker)) continue;
               if(!perMarker.has(marker)) perMarker.set(marker, []);
               perMarker.get(marker).push(e);
             }
@@ -1270,7 +1270,21 @@ export function useAppCore(session){
   // dal calendario, dobbiamo risalire al turno AUTO padre e aggiornarlo.
   function decodificaProtrazioneFiglio(importId){
     if(!importId) return null;
-    const m = /^protrazione_di_(.+)_(pagamento|recupero|meno_recupero)$/.exec(importId);
+    // FIX BUG DOPPIONE "- PR RECUPERO": con (.+) greedy e le alternative
+    // nell'ordine "pagamento|recupero|meno_recupero", su un importId tipo
+    // "protrazione_di_<uuid>_meno_recupero" il motore regex risaliva da
+    // destra e si accontentava di "recupero" come suffisso (che è anche
+    // suffisso di "meno_recupero"), catturando erroneamente "<uuid>_meno"
+    // come idEventoBase invece di "<uuid>". Quell'id sbagliato non esiste
+    // in nessun elenco di eventi, quindi allEvts() non riusciva mai a
+    // riconoscere il figlio come "già gestito dal turno base" e lo
+    // mostrava DUE volte: una nella sua posizione naturale (ordinamento
+    // per modello) e una seconda volta quando il turno base veniva
+    // processato (lì l'aggancio riuscito, perché lì si usa un semplice
+    // startsWith sul prefisso, non questa regex). Il gruppo (.+?) reso
+    // non-greedy risolve, catturando il minimo necessario e lasciando il
+    // resto al gruppo tipo, che prova "meno_recupero" correttamente.
+    const m = /^protrazione_di_(.+?)_(pagamento|meno_recupero|recupero)$/.exec(importId);
     if(!m) return null;
     return { idEventoBase: m[1], tipo: m[2] };
   }
