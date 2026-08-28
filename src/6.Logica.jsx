@@ -1364,7 +1364,13 @@ export function useAppCore(session){
       const mod = await trovaOCreaModelloProtrazione(tipo, calId);
       if(!mod) continue;
       const color = mod.coloreCustom || (tipo==="recupero" ? "#f9a8d4" : tipo==="meno_recupero" ? "#dc2626" : "#ec4899");
-      const label = (mod.titolo||mod.label||"").toUpperCase();
+      // Il "nome da mostrare nel calendario" (mod.label) ha PRIORITÃ€ sul
+      // titolo/codice (mod.titolo): stessa convenzione giÃ  usata altrove
+      // (vedi computeEventFields piÃ¹ sopra). Con la vecchia priorità
+      // invertita, un modello con titolo "PROTRAZIONE RECUPERO" e nome da
+      // mostrare "PR RECUPERO" finiva comunque per etichettare l'evento
+      // col titolo lungo, ignorando il nome scelto dall'utente.
+      const label = (mod.label||mod.titolo||"").toUpperCase();
 
       if(esistente){
         // Aggiorno l'evento figlio esistente (stesso pattern di updateEvt).
