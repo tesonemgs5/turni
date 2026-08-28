@@ -43,6 +43,16 @@ export function useAppCore(session){
 // #region SEZIONE 6: USESTATE HOOKS
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   const [store, setStore] = useState(INIT);
+  // Ref sincrono per leggere l'ultimo valore di store dentro funzioni
+  // async (es. sincronizzaEventiProtrazione chiamata subito dopo un
+  // setStore, prima che il re-render abbia aggiornato la closure di
+  // updateEvt/saveEvt): senza questo ref, la ricerca del figlio di
+  // protrazione esistente puÃ² leggere uno snapshot di store "vecchio"
+  // di un giro, non trovare il figlio giÃ  creato in una modifica
+  // precedente e crearne un secondo doppione invece di aggiornare quello
+  // giÃ  presente. Stesso pattern giÃ  usato per modelliRef qui sotto.
+  const storeRef = useRef(INIT);
+  useEffect(()=>{ storeRef.current = store; }, [store]);
   const [loading, setLoading] = useState(true);
   const [year,  setYear]  = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
@@ -1315,11 +1325,31 @@ export function useAppCore(session){
       { tipo:"recupero",  oraFine: protRecFine },
       { tipo:"meno_recupero", oraFine: minutiMenoRec>0 ? oraFineVirtualeMenoRec : "", durataOverride: minutiMenoRec },
     ];
-    const evtiGiorno = store.events?.[dayKey]?.[calId]||[];
+    // Leggo SEMPRE da storeRef.current, non dalla "store" chiusa nella
+    // closure di questa funzione: quest'ultima puÃ² essere ancora la
+    // fotografia del render precedente quando saveEvt/updateEvt chiamano
+    // sincronizzaEventiProtrazione subito dopo il proprio setStore, prima
+    // che React abbia ri-renderizzato. Se cosÃ¬ fosse, un figlio di
+    // protrazione giÃ  creato in una modifica precedente non verrebbe
+    // trovato qui sotto (find fallirebbe), e verrebbe creato un secondo
+    // evento doppione invece di aggiornare quello esistente.
+    const evtiGiorno = storeRef.current.events?.[dayKey]?.[calId]||[];
 
     for(const { tipo, oraFine, durataOverride } of richieste){
       const marker = idProtrazioneFiglio(idEventoBase, tipo);
-      const esistente = evtiGiorno.find(e=>e.importId===marker);
+      // Auto-riparazione: se per lo stesso marker esistono giÃ  piÃ¹ eventi
+      // figli (retaggio del bug di race condition risolto sopra, quando la
+      // ricerca leggeva uno store non ancora aggiornato e ne creava un
+      // secondo invece di trovare il primo), tengo solo il piÃ¹ vecchio e
+      // cancello gli altri, cosÃ¬ il doppione sparisce automaticamente alla
+      // prossima modifica del turno invece di restare per sempre in giro.
+      const candidatiEsistenti = evtiGiorno.filter(e=>e.importId===marker);
+      const esistente = candidatiEsistenti[0]||null;
+      if(candidatiEsistenti.length>1){
+        for(const doppione of candidatiEsistenti.slice(1)){
+          await delEvt(dayKey, calId, doppione.id);
+        }
+      }
 
       // Campo vuoto o orario non valido/non successivo alla base: se
       // esisteva un figlio da una modifica precedente, lo rimuovo.
@@ -1347,6 +1377,7 @@ export function useAppCore(session){
           const patch = { label, color, allDay:false, tIn: tOutBase||"", tOut: oraFine, modelloId: mod.id||null };
           const ns = withEventoAggiornato(prev, dayKey, calId, esistente.id, patch);
           saveToLocalStorage(ns.events, ns.calendars, modelli);
+          storeRef.current = ns;
           return ns;
         });
         const match = { id: esistente.id, user_id: userId };
@@ -1379,6 +1410,7 @@ export function useAppCore(session){
         setStore(prev=>{
           const ns = withEventoAggiunto(prev, dayKey, calId, evt);
           saveToLocalStorage(ns.events, ns.calendars, modelli);
+          storeRef.current = ns;
           return ns;
         });
         await scriviConBackup({
@@ -1431,6 +1463,10 @@ export function useAppCore(session){
     const nuovoStore = withEventoAggiunto(store, dayKey, calId, evt);
     saveToLocalStorage(nuovoStore.events, nuovoStore.calendars, modelli);
     setStore(nuovoStore);
+    // Aggiorno anche il ref SUBITO (sincrono): sincronizzaEventiProtrazione
+    // viene chiamata poche righe sotto, prima che React possa aver
+    // ri-renderizzato e propagato nuovoStore dentro storeRef via useEffect.
+    storeRef.current = nuovoStore;
     setForm(null); setDayKey(null);
 
     // 2) Backup su Supabase (con retry colonna) + Sheets in parallelo.
@@ -1523,6 +1559,14 @@ export function useAppCore(session){
     const nuovoStore = withEventoAggiornato(store, dayKey, editCalId, form.editId, patch);
     saveToLocalStorage(nuovoStore.events, nuovoStore.calendars, modelli);
     setStore(nuovoStore);
+    // Aggiorno anche il ref SUBITO (sincrono): la chiamata a
+    // sincronizzaEventiProtrazione poco sotto deve vedere questo turno
+    // giÃ  aggiornato E, soprattutto, l'eventuale figlio "-PROTRAZIONE A
+    // RECUPERO" creato in un salvataggio precedente, che altrimenti (con
+    // la "store" chiusa nella closure, ferma al render precedente) puÃ²
+    // risultare non trovato e causare la creazione di un secondo
+    // evento doppione invece di aggiornare quello giÃ  esistente.
+    storeRef.current = nuovoStore;
     setForm(null); setDayKey(null);
 
     // 2) Backup su Supabase (con retry colonna) + Sheets in parallelo.
