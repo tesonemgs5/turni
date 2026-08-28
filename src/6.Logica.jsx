@@ -1687,32 +1687,52 @@ export function useAppCore(session){
     // di protrazione che in calendario non esiste piÃ¹.
     const evtCorrente = evtiGiorno.find(e=>e.id===evtId);
     const decodifica = decodificaProtrazioneFiglio(evtCorrente?.importId);
+    let idEventoBasePulito = null, campoDbDaPulire = null;
     if(decodifica && decodifica.tipo!=="meno_recupero"){
       const { idEventoBase, tipo } = decodifica;
       const campoDaPulire = tipo==="pagamento" ? "protPagFine" : "protRecFine";
-      const campoDbDaPulire = tipo==="pagamento" ? "prot_pag_fine" : "prot_rec_fine";
+      campoDbDaPulire = tipo==="pagamento" ? "prot_pag_fine" : "prot_rec_fine";
       const padreEsiste = evtiGiorno.some(e=>e.id===idEventoBase);
       if(padreEsiste){
-        setStore(prev=>{
-          const ns = withEventoAggiornato(prev, dKey, cId, idEventoBase, { [campoDaPulire]: "" });
-          saveToLocalStorage(ns.events, ns.calendars, modelli);
-          return ns;
-        });
-        await scriviConBackup({
-          tipo:"update", table:"events", payload:{ [campoDbDaPulire]: null },
-          matchObj:{ id: idEventoBase, user_id: userId },
-          contesto:`Pulizia campo protrazione ${tipo} sul turno base`, ts:new Date().toISOString(),
-          eventsPerSheets: store.events, calendarsPerSheets: store.calendars,
-          opzioni:{ soloLog:true },
-        });
+        idEventoBasePulito = idEventoBase;
       }
     }
 
-    // 1) SUBITO in locale.
-    let nuovoStore = withEventoRimosso(store, dKey, cId, evtId);
+    // 1) SUBITO in locale: pulizia campo sul padre (se serve) + rimozione
+    // dell'evento (+ eventuali figli), tutto a partire dallo STESSO stato
+    // "prev" in un'unica pipeline, cosÃ¬ nessuna delle due modifiche
+    // sovrascrive l'altra (bug precedente: due setStore separati, il
+    // secondo costruito dalla variabile "store" non aggiornata, annullava
+    // silenziosamente la pulizia del campo fatta dal primo).
+    setStore(prev=>{
+      let ns = prev;
+      if(idEventoBasePulito){
+        const campoDaPulire = decodifica.tipo==="pagamento" ? "protPagFine" : "protRecFine";
+        ns = withEventoAggiornato(ns, dKey, cId, idEventoBasePulito, { [campoDaPulire]: "" });
+      }
+      ns = withEventoRimosso(ns, dKey, cId, evtId);
+      for(const f of figli) ns = withEventoRimosso(ns, dKey, cId, f.id);
+      saveToLocalStorage(ns.events, ns.calendars, modelli);
+      storeRef.current = ns;
+      return ns;
+    });
+    if(idEventoBasePulito){
+      await scriviConBackup({
+        tipo:"update", table:"events", payload:{ [campoDbDaPulire]: null },
+        matchObj:{ id: idEventoBasePulito, user_id: userId },
+        contesto:`Pulizia campo protrazione sul turno base`, ts:new Date().toISOString(),
+        eventsPerSheets: store.events, calendarsPerSheets: store.calendars,
+        opzioni:{ soloLog:true },
+      });
+    }
+
+    // 1b) Valore locale (non tocca lo stato React, giÃ  aggiornato sopra):
+    // serve solo come payload per i backup Sheets/Supabase qui sotto.
+    let nuovoStore = idEventoBasePulito
+      ? withEventoAggiornato(store, dKey, cId, idEventoBasePulito, { [decodifica.tipo==="pagamento"?"protPagFine":"protRecFine"]: "" })
+      : store;
+    nuovoStore = withEventoRimosso(nuovoStore, dKey, cId, evtId);
     for(const f of figli) nuovoStore = withEventoRimosso(nuovoStore, dKey, cId, f.id);
-    saveToLocalStorage(nuovoStore.events, nuovoStore.calendars, modelli);
-    setStore(nuovoStore);
     // 2) Backup su Supabase (con retry colonna) + Sheets in parallelo.
     const match = { id: evtId, user_id: userId };
     await scriviConBackup({
