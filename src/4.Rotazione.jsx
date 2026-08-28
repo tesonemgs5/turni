@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, Fragment } from "react";
+    import { useState, useEffect, useRef, useMemo, Fragment } from "react";
 import { AutocompleteInput, ColorPickerModal } from "./5.Comuni";
 
 // ═══════════════════════════════════════════════════════════════
@@ -1117,62 +1117,80 @@ export function ModelForm({T, form, setForm, accent, dark, fasceAutomatiche, mod
           </div>
         </div>
       )}
-      <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>CATEGORIA TURNO (per report Turnazione)</div>
       {(()=>{
-        // ── Due gruppi indipendenti, ciascuno con la propria "Automatica" e
-        // il proprio campo dati: form.categoria (TURNO) e form.categoriaAppAuto
-        // (APP/AUTO). Non sono collegati fra loro in nessun modo.
-        const catAutoTurno = categoriaTurnoAutomatica(form);
-        const catAutoAppAuto = categoriaAppAutoAutomatica(form);
-        const renderBtn=(campo, catAuto, flagCampo)=>([v,l])=>{
-          const valoreAttuale = form[campo]||"";
-          const selezionato = valoreAttuale===v && !form[flagCampo];
-          const suggeritoDaAuto = !valoreAttuale && v!=="" && v===catAuto && !form[flagCampo];
-          const nuovoValore = (selezionato && v!=="") ? "" : v;
-          return (
-            <button key={v||l} onClick={()=>setForm(f=>({...f,[campo]:nuovoValore,[flagCampo]:false}))}
-              style={{flex:"1 1 30%",padding:"9px 4px",borderRadius:10,cursor:"pointer",
-                fontWeight:700,fontSize:11,
-                border:suggeritoDaAuto?`2px solid ${accent}`:"2px solid transparent",
-                background:selezionato?accent:T.s2,
-                color:selezionato?"#fff":(suggeritoDaAuto?accent:T.sub)}}>{l}</button>
-          );
-        };
-        const renderDeselBtn=(flagCampo, campo)=>{
-          const attivo = !!form[flagCampo];
-          return (
-            <button onClick={()=>setForm(f=>({...f,[flagCampo]:!attivo,[campo]: !attivo ? "" : f[campo]}))}
-              style={{marginTop:6,marginBottom:10,width:"100%",padding:"7px 4px",borderRadius:10,
-                border:attivo?"2px solid #ef4444":"2px solid transparent",cursor:"pointer",
-                fontWeight:700,fontSize:11,
-                background:attivo?"#ef444422":"transparent",
-                color:"#ef4444"}}>
-              {attivo?"✓ Nessuna categoria (riattiva per tornare all'automatismo)":"Nessuna categoria per questo asse"}
-            </button>
-          );
-        };
-        const isH24 = form.tempo==="h24";
+        // Le sezioni CATEGORIA TURNO / CATEGORIA APP-AUTO si applicano a
+        // TUTTI i modelli normali come prima. Vengono nascoste SOLO per i
+        // tre modelli PROTRAZIONE (pagamento, recupero, -recupero): per
+        // quei tre non ha senso la distinzione 1Â°/2Â° turno o APP/AUTO.
+        // Il riconoscimento usa lo stesso criterio (radice
+        // PROTRAZIONE/PROTAZIONE + PAGAMENTO/RECUPERO nel titolo) giÃ 
+        // usato nel resto del progetto per riconoscere questi tre modelli.
+        const titoloNorm = (form.titolo||"").trim().toUpperCase().replace(/\s+/g," ");
+        const haRadiceProtrazione = titoloNorm.includes("PROTRAZIONE") || titoloNorm.includes("PROTAZIONE");
+        const eModelloProtrazione = haRadiceProtrazione && (titoloNorm.includes("PAGAMENTO") || titoloNorm.includes("RECUPERO"));
+        if(eModelloProtrazione) return null;
+
         return (
-          <div style={{marginBottom:16}}>
-            <div style={{display:"flex",gap:6,marginBottom:10}}>
-              {[["","Automatica"],["primo","1° Turno"],["secondo","2° Turno"]].map(renderBtn("categoria", catAutoTurno, "turnoVuoto"))}
-            </div>
-            {renderDeselBtn("turnoVuoto","categoria")}
-            {!isH24 && (
-              <>
-                <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>CATEGORIA APP/AUTO (per report Turnazione)</div>
-                <div style={{display:"flex",gap:6}}>
-                  {[["","Automatica"],["app","APP"],["auto","AUTO"]].map(renderBtn("categoriaAppAuto", catAutoAppAuto, "appAutoVuoto"))}
+          <>
+            <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>CATEGORIA TURNO (per report Turnazione)</div>
+            {(()=>{
+              // â”€â”€ Due gruppi indipendenti, ciascuno con la propria "Automatica" e
+              // il proprio campo dati: form.categoria (TURNO) e form.categoriaAppAuto
+              // (APP/AUTO). Non sono collegati fra loro in nessun modo.
+              const catAutoTurno = categoriaTurnoAutomatica(form);
+              const catAutoAppAuto = categoriaAppAutoAutomatica(form);
+              const renderBtn=(campo, catAuto, flagCampo)=>([v,l])=>{
+                const valoreAttuale = form[campo]||"";
+                const selezionato = valoreAttuale===v && !form[flagCampo];
+                const suggeritoDaAuto = !valoreAttuale && v!=="" && v===catAuto && !form[flagCampo];
+                const nuovoValore = (selezionato && v!=="") ? "" : v;
+                return (
+                  <button key={v||l} onClick={()=>setForm(f=>({...f,[campo]:nuovoValore,[flagCampo]:false}))}
+                    style={{flex:"1 1 30%",padding:"9px 4px",borderRadius:10,cursor:"pointer",
+                      fontWeight:700,fontSize:11,
+                      border:suggeritoDaAuto?`2px solid ${accent}`:"2px solid transparent",
+                      background:selezionato?accent:T.s2,
+                      color:selezionato?"#fff":(suggeritoDaAuto?accent:T.sub)}}>{l}</button>
+                );
+              };
+              const renderDeselBtn=(flagCampo, campo)=>{
+                const attivo = !!form[flagCampo];
+                return (
+                  <button onClick={()=>setForm(f=>({...f,[flagCampo]:!attivo,[campo]: !attivo ? "" : f[campo]}))}
+                    style={{marginTop:6,marginBottom:10,width:"100%",padding:"7px 4px",borderRadius:10,
+                      border:attivo?"2px solid #ef4444":"2px solid transparent",cursor:"pointer",
+                      fontWeight:700,fontSize:11,
+                      background:attivo?"#ef444422":"transparent",
+                      color:"#ef4444"}}>
+                    {attivo?"✓ Nessuna categoria (riattiva per tornare all'automatismo)":"Nessuna categoria per questo asse"}
+                  </button>
+                );
+              };
+              const isH24 = form.tempo==="h24";
+              return (
+                <div style={{marginBottom:16}}>
+                  <div style={{display:"flex",gap:6,marginBottom:10}}>
+                    {[["","Automatica"],["primo","1° Turno"],["secondo","2° Turno"]].map(renderBtn("categoria", catAutoTurno, "turnoVuoto"))}
+                  </div>
+                  {renderDeselBtn("turnoVuoto","categoria")}
+                  {!isH24 && (
+                    <>
+                      <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>CATEGORIA APP/AUTO (per report Turnazione)</div>
+                      <div style={{display:"flex",gap:6}}>
+                        {[["","Automatica"],["app","APP"],["auto","AUTO"]].map(renderBtn("categoriaAppAuto", catAutoAppAuto, "appAutoVuoto"))}
+                      </div>
+                      {renderDeselBtn("appAutoVuoto","categoriaAppAuto")}
+                    </>
+                  )}
                 </div>
-                {renderDeselBtn("appAutoVuoto","categoriaAppAuto")}
-              </>
-            )}
-          </div>
+              );
+            })()}
+            <div style={{fontSize:11,color:T.sub,marginTop:-10,marginBottom:16,paddingLeft:4}}>
+              "Automatica" decide da sola in base a titolo/orario. Scegliendo una categoria qui, ogni evento creato da questo modello finirà sempre in quel gruppo nel report Turnazione.
+            </div>
+          </>
         );
       })()}
-      <div style={{fontSize:11,color:T.sub,marginTop:-10,marginBottom:16,paddingLeft:4}}>
-        "Automatica" decide da sola in base a titolo/orario. Scegliendo una categoria qui, ogni evento creato da questo modello finirà sempre in quel gruppo nel report Turnazione.
-      </div>
       {reports.length>0&&(
         <div style={{marginBottom:16}}>
           <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8,paddingLeft:4}}>CATEGORIA REPORT</div>
@@ -1855,3 +1873,5 @@ export function NLRSView({rot, T, accent, modelli}){
   );
 }
 // #endregion
+
+    
