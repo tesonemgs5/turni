@@ -764,6 +764,67 @@ export function useAppCore(session){
             }
           } catch(e){ segnalaErrore(e, "Unificazione automatica modelli protrazione all'avvio"); }
 
+          // Fix "una tantum": assegna il nome breve (label) ai modelli
+          // PROTRAZIONE storici che ne sono privi. Senza un nome breve, il
+          // riquadro calendario (stretto, CSS ellipsis) mostra il titolo
+          // completo troncato a metÃ  parola (es. "PROTRAZIONE RECUPERO" ->
+          // "PROTRA..."). Questo fix riguarda SOLO i tre modelli
+          // PROTRAZIONE (pagamento/recupero/-recupero), riconosciuti dalla
+          // stessa radice usata altrove nel progetto; nessun altro modello
+          // viene toccato, e un modello PROTRAZIONE con un nome breve giÃ 
+          // impostato dall'utente (anche diverso da quello di default) non
+          // viene sovrascritto.
+          try {
+            function normRadiceProtrazioneFix(t){
+              return (t||"").trim().toUpperCase().replace(/\s+/g,"");
+            }
+            const labelDaAssegnare = [];
+            for(const m of (modelliDb||[])){
+              if((m.label||"").trim()) continue; // ha giÃ  un nome breve: non tocco
+              const titoloRaw = (m.titolo||"").trim();
+              const eMenoRecupero = titoloRaw.startsWith("-");
+              const n = normRadiceProtrazioneFix(titoloRaw);
+              const haRadice = n.includes("PROTRAZIONE") || n.includes("PROTAZIONE");
+              if(!haRadice) continue;
+              let labelBreve = null;
+              if(eMenoRecupero && n.includes("RECUPERO")) labelBreve = "-PR RECUPERO";
+              else if(n.includes("RECUPERO")) labelBreve = "PR RECUPERO";
+              else if(n.includes("PAGAMENTO")) labelBreve = "PR PAGAMENTO";
+              if(labelBreve) labelDaAssegnare.push({ id:m.id, label:labelBreve });
+            }
+            if(labelDaAssegnare.length>0){
+              await Promise.all(labelDaAssegnare.map(({id,label})=>
+                supabase.from("modelli").update({label}).eq("id",id).eq("user_id",userId)
+              ));
+              const {data:modelliDbConLabel}=await supabase.from("modelli").select("*").eq("user_id",userId).order("sort_order").order("id");
+              const labelPerId = new Map(labelDaAssegnare.map(x=>[x.id,x.label]));
+              setModelli((modelliDbConLabel||[]).map(m=>({
+                id:m.id,titolo:m.titolo,label:m.label||"",tempo:m.tempo,
+                inizio:m.inizio||"",fine:m.fine||"",
+                colore:m.colore,coloreCustom:m.colore_custom||null,
+                calendarId:m.calendar_id||null,
+                posizione:m.posizione||"",sortOrder:m.sort_order||0,
+              })));
+              // Aggiorno anche la label sugli eventi giÃ  creati da questi
+              // modelli, cosÃ¬ il calendario mostra subito il nome breve
+              // senza dover riaprire/risalvare ogni evento singolarmente.
+              setStore(prev=>{
+                const ns = JSON.parse(JSON.stringify(prev));
+                for(const dKey of Object.keys(ns.events||{})){
+                  for(const cid of Object.keys(ns.events[dKey]||{})){
+                    ns.events[dKey][cid] = (ns.events[dKey][cid]||[]).map(e=>
+                      e.modelloId && labelPerId.has(e.modelloId)
+                        ? {...e, label: labelPerId.get(e.modelloId)}
+                        : e
+                    );
+                  }
+                }
+                saveToLocalStorage(ns.events, ns.calendars, modelli);
+                return ns;
+              });
+            }
+          } catch(e){ segnalaErrore(e, "Assegnazione nome breve automatico modelli protrazione all'avvio"); }
+
           // Fix "una tantum" (eseguito una sola volta per utente, mai piÃ¹
           // dopo â€” vedi flag in localStorage sotto): i modelli PROTRAZIONE
           // PAGAMENTO/RECUPERO creati da versioni precedenti avevano
@@ -2989,6 +3050,13 @@ const importsRecenti = useMemo(()=>{
     const titolo = tipo==="recupero" ? "PROTRAZIONE RECUPERO"
       : tipo==="meno_recupero" ? "-PROTRAZIONE A RECUPERO"
       : "PROTRAZIONE PAGAMENTO";
+    // Nome breve mostrato nel calendario (riquadro stretto: senza questo,
+    // il CSS ellipsis tronca il titolo completo a metÃ  parola, es.
+    // "PROTRA..."). Il titolo resta comunque quello per esteso ovunque
+    // altro (form Modelli, report); questo Ã¨ solo il "nome da mostrare".
+    const labelBreve = tipo==="recupero" ? "PR RECUPERO"
+      : tipo==="meno_recupero" ? "-PR RECUPERO"
+      : "PR PAGAMENTO";
     // Riconoscimento per PAROLE CHIAVE anzichÃ© lista fissa di refusi: un
     // titolo storico Ã¨ considerato lo stesso modello PROTRAZIONE se, una
     // volta normalizzato (spazi collassati), contiene sia la radice
@@ -3043,7 +3111,7 @@ const importsRecenti = useMemo(()=>{
     if(modelloProtrazioneCacheRef.current[cacheKey]) return modelloProtrazioneCacheRef.current[cacheKey];
 
     const esito = await saveModello({
-      titolo, tempo:"h24",
+      titolo, label: labelBreve, tempo:"h24",
       coloreCustom: tipo==="recupero" ? "#f9a8d4" : "#ec4899",
       calendarId: targetCalId,
       silenzioso: true,
