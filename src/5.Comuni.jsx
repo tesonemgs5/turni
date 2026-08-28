@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, Fragment } from "react";
+    import { useState, useEffect, useRef, useMemo, Fragment } from "react";
 // NOTA: COLORE_H24, getColorByTime e getContrastTextColor sono copiate qui
 // (invece di importate da 4.Rotazione) per evitare un import circolare
 // 4.Rotazione <-> 5.Comuni. Se cambi la formula del contrasto o le fasce
@@ -673,9 +673,11 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, acce
 // sostituisce la vecchia OrePerTurnoView (assumeva sempre 6h15 fisse a
 // turno, sbagliato per modelli come le protrazioni con durata variabile).
 export function fmtOreMin(mins){
-  const m = Number.isFinite(mins) ? Math.max(0, Math.round(mins)) : 0;
+  const raw = Number.isFinite(mins) ? Math.round(mins) : 0;
+  const negativo = raw<0;
+  const m = Math.abs(raw);
   const h = Math.floor(m/60), rest = m%60;
-  return h+"h"+(rest>0?" "+rest+"m":"");
+  return (negativo?"-":"")+h+"h"+(rest>0?" "+rest+"m":"");
 }
 
 // Gemella di ConteggioConfigCard: stessa struttura (nome modificabile,
@@ -688,7 +690,7 @@ export function fmtOreMin(mins){
 export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, accent, fasceAutomatiche, onRename, onUpdateCfg}){
   const [editingName, setEditingName] = useState(false);
   const [tmpName, setTmpName] = useState(r.label);
-  const pct = totaleMinPeriodo>0 ? Math.round((data.totaleMin/totaleMinPeriodo)*100) : 0;
+  const pct = totaleMinPeriodo>0 ? Math.max(0, Math.min(100, Math.round((data.totaleMin/totaleMinPeriodo)*100))) : 0;
   const [openSottomenu, setOpenSottomenu] = useState(null);
   const [openGruppoDentro, setOpenGruppoDentro] = useState(null);
   const [showAggiungiMenu, setShowAggiungiMenu] = useState(false);
@@ -749,7 +751,7 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
       <div style={{background:T.surface,borderRadius:10,padding:"10px 12px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
           <span style={{fontSize:12,color:"#0f172a",fontWeight:700}}>TOTALE ORE</span>
-          <span style={{fontSize:20,fontWeight:900,color:T.text}}>{fmtOreMin(data.totaleMin)}</span>
+          <span style={{fontSize:20,fontWeight:900,color:data.totaleMin<0?"#dc2626":T.text}}>{fmtOreMin(data.totaleMin)}</span>
         </div>
         {totaleMinPeriodo>0&&(
           <div style={{height:6,background:T.s2,borderRadius:3,overflow:"hidden"}}>
@@ -1809,3 +1811,5 @@ export function Sec({label,children,T}){
   );
 }
 // #endregion
+
+    
