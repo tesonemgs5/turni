@@ -347,7 +347,14 @@ export function useAppCore(session){
     if(autoScrollRAF.current){ cancelAnimationFrame(autoScrollRAF.current); autoScrollRAF.current=null; }
   }
 
-  const [reportInterval, setReportInterval] = useState("mese");
+  const [reportInterval, setReportInterval] = useState(()=>{
+    try{
+      const salvato = localStorage.getItem('reportInterval');
+      if(salvato==="mese"||salvato==="anno"||salvato==="custom") return salvato;
+    }catch(e){}
+    return "mese";
+  });
+  useEffect(()=>{ try{ localStorage.setItem('reportInterval', reportInterval); }catch(e){} }, [reportInterval]);
   // Mese selezionato per il report (persistente su localStorage, come
   // syncMode sopra): prima "1 mese" usava sempre new Date(), quindi il
   // report mostrava sempre il mese corrente e "dimenticava" la scelta ad
@@ -366,8 +373,40 @@ export function useAppCore(session){
     try{ localStorage.setItem('reportMeseSel', `${anno}-${mese}`); }catch(e){}
   }
   const [showMeseReportPicker, setShowMeseReportPicker] = useState(false);
-  const [reportDateFrom, setReportDateFrom] = useState("");
-  const [reportDateTo, setReportDateTo] = useState("");
+  const [reportDateFrom, setReportDateFrom] = useState(()=>{
+    try{ return localStorage.getItem('reportDateFrom')||""; }catch(e){ return ""; }
+  });
+  const [reportDateTo, setReportDateTo] = useState(()=>{
+    try{ return localStorage.getItem('reportDateTo')||""; }catch(e){ return ""; }
+  });
+  useEffect(()=>{ try{ localStorage.setItem('reportDateFrom', reportDateFrom||""); }catch(e){} }, [reportDateFrom]);
+  useEffect(()=>{ try{ localStorage.setItem('reportDateTo', reportDateTo||""); }catch(e){} }, [reportDateTo]);
+  // Intervalli personalizzati memorizzati: {id,from,to} salvati dall'utente
+  // per riselezionare con un tap un periodo ricorrente, invece di reimpostare
+  // le due date da capo ogni volta (selezione piÃ¹ veloce).
+  const [intervalliSalvati, setIntervalliSalvati] = useState(()=>{
+    try{
+      const salvato = JSON.parse(localStorage.getItem('intervalliSalvati')||"[]");
+      return Array.isArray(salvato) ? salvato : [];
+    }catch(e){ return []; }
+  });
+  function persistIntervalliSalvati(lista){
+    setIntervalliSalvati(lista);
+    try{ localStorage.setItem('intervalliSalvati', JSON.stringify(lista)); }catch(e){}
+  }
+  function salvaIntervalloCorrente(){
+    if(!reportDateFrom||!reportDateTo) return;
+    const esiste = intervalliSalvati.some(iv=>iv.from===reportDateFrom&&iv.to===reportDateTo);
+    if(esiste) return;
+    persistIntervalliSalvati([...intervalliSalvati, {id:uid(), from:reportDateFrom, to:reportDateTo}]);
+  }
+  function applicaIntervalloSalvato(iv){
+    setReportDateFrom(iv.from);
+    setReportDateTo(iv.to);
+  }
+  function rimuoviIntervalloSalvato(id){
+    persistIntervalliSalvati(intervalliSalvati.filter(iv=>iv.id!==id));
+  }
   const [openReportConfig, setOpenReportConfig] = useState(null);
   const [showIntervalPicker, setShowIntervalPicker] = useState(false);
   const [indennita, setIndennita] = useState({ diurno:"", notturno:"", festivo:"", notturno_festivo:"" });
@@ -3842,6 +3881,10 @@ const importsRecenti = useMemo(()=>{
     setReportDateFrom,
     reportDateTo,
     setReportDateTo,
+    intervalliSalvati,
+    salvaIntervalloCorrente,
+    applicaIntervalloSalvato,
+    rimuoviIntervalloSalvato,
     openReportConfig,
     setOpenReportConfig,
     showIntervalPicker,
