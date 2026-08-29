@@ -521,9 +521,17 @@ export default function VistaCalendario({ C }){
             return (
               <button key={c.id} onClick={()=>{
                   setReportCalIdsPersistito(prev=>{
-                    if(prev.length===0) return [c.id];
-                    const next = prev.includes(c.id) ? prev.filter(id=>id!==c.id) : [...prev, c.id];
-                    return next.length===store.calendars.length ? [] : next;
+                    const base = prev.length===0 ? [mainCalId].filter(Boolean) : prev;
+                    const eraAttivo = base.includes(c.id);
+                    const next = eraAttivo ? base.filter(id=>id!==c.id) : [...base, c.id];
+                    if(next.length===store.calendars.length){
+                      // Hai appena selezionato l'ultimo calendario mancante:
+                      // salvo l'elenco completo esplicito, non [] (che qui
+                      // significherebbe "nessuna scelta ancora fatta" e
+                      // farebbe scattare di nuovo il default "solo TURNI").
+                      return store.calendars.map(cc=>cc.id);
+                    }
+                    return next;
                   });
                 }}
                 style={{display:"flex",alignItems:"center",gap:3,flexShrink:0,cursor:"pointer",
