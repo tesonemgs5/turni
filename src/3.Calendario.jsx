@@ -466,12 +466,20 @@ export default function VistaCalendario({ C }){
                 onUpdateCfg={newCfg=>updateConteggioConfig(r.id, newCfg)}
                 onGoToModelli={()=>setScreen("modelli")}/>
             )}
-            {r.type==="turnazione" && (
-              <TurnazioneConfigCard T={T} r={r} cfg={cfg} data={computeTurnazioneForReport(cfg)}
-                modelli={modelli} modelliOrdinati={modelliOrdinati} accent={accent} fasceAutomatiche={fasceAutomatiche}
-                onRename={label=>renameReport(r.id, label)}
-                onUpdateCfg={newCfg=>updateConteggioConfig(r.id, newCfg)}/>
-            )}
+            {r.type==="turnazione" && (()=>{
+              const modelliFiltratiPerCal = reportCalIds.length>0
+                ? modelli.filter(m=>!m.calendarId || reportCalIds.includes(m.calendarId))
+                : modelli;
+              const modelliOrdinatiFiltratiPerCal = reportCalIds.length>0
+                ? modelliOrdinati.filter(m=>!m.calendarId || reportCalIds.includes(m.calendarId))
+                : modelliOrdinati;
+              return (
+                <TurnazioneConfigCard T={T} r={r} cfg={cfg} data={computeTurnazioneForReport(cfg)}
+                  modelli={modelliFiltratiPerCal} modelliOrdinati={modelliOrdinatiFiltratiPerCal} accent={accent} fasceAutomatiche={fasceAutomatiche}
+                  onRename={label=>renameReport(r.id, label)}
+                  onUpdateCfg={newCfg=>updateConteggioConfig(r.id, newCfg)}/>
+              );
+            })()}
             {r.type==="indennita" && (
               <IndennitaConfig T={T} values={indennita} setValues={setIndennita}
                 calc={computeIndennita(cfg.modelliInclusi||[])} onSave={()=>saveSettings({indennita})}/>
