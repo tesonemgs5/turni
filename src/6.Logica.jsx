@@ -69,10 +69,14 @@ export function useAppCore(session){
   }, [selectedCalIds]);
   const [reportCalIds, setReportCalIds] = useState(()=>{
     try{ return JSON.parse(localStorage.getItem('cache_reportCalIds')||'[]'); }catch(e){ return []; }
-  }); // selezione calendari per il Report (vuoto = tutti). Persistita: al refresh/riavvio resta quella scelta dall'utente, non torna a "tutti".
-  useEffect(()=>{
-    try{ localStorage.setItem('cache_reportCalIds', JSON.stringify(reportCalIds)); }catch(e){}
-  }, [reportCalIds]);
+  }); // selezione calendari per il Report (vuoto = tutti). Persistita: il salvataggio avviene SINCRONAMENTE dentro l'handler del click (vedi setReportCalIdsPersistito piu' sotto e il suo uso in 3_Calendario.jsx), non tramite useEffect, per evitare che un refresh immediato dopo il click perda la selezione appena fatta.
+  function setReportCalIdsPersistito(updater){
+    setReportCalIds(prev=>{
+      const next = typeof updater==="function" ? updater(prev) : updater;
+      try{ localStorage.setItem('cache_reportCalIds', JSON.stringify(next)); }catch(e){}
+      return next;
+    });
+  }
   const [selectedModelloIds, setSelectedModelloIds] = useState([]); // selezione multipla modelli (editMode OFF)
   const [screen, setScreen] = useState("cal");
   const [dayKey, setDayKey] = useState(null);
@@ -369,7 +373,10 @@ export function useAppCore(session){
     }catch(e){}
     return "mese";
   });
-  useEffect(()=>{ try{ localStorage.setItem('reportInterval', reportInterval); }catch(e){} }, [reportInterval]);
+  function setReportIntervalPersistito(v){
+    setReportInterval(v);
+    try{ localStorage.setItem('reportInterval', v); }catch(e){}
+  }
   // Mese selezionato per il report (persistente su localStorage, come
   // syncMode sopra): prima "1 mese" usava sempre new Date(), quindi il
   // report mostrava sempre il mese corrente e "dimenticava" la scelta ad
@@ -394,8 +401,14 @@ export function useAppCore(session){
   const [reportDateTo, setReportDateTo] = useState(()=>{
     try{ return localStorage.getItem('reportDateTo')||""; }catch(e){ return ""; }
   });
-  useEffect(()=>{ try{ localStorage.setItem('reportDateFrom', reportDateFrom||""); }catch(e){} }, [reportDateFrom]);
-  useEffect(()=>{ try{ localStorage.setItem('reportDateTo', reportDateTo||""); }catch(e){} }, [reportDateTo]);
+  function setReportDateFromPersistito(v){
+    setReportDateFrom(v);
+    try{ localStorage.setItem('reportDateFrom', v||""); }catch(e){}
+  }
+  function setReportDateToPersistito(v){
+    setReportDateTo(v);
+    try{ localStorage.setItem('reportDateTo', v||""); }catch(e){}
+  }
   // Intervalli personalizzati memorizzati: {id,from,to} salvati dall'utente
   // per riselezionare con un tap un periodo ricorrente, invece di reimpostare
   // le due date da capo ogni volta (selezione piÃ¹ veloce).
@@ -416,8 +429,8 @@ export function useAppCore(session){
     persistIntervalliSalvati([...intervalliSalvati, {id:uid(), from:reportDateFrom, to:reportDateTo}]);
   }
   function applicaIntervalloSalvato(iv){
-    setReportDateFrom(iv.from);
-    setReportDateTo(iv.to);
+    setReportDateFromPersistito(iv.from);
+    setReportDateToPersistito(iv.to);
   }
   function rimuoviIntervalloSalvato(id){
     persistIntervalliSalvati(intervalliSalvati.filter(iv=>iv.id!==id));
@@ -3915,6 +3928,7 @@ const importsRecenti = useMemo(()=>{
     setSelectedCalIds,
     reportCalIds,
     setReportCalIds,
+    setReportCalIdsPersistito,
     selectedModelloIds,
     setSelectedModelloIds,
     screen,
@@ -4066,6 +4080,7 @@ const importsRecenti = useMemo(()=>{
     stopAutoScroll,
     reportInterval,
     setReportInterval,
+    setReportIntervalPersistito,
     reportMeseSel,
     setReportMeseSel,
     selezionaReportMese,
@@ -4073,8 +4088,10 @@ const importsRecenti = useMemo(()=>{
     setShowMeseReportPicker,
     reportDateFrom,
     setReportDateFrom,
+    setReportDateFromPersistito,
     reportDateTo,
     setReportDateTo,
+    setReportDateToPersistito,
     intervalliSalvati,
     salvaIntervalloCorrente,
     applicaIntervalloSalvato,
