@@ -1062,7 +1062,12 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
                         onChange={()=>setGruppoModello(m.id, attivo?"":f.key)}
                         style={{cursor:"pointer",flexShrink:0}}/>
                       <div style={{width:8,height:8,borderRadius:"50%",background:c,flexShrink:0}}/>
-                      <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>{m.titolo}</span>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:12,color:T.text,fontWeight:600}}>{m.titolo}</div>
+                        <div style={{fontSize:10,color:T.sub}}>
+                          {m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${m.fine?` - ${m.fine}`:""}`:""}
+                        </div>
+                      </div>
                       <span style={{fontSize:13,fontWeight:800,color:T.text}}>{info?.count||0}</span>
                     </div>
                   );
