@@ -32,7 +32,7 @@ export default function VistaCalendario({ C }){
   const {
     today, store, setStore, loading, setLoading, year,
     setYear, month, setMonth, calId, setCalId, editMode,
-    setEditMode, selectedCalIds, setSelectedCalIds, reportCalIds, setReportCalIds, selectedModelloIds,
+    setEditMode, selectedCalIds, setSelectedCalIds, reportCalIds, setReportCalIds, setReportCalIdsPersistito, selectedModelloIds,
     setSelectedModelloIds, screen, setScreen, dayKey, setDayKey, form,
     setForm, pal, setPal, ncName, setNcName, ncColor,
     setNcColor, nsName, setNsName, nsColor, setNsColor, exCal,
@@ -57,9 +57,9 @@ export default function VistaCalendario({ C }){
     quickModeModello, setQuickModeModello, showRotazionePicker, setShowRotazionePicker, dragSrcId, dragTargetId,
     touchSrcId, touchTargetId, touchStartX, touchStartY, prevGrid, modelliScrollRef,
     autoScrollRAF, autoScrollSpeed, dragOverId, setDragOverId, draggingId, setDraggingId,
-    modalitaSpostamento, setModalitaSpostamento, updateAutoScroll, stopAutoScroll, reportInterval, setReportInterval,
+    modalitaSpostamento, setModalitaSpostamento, updateAutoScroll, stopAutoScroll, reportInterval, setReportInterval, setReportIntervalPersistito,
     reportMeseSel, setReportMeseSel, selezionaReportMese, showMeseReportPicker, setShowMeseReportPicker, reportDateFrom,
-    setReportDateFrom, reportDateTo, setReportDateTo, intervalliSalvati, salvaIntervalloCorrente,
+    setReportDateFrom, setReportDateFromPersistito, reportDateTo, setReportDateTo, setReportDateToPersistito, intervalliSalvati, salvaIntervalloCorrente,
     applicaIntervalloSalvato, rimuoviIntervalloSalvato, openReportConfig, setOpenReportConfig, showIntervalPicker,
     setShowIntervalPicker, indennita, setIndennita, conteggioConfigs, setConteggioConfigs, showReportModelliPicker,
     setShowReportModelliPicker, editFascia, setEditFascia, showFasciaColorPicker, setShowFasciaColorPicker, userId,
@@ -466,12 +466,20 @@ export default function VistaCalendario({ C }){
                 onUpdateCfg={newCfg=>updateConteggioConfig(r.id, newCfg)}
                 onGoToModelli={()=>setScreen("modelli")}/>
             )}
-            {r.type==="turnazione" && (
-              <TurnazioneConfigCard T={T} r={r} cfg={cfg} data={computeTurnazioneForReport(cfg)}
-                modelli={modelli} modelliOrdinati={modelliOrdinati} accent={accent} fasceAutomatiche={fasceAutomatiche}
-                onRename={label=>renameReport(r.id, label)}
-                onUpdateCfg={newCfg=>updateConteggioConfig(r.id, newCfg)}/>
-            )}
+            {r.type==="turnazione" && (()=>{
+              const modelliFiltratiPerCal = reportCalIds.length>0
+                ? modelli.filter(m=>reportCalIds.includes(m.calendarId||mainCalId))
+                : modelli;
+              const modelliOrdinatiFiltratiPerCal = reportCalIds.length>0
+                ? modelliOrdinati.filter(m=>reportCalIds.includes(m.calendarId||mainCalId))
+                : modelliOrdinati;
+              return (
+                <TurnazioneConfigCard T={T} r={r} cfg={cfg} data={computeTurnazioneForReport(cfg)}
+                  modelli={modelliFiltratiPerCal} modelliOrdinati={modelliOrdinatiFiltratiPerCal} accent={accent} fasceAutomatiche={fasceAutomatiche}
+                  onRename={label=>renameReport(r.id, label)}
+                  onUpdateCfg={newCfg=>updateConteggioConfig(r.id, newCfg)}/>
+              );
+            })()}
             {r.type==="indennita" && (
               <IndennitaConfig T={T} values={indennita} setValues={setIndennita}
                 calc={computeIndennita(cfg.modelliInclusi||[])} onSave={()=>saveSettings({indennita})}/>
@@ -512,10 +520,18 @@ export default function VistaCalendario({ C }){
             const attivo = reportCalIds.length===0 || reportCalIds.includes(c.id);
             return (
               <button key={c.id} onClick={()=>{
-                  setReportCalIds(prev=>{
-                    if(prev.length===0) return [c.id];
-                    const next = prev.includes(c.id) ? prev.filter(id=>id!==c.id) : [...prev, c.id];
-                    return next.length===store.calendars.length ? [] : next;
+                  setReportCalIdsPersistito(prev=>{
+                    const base = prev.length===0 ? [mainCalId].filter(Boolean) : prev;
+                    const eraAttivo = base.includes(c.id);
+                    const next = eraAttivo ? base.filter(id=>id!==c.id) : [...base, c.id];
+                    if(next.length===store.calendars.length){
+                      // Hai appena selezionato l'ultimo calendario mancante:
+                      // salvo l'elenco completo esplicito, non [] (che qui
+                      // significherebbe "nessuna scelta ancora fatta" e
+                      // farebbe scattare di nuovo il default "solo TURNI").
+                      return store.calendars.map(cc=>cc.id);
+                    }
+                    return next;
                   });
                 }}
                 style={{display:"flex",alignItems:"center",gap:3,flexShrink:0,cursor:"pointer",
@@ -622,7 +638,7 @@ export default function VistaCalendario({ C }){
             <div style={{fontSize:16,fontWeight:900,marginBottom:14,color:T.text}}>Intervallo</div>
             <div style={{background:T.s2,borderRadius:14,overflow:"hidden",border:`1px solid ${T.border}`}}>
               {[["mese","1 mese"],["anno","1 anno"],["custom","Intervallo personalizzato"]].map(([v,l])=>(
-                <div key={v} onClick={()=>{setReportInterval(v);if(v!=="custom")setShowIntervalPicker(false);}}
+                <div key={v} onClick={()=>{setReportIntervalPersistito(v);if(v!=="custom")setShowIntervalPicker(false);}}
                   style={{display:"flex",alignItems:"center",padding:"14px 16px",
                     borderBottom:`1px solid ${T.border}`,cursor:"pointer",
                     background:reportInterval===v?accent+"15":"transparent"}}>
@@ -678,13 +694,13 @@ export default function VistaCalendario({ C }){
                 <div style={{display:"flex",gap:10}}>
                   <div style={{flex:1}}>
                     <div style={{fontSize:12,color:"#0f172a",marginBottom:4}}>DA</div>
-                    <input type="date" value={reportDateFrom} onChange={e=>setReportDateFrom(e.target.value)}
+                    <input type="date" value={reportDateFrom} onChange={e=>setReportDateFromPersistito(e.target.value)}
                       style={{width:"100%",background:T.s2,border:`1px solid ${T.border}`,
                         borderRadius:8,padding:"8px 10px",color:T.text,fontSize:13,outline:"none",boxSizing:"border-box"}}/>
                   </div>
                   <div style={{flex:1}}>
                     <div style={{fontSize:12,color:"#0f172a",marginBottom:4}}>A</div>
-                    <input type="date" value={reportDateTo} onChange={e=>setReportDateTo(e.target.value)}
+                    <input type="date" value={reportDateTo} onChange={e=>setReportDateToPersistito(e.target.value)}
                       style={{width:"100%",background:T.s2,border:`1px solid ${T.border}`,
                         borderRadius:8,padding:"8px 10px",color:T.text,fontSize:13,outline:"none",boxSizing:"border-box"}}/>
                   </div>

@@ -67,7 +67,16 @@ export function useAppCore(session){
   useEffect(()=>{
     try{ localStorage.setItem('cache_selectedCalIds', JSON.stringify(selectedCalIds)); }catch(e){}
   }, [selectedCalIds]);
-  const [reportCalIds, setReportCalIds] = useState([]); // selezione calendari per il Report (vuoto = tutti)
+  const [reportCalIds, setReportCalIds] = useState(()=>{
+    try{ return JSON.parse(localStorage.getItem('cache_reportCalIds')||'[]'); }catch(e){ return []; }
+  }); // selezione calendari per il Report. Persistita: il salvataggio avviene SINCRONAMENTE dentro l'handler del click (vedi setReportCalIdsPersistito piu' sotto e il suo uso in 3_Calendario.jsx), non tramite useEffect, per evitare che un refresh immediato dopo il click perda la selezione appena fatta.
+  function setReportCalIdsPersistito(updater){
+    setReportCalIds(prev=>{
+      const next = typeof updater==="function" ? updater(prev) : updater;
+      try{ localStorage.setItem('cache_reportCalIds', JSON.stringify(next)); }catch(e){}
+      return next;
+    });
+  }
   const [selectedModelloIds, setSelectedModelloIds] = useState([]); // selezione multipla modelli (editMode OFF)
   const [screen, setScreen] = useState("cal");
   const [dayKey, setDayKey] = useState(null);
@@ -364,7 +373,10 @@ export function useAppCore(session){
     }catch(e){}
     return "mese";
   });
-  useEffect(()=>{ try{ localStorage.setItem('reportInterval', reportInterval); }catch(e){} }, [reportInterval]);
+  function setReportIntervalPersistito(v){
+    setReportInterval(v);
+    try{ localStorage.setItem('reportInterval', v); }catch(e){}
+  }
   // Mese selezionato per il report (persistente su localStorage, come
   // syncMode sopra): prima "1 mese" usava sempre new Date(), quindi il
   // report mostrava sempre il mese corrente e "dimenticava" la scelta ad
@@ -389,8 +401,14 @@ export function useAppCore(session){
   const [reportDateTo, setReportDateTo] = useState(()=>{
     try{ return localStorage.getItem('reportDateTo')||""; }catch(e){ return ""; }
   });
-  useEffect(()=>{ try{ localStorage.setItem('reportDateFrom', reportDateFrom||""); }catch(e){} }, [reportDateFrom]);
-  useEffect(()=>{ try{ localStorage.setItem('reportDateTo', reportDateTo||""); }catch(e){} }, [reportDateTo]);
+  function setReportDateFromPersistito(v){
+    setReportDateFrom(v);
+    try{ localStorage.setItem('reportDateFrom', v||""); }catch(e){}
+  }
+  function setReportDateToPersistito(v){
+    setReportDateTo(v);
+    try{ localStorage.setItem('reportDateTo', v||""); }catch(e){}
+  }
   // Intervalli personalizzati memorizzati: {id,from,to} salvati dall'utente
   // per riselezionare con un tap un periodo ricorrente, invece di reimpostare
   // le due date da capo ogni volta (selezione piÃ¹ veloce).
@@ -411,8 +429,8 @@ export function useAppCore(session){
     persistIntervalliSalvati([...intervalliSalvati, {id:uid(), from:reportDateFrom, to:reportDateTo}]);
   }
   function applicaIntervalloSalvato(iv){
-    setReportDateFrom(iv.from);
-    setReportDateTo(iv.to);
+    setReportDateFromPersistito(iv.from);
+    setReportDateToPersistito(iv.to);
   }
   function rimuoviIntervalloSalvato(id){
     persistIntervalliSalvati(intervalliSalvati.filter(iv=>iv.id!==id));
@@ -509,6 +527,7 @@ export function useAppCore(session){
             auto: e.auto||"", parentId: e.parent_id||null,
             protPagFine: e.prot_pag_fine||"", protRecFine: e.prot_rec_fine||"",
             protMenoRecIn: e.prot_meno_rec_in||"", protMenoRecOut: e.prot_meno_rec_out||"",
+            categoriaTurno: e.categoria_turno||"", categoriaAppAuto: e.categoria_app_auto||"",
             importId: e.import_id||null,
           });
         });
@@ -1091,6 +1110,16 @@ export function useAppCore(session){
   const activeCal = store.calendars.find(c=>c.id===calId)||null;
   const mainCal   = store.calendars.find(c=>c.isMain)||null;
   const mainCalId = mainCal?.id||null; // calendario principale: usato come fallback per i modelli/rotazioni senza calendarId esplicito
+
+  // Default per il Report: se reportCalIds risulta vuoto (nessuna scelta
+  // salvata, o per qualunque motivo la persistenza non ha ancora effetto)
+  // e il calendario principale e' disponibile, seleziona SOLO quello
+  // invece di lasciare "vuoto = tutti i calendari mischiati insieme".
+  useEffect(()=>{
+    if(reportCalIds.length===0 && mainCalId){
+      setReportCalIdsPersistito([mainCalId]);
+    }
+  }, [mainCalId]);
   // Colore dell'interfaccia (pulsanti, badge, evidenziazioni di selezione): FISSO e indipendente
   // dal colore scelto per i calendari, cosÃ¬ i colori dei calendari/modelli (es. giallo) restano
   // solo lÃ¬ dove servono a identificarli, senza "colorare" tutti i menu dell'app.
@@ -1524,6 +1553,7 @@ export function useAppCore(session){
       collega: up(form.collega), auto: up(form.auto),
       prot_pag_fine: form.protPagFine||null, prot_rec_fine: form.protRecFine||null,
       prot_meno_rec_in: form.protMenoRecIn||null, prot_meno_rec_out: form.protMenoRecOut||null,
+      categoria_turno: form.categoriaTurno||null, categoria_app_auto: form.categoriaAppAuto||null,
     };
 
     // 1) SUBITO in locale: l'utente vede il turno all'istante, online o offline.
@@ -1536,6 +1566,7 @@ export function useAppCore(session){
       collega: payload.collega||null, auto: payload.auto||"",
       protPagFine: payload.prot_pag_fine||"", protRecFine: payload.prot_rec_fine||"",
       protMenoRecIn: payload.prot_meno_rec_in||"", protMenoRecOut: payload.prot_meno_rec_out||"",
+      categoriaTurno: payload.categoria_turno||"", categoriaAppAuto: payload.categoria_app_auto||"",
     };
     if(!form.modelloId && form.label) registraValoreAutocomplete("titolo", label);
     if(form.auto) registraValoreAutocomplete("auto", form.auto);
@@ -1620,6 +1651,8 @@ export function useAppCore(session){
       prot_rec_fine: form.protRecFine||null,
       prot_meno_rec_in: form.protMenoRecIn||null,
       prot_meno_rec_out: form.protMenoRecOut||null,
+      categoria_turno: form.categoriaTurno||null,
+      categoria_app_auto: form.categoriaAppAuto||null,
     };
     const match = { id: form.editId, user_id: userId };
 
@@ -1636,6 +1669,7 @@ export function useAppCore(session){
       collega: (form.collega||"").toUpperCase(), auto: (form.auto||"").toUpperCase(),
       protPagFine: form.protPagFine||"", protRecFine: form.protRecFine||"",
       protMenoRecIn: form.protMenoRecIn||"", protMenoRecOut: form.protMenoRecOut||"",
+      categoriaTurno: form.categoriaTurno||"", categoriaAppAuto: form.categoriaAppAuto||"",
     };
     const nuovoStore = withEventoAggiornato(store, dayKey, editCalId, form.editId, patch);
     saveToLocalStorage(nuovoStore.events, nuovoStore.calendars, modelli);
@@ -1687,32 +1721,52 @@ export function useAppCore(session){
     // di protrazione che in calendario non esiste piÃ¹.
     const evtCorrente = evtiGiorno.find(e=>e.id===evtId);
     const decodifica = decodificaProtrazioneFiglio(evtCorrente?.importId);
+    let idEventoBasePulito = null, campoDbDaPulire = null;
     if(decodifica && decodifica.tipo!=="meno_recupero"){
       const { idEventoBase, tipo } = decodifica;
       const campoDaPulire = tipo==="pagamento" ? "protPagFine" : "protRecFine";
-      const campoDbDaPulire = tipo==="pagamento" ? "prot_pag_fine" : "prot_rec_fine";
+      campoDbDaPulire = tipo==="pagamento" ? "prot_pag_fine" : "prot_rec_fine";
       const padreEsiste = evtiGiorno.some(e=>e.id===idEventoBase);
       if(padreEsiste){
-        setStore(prev=>{
-          const ns = withEventoAggiornato(prev, dKey, cId, idEventoBase, { [campoDaPulire]: "" });
-          saveToLocalStorage(ns.events, ns.calendars, modelli);
-          return ns;
-        });
-        await scriviConBackup({
-          tipo:"update", table:"events", payload:{ [campoDbDaPulire]: null },
-          matchObj:{ id: idEventoBase, user_id: userId },
-          contesto:`Pulizia campo protrazione ${tipo} sul turno base`, ts:new Date().toISOString(),
-          eventsPerSheets: store.events, calendarsPerSheets: store.calendars,
-          opzioni:{ soloLog:true },
-        });
+        idEventoBasePulito = idEventoBase;
       }
     }
 
-    // 1) SUBITO in locale.
-    let nuovoStore = withEventoRimosso(store, dKey, cId, evtId);
+    // 1) SUBITO in locale: pulizia campo sul padre (se serve) + rimozione
+    // dell'evento (+ eventuali figli), tutto a partire dallo STESSO stato
+    // "prev" in un'unica pipeline, cosÃ¬ nessuna delle due modifiche
+    // sovrascrive l'altra (bug precedente: due setStore separati, il
+    // secondo costruito dalla variabile "store" non aggiornata, annullava
+    // silenziosamente la pulizia del campo fatta dal primo).
+    setStore(prev=>{
+      let ns = prev;
+      if(idEventoBasePulito){
+        const campoDaPulire = decodifica.tipo==="pagamento" ? "protPagFine" : "protRecFine";
+        ns = withEventoAggiornato(ns, dKey, cId, idEventoBasePulito, { [campoDaPulire]: "" });
+      }
+      ns = withEventoRimosso(ns, dKey, cId, evtId);
+      for(const f of figli) ns = withEventoRimosso(ns, dKey, cId, f.id);
+      saveToLocalStorage(ns.events, ns.calendars, modelli);
+      storeRef.current = ns;
+      return ns;
+    });
+    if(idEventoBasePulito){
+      await scriviConBackup({
+        tipo:"update", table:"events", payload:{ [campoDbDaPulire]: null },
+        matchObj:{ id: idEventoBasePulito, user_id: userId },
+        contesto:`Pulizia campo protrazione sul turno base`, ts:new Date().toISOString(),
+        eventsPerSheets: store.events, calendarsPerSheets: store.calendars,
+        opzioni:{ soloLog:true },
+      });
+    }
+
+    // 1b) Valore locale (non tocca lo stato React, giÃ  aggiornato sopra):
+    // serve solo come payload per i backup Sheets/Supabase qui sotto.
+    let nuovoStore = idEventoBasePulito
+      ? withEventoAggiornato(store, dKey, cId, idEventoBasePulito, { [decodifica.tipo==="pagamento"?"protPagFine":"protRecFine"]: "" })
+      : store;
+    nuovoStore = withEventoRimosso(nuovoStore, dKey, cId, evtId);
     for(const f of figli) nuovoStore = withEventoRimosso(nuovoStore, dKey, cId, f.id);
-    saveToLocalStorage(nuovoStore.events, nuovoStore.calendars, modelli);
-    setStore(nuovoStore);
     // 2) Backup su Supabase (con retry colonna) + Sheets in parallelo.
     const match = { id: evtId, user_id: userId };
     await scriviConBackup({
@@ -3710,23 +3764,30 @@ const importsRecenti = useMemo(()=>{
           const overrideAppAutoRaw = e.modelloId ? gruppiManuali[e.modelloId+"_appauto"] : null;
           const escludiAppAuto = overrideAppAutoRaw==="escluso";
           const overrideAppAuto = (overrideAppAutoRaw==="app"||overrideAppAutoRaw==="auto") ? overrideAppAutoRaw : null;
+          // Override a livello di SINGOLO EVENTO (scelto dall'utente nel form
+          // di modifica evento, opzione "solo questo evento"): ha PRIORITÃ€
+          // MASSIMA, sopra la categoria del modello e sopra l'override del
+          // report, perchÃ© Ã¨ la scelta piÃ¹ specifica possibile.
+          const overrideEventoTurno = (e.categoriaTurno==="primo"||e.categoriaTurno==="secondo") ? e.categoriaTurno : null;
+          const overrideEventoAppAuto = (e.categoriaAppAuto==="app"||e.categoriaAppAuto==="auto") ? e.categoriaAppAuto : null;
 
-          // â”€â”€ Asse 1: TURNO (1Â°/2Â°) â€” indipendente, decide su categoria manuale del
-          // modello, poi override di questo report, poi automatico per orario.
+          // â”€â”€ Asse 1: TURNO (1Â°/2Â°) â€” indipendente, decide su override evento,
+          // poi categoria manuale del modello, poi override di questo
+          // report, poi automatico per orario.
           // Se l'utente ha esplicitamente deselezionato questo asse (modello o report), niente auto: nessun gruppo.
-          const gruppoTurno = (modelloEvt?.turnoVuoto || escludiTurno)
+          const gruppoTurno = overrideEventoTurno || ((modelloEvt?.turnoVuoto || escludiTurno)
             ? null
             : ((modelloEvt?.categoria==="primo"||modelloEvt?.categoria==="secondo")
               ? modelloEvt.categoria
-              : (overrideTurno || categoriaTurnoAutomatica(modelloEvt)));
+              : (overrideTurno || categoriaTurnoAutomatica(modelloEvt))));
 
           // â”€â”€ Asse 2: APP/AUTO â€” indipendente, stessa prioritÃ  ma decide su titolo.
           // Se l'utente ha esplicitamente deselezionato questo asse (modello o report), niente auto: nessun gruppo.
-          const gruppoAppAuto = (modelloEvt?.appAutoVuoto || escludiAppAuto)
+          const gruppoAppAuto = overrideEventoAppAuto || ((modelloEvt?.appAutoVuoto || escludiAppAuto)
             ? null
             : ((modelloEvt?.categoriaAppAuto==="app"||modelloEvt?.categoriaAppAuto==="auto")
               ? modelloEvt.categoriaAppAuto
-              : (overrideAppAuto || categoriaAppAutoAutomatica(modelloEvt) || "auto"));
+              : (overrideAppAuto || categoriaAppAutoAutomatica(modelloEvt) || "auto")));
 
           if(e.modelloId){
             if(!perModello[e.modelloId]) perModello[e.modelloId] = { count:0, dates:[] };
@@ -3877,6 +3938,7 @@ const importsRecenti = useMemo(()=>{
     setSelectedCalIds,
     reportCalIds,
     setReportCalIds,
+    setReportCalIdsPersistito,
     selectedModelloIds,
     setSelectedModelloIds,
     screen,
@@ -4028,6 +4090,7 @@ const importsRecenti = useMemo(()=>{
     stopAutoScroll,
     reportInterval,
     setReportInterval,
+    setReportIntervalPersistito,
     reportMeseSel,
     setReportMeseSel,
     selezionaReportMese,
@@ -4035,8 +4098,10 @@ const importsRecenti = useMemo(()=>{
     setShowMeseReportPicker,
     reportDateFrom,
     setReportDateFrom,
+    setReportDateFromPersistito,
     reportDateTo,
     setReportDateTo,
+    setReportDateToPersistito,
     intervalliSalvati,
     salvaIntervalloCorrente,
     applicaIntervalloSalvato,
