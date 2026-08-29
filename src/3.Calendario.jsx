@@ -468,10 +468,10 @@ export default function VistaCalendario({ C }){
             )}
             {r.type==="turnazione" && (()=>{
               const modelliFiltratiPerCal = reportCalIds.length>0
-                ? modelli.filter(m=>!m.calendarId || reportCalIds.includes(m.calendarId))
+                ? modelli.filter(m=>reportCalIds.includes(m.calendarId||mainCalId))
                 : modelli;
               const modelliOrdinatiFiltratiPerCal = reportCalIds.length>0
-                ? modelliOrdinati.filter(m=>!m.calendarId || reportCalIds.includes(m.calendarId))
+                ? modelliOrdinati.filter(m=>reportCalIds.includes(m.calendarId||mainCalId))
                 : modelliOrdinati;
               return (
                 <TurnazioneConfigCard T={T} r={r} cfg={cfg} data={computeTurnazioneForReport(cfg)}
