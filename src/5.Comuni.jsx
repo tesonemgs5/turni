@@ -1056,14 +1056,19 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
                   const info = data.perGruppo?.[f.key]?.[m.id];
                   const c = m.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
                   return (
-                    <div key={m.id} style={{display:"flex",alignItems:"center",gap:8,
-                      padding:"5px 6px",borderRadius:6,marginBottom:3,background:T.surface}}>
+                    <div key={m.id} style={{display:"flex",alignItems:"center",gap:10,
+                      padding:"7px 8px",borderRadius:8,marginBottom:4,background:T.surface}}>
                       <input type="checkbox" checked={attivo}
                         onChange={()=>setGruppoModello(m.id, attivo?"":f.key)}
-                        style={{cursor:"pointer",flexShrink:0}}/>
-                      <div style={{width:8,height:8,borderRadius:"50%",background:c,flexShrink:0}}/>
-                      <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>{m.titolo}</span>
-                      <span style={{fontSize:13,fontWeight:800,color:T.text}}>{info?.count||0}</span>
+                        style={{cursor:"pointer",flexShrink:0,width:17,height:17}}/>
+                      <div style={{width:10,height:10,borderRadius:"50%",background:c,flexShrink:0}}/>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:16,color:T.text,fontWeight:600}}>{m.titolo}</div>
+                        <div style={{fontSize:13,color:T.sub}}>
+                          {m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${m.fine?` - ${m.fine}`:""}`:""}
+                        </div>
+                      </div>
+                      <span style={{fontSize:17,fontWeight:800,color:T.text}}>{info?.count||0}</span>
                     </div>
                   );
                 })}

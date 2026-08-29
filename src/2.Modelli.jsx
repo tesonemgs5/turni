@@ -1409,7 +1409,8 @@ export default function VistaModelli({ C }){
                 colorOvr:e.color, dur:e.allDay?"allday":(e.tIn&&e.tOut&&e.tOut===calcFine6h15(e.tIn))?"fixed":(e.tIn&&e.tOut&&e.tOut===calcFine6h30(e.tIn))?"fixed30":"custom", tIn:e.tIn||"", tOut:e.tOut||"",
                 place:e.place||"", map:e.map||"", note:e.note||"", collega:e.collega||"", auto:e.auto||"",
                 protPagFine:e.protPagFine||"", protRecFine:e.protRecFine||"",
-                protMenoRecIn:e.protMenoRecIn||"", protMenoRecOut:e.protMenoRecOut||"" });
+                protMenoRecIn:e.protMenoRecIn||"", protMenoRecOut:e.protMenoRecOut||"",
+                categoriaTurno:e.categoriaTurno||"", categoriaAppAuto:e.categoriaAppAuto||"" });
             }}
             style={{background:e.color,borderRadius:10,padding:"10px 12px",marginBottom:8,cursor:"pointer",
               display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
@@ -1447,6 +1448,7 @@ export default function VistaModelli({ C }){
                 map:e.map||"",note:e.note||"",collega:e.collega||"",auto:e.auto||"",
                 protPagFine:e.protPagFine||"",protRecFine:e.protRecFine||"",
                 protMenoRecIn:e.protMenoRecIn||"",protMenoRecOut:e.protMenoRecOut||"",
+                categoriaTurno:e.categoriaTurno||"",categoriaAppAuto:e.categoriaAppAuto||"",
               });}}
               style={{background:cardTextColor==="#ffffff"?"rgba(0,0,0,0.2)":"rgba(255,255,255,0.35)",border:"none",borderRadius:6,
                 color:cardTextColor,width:26,height:26,cursor:"pointer",fontSize:14,marginLeft:4,flexShrink:0,
@@ -1816,6 +1818,83 @@ export default function VistaModelli({ C }){
     })()}
   </div>
 )}
+
+{(()=>{
+  // Selettore gruppo report per il SINGOLO EVENTO: escluso per i tre
+  // modelli PROTRAZIONE (pagamento/recupero/-recupero), per tutti gli
+  // altri modelli mostra la possibilitÃ  di forzare manualmente il gruppo
+  // (1Â° Turno/2Â° Turno/APP/AUTO) per questo evento, con scelta inline
+  // (niente popup/modale) se applicare solo a questo evento o a tutti gli
+  // eventi di quel modello.
+  const modelloIdCorrente = form.modelloId || form.evtModelloId || null;
+  if(!modelloIdCorrente) return null;
+  if(tipoModelloProtrazione(modelloIdCorrente)) return null;
+  const modelloCorrente = modelli.find(m=>m.id===modelloIdCorrente);
+  if(!modelloCorrente) return null;
+
+  const GRUPPI_EVENTO = [
+    { key:"", label:"Automatico" },
+    { key:"primo", label:"1° Turno" },
+    { key:"secondo", label:"2° Turno" },
+    { key:"app", label:"APP" },
+    { key:"auto", label:"AUTO" },
+  ];
+  const categoriaTurnoAttuale = form.categoriaTurno||"";
+  const categoriaAppAutoAttuale = form.categoriaAppAuto||"";
+  const haOverrideAttivo = !!(categoriaTurnoAttuale || categoriaAppAutoAttuale);
+
+  function selezionaGruppo(key){
+    if(key==="primo"||key==="secondo"){
+      setForm(f=>({...f, categoriaTurno:key}));
+    } else if(key==="app"||key==="auto"){
+      setForm(f=>({...f, categoriaAppAuto:key}));
+    } else {
+      setForm(f=>({...f, categoriaTurno:"", categoriaAppAuto:""}));
+    }
+  }
+  function applicaATuttiGliEventi(){
+    // "Tutti gli eventi di questo modello": stessa cosa che giÃ  fa il form
+    // Modello (categoria/categoriaAppAuto sul modello), non un override sul
+    // singolo evento. Qui puliamo l'override locale (che avrebbe comunque
+    // prioritÃ  su questo) e mandiamo l'utente a modificare il modello.
+    setForm(f=>({...f, categoriaTurno:"", categoriaAppAuto:""}));
+    setScreen("modelli");
+  }
+
+  return (
+    <div style={{marginBottom:10}}>
+      <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:6}}>GRUPPO REPORT (per questo evento)</div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+        {GRUPPI_EVENTO.map(g=>{
+          const attivo = g.key===""
+            ? !haOverrideAttivo
+            : (categoriaTurnoAttuale===g.key || categoriaAppAutoAttuale===g.key);
+          return (
+            <button key={g.key} onClick={()=>selezionaGruppo(g.key)}
+              style={{padding:"7px 12px",borderRadius:10,cursor:"pointer",
+                fontWeight:700,fontSize:12,border:"2px solid transparent",
+                background:attivo?accent:T.s2,
+                color:attivo?"#fff":T.sub}}>{g.label}</button>
+          );
+        })}
+      </div>
+      {haOverrideAttivo && (
+        <div style={{marginTop:8,display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+          <span style={{fontSize:11,color:T.sub}}>Applica a:</span>
+          <span style={{fontSize:11,fontWeight:800,color:accent,
+            background:accent+"22",borderRadius:8,padding:"4px 8px"}}>
+            Solo questo evento (attivo)
+          </span>
+          <button onClick={applicaATuttiGliEventi}
+            style={{fontSize:11,fontWeight:700,color:T.sub,background:"none",
+              border:`1px solid ${T.border}`,borderRadius:8,padding:"4px 8px",cursor:"pointer"}}>
+            Tutti gli eventi di "{modelloCorrente.titolo}" →
+          </button>
+        </div>
+      )}
+    </div>
+  );
+})()}
 
             <AutocompleteInput value={form.auto||""} onChange={e=>{
                 const raw=e.target.value.toUpperCase();
