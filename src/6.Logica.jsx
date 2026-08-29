@@ -67,7 +67,12 @@ export function useAppCore(session){
   useEffect(()=>{
     try{ localStorage.setItem('cache_selectedCalIds', JSON.stringify(selectedCalIds)); }catch(e){}
   }, [selectedCalIds]);
-  const [reportCalIds, setReportCalIds] = useState([]); // selezione calendari per il Report (vuoto = tutti)
+  const [reportCalIds, setReportCalIds] = useState(()=>{
+    try{ return JSON.parse(localStorage.getItem('cache_reportCalIds')||'[]'); }catch(e){ return []; }
+  }); // selezione calendari per il Report (vuoto = tutti). Persistita: al refresh/riavvio resta quella scelta dall'utente, non torna a "tutti".
+  useEffect(()=>{
+    try{ localStorage.setItem('cache_reportCalIds', JSON.stringify(reportCalIds)); }catch(e){}
+  }, [reportCalIds]);
   const [selectedModelloIds, setSelectedModelloIds] = useState([]); // selezione multipla modelli (editMode OFF)
   const [screen, setScreen] = useState("cal");
   const [dayKey, setDayKey] = useState(null);
@@ -1767,13 +1772,4 @@ export function useAppCore(session){
     const ids = toDelete.map(r=>r.id);
     if(ids.length===0) return;
     const { error: delErr } = await supabase.from("events").delete().in("id", ids).eq("user_id", userId);
-    if(delErr){ segnalaErroreDb(delErr, "Eliminazione eventi rotazione da data"); return; }
-    setStore(prev=>{
-      const ns=JSON.parse(JSON.stringify(prev));
-      const idSet = new Set(ids);
-      for(const dKey of Object.keys(ns.events||{})){
-        if(ns.events[dKey]?.[cId]){
-          ns.events[dKey][cId] = ns.events[dKey][cId].filter(e=>!idSet.has(e.id));
-        }
-      }
-      sync
+    if(delErr){ segnalaErroreDb(delErr, "Eliminazione eventi rotazione da d
