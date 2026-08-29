@@ -69,7 +69,7 @@ export function useAppCore(session){
   }, [selectedCalIds]);
   const [reportCalIds, setReportCalIds] = useState(()=>{
     try{ return JSON.parse(localStorage.getItem('cache_reportCalIds')||'[]'); }catch(e){ return []; }
-  }); // selezione calendari per il Report (vuoto = tutti). Persistita: il salvataggio avviene SINCRONAMENTE dentro l'handler del click (vedi setReportCalIdsPersistito piu' sotto e il suo uso in 3_Calendario.jsx), non tramite useEffect, per evitare che un refresh immediato dopo il click perda la selezione appena fatta.
+  }); // selezione calendari per il Report. Persistita: il salvataggio avviene SINCRONAMENTE dentro l'handler del click (vedi setReportCalIdsPersistito piu' sotto e il suo uso in 3_Calendario.jsx), non tramite useEffect, per evitare che un refresh immediato dopo il click perda la selezione appena fatta.
   function setReportCalIdsPersistito(updater){
     setReportCalIds(prev=>{
       const next = typeof updater==="function" ? updater(prev) : updater;
@@ -1110,6 +1110,16 @@ export function useAppCore(session){
   const activeCal = store.calendars.find(c=>c.id===calId)||null;
   const mainCal   = store.calendars.find(c=>c.isMain)||null;
   const mainCalId = mainCal?.id||null; // calendario principale: usato come fallback per i modelli/rotazioni senza calendarId esplicito
+
+  // Default per il Report: se reportCalIds risulta vuoto (nessuna scelta
+  // salvata, o per qualunque motivo la persistenza non ha ancora effetto)
+  // e il calendario principale e' disponibile, seleziona SOLO quello
+  // invece di lasciare "vuoto = tutti i calendari mischiati insieme".
+  useEffect(()=>{
+    if(reportCalIds.length===0 && mainCalId){
+      setReportCalIdsPersistito([mainCalId]);
+    }
+  }, [mainCalId]);
   // Colore dell'interfaccia (pulsanti, badge, evidenziazioni di selezione): FISSO e indipendente
   // dal colore scelto per i calendari, cosÃ¬ i colori dei calendari/modelli (es. giallo) restano
   // solo lÃ¬ dove servono a identificarli, senza "colorare" tutti i menu dell'app.
