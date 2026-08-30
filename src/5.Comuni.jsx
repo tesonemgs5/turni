@@ -1105,7 +1105,12 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
                   style={{display:"flex",alignItems:"center",gap:8,
                     padding:"6px 8px",background:T.s2,borderRadius:isOpen?"6px 6px 0 0":6,cursor:"pointer"}}>
                   <div style={{width:10,height:10,borderRadius:"50%",background:c}}/>
-                  <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>{m.titolo}</span>
+                  <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>
+                    {m.titolo}
+                    {m.tempo!=="h24"&&m.inizio&&(
+                      <span style={{opacity:0.7,fontWeight:500,marginLeft:5}}>{m.inizio}→{m.fine||""}</span>
+                    )}
+                  </span>
                   <span style={{fontSize:14,fontWeight:800,color:T.text}}>{info.count}</span>
                   <span style={{fontSize:11,color:T.sub}}>{isOpen?"▲":"▼"}</span>
                 </div>
