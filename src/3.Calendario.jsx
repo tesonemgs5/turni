@@ -149,6 +149,55 @@ export default function VistaCalendario({ C }){
     appearance:"none", WebkitAppearance:"none",
   };
 
+  // Opzioni di visualizzazione evento (Impostazioni → Opzioni di visualizzazione):
+  // 1 riga = solo label come sempre; 2 righe = due campi scelti dall'utente.
+  const calEventRows = store.calEventRows || 1;
+  const calRow1Field = store.calRow1Field || "titolo";
+  const calRow2Field = store.calRow2Field || "---";
+  function eventRowText(e, field){
+    switch(field){
+      case "titolo": return e.label||"";
+      case "inizio": return e.tIn||"";
+      case "fine":   return e.tOut||"";
+      case "durata": return (e.tIn&&e.tOut) ? calcDurata(e.tIn,e.tOut) : "";
+      case "note":   return e.note||"";
+      case "icona":  return e.allDay ? "☀️" : (e.tIn||e.tOut ? "🕒" : "");
+      case "---":    return "";
+      default: return "";
+    }
+  }
+  function EventCard({ e }){
+    const textColor = getContrastTextColor(e.color);
+    const shadow = textColor==="#ffffff" ? "0 1px 2px rgba(0,0,0,0.35)" : "none";
+    if(calEventRows!==2){
+      return (
+        <div style={{background:e.color,borderRadius:3,padding:"0 4px",
+          fontSize:evtFontSize,fontWeight:800,color:textColor,overflow:"hidden",textOverflow:"ellipsis",
+          whiteSpace:"nowrap",display:"flex",alignItems:"center",lineHeight:1,
+          textShadow:shadow}}>
+          {e.label}
+        </div>
+      );
+    }
+    const row1 = eventRowText(e, calRow1Field);
+    const row2 = eventRowText(e, calRow2Field);
+    return (
+      <div style={{background:e.color,borderRadius:3,padding:"1px 4px",
+        display:"flex",flexDirection:"column",justifyContent:"center",overflow:"hidden"}}>
+        <div style={{fontSize:evtFontSize,fontWeight:800,color:textColor,overflow:"hidden",
+          textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.15,textShadow:shadow}}>
+          {row1}
+        </div>
+        {calRow2Field!=="---" && (
+          <div style={{fontSize:Math.max(8,evtFontSize-2),fontWeight:600,color:textColor,opacity:0.9,
+            overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.15,textShadow:shadow}}>
+            {row2}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   const goPrevMonth = ()=>{
     setPrevGrid({year, month, dir:"prev"});
     setTimeout(()=>setPrevGrid(null), 350);
@@ -330,10 +379,7 @@ export default function VistaCalendario({ C }){
                   </div>
                   <div style={{flex:1,overflow:"hidden",display:"grid",gridTemplateRows:"repeat(5,1fr)",gap:"1px",padding:"0 1px 1px"}}>
                     {evts.slice(0,5).map((e,ei)=>(
-                      <div key={e.id+ei} style={{background:e.color,borderRadius:3,padding:"0 4px",
-                        fontSize:evtFontSize,fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
-                        whiteSpace:"nowrap",display:"flex",alignItems:"center",lineHeight:1,
-                        textShadow:getContrastTextColor(e.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>{e.label}</div>
+                      <EventCard key={e.id+ei} e={e}/>
                     ))}
                   </div>
                 </div>
@@ -376,18 +422,9 @@ export default function VistaCalendario({ C }){
               <div style={{flex:1,overflow:"hidden",display:"grid",
                 gridTemplateRows:`repeat(5,1fr)`,
                 gap:"1px",padding:"0 1px 1px"}}>
-                {evts.slice(0,5).map((e,ei)=>{
-                  return (
-                    <Fragment key={e.id+ei}>
-                      <div style={{background:e.color,borderRadius:3,padding:"0 4px",
-                        fontSize:evtFontSize,fontWeight:800,color:getContrastTextColor(e.color),overflow:"hidden",textOverflow:"ellipsis",
-                        whiteSpace:"nowrap",display:"flex",alignItems:"center",lineHeight:1,
-                        textShadow:getContrastTextColor(e.color)==="#ffffff"?"0 1px 2px rgba(0,0,0,0.35)":"none"}}>
-                        {e.label}
-                      </div>
-                    </Fragment>
-                  );
-                })}
+                {evts.slice(0,5).map((e,ei)=>(
+                  <EventCard key={e.id+ei} e={e}/>
+                ))}
               </div>
             </div>
           );
