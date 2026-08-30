@@ -154,6 +154,9 @@ export default function VistaCalendario({ C }){
   const calEventRows = store.calEventRows || 1;
   const calRow1Field = store.calRow1Field || "titolo";
   const calRow2Field = store.calRow2Field || "---";
+  // Sempre 5 eventi visibili in griglia, sia con 1 che con 2 righe per
+  // evento: dal 6° in poi solo il contatore "+N" (vista giorno per il resto).
+  const maxEvtSlots = 5;
   function eventRowText(e, field){
     switch(field){
       case "titolo": return e.label||"";
@@ -181,16 +184,19 @@ export default function VistaCalendario({ C }){
     }
     const row1 = eventRowText(e, calRow1Field);
     const row2 = eventRowText(e, calRow2Field);
+    const row2FontSize = Math.max(8,evtFontSize-2);
     return (
       <div style={{background:e.color,borderRadius:3,padding:"1px 4px",
-        display:"flex",flexDirection:"column",justifyContent:"center",overflow:"hidden"}}>
+        display:"flex",flexDirection:"column",overflow:"hidden"}}>
         <div style={{fontSize:evtFontSize,fontWeight:800,color:textColor,overflow:"hidden",
-          textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.15,textShadow:shadow}}>
+          textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.15,textShadow:shadow,
+          flexShrink:0}}>
           {row1}
         </div>
         {calRow2Field!=="---" && (
-          <div style={{fontSize:Math.max(8,evtFontSize-2),fontWeight:600,color:textColor,opacity:0.9,
-            overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.15,textShadow:shadow}}>
+          <div style={{fontSize:row2FontSize,fontWeight:600,color:textColor,opacity:0.9,
+            overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.15,textShadow:shadow,
+            flexShrink:1,minHeight:0}}>
             {row2}
           </div>
         )}
@@ -374,11 +380,13 @@ export default function VistaCalendario({ C }){
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:2,padding:"2px 3px 0",flexShrink:0}}>
                     <span style={{fontSize:20,fontWeight:500,lineHeight:1,color:red?"#ef4444":T.sub}}>{d}</span>
                     <div style={{display:"flex",alignItems:"center",gap:3,flexShrink:0}}>
-                      {evts.length>5&&<span style={{fontSize:11,fontWeight:800,color:T.sub}}>+{evts.length-5}</span>}
+                      {evts.length>maxEvtSlots&&<span style={{fontSize:11,fontWeight:800,color:T.sub}}>+{evts.length-maxEvtSlots}</span>}
                     </div>
                   </div>
-                  <div style={{flex:1,overflow:"hidden",display:"grid",gridTemplateRows:"repeat(5,1fr)",gap:"1px",padding:"0 1px 1px"}}>
-                    {evts.slice(0,5).map((e,ei)=>(
+                  <div style={{flex:1,overflow:"hidden",display:"grid",
+                    gridTemplateRows:`repeat(${maxEvtSlots},1fr)`,
+                    gap:"1px",padding:"0 1px 1px"}}>
+                    {evts.slice(0,maxEvtSlots).map((e,ei)=>(
                       <EventCard key={e.id+ei} e={e}/>
                     ))}
                   </div>
@@ -416,13 +424,13 @@ export default function VistaCalendario({ C }){
                 <span style={{fontSize:20,fontWeight:isT?900:500,lineHeight:1,
                   color:isT?accent:red?"#ef4444":T.sub}}>{d}</span>
                 <div style={{display:"flex",alignItems:"center",gap:3,flexShrink:0}}>
-                  {evts.length>5&&<span style={{fontSize:11,fontWeight:800,color:T.sub}}>+{evts.length-5}</span>}
+                  {evts.length>maxEvtSlots&&<span style={{fontSize:11,fontWeight:800,color:T.sub}}>+{evts.length-maxEvtSlots}</span>}
                 </div>
               </div>
               <div style={{flex:1,overflow:"hidden",display:"grid",
-                gridTemplateRows:`repeat(5,1fr)`,
+                gridTemplateRows:`repeat(${maxEvtSlots},1fr)`,
                 gap:"1px",padding:"0 1px 1px"}}>
-                {evts.slice(0,5).map((e,ei)=>(
+                {evts.slice(0,maxEvtSlots).map((e,ei)=>(
                   <EventCard key={e.id+ei} e={e}/>
                 ))}
               </div>
