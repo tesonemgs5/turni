@@ -157,6 +157,11 @@ export default function VistaCalendario({ C }){
   // Sempre 5 eventi visibili in griglia, sia con 1 che con 2 righe per
   // evento: dal 6° in poi solo il contatore "+N" (vista giorno per il resto).
   const maxEvtSlots = 5;
+  // Con 2 righe per evento ogni slot deve essere alto abbastanza da
+  // contenere davvero due righe di testo: senza aumentare l'altezza della
+  // cella-giorno, la riga 2 non avrebbe mai spazio reale e sparirebbe
+  // sempre, anche quando ci sarebbe posto.
+  const weekRowMinH = calEventRows===2 ? 92 : 54;
   function eventRowText(e, field){
     switch(field){
       case "titolo": return e.label||"";
@@ -196,7 +201,7 @@ export default function VistaCalendario({ C }){
         {calRow2Field!=="---" && (
           <div style={{fontSize:row2FontSize,fontWeight:600,color:textColor,opacity:0.9,
             overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.15,textShadow:shadow,
-            flexShrink:1,minHeight:0}}>
+            flexShrink:0}}>
             {row2}
           </div>
         )}
@@ -364,7 +369,7 @@ export default function VistaCalendario({ C }){
           <div key={"prev-"+prevGrid.month+"-"+prevGrid.year}
             className={`calSlideOut${prevGrid.dir==="next"?"Left":"Right"}`}
             style={{position:"absolute",inset:0,display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",
-              gridAutoRows:"minmax(54px,1fr)",gap:"1px 0px",background:T.gap,
+              gridAutoRows:`minmax(${weekRowMinH}px,1fr)`,gap:"1px 0px",background:T.gap,
               animation:`calSlideOut${prevGrid.dir==="next"?"Left":"Right"} 0.35s ease forwards`}}>
             {pCells.map((d,i)=>{
               if(!d) return <div key={i} style={{background:T.bg}}/>;
@@ -399,7 +404,7 @@ export default function VistaCalendario({ C }){
       <div key={month+"-"+year}
         className={prevGrid?`calSlideIn${prevGrid.dir==="next"?"Left":"Right"}`:""}
         style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",
-        gridAutoRows:"minmax(54px,1fr)",gap:"1px 0px",background:T.gap,
+        gridAutoRows:`minmax(${weekRowMinH}px,1fr)`,gap:"1px 0px",background:T.gap,
         position:prevGrid?"absolute":"relative",inset:0,height:"100%",
         animation:prevGrid?`calSlideIn${prevGrid.dir==="next"?"Left":"Right"} 0.35s ease forwards`:"none"}}>
         {cells.map((d,i)=>{
