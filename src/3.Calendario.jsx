@@ -154,9 +154,13 @@ export default function VistaCalendario({ C }){
   const calEventRows = store.calEventRows || 1;
   const calRow1Field = store.calRow1Field || "titolo";
   const calRow2Field = store.calRow2Field || "---";
-  // Sempre 5 eventi visibili in griglia, sia con 1 che con 2 righe per
-  // evento: dal 6° in poi solo il contatore "+N" (vista giorno per il resto).
-  const maxEvtSlots = 5;
+  // Griglia SEMPRE a 5 slot fissi per ogni giorno. Con 1 riga per evento,
+  // ogni evento occupa 1 slot (quindi fino a 5 eventi interi). Con 2 righe,
+  // ogni evento occupa 2 slot (quindi fino a 2 eventi interi, con l'ultimo
+  // slot eventualmente libero se avanza). Il resto va nel contatore "+N".
+  const TOTAL_SLOTS = 5;
+  const slotsPerEvt = calEventRows===2 ? 2 : 1;
+  const maxEvtSlots = Math.floor(TOTAL_SLOTS/slotsPerEvt); // eventi interi mostrabili
   // Con 2 righe per evento ogni slot deve essere alto abbastanza da
   // contenere davvero due righe di testo: senza aumentare l'altezza della
   // cella-giorno, la riga 2 non avrebbe mai spazio reale e sparirebbe
@@ -182,7 +186,7 @@ export default function VistaCalendario({ C }){
         <div style={{background:e.color,borderRadius:3,padding:"0 4px",
           fontSize:evtFontSize,fontWeight:800,color:textColor,overflow:"hidden",textOverflow:"ellipsis",
           whiteSpace:"nowrap",display:"flex",alignItems:"center",lineHeight:1,
-          textShadow:shadow}}>
+          textShadow:shadow,gridRow:"span 1"}}>
           {e.label}
         </div>
       );
@@ -192,7 +196,7 @@ export default function VistaCalendario({ C }){
     const row2FontSize = Math.max(8,evtFontSize-2);
     return (
       <div style={{background:e.color,borderRadius:3,padding:"1px 4px",
-        display:"flex",flexDirection:"column",overflow:"hidden"}}>
+        display:"flex",flexDirection:"column",overflow:"hidden",gridRow:"span 2"}}>
         <div style={{fontSize:evtFontSize,fontWeight:800,color:textColor,overflow:"hidden",
           textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.15,textShadow:shadow,
           flexShrink:0}}>
@@ -389,7 +393,7 @@ export default function VistaCalendario({ C }){
                     </div>
                   </div>
                   <div style={{flex:1,overflow:"hidden",display:"grid",
-                    gridTemplateRows:`repeat(${Math.min(evts.length,maxEvtSlots)||1},1fr)`,
+                    gridTemplateRows:`repeat(${TOTAL_SLOTS},1fr)`,
                     gap:"1px",padding:"0 1px 1px"}}>
                     {evts.slice(0,maxEvtSlots).map((e,ei)=>(
                       <EventCard key={e.id+ei} e={e}/>
@@ -434,7 +438,7 @@ export default function VistaCalendario({ C }){
                 </div>
               </div>
               <div style={{flex:1,overflow:"hidden",display:"grid",
-                gridTemplateRows:`repeat(${Math.min(evts.length,maxEvtSlots)||1},1fr)`,
+                gridTemplateRows:`repeat(${TOTAL_SLOTS},1fr)`,
                 gap:"1px",padding:"0 1px 1px"}}>
                 {evts.slice(0,maxEvtSlots).map((e,ei)=>(
                   <EventCard key={e.id+ei} e={e}/>
