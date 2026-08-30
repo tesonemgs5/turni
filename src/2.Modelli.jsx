@@ -1469,7 +1469,8 @@ export default function VistaModelli({ C }){
               if(soloConsultazione) return;
               if(form?.editId===e.id){ setForm(null); return; }
               setForm({ editId:e.id, editCid:e._cid||calId, modelloId:null, evtModelloId:e.modelloId||null, shiftId:null, label:e.label,
-                colorOvr:e.color, dur:e.allDay?"allday":(e.tIn&&e.tOut&&e.tOut===calcFine6h15(e.tIn))?"fixed":(e.tIn&&e.tOut&&e.tOut===calcFine6h30(e.tIn))?"fixed30":"custom", tIn:e.tIn||"", tOut:e.tOut||"",
+                colorOvr:e.color, dur:e.allDay?"allday":(e.tIn&&e.tOut&&e.tOut===calcFine6h15(e.tIn))?"fixed":(e.tIn&&e.tOut&&e.tOut===calcFine6h30(e.tIn))?"fixed30":"custom",
+                tIn:(e.tInNote??e.tIn)||"", tOut:(e.tOutNote??e.tOut)||"",
                 place:e.place||"", map:e.map||"", note:e.note||"", collega:e.collega||"", auto:e.auto||"",
                 protPagFine:e.protPagFine||"", protRecFine:e.protRecFine||"",
                 protMenoRecIn:e.protMenoRecIn||"", protMenoRecOut:e.protMenoRecOut||"",
