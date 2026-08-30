@@ -363,7 +363,12 @@ export function FasceExpand({data, pct1, pct2, T, modelli, accent, cfg}){
                   <div key={mid} style={{display:"flex",alignItems:"center",gap:8,
                     padding:"5px 6px",borderRadius:6,marginBottom:3,background:T.surface}}>
                     <div style={{width:8,height:8,borderRadius:"50%",background:c,flexShrink:0}}/>
-                    <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>{m.titolo}</span>
+                    <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>
+                    {m.titolo}
+                    {m.tempo!=="h24"&&m.inizio&&(
+                      <span style={{opacity:0.7,fontWeight:500,marginLeft:5}}>{m.inizio}→{m.fine||""}</span>
+                    )}
+                  </span>
                     <span style={{fontSize:13,fontWeight:800,color:T.text}}>{cnt}</span>
                   </div>
                 );
@@ -529,7 +534,12 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, acce
                             style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",
                               background:T.s2,borderRadius:isOpenG?"6px 6px 0 0":6,cursor:"pointer"}}>
                             <div style={{width:10,height:10,borderRadius:"50%",background:c}}/>
-                            <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>{m.titolo}</span>
+                            <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>
+                    {m.titolo}
+                    {m.tempo!=="h24"&&m.inizio&&(
+                      <span style={{opacity:0.7,fontWeight:500,marginLeft:5}}>{m.inizio}→{m.fine||""}</span>
+                    )}
+                  </span>
                             <span style={{fontSize:13,fontWeight:800,color:T.text}}>{info.count}</span>
                             <span style={{fontSize:11,color:T.sub}}>{isOpenG?"▲":"▼"}</span>
                           </div>
@@ -609,7 +619,12 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, acce
                                             onChange={()=>setAssegnazione(m.id,g.key)}
                                             style={{cursor:"pointer",flexShrink:0}}/>
                                           <div style={{width:8,height:8,borderRadius:"50%",background:c,flexShrink:0}}/>
-                                          <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>{m.titolo}</span>
+                                          <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>
+                    {m.titolo}
+                    {m.tempo!=="h24"&&m.inizio&&(
+                      <span style={{opacity:0.7,fontWeight:500,marginLeft:5}}>{m.inizio}→{m.fine||""}</span>
+                    )}
+                  </span>
                                           <span style={{fontSize:13,fontWeight:800,color:T.text}}>{info?.count||0}</span>
                                         </div>
                                       </div>
@@ -831,7 +846,12 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
                             style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",
                               background:T.s2,borderRadius:isOpenG?"6px 6px 0 0":6,cursor:"pointer"}}>
                             <div style={{width:10,height:10,borderRadius:"50%",background:c}}/>
-                            <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>{m.titolo}</span>
+                            <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>
+                    {m.titolo}
+                    {m.tempo!=="h24"&&m.inizio&&(
+                      <span style={{opacity:0.7,fontWeight:500,marginLeft:5}}>{m.inizio}→{m.fine||""}</span>
+                    )}
+                  </span>
                             <span style={{fontSize:13,fontWeight:800,color:T.text}}>{fmtOreMin(info.minuti)}</span>
                             <span style={{fontSize:11,color:T.sub}}>{isOpenG?"▲":"▼"}</span>
                           </div>
@@ -907,7 +927,12 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
                                             onChange={()=>setAssegnazione(m.id,g.key)}
                                             style={{cursor:"pointer",flexShrink:0}}/>
                                           <div style={{width:8,height:8,borderRadius:"50%",background:c,flexShrink:0}}/>
-                                          <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>{m.titolo}</span>
+                                          <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>
+                    {m.titolo}
+                    {m.tempo!=="h24"&&m.inizio&&(
+                      <span style={{opacity:0.7,fontWeight:500,marginLeft:5}}>{m.inizio}→{m.fine||""}</span>
+                    )}
+                  </span>
                                           <span style={{fontSize:13,fontWeight:800,color:T.text}}>{fmtOreMin(info?.minuti||0)}</span>
                                         </div>
                                       </div>
