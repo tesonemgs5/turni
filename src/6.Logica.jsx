@@ -1312,17 +1312,15 @@ export function useAppCore(session){
       if(mod){
         color = form.colorOvr||(mod.coloreCustom||colByTime(mod.inizio));
         label = (mod.label||mod.titolo||label).toUpperCase();
+        // Orari SEMPRE quelli ufficiali del modello quando un modello è
+        // selezionato: il campo Ingresso/Uscita in alto NON deve più poter
+        // spostare l'identità/conteggio del turno (es. arrivare in ritardo
+        // e recuperare a fine turno non deve trasformare "AUTO 13:45-20:00"
+        // in un evento diverso "AUTO 13:51-20:06"). Chi vuole tracciare uno
+        // scostamento reale usa i campi dedicati "Entrata/Uscita effettiva"
+        // sotto PROTRAZIONE A RECUPERO, pensati apposta per questo.
         if(mod.tempo==="h24"){ tInFinal=""; tOutFinal=""; }
-        else if(mod.tempo==="6h15"){
-          tInFinal = form.tIn||mod.inizio||"";
-          tOutFinal = form.tOut||calcFine6h15(tInFinal)||"";
-        } else if(mod.tempo==="6h30"){
-          tInFinal = form.tIn||mod.inizio||"";
-          tOutFinal = form.tOut||calcFine6h30(tInFinal)||"";
-        } else {
-          tInFinal = form.tIn||mod.inizio||"";
-          tOutFinal = form.tOut||mod.fine||"";
-        }
+        else { tInFinal = mod.inizio||""; tOutFinal = mod.fine||""; }
       }
     } else if(form.shiftId){
       const sh = cal.shifts?.find(s=>s.id===form.shiftId);
@@ -1425,7 +1423,6 @@ export function useAppCore(session){
         oraFineVirtualeMenoRec = String(Math.floor(m2/60)).padStart(2,"0")+":"+String(m2%60).padStart(2,"0");
       }
     }
-
     const richieste = [
       { tipo:"pagamento", oraFine: protPagFine },
       { tipo:"recupero",  oraFine: protRecFine },
@@ -1440,6 +1437,7 @@ export function useAppCore(session){
     // trovato qui sotto (find fallirebbe), e verrebbe creato un secondo
     // evento doppione invece di aggiornare quello esistente.
     const evtiGiorno = storeRef.current.events?.[dayKey]?.[calId]||[];
+
     for(const { tipo, oraFine, durataOverride } of richieste){
       const marker = idProtrazioneFiglio(idEventoBase, tipo);
       // Auto-riparazione: se per lo stesso marker esistono già più eventi
