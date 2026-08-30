@@ -1428,10 +1428,16 @@ export default function VistaModelli({ C }){
               const tipoProtQuestoEvento = tipoModelloProtrazione(e.modelloId);
               const modelloCollegato = tipoProtQuestoEvento ? modelli.find(m=>m.id===e.modelloId) : null;
               const labelDaMostrare = (modelloCollegato ? (modelloCollegato.label||modelloCollegato.titolo||e.label) : e.label);
+              const modelloDiQuestoEvento = e.modelloId ? modelli.find(m=>m.id===e.modelloId) : null;
+              const orarioModello = (modelloDiQuestoEvento && modelloDiQuestoEvento.tempo!=="h24" && modelloDiQuestoEvento.inizio)
+                ? `${modelloDiQuestoEvento.inizio}→${modelloDiQuestoEvento.fine||""}` : null;
               return (
               <>
             <div style={{flex:1}}>
-              <div style={{color:cardTextColor,fontSize:20,fontWeight:800,textShadow:cardShadow}}>{labelDaMostrare}</div>
+              <div style={{color:cardTextColor,fontSize:20,fontWeight:800,textShadow:cardShadow,display:"flex",alignItems:"baseline",gap:6,flexWrap:"wrap"}}>
+                {labelDaMostrare}
+                {orarioModello&&<span style={{fontSize:13,fontWeight:700,opacity:0.85}}>{orarioModello}</span>}
+              </div>
               {!e.allDay&&e.tIn&&(
                 <div style={{color:cardSubColor,fontSize:17,marginTop:2}}>
                   🕐 {e.tIn}{e.tOut?` → ${e.tOut}`:""}{durataEvt?` · ${durataEvt}`:""}
@@ -1470,8 +1476,13 @@ export default function VistaModelli({ C }){
             {form.editId&&(
               <div onClick={()=>setForm(f=>({...f,_showModPicker:!f._showModPicker}))}
                 style={{fontSize:24,color:T.text,fontWeight:900,marginBottom:12,letterSpacing:1,cursor:"pointer",
-                  display:"flex",alignItems:"center",gap:8}}>
+                  display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                 {(form.label||"EVENTO").toUpperCase()}
+                {(()=>{
+                  const modSel = form.modelloId && modelli.find(m=>m.id===form.modelloId);
+                  if(!modSel || modSel.tempo==="h24" || !modSel.inizio) return null;
+                  return <span style={{fontSize:14,color:T.sub,fontWeight:700}}>{modSel.inizio}→{modSel.fine||""}</span>;
+                })()}
                 <span style={{fontSize:12,color:T.sub,fontWeight:700}}>✎ cambia modello</span>
               </div>
             )}
