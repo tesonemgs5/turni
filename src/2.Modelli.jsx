@@ -1003,7 +1003,6 @@ export default function VistaModelli({ C }){
         )}
       </SecCollapsible>
 
-
       <SecCollapsible label="CALENDARI" T={T}>
         {store.calendars.map((c,ci)=>(
           <div key={c.id} style={{marginBottom:10}}>
@@ -1483,7 +1482,9 @@ export default function VistaModelli({ C }){
               const cardTextColor=getContrastTextColor(e.color);
               const cardSubColor=cardTextColor==="#ffffff"?"rgba(255,255,255,0.85)":"rgba(15,23,42,0.75)";
               const cardShadow=cardTextColor==="#ffffff"?"0 1px 3px rgba(0,0,0,0.3)":"none";
-              const durataEvt=(!e.allDay&&e.tIn&&e.tOut)?calcDurata(e.tIn,e.tOut):"";
+              const tInMostrato = e.tInNote||e.tIn;
+              const tOutMostrato = e.tOutNote||e.tOut;
+              const durataEvt=(!e.allDay&&tInMostrato&&tOutMostrato)?calcDurata(tInMostrato,tOutMostrato):"";
               // Le protrazioni sono eventi generati automaticamente dal
               // sistema: il loro titolo visualizzato deve sempre riflettere
               // il nome ATTUALE del modello collegato, non quello salvato
@@ -1503,9 +1504,9 @@ export default function VistaModelli({ C }){
                 {labelDaMostrare}
                 {orarioModello&&<span style={{fontSize:13,fontWeight:700,opacity:0.85}}>{orarioModello}</span>}
               </div>
-              {!e.allDay&&e.tIn&&(
+              {!e.allDay&&tInMostrato&&(
                 <div style={{color:cardSubColor,fontSize:17,marginTop:2}}>
-                  🕐 {e.tIn}{e.tOut?` → ${e.tOut}`:""}{durataEvt?` · ${durataEvt}`:""}
+                  🕐 {tInMostrato}{tOutMostrato?` → ${tOutMostrato}`:""}{durataEvt?` · ${durataEvt}`:""}
                 </div>
               )}
               {(e.auto||e.collega)&&<div style={{color:cardSubColor,fontSize:17,marginTop:3}}>
