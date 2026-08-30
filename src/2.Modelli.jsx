@@ -1480,7 +1480,8 @@ export default function VistaModelli({ C }){
                   display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                 {(form.label||"EVENTO").toUpperCase()}
                 {(()=>{
-                  const modSel = form.modelloId && modelli.find(m=>m.id===form.modelloId);
+                  const idModelloAttuale = form.modelloId || form.evtModelloId;
+                  const modSel = idModelloAttuale && modelli.find(m=>m.id===idModelloAttuale);
                   if(!modSel || modSel.tempo==="h24" || !modSel.inizio) return null;
                   return <span style={{fontSize:14,color:T.sub,fontWeight:700}}>{modSel.inizio}→{modSel.fine||""}</span>;
                 })()}

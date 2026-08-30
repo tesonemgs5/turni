@@ -1307,8 +1307,14 @@ export function useAppCore(session){
     let label = (form.label||"Evento").toUpperCase();
     let tInFinal = form.dur==="allday"?"":form.tIn||"";
     let tOutFinal = form.dur==="allday"?"":form.tOut||"";
-    if(form.modelloId){
-      const mod = modelli.find(m=>m.id===form.modelloId);
+    // In creazione il modello scelto sta in form.modelloId; in modifica di un
+    // evento esistente sta invece in form.evtModelloId (form.modelloId resta
+    // null finché non si passa esplicitamente dal picker "cambia modello").
+    // Serve leggere entrambi, altrimenti gli eventi modificati (non ricreati
+    // da zero) non hanno mai gli orari del modello ricalcolati qui sotto.
+    const idModelloForm = form.modelloId || form.evtModelloId;
+    if(idModelloForm){
+      const mod = modelli.find(m=>m.id===idModelloForm);
       if(mod){
         color = form.colorOvr||(mod.coloreCustom||colByTime(mod.inizio));
         label = (mod.label||mod.titolo||label).toUpperCase();
@@ -1423,6 +1429,7 @@ export function useAppCore(session){
         oraFineVirtualeMenoRec = String(Math.floor(m2/60)).padStart(2,"0")+":"+String(m2%60).padStart(2,"0");
       }
     }
+
     const richieste = [
       { tipo:"pagamento", oraFine: protPagFine },
       { tipo:"recupero",  oraFine: protRecFine },
@@ -2864,6 +2871,7 @@ const importsRecenti = useMemo(()=>{
       eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelliAggiornati,
     });
   }
+
   // ── COLORI: aggiunta/rimozione dalla sezione + assegnazione esclusiva ai modelli
   async function addColoreExtra(hex){
     if(!userId || coloriExtra.some(c=>c.hex===hex)) return;
