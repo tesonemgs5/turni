@@ -1570,9 +1570,12 @@ export function useAppCore(session){
     // Fallback: se il form non ha un modello selezionato ma il testo/orario
     // combaciano esattamente con un modello esistente, colleghiamolo ora,
     // prima di scrivere su Supabase — invece di scoprirlo dopo dal report.
+    // NB: `form` proviene dallo stato React (const), quindi non va mai
+    // riassegnato con `=`: usiamo una variabile locale derivata.
+    let formEffettivo = form;
     if(!form.modelloId){
       const matchAuto = trovaModelloCorrispondente(calId, label, tInFinal, tOutFinal);
-      if(matchAuto) form = {...form, modelloId: matchAuto.id};
+      if(matchAuto) formEffettivo = {...form, modelloId: matchAuto.id};
     }
 
     // L'id viene generato QUI, non più dal database: così l'evento locale
@@ -1582,14 +1585,14 @@ export function useAppCore(session){
     const payload = {
       id: idLocale,
       user_id: userId, calendar_id: calId, date_key: dayKey,
-      label, color, all_day: form.dur==="allday"&&!form.modelloId,
+      label, color, all_day: formEffettivo.dur==="allday"&&!formEffettivo.modelloId,
       time_in: tInFinal, time_out: tOutFinal,
-      place: up(form.place), map_url: form.map||"", note: up(extraNote),
-      modello_id: form.modelloId||null, rotazione_id: form.rotazioneId||null,
-      collega: up(form.collega), auto: up(form.auto),
-      prot_pag_fine: form.protPagFine||null, prot_rec_fine: form.protRecFine||null,
-      prot_meno_rec_in: form.protMenoRecIn||null, prot_meno_rec_out: form.protMenoRecOut||null,
-      categoria_turno: form.categoriaTurno||null, categoria_app_auto: form.categoriaAppAuto||null,
+      place: up(formEffettivo.place), map_url: formEffettivo.map||"", note: up(extraNote),
+      modello_id: formEffettivo.modelloId||null, rotazione_id: formEffettivo.rotazioneId||null,
+      collega: up(formEffettivo.collega), auto: up(formEffettivo.auto),
+      prot_pag_fine: formEffettivo.protPagFine||null, prot_rec_fine: formEffettivo.protRecFine||null,
+      prot_meno_rec_in: formEffettivo.protMenoRecIn||null, prot_meno_rec_out: formEffettivo.protMenoRecOut||null,
+      categoria_turno: formEffettivo.categoriaTurno||null, categoria_app_auto: formEffettivo.categoriaAppAuto||null,
     };
 
     // 1) SUBITO in locale: l'utente vede il turno all'istante, online o offline.
@@ -1604,10 +1607,10 @@ export function useAppCore(session){
       protMenoRecIn: payload.prot_meno_rec_in||"", protMenoRecOut: payload.prot_meno_rec_out||"",
       categoriaTurno: payload.categoria_turno||"", categoriaAppAuto: payload.categoria_app_auto||"",
     };
-    if(!form.modelloId && form.label) registraValoreAutocomplete("titolo", label);
-    if(form.auto) registraValoreAutocomplete("auto", form.auto);
-    if(form.place) registraValoreAutocomplete("luogo", form.place);
-    if(form.collega) registraValoriAutocomplete("collega", form.collega.split(/\r?\n/));
+    if(!formEffettivo.modelloId && formEffettivo.label) registraValoreAutocomplete("titolo", label);
+    if(formEffettivo.auto) registraValoreAutocomplete("auto", formEffettivo.auto);
+    if(formEffettivo.place) registraValoreAutocomplete("luogo", formEffettivo.place);
+    if(formEffettivo.collega) registraValoriAutocomplete("collega", formEffettivo.collega.split(/\r?\n/));
     const nuovoStore = withEventoAggiunto(store, dayKey, calId, evt);
     saveToLocalStorage(nuovoStore.events, nuovoStore.calendars, modelli);
     setStore(nuovoStore);
@@ -1632,8 +1635,8 @@ export function useAppCore(session){
     await sincronizzaEventiProtrazione({
       idEventoBase: idLocale, dayKey, calId,
       tInBase: tInFinal, tOutBase: tOutFinal,
-      protPagFine: form.protPagFine||"", protRecFine: form.protRecFine||"",
-      menoRecIn: form.protMenoRecIn||"", menoRecOut: form.protMenoRecOut||"",
+      protPagFine: formEffettivo.protPagFine||"", protRecFine: formEffettivo.protRecFine||"",
+      menoRecIn: formEffettivo.protMenoRecIn||"", menoRecOut: formEffettivo.protMenoRecOut||"",
     });
   }
 
@@ -1646,9 +1649,12 @@ export function useAppCore(session){
 
     // Stesso fallback di saveEvt: se manca modelloId ma testo/orario
     // combaciano esattamente con un modello esistente, colleghiamolo ora.
+    // NB: `form` proviene dallo stato React (const), quindi non va mai
+    // riassegnato con `=`: usiamo una variabile locale derivata.
+    let formEffettivo = form;
     if(!form.modelloId){
       const matchAuto = trovaModelloCorrispondente(editCalId, label, tInFinal, tOutFinal);
-      if(matchAuto) form = {...form, modelloId: matchAuto.id};
+      if(matchAuto) formEffettivo = {...form, modelloId: matchAuto.id};
     }
 
     // Sincronizzazione inversa: se l'evento che sto modificando È esso
@@ -1658,7 +1664,7 @@ export function useAppCore(session){
     // protPagFine/protRecFine del turno AUTO padre, così restano sempre
     // allineati indipendentemente da dove viene fatta la modifica.
     const evtiGiornoCorrente = store.events?.[dayKey]?.[editCalId]||[];
-    const evtCorrente = evtiGiornoCorrente.find(e=>e.id===form.editId);
+    const evtCorrente = evtiGiornoCorrente.find(e=>e.id===formEffettivo.editId);
     const decodificaMod = decodificaProtrazioneFiglio(evtCorrente?.importId);
     if(decodificaMod && decodificaMod.tipo!=="meno_recupero"){
       const { idEventoBase, tipo } = decodificaMod;
@@ -1682,39 +1688,39 @@ export function useAppCore(session){
     }
 
     const payload = {
-      label, color, all_day: form.dur==="allday",
+      label, color, all_day: formEffettivo.dur==="allday",
       time_in: tInFinal, time_out: tOutFinal,
-      place: (form.place||"").toUpperCase(),
-      map_url: form.map||"",
-      note: (form.note||"").toUpperCase(),
-      modello_id: form.modelloId||null,
-      collega: (form.collega||"").toUpperCase(),
-      auto: (form.auto||"").toUpperCase(),
-      prot_pag_fine: form.protPagFine||null,
-      prot_rec_fine: form.protRecFine||null,
-      prot_meno_rec_in: form.protMenoRecIn||null,
-      prot_meno_rec_out: form.protMenoRecOut||null,
-      categoria_turno: form.categoriaTurno||null,
-      categoria_app_auto: form.categoriaAppAuto||null,
+      place: (formEffettivo.place||"").toUpperCase(),
+      map_url: formEffettivo.map||"",
+      note: (formEffettivo.note||"").toUpperCase(),
+      modello_id: formEffettivo.modelloId||null,
+      collega: (formEffettivo.collega||"").toUpperCase(),
+      auto: (formEffettivo.auto||"").toUpperCase(),
+      prot_pag_fine: formEffettivo.protPagFine||null,
+      prot_rec_fine: formEffettivo.protRecFine||null,
+      prot_meno_rec_in: formEffettivo.protMenoRecIn||null,
+      prot_meno_rec_out: formEffettivo.protMenoRecOut||null,
+      categoria_turno: formEffettivo.categoriaTurno||null,
+      categoria_app_auto: formEffettivo.categoriaAppAuto||null,
     };
-    const match = { id: form.editId, user_id: userId };
+    const match = { id: formEffettivo.editId, user_id: userId };
 
-    if(!form.modelloId && form.label) registraValoreAutocomplete("titolo", label);
-    if(form.auto) registraValoreAutocomplete("auto", (form.auto||"").toUpperCase());
-    if(form.place) registraValoreAutocomplete("luogo", (form.place||"").toUpperCase());
-    if(form.collega) registraValoriAutocomplete("collega", (form.collega||"").toUpperCase().split(/\r?\n/));
+    if(!formEffettivo.modelloId && formEffettivo.label) registraValoreAutocomplete("titolo", label);
+    if(formEffettivo.auto) registraValoreAutocomplete("auto", (formEffettivo.auto||"").toUpperCase());
+    if(formEffettivo.place) registraValoreAutocomplete("luogo", (formEffettivo.place||"").toUpperCase());
+    if(formEffettivo.collega) registraValoriAutocomplete("collega", (formEffettivo.collega||"").toUpperCase().split(/\r?\n/));
 
     // 1) SUBITO in locale.
     const patch = {label, color,
-      allDay: form.dur==="allday", tIn: tInFinal, tOut: tOutFinal,
-      place: (form.place||"").toUpperCase(), map: form.map||"",
-      note: (form.note||"").toUpperCase(), modelloId: form.modelloId||null,
-      collega: (form.collega||"").toUpperCase(), auto: (form.auto||"").toUpperCase(),
-      protPagFine: form.protPagFine||"", protRecFine: form.protRecFine||"",
-      protMenoRecIn: form.protMenoRecIn||"", protMenoRecOut: form.protMenoRecOut||"",
-      categoriaTurno: form.categoriaTurno||"", categoriaAppAuto: form.categoriaAppAuto||"",
+      allDay: formEffettivo.dur==="allday", tIn: tInFinal, tOut: tOutFinal,
+      place: (formEffettivo.place||"").toUpperCase(), map: formEffettivo.map||"",
+      note: (formEffettivo.note||"").toUpperCase(), modelloId: formEffettivo.modelloId||null,
+      collega: (formEffettivo.collega||"").toUpperCase(), auto: (formEffettivo.auto||"").toUpperCase(),
+      protPagFine: formEffettivo.protPagFine||"", protRecFine: formEffettivo.protRecFine||"",
+      protMenoRecIn: formEffettivo.protMenoRecIn||"", protMenoRecOut: formEffettivo.protMenoRecOut||"",
+      categoriaTurno: formEffettivo.categoriaTurno||"", categoriaAppAuto: formEffettivo.categoriaAppAuto||"",
     };
-    const nuovoStore = withEventoAggiornato(store, dayKey, editCalId, form.editId, patch);
+    const nuovoStore = withEventoAggiornato(store, dayKey, editCalId, formEffettivo.editId, patch);
     saveToLocalStorage(nuovoStore.events, nuovoStore.calendars, modelli);
     setStore(nuovoStore);
     // Aggiorno anche il ref SUBITO (sincrono): la chiamata a
@@ -1740,10 +1746,10 @@ export function useAppCore(session){
     // secondo caso l'aggiornamento è già stato propagato sopra, punto 3bis).
     if(!decodificaMod){
       await sincronizzaEventiProtrazione({
-        idEventoBase: form.editId, dayKey, calId: editCalId,
+        idEventoBase: formEffettivo.editId, dayKey, calId: editCalId,
         tInBase: tInFinal, tOutBase: tOutFinal,
-        protPagFine: form.protPagFine||"", protRecFine: form.protRecFine||"",
-        menoRecIn: form.protMenoRecIn||"", menoRecOut: form.protMenoRecOut||"",
+        protPagFine: formEffettivo.protPagFine||"", protRecFine: formEffettivo.protRecFine||"",
+        menoRecIn: formEffettivo.protMenoRecIn||"", menoRecOut: formEffettivo.protMenoRecOut||"",
       });
     }
   }
