@@ -1077,6 +1077,7 @@ export default function VistaModelli({ C }){
           }} style={{background:"#3b82f6",border:"none",borderRadius:8,color:"#fff",padding:"8px 14px",cursor:"pointer",fontWeight:800,fontSize:14}}>+</button>
         </div>
       </SecCollapsible>
+
       <SecCollapsible label="ARCHIVIO GOOGLE SHEETS" T={T}>
         <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
           Configura il tuo script Google Sheets per importare ed esportare i dati.
