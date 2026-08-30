@@ -1516,6 +1516,9 @@ export default function VistaModelli({ C }){
                           display:"flex",alignItems:"center",gap:5}}>
                         <div style={{width:8,height:8,borderRadius:"50%",background:c}}/>
                         {m.titolo}
+                        {m.tempo!=="h24"&&m.inizio&&(
+                          <span style={{opacity:0.75,fontWeight:600}}>{m.inizio}→{m.fine||""}</span>
+                        )}
                       </button>
                     );
                   })}
@@ -1552,6 +1555,9 @@ export default function VistaModelli({ C }){
                           display:"flex",alignItems:"center",gap:5}}>
                         <div style={{width:8,height:8,borderRadius:"50%",background:c}}/>
                         {m.titolo}
+                        {m.tempo!=="h24"&&m.inizio&&(
+                          <span style={{opacity:0.75,fontWeight:600}}>{m.inizio}→{m.fine||""}</span>
+                        )}
                       </button>
                     );
                   })}
