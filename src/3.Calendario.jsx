@@ -360,7 +360,7 @@ export default function VistaCalendario({ C }){
           📴 OFFLINE — le modifiche verranno sincronizzate al ritorno della connessione
         </div>
       )}
-      <div style={{position:"relative",flex:1,overflow:"hidden",minHeight:0}}>
+      <div style={{position:"relative",flex:1,overflow:calEventRows===2?"auto":"hidden",minHeight:0}}>
       {prevGrid&&(()=>{
         const pTotalDays=daysInMonth(prevGrid.year,prevGrid.month);
         const pFd=firstDay(prevGrid.year,prevGrid.month);
@@ -405,7 +405,8 @@ export default function VistaCalendario({ C }){
         className={prevGrid?`calSlideIn${prevGrid.dir==="next"?"Left":"Right"}`:""}
         style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",
         gridAutoRows:`minmax(${weekRowMinH}px,1fr)`,gap:"1px 0px",background:T.gap,
-        position:prevGrid?"absolute":"relative",inset:0,height:"100%",
+        position:prevGrid?"absolute":"relative",inset:0,
+        [calEventRows===2?"minHeight":"height"]:"100%",
         animation:prevGrid?`calSlideIn${prevGrid.dir==="next"?"Left":"Right"} 0.35s ease forwards`:"none"}}>
         {cells.map((d,i)=>{
           if(!d) return <div key={i} style={{background:T.bg}}/>;
