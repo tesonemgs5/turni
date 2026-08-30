@@ -941,6 +941,68 @@ export default function VistaModelli({ C }){
         </button>
       </SecCollapsible>
 
+      <SecCollapsible label="OPZIONI DI VISUALIZZAZIONE" T={T}>
+        <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
+          Quante righe di dettaglio mostrare per ogni evento nella griglia mensile del Calendario.
+        </div>
+        <div style={{display:"flex",gap:8,marginBottom:14}}>
+          {[[1,"1 riga"],[2,"2 righe"]].map(([v,l])=>(
+            <button key={v} onClick={()=>{
+              setStore(s=>({...s,calEventRows:v}));
+              saveSettings({cal_event_rows:v});
+            }}
+              style={{flex:1,padding:"9px 4px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:12,
+                background:store.calEventRows===v?"#6366f1":T.s2,
+                color:store.calEventRows===v?"#fff":T.sub,
+                border:`2px solid ${store.calEventRows===v?"#6366f1":T.border}`}}>{l}</button>
+          ))}
+        </div>
+
+        {store.calEventRows===2 && (
+          <>
+            <div style={{fontSize:10,fontWeight:800,color:T.sub,letterSpacing:"0.5px",marginBottom:8}}>RIGA 1</div>
+            <div style={{background:T.s2,borderRadius:10,marginBottom:14,overflow:"hidden"}}>
+              {[["titolo","Titolo"],["inizio","Inizio"],["fine","Fine"],["durata","Durata"],["icona","Icona"]].map(([v,l],i,arr)=>(
+                <div key={v} onClick={()=>{
+                    setStore(s=>({...s,calRow1Field:v}));
+                    saveSettings({cal_row1_field:v});
+                  }}
+                  style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+                    padding:"11px 12px",cursor:"pointer",
+                    borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
+                  <span style={{fontSize:13,color:T.text}}>{l}</span>
+                  <div style={{width:18,height:18,borderRadius:"50%",flexShrink:0,
+                    border:`2px solid ${store.calRow1Field===v?"#6366f1":T.border}`,
+                    display:"flex",alignItems:"center",justifyContent:"center"}}>
+                    {store.calRow1Field===v && <div style={{width:9,height:9,borderRadius:"50%",background:"#6366f1"}}/>}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{fontSize:10,fontWeight:800,color:T.sub,letterSpacing:"0.5px",marginBottom:8}}>RIGA 2</div>
+            <div style={{background:T.s2,borderRadius:10,overflow:"hidden"}}>
+              {[["---","---"],["inizio","Inizio"],["fine","Fine"],["durata","Durata"],["note","Note"]].map(([v,l],i,arr)=>(
+                <div key={v} onClick={()=>{
+                    setStore(s=>({...s,calRow2Field:v}));
+                    saveSettings({cal_row2_field:v});
+                  }}
+                  style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+                    padding:"11px 12px",cursor:"pointer",
+                    borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
+                  <span style={{fontSize:13,color:T.text}}>{l}</span>
+                  <div style={{width:18,height:18,borderRadius:"50%",flexShrink:0,
+                    border:`2px solid ${store.calRow2Field===v?"#6366f1":T.border}`,
+                    display:"flex",alignItems:"center",justifyContent:"center"}}>
+                    {store.calRow2Field===v && <div style={{width:9,height:9,borderRadius:"50%",background:"#6366f1"}}/>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </SecCollapsible>
+
       <SecCollapsible label="CALENDARI" T={T}>
         {store.calendars.map((c,ci)=>(
           <div key={c.id} style={{marginBottom:10}}>
