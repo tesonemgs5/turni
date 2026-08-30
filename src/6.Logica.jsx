@@ -2716,21 +2716,17 @@ const importsRecenti = useMemo(()=>{
           );
         });
       });
-      saveToLocalStorage(nuovoStore.events, nuovoStore.calendars, modelli);
-      setStore(nuovoStore);
-      let modelliAggiornati;
-      let modelloAggiornato;
       const { silenzioso: _silenziosoUpd, ...datiUpdatePuliti } = data;
-      setModelli(prev=>{
-        const updated=prev.map(m=>{
-          if(m.id!==data.id) return m;
-          const nuovo = {...m,...datiUpdatePuliti,colore:coloreEff,calendarId:targetCalId};
-          modelloAggiornato = nuovo;
-          return nuovo;
-        });
-        modelliAggiornati = updated;
-        return updated;
+      let modelloAggiornato;
+      const modelliAggiornati = modelli.map(m=>{
+        if(m.id!==data.id) return m;
+        const nuovo = {...m,...datiUpdatePuliti,colore:coloreEff,calendarId:targetCalId};
+        modelloAggiornato = nuovo;
+        return nuovo;
       });
+      saveToLocalStorage(nuovoStore.events, nuovoStore.calendars, modelliAggiornati);
+      setStore(nuovoStore);
+      setModelli(modelliAggiornati);
 
       // Il form aspetta questa funzione per chiudersi (await saveModello in
       // onSave): il locale è già scritto sopra, quindi da qui si ritorna
