@@ -258,6 +258,8 @@ export function useAppCore(session){
   const [sheetsSecret, setSheetsSecret] = useState("");
   const [stats, setStats] = useState(null);
   const [showDbModal, setShowDbModal] = useState(false);
+  const [ripristinoInCorso, setRipristinoInCorso] = useState(false);
+  const [ripristinoEsito, setRipristinoEsito] = useState(null);
   const [showModelloEditor, setShowModelloEditor] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [banner, setBanner] = useState(null);
@@ -1438,7 +1440,6 @@ export function useAppCore(session){
     // trovato qui sotto (find fallirebbe), e verrebbe creato un secondo
     // evento doppione invece di aggiornare quello esistente.
     const evtiGiorno = storeRef.current.events?.[dayKey]?.[calId]||[];
-
     for(const { tipo, oraFine, durataOverride } of richieste){
       const marker = idProtrazioneFiglio(idEventoBase, tipo);
       // Auto-riparazione: se per lo stesso marker esistono già più eventi
@@ -1533,11 +1534,41 @@ export function useAppCore(session){
     }
   }
 
+  // ── Auto-collegamento evento→modello: se l'utente salva un evento senza
+  // passare dal picker "Scegli modello" (scrivendo a mano titolo/orario),
+  // form.modelloId resta vuoto e l'evento diventa "orfano" — invisibile ai
+  // report, che contano sempre per modelloId, mai per il solo testo/label.
+  // Qui cerchiamo un modello dello stesso calendario con titolo (o label) e
+  // orari IDENTICI: se lo troviamo, colleghiamo l'evento in automatico,
+  // silenziosamente, così il problema non si presenta più al salvataggio.
+  // Match volutamente RIGOROSO (stesso calendario, stesso testo, stessi
+  // orari): meglio lasciare un evento orfano isolato che agganciarlo al
+  // modello sbagliato.
+  function trovaModelloCorrispondente(calId, label, tIn, tOut){
+    if(!label) return null;
+    const norm = s => (s||"").trim().toUpperCase();
+    const target = norm(label);
+    return modelli.find(m=>
+      m.calendarId===calId &&
+      (norm(m.titolo)===target || norm(m.label)===target) &&
+      (m.inizio||"")===(tIn||"") &&
+      (m.fine||"")===(tOut||"")
+    ) || null;
+  }
+
   async function saveEvt(){
     if(!form||!dayKey||!calId||!userId) return;
     const cal = store.calendars.find(c=>c.id===calId);
     if(!cal) return;
     const { color, label, tInFinal, tOutFinal, extraNote } = computeEventFields(form, cal, modelli);
+
+    // Fallback: se il form non ha un modello selezionato ma il testo/orario
+    // combaciano esattamente con un modello esistente, colleghiamolo ora,
+    // prima di scrivere su Supabase — invece di scoprirlo dopo dal report.
+    if(!form.modelloId){
+      const matchAuto = trovaModelloCorrispondente(calId, label, tInFinal, tOutFinal);
+      if(matchAuto) form = {...form, modelloId: matchAuto.id};
+    }
 
     // L'id viene generato QUI, non più dal database: così l'evento locale
     // e quello su Supabase condividono lo stesso id fin dal primo istante,
@@ -1607,6 +1638,13 @@ export function useAppCore(session){
     const cal = store.calendars.find(c=>c.id===editCalId);
     if(!cal) return;
     const { color, label, tInFinal, tOutFinal } = computeEventFields(form, cal, modelli);
+
+    // Stesso fallback di saveEvt: se manca modelloId ma testo/orario
+    // combaciano esattamente con un modello esistente, colleghiamolo ora.
+    if(!form.modelloId){
+      const matchAuto = trovaModelloCorrispondente(editCalId, label, tInFinal, tOutFinal);
+      if(matchAuto) form = {...form, modelloId: matchAuto.id};
+    }
 
     // Sincronizzazione inversa: se l'evento che sto modificando È esso
     // stesso una protrazione-figlia (l'utente ha cambiato l'orario
@@ -2828,7 +2866,6 @@ const importsRecenti = useMemo(()=>{
       eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelliAggiornati,
     });
   }
-
   // ── COLORI: aggiunta/rimozione dalla sezione + assegnazione esclusiva ai modelli
   async function addColoreExtra(hex){
     if(!userId || coloriExtra.some(c=>c.hex===hex)) return;
@@ -3919,11 +3956,57 @@ const importsRecenti = useMemo(()=>{
 // #endregion
 
 
+  // ── Manutenzione: ricollega gli eventi "orfani" (modello_id nullo) ai
+  // modelli esistenti, quando testo e orari combaciano esattamente.
+  // Richiamabile da un pulsante in Impostazioni. Match rigoroso (stesso
+  // calendario, stesso titolo/label, stessi orari): quello che non trova
+  // un match sicuro resta orfano e va controllato a mano, elencato nel
+  // riepilogo restituito.
+  async function ripristinaModelliMancanti(){
+    const orfani = [];
+    for(const dayKey in store.events){
+      for(const cId in store.events[dayKey]){
+        for(const e of store.events[dayKey][cId]){
+          if(!e.modelloId) orfani.push({ dayKey, calId:cId, evt:e });
+        }
+      }
+    }
+    const risolti = [];
+    const nonRisolti = [];
+    for(const { dayKey, calId:cId, evt } of orfani){
+      const match = trovaModelloCorrispondente(cId, evt.label, evt.tIn, evt.tOut);
+      if(match){
+        const { error } = await scriviConBackup({
+          tipo:"update", table:"events",
+          payload:{ modello_id: match.id },
+          matchObj:{ id: evt.id },
+          contesto:"Ripristino automatico modello mancante",
+          ts:new Date().toISOString(),
+          opzioni:{ soloLog:true },
+        });
+        if(!error){
+          const nuovoStore = withEventoAggiornato(store, dayKey, cId, evt.id, { modelloId: match.id });
+          setStore(nuovoStore);
+          storeRef.current = nuovoStore;
+          risolti.push({ dayKey, label: evt.label, modello: match.titolo||match.label });
+        } else {
+          nonRisolti.push({ dayKey, label: evt.label, motivo: "errore di scrittura" });
+        }
+      } else {
+        nonRisolti.push({ dayKey, label: evt.label, motivo: "nessun modello corrispondente trovato" });
+      }
+    }
+    return { totale: orfani.length, risolti, nonRisolti };
+  }
+
   return {
     today,
     tipoModelloProtrazione,
     store,
     setStore,
+    ripristinaModelliMancanti,
+    ripristinoInCorso, setRipristinoInCorso,
+    ripristinoEsito, setRipristinoEsito,
     loading,
     setLoading,
     year,
