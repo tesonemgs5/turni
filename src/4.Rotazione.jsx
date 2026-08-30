@@ -1504,6 +1504,9 @@ export function ModelloSelector({label, value, onChange, modelli, T, required=fa
             <div style={{display:"flex",alignItems:"center",gap:6}}>
               <div style={{width:10,height:10,borderRadius:"50%",background:colore}}/>
               <span style={{fontSize:14,fontWeight:700,color:T.text}}>{sel.titolo}</span>
+              {sel.tempo!=="h24"&&sel.inizio&&(
+                <span style={{fontSize:12,color:T.sub,fontWeight:600}}>{sel.inizio}→{sel.fine||""}</span>
+              )}
             </div>
           ):(
             <span style={{fontSize:13,color:T.sub,fontStyle:"italic"}}>{required?"Seleziona...":"Nessuno (opzionale)"}</span>
