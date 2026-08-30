@@ -184,7 +184,7 @@ export default function VistaCalendario({ C }){
     if(calEventRows!==2){
       return (
         <div style={{background:e.color,borderRadius:3,padding:"0 4px",
-          fontSize:evtFontSize,fontWeight:800,color:textColor,overflow:"hidden",textOverflow:"ellipsis",
+          fontSize:evtFontSize,fontWeight:800,color:textColor,overflow:"hidden",
           whiteSpace:"nowrap",display:"flex",alignItems:"center",lineHeight:1,
           textShadow:shadow,gridRow:"span 1"}}>
           {e.label}
@@ -198,13 +198,13 @@ export default function VistaCalendario({ C }){
       <div style={{background:e.color,borderRadius:3,padding:"1px 4px",
         display:"flex",flexDirection:"column",overflow:"hidden",gridRow:"span 2"}}>
         <div style={{fontSize:evtFontSize,fontWeight:800,color:textColor,overflow:"hidden",
-          textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.15,textShadow:shadow,
+          whiteSpace:"nowrap",lineHeight:1.15,textShadow:shadow,
           flexShrink:0}}>
           {row1}
         </div>
         {calRow2Field!=="---" && (
           <div style={{fontSize:row2FontSize,fontWeight:600,color:textColor,opacity:0.9,
-            overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.15,textShadow:shadow,
+            overflow:"hidden",whiteSpace:"nowrap",lineHeight:1.15,textShadow:shadow,
             flexShrink:0}}>
             {row2}
           </div>
