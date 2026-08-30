@@ -33,7 +33,7 @@ const REPORT_TEMPLATES = [
   { type:"storno_recupero", label:"Storno PROTRAZIONE A RECUPERO", desc:"Credito PROTRAZIONE A RECUPERO e consumo -PROTRAZIONE A RECUPERO, con date e minuti" },
 ];
 
-const INIT = { calendars:[], events:{}, theme:"auto", extraHols:[], reports:[], reportSettings:{}, fasceAutomatiche: FASCE_AUTOMATICHE_DEFAULT, sundayColor:"", holidayColor:"", nationalHolsEnabled:FESTIVITA_DEFAULT_ATTIVE };
+const INIT = { calendars:[], events:{}, theme:"auto", extraHols:[], reports:[], reportSettings:{}, fasceAutomatiche: FASCE_AUTOMATICHE_DEFAULT, sundayColor:"", holidayColor:"", nationalHolsEnabled:FESTIVITA_DEFAULT_ATTIVE, calEventRows:1, calRow1Field:"titolo", calRow2Field:"---" };
 
 export function useAppCore(session){
   const today = new Date();
@@ -546,6 +546,9 @@ export function useAppCore(session){
         const savedSundayColor = settings?.sunday_color || "";
         const savedHolidayColor = settings?.holiday_color || "";
         const savedNationalHolsEnabled = settings?.national_hols_enabled || FESTIVITA_DEFAULT_ATTIVE;
+        const savedCalEventRows = settings?.cal_event_rows || 1;
+        const savedCalRow1Field = settings?.cal_row1_field || "titolo";
+        const savedCalRow2Field = settings?.cal_row2_field || "---";
 
         const modelliMappati = (modelliDb||[]).map(m=>({
           id:m.id, titolo:m.titolo, label:m.label||"", tempo:m.tempo,
@@ -575,15 +578,16 @@ export function useAppCore(session){
         const modelliUguali = cached && sameData(cached.modelli, modelliMappati);
 
         if(!(calendariUguali && eventiUguali)){
-          setStore(s=>({ ...s, calendars, events, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings, fasceAutomatiche: savedFasce, sundayColor: savedSundayColor, holidayColor: savedHolidayColor, nationalHolsEnabled: savedNationalHolsEnabled }));
+          setStore(s=>({ ...s, calendars, events, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings, fasceAutomatiche: savedFasce, sundayColor: savedSundayColor, holidayColor: savedHolidayColor, nationalHolsEnabled: savedNationalHolsEnabled, calEventRows: savedCalEventRows, calRow1Field: savedCalRow1Field, calRow2Field: savedCalRow2Field }));
         } else {
-          setStore(s=>({ ...s, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings, fasceAutomatiche: savedFasce, sundayColor: savedSundayColor, holidayColor: savedHolidayColor, nationalHolsEnabled: savedNationalHolsEnabled }));
+          setStore(s=>({ ...s, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings, fasceAutomatiche: savedFasce, sundayColor: savedSundayColor, holidayColor: savedHolidayColor, nationalHolsEnabled: savedNationalHolsEnabled, calEventRows: savedCalEventRows, calRow1Field: savedCalRow1Field, calRow2Field: savedCalRow2Field }));
         }
         // Aggiorno anche la cache delle impostazioni visive, così il
         // prossimo avvio dell'app parte già col colore giusto, senza flash.
         saveToLocalStorage(events, calendars, modelliMappati, calId, {
           theme, extraHols, sundayColor: savedSundayColor, holidayColor: savedHolidayColor,
           fasceAutomatiche: savedFasce, nationalHolsEnabled: savedNationalHolsEnabled,
+          calEventRows: savedCalEventRows, calRow1Field: savedCalRow1Field, calRow2Field: savedCalRow2Field,
         });
         if(!modelliUguali){
           setModelli(modelliMappati);
@@ -1240,6 +1244,9 @@ export function useAppCore(session){
       user_id: userId,
       theme: store.theme,
       extra_hols: store.extraHols,
+      cal_event_rows: store.calEventRows,
+      cal_row1_field: store.calRow1Field,
+      cal_row2_field: store.calRow2Field,
       ...updates,
       updated_at: new Date().toISOString(),
     });
