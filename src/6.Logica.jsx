@@ -1339,15 +1339,15 @@ export function useAppCore(session){
       const sh = cal.shifts?.find(s=>s.id===form.shiftId);
       if(sh){ color=form.colorOvr||sh.color; label=sh.label.toUpperCase(); }
     }
-    if(form.dur==="fixed" && tInFinal && !form.modelloId){
+    if(form.dur==="fixed" && tInFinal && !idModelloForm){
       tOutFinal = form.tOut||calcFine6h15(tInFinal);
     }
-    if(form.dur==="fixed30" && tInFinal && !form.modelloId){
+    if(form.dur==="fixed30" && tInFinal && !idModelloForm){
       tOutFinal = form.tOut||calcFine6h30(tInFinal);
     }
     let extraNote = form.note||"";
-    if(form.modelloId && tInFinal && tOutFinal){
-      const mod=modelli.find(m=>m.id===form.modelloId);
+    if(idModelloForm && tInFinal && tOutFinal){
+      const mod=modelli.find(m=>m.id===idModelloForm);
       if(mod&&mod.fine&&mod.inizio){
         const durPrevista=calcMinuti(mod.inizio,mod.fine);
         const durEffettiva=calcMinuti(tInFinal,tOutFinal);
