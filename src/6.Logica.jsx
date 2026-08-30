@@ -524,6 +524,7 @@ export function useAppCore(session){
           events[e.date_key][e.calendar_id].push({
             id: e.id, label: e.label, color: e.color, allDay: e.all_day,
             tIn: e.time_in||"", tOut: e.time_out||"", place: e.place||"",
+            tInNote: e.time_in_note||"", tOutNote: e.time_out_note||"",
             map: e.map_url||"", note: e.note||"",
             modelloId: e.modello_id||null, rotazioneId: e.rotazione_id||null, collega: e.collega||null,
             auto: e.auto||"", parentId: e.parent_id||null,
@@ -1600,12 +1601,19 @@ export function useAppCore(session){
       prot_pag_fine: formEffettivo.protPagFine||null, prot_rec_fine: formEffettivo.protRecFine||null,
       prot_meno_rec_in: formEffettivo.protMenoRecIn||null, prot_meno_rec_out: formEffettivo.protMenoRecOut||null,
       categoria_turno: formEffettivo.categoriaTurno||null, categoria_app_auto: formEffettivo.categoriaAppAuto||null,
+      // Promemoria di ingresso/uscita realmente digitato dall'utente, separato
+      // dagli orari ufficiali dell'evento (time_in/time_out, sempre uguali al
+      // modello quando c'è un modello collegato). Serve solo per essere
+      // rimostrato nel form al riapertura, non incide su report/conteggi.
+      time_in_note: formEffettivo.modelloId||formEffettivo.evtModelloId ? (formEffettivo.tIn||null) : null,
+      time_out_note: formEffettivo.modelloId||formEffettivo.evtModelloId ? (formEffettivo.tOut||null) : null,
     };
 
     // 1) SUBITO in locale: l'utente vede il turno all'istante, online o offline.
     const evt = {
       id: idLocale, color, label, allDay: payload.all_day,
       tIn: tInFinal||"", tOut: tOutFinal||"",
+      tInNote: payload.time_in_note||"", tOutNote: payload.time_out_note||"",
       place: payload.place||"", map: payload.map_url||"",
       note: payload.note||"", modelloId: payload.modello_id,
       rotazioneId: payload.rotazione_id,
@@ -1709,6 +1717,10 @@ export function useAppCore(session){
       prot_meno_rec_out: formEffettivo.protMenoRecOut||null,
       categoria_turno: formEffettivo.categoriaTurno||null,
       categoria_app_auto: formEffettivo.categoriaAppAuto||null,
+      // Vedi commento gemello in saveEvt: promemoria separato dagli orari
+      // ufficiali, per sopravvivere al refresh senza alterare il turno.
+      time_in_note: formEffettivo.modelloId||formEffettivo.evtModelloId ? (formEffettivo.tIn||null) : null,
+      time_out_note: formEffettivo.modelloId||formEffettivo.evtModelloId ? (formEffettivo.tOut||null) : null,
     };
     const match = { id: formEffettivo.editId, user_id: userId };
 
@@ -1720,6 +1732,8 @@ export function useAppCore(session){
     // 1) SUBITO in locale.
     const patch = {label, color,
       allDay: formEffettivo.dur==="allday", tIn: tInFinal, tOut: tOutFinal,
+      tInNote: formEffettivo.modelloId||formEffettivo.evtModelloId ? (formEffettivo.tIn||"") : "",
+      tOutNote: formEffettivo.modelloId||formEffettivo.evtModelloId ? (formEffettivo.tOut||"") : "",
       place: (formEffettivo.place||"").toUpperCase(), map: formEffettivo.map||"",
       note: (formEffettivo.note||"").toUpperCase(), modelloId: formEffettivo.modelloId||null,
       collega: (formEffettivo.collega||"").toUpperCase(), auto: (formEffettivo.auto||"").toUpperCase(),
