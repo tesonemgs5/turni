@@ -59,6 +59,7 @@ function ColorRow({ T, hex, label, sub, count, onClick, onRemove }) {
 export default function VistaModelli({ C }){
   const {
     today, tipoModelloProtrazione, computeStornoRecupero, store, setStore, loading, setLoading, year,
+    ripristinaModelliMancanti, ripristinoInCorso, setRipristinoInCorso, ripristinoEsito, setRipristinoEsito,
     setYear, month, setMonth, calId, setCalId, editMode,
     setEditMode, selectedCalIds, setSelectedCalIds, reportCalIds, setReportCalIds, selectedModelloIds,
     setSelectedModelloIds, screen, setScreen, dayKey, setDayKey, form,
@@ -1076,7 +1077,6 @@ export default function VistaModelli({ C }){
           }} style={{background:"#3b82f6",border:"none",borderRadius:8,color:"#fff",padding:"8px 14px",cursor:"pointer",fontWeight:800,fontSize:14}}>+</button>
         </div>
       </SecCollapsible>
-
       <SecCollapsible label="ARCHIVIO GOOGLE SHEETS" T={T}>
         <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
           Configura il tuo script Google Sheets per importare ed esportare i dati.
@@ -2008,7 +2008,24 @@ export default function VistaModelli({ C }){
             <div style={{textAlign:"center",padding:24,color:T.sub,fontSize:12}}>⏳ Caricamento...</div>
           )}
         </div>
-        <div style={{padding:12,borderTop:`1px solid ${T.border}`}}>
+        <div style={{padding:12,borderTop:`1px solid ${T.border}`,display:"flex",flexDirection:"column",gap:8}}>
+          <button onClick={async()=>{
+              setRipristinoInCorso(true);
+              const ris = await ripristinaModelliMancanti();
+              setRipristinoInCorso(false);
+              setRipristinoEsito(ris);
+            }}
+            disabled={ripristinoInCorso}
+            style={{width:"100%",background:accent,border:"none",borderRadius:10,color:"#fff",padding:"10px 0",cursor:ripristinoInCorso?"default":"pointer",fontWeight:800,fontSize:12,opacity:ripristinoInCorso?0.6:1}}>
+            {ripristinoInCorso?"⏳ Controllo in corso...":"🔗 Controlla eventi senza modello"}
+          </button>
+          {ripristinoEsito&&(
+            <div style={{background:T.s2,borderRadius:8,padding:"8px 10px",fontSize:11,color:T.text}}>
+              {ripristinoEsito.totale===0
+                ? "Nessun evento senza modello trovato ✅"
+                : `${ripristinoEsito.risolti.length} di ${ripristinoEsito.totale} eventi ricollegati automaticamente.${ripristinoEsito.nonRisolti.length?` ${ripristinoEsito.nonRisolti.length} da controllare a mano (nessun modello corrispondente trovato).`:""}`}
+            </div>
+          )}
           <button onClick={()=>setShowDbModal(false)}
             style={{width:"100%",background:"#64748b",border:"none",borderRadius:10,color:"#fff",padding:"10px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
             Chiudi
