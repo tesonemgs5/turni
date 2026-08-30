@@ -389,7 +389,7 @@ export default function VistaCalendario({ C }){
                     </div>
                   </div>
                   <div style={{flex:1,overflow:"hidden",display:"grid",
-                    gridTemplateRows:`repeat(${maxEvtSlots},1fr)`,
+                    gridTemplateRows:`repeat(${Math.min(evts.length,maxEvtSlots)||1},1fr)`,
                     gap:"1px",padding:"0 1px 1px"}}>
                     {evts.slice(0,maxEvtSlots).map((e,ei)=>(
                       <EventCard key={e.id+ei} e={e}/>
@@ -434,7 +434,7 @@ export default function VistaCalendario({ C }){
                 </div>
               </div>
               <div style={{flex:1,overflow:"hidden",display:"grid",
-                gridTemplateRows:`repeat(${maxEvtSlots},1fr)`,
+                gridTemplateRows:`repeat(${Math.min(evts.length,maxEvtSlots)||1},1fr)`,
                 gap:"1px",padding:"0 1px 1px"}}>
                 {evts.slice(0,maxEvtSlots).map((e,ei)=>(
                   <EventCard key={e.id+ei} e={e}/>
