@@ -1003,6 +1003,7 @@ export default function VistaModelli({ C }){
         )}
       </SecCollapsible>
 
+
       <SecCollapsible label="CALENDARI" T={T}>
         {store.calendars.map((c,ci)=>(
           <div key={c.id} style={{marginBottom:10}}>
@@ -1514,7 +1515,8 @@ export default function VistaModelli({ C }){
             </div>
             <button onClick={e2=>{e2.stopPropagation();setForm({
                 editId:e.id,editCid:e._cid||calId,modelloId:null,evtModelloId:e.modelloId||null,shiftId:null,label:e.label,colorOvr:e.color,
-                dur:e.allDay?"allday":(e.tIn&&e.tOut&&e.tOut===calcFine6h15(e.tIn))?"fixed":(e.tIn&&e.tOut&&e.tOut===calcFine6h30(e.tIn))?"fixed30":"custom",tIn:e.tIn||"",tOut:e.tOut||"",place:e.place||"",
+                dur:e.allDay?"allday":(e.tIn&&e.tOut&&e.tOut===calcFine6h15(e.tIn))?"fixed":(e.tIn&&e.tOut&&e.tOut===calcFine6h30(e.tIn))?"fixed30":"custom",
+                tIn:(e.tInNote??e.tIn)||"",tOut:(e.tOutNote??e.tOut)||"",place:e.place||"",
                 map:e.map||"",note:e.note||"",collega:e.collega||"",auto:e.auto||"",
                 protPagFine:e.protPagFine||"",protRecFine:e.protRecFine||"",
                 protMenoRecIn:e.protMenoRecIn||"",protMenoRecOut:e.protMenoRecOut||"",
