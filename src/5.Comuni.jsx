@@ -522,7 +522,10 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, acce
                   {sm.tipo==="modello" && (
                     !data.perModello||Object.keys(data.perModello).length===0 ? (
                       <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"10px 0"}}>Nessun turno nel periodo</div>
-                    ) : Object.entries(data.perModello).map(([mid,info])=>{
+                    ) : Object.entries(data.perModello).sort(([a],[b])=>{
+                      const ia=modelli.findIndex(m=>m.id===a), ib=modelli.findIndex(m=>m.id===b);
+                      return (ia<0?9999:ia)-(ib<0?9999:ib);
+                    }).map(([mid,info])=>{
                       const m=modelli.find(x=>x.id===mid);
                       if(!m) return null;
                       const c=m.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
@@ -834,7 +837,10 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
                   {sm.tipo==="modello" && (
                     !data.perModello||Object.keys(data.perModello).length===0 ? (
                       <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"10px 0"}}>Nessun turno nel periodo</div>
-                    ) : Object.entries(data.perModello).map(([mid,info])=>{
+                    ) : Object.entries(data.perModello).sort(([a],[b])=>{
+                      const ia=modelli.findIndex(m=>m.id===a), ib=modelli.findIndex(m=>m.id===b);
+                      return (ia<0?9999:ia)-(ib<0?9999:ib);
+                    }).map(([mid,info])=>{
                       const m=modelli.find(x=>x.id===mid);
                       if(!m) return null;
                       const c=m.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
@@ -1119,7 +1125,10 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
       {modelli.length>0&&data.perModello&&Object.keys(data.perModello).length>0&&(
         <div style={{background:T.surface,borderRadius:10,padding:12}}>
           <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:8}}>PER MODELLO</div>
-          {Object.entries(data.perModello).map(([mid,info])=>{
+          {Object.entries(data.perModello).sort(([a],[b])=>{
+                      const ia=modelli.findIndex(m=>m.id===a), ib=modelli.findIndex(m=>m.id===b);
+                      return (ia<0?9999:ia)-(ib<0?9999:ib);
+                    }).map(([mid,info])=>{
             const m=modelli.find(x=>x.id===mid);
             if(!m) return null;
             const c=m.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
