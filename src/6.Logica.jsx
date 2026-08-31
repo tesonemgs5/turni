@@ -2700,7 +2700,7 @@ const importsRecenti = useMemo(()=>{
     const targetCalId = data.calendarId||calId||mainCalId;
     const payload={
       user_id:userId, titolo:(data.titolo||"").toUpperCase(), label:(data.label||"").toUpperCase(), tempo:data.tempo,
-      inizio:data.inizio||null, fine:data.fine||null,
+      inizio:data.inizio||null, fine:calcFineModello(data)||null,
       colore:coloreEff, colore_custom:data.coloreCustom||null,
       posizione:data.posizione||null,
       sort_order:data.sortOrder||modelli.length,
