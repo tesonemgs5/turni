@@ -1468,9 +1468,12 @@ export default function VistaModelli({ C }){
           <div key={e.id} onClick={()=>{
               if(soloConsultazione) return;
               if(form?.editId===e.id){ setForm(null); return; }
+              const modCollegatoQuestoEvt = e.modelloId ? modelli.find(m=>m.id===e.modelloId) : null;
+              const tInFallback = (e.tInNote??e.tIn) || modCollegatoQuestoEvt?.inizio || "";
+              const tOutFallback = (e.tOutNote??e.tOut) || modCollegatoQuestoEvt?.fine || "";
               setForm({ editId:e.id, editCid:e._cid||calId, modelloId:null, evtModelloId:e.modelloId||null, shiftId:null, label:e.label,
                 colorOvr:e.color, dur:e.allDay?"allday":(e.tIn&&e.tOut&&e.tOut===calcFine6h15(e.tIn))?"fixed":(e.tIn&&e.tOut&&e.tOut===calcFine6h30(e.tIn))?"fixed30":"custom",
-                tIn:(e.tInNote??e.tIn)||"", tOut:(e.tOutNote??e.tOut)||"",
+                tIn:tInFallback, tOut:tOutFallback,
                 place:e.place||"", map:e.map||"", note:e.note||"", collega:e.collega||"", auto:e.auto||"",
                 protPagFine:e.protPagFine||"", protRecFine:e.protRecFine||"",
                 protMenoRecIn:e.protMenoRecIn||"", protMenoRecOut:e.protMenoRecOut||"",
@@ -1514,10 +1517,14 @@ export default function VistaModelli({ C }){
               </div>}
 
             </div>
-            <button onClick={e2=>{e2.stopPropagation();setForm({
+            <button onClick={e2=>{e2.stopPropagation();
+              const modCollegatoQuestoEvt2 = e.modelloId ? modelli.find(m=>m.id===e.modelloId) : null;
+              const tInFallback2 = (e.tInNote??e.tIn) || modCollegatoQuestoEvt2?.inizio || "";
+              const tOutFallback2 = (e.tOutNote??e.tOut) || modCollegatoQuestoEvt2?.fine || "";
+              setForm({
                 editId:e.id,editCid:e._cid||calId,modelloId:null,evtModelloId:e.modelloId||null,shiftId:null,label:e.label,colorOvr:e.color,
                 dur:e.allDay?"allday":(e.tIn&&e.tOut&&e.tOut===calcFine6h15(e.tIn))?"fixed":(e.tIn&&e.tOut&&e.tOut===calcFine6h30(e.tIn))?"fixed30":"custom",
-                tIn:(e.tInNote??e.tIn)||"",tOut:(e.tOutNote??e.tOut)||"",place:e.place||"",
+                tIn:tInFallback2,tOut:tOutFallback2,place:e.place||"",
                 map:e.map||"",note:e.note||"",collega:e.collega||"",auto:e.auto||"",
                 protPagFine:e.protPagFine||"",protRecFine:e.protRecFine||"",
                 protMenoRecIn:e.protMenoRecIn||"",protMenoRecOut:e.protMenoRecOut||"",
