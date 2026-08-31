@@ -1203,6 +1203,12 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
   );
 }
 
+function fmtOreDecimali(ore){
+  const totMin = Math.round((ore||0)*60);
+  const h = Math.floor(totMin/60), m = totMin%60;
+  return `${h}h${m>0?` ${m}m`:""}`;
+}
+
 export function IndennitaConfig({T, values, setValues, calc, onSave}){
   const fasce = [
     { key:"diurno",          label:"Diurno (06:00 - 22:00)", count:calc.diurno },
@@ -1212,13 +1218,13 @@ export function IndennitaConfig({T, values, setValues, calc, onSave}){
   ];
   return (
     <div style={{display:"flex",flexDirection:"column",gap:8}}>
-      <div style={{fontSize:10,color:T.sub,marginBottom:2}}>Imposta il compenso per fascia oraria</div>
+      <div style={{fontSize:10,color:T.sub,marginBottom:2}}>Imposta il compenso per ora</div>
       {fasce.map(f=>(
         <div key={f.key} style={{background:T.surface,borderRadius:10,padding:"10px 12px",
           display:"flex",alignItems:"center",gap:10}}>
           <div style={{flex:1}}>
             <div style={{fontSize:12,fontWeight:700,color:T.text}}>{f.label}</div>
-            <div style={{fontSize:11,color:T.sub}}>{f.count} turni nel periodo</div>
+            <div style={{fontSize:11,color:T.sub}}>{fmtOreDecimali(f.count)} nel periodo</div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:4}}>
             <span style={{fontSize:13,color:T.sub}}>€</span>
@@ -1462,6 +1468,64 @@ export function GuadagniView({T, indennita, calc}){
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <span style={{fontSize:14,fontWeight:800,color:T.text}}>Totale periodo</span>
         <span style={{fontSize:20,fontWeight:900,color:"#22c55e"}}>€ {tot.toFixed(2)}</span>
+      </div>
+    </div>
+  );
+}
+
+// Viabilità: 15€ per giorno con turno 6h15/6h30/6h01, scalata di 2,4€
+// per ogni ora di lavoro effettivo mancante rispetto al previsto.
+export function ViabilitaView({T, calc}){
+  return (
+    <div style={{background:T.surface,borderRadius:10,padding:12}}>
+      <div style={{fontSize:11,color:T.sub,marginBottom:8}}>Viabilità (15€/giorno, -2,4€ per ora mancante)</div>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+        <span style={{fontSize:12,color:T.sub}}>Giorni con turno valido</span>
+        <span style={{fontWeight:800,color:T.text}}>{calc.giorni}</span>
+      </div>
+      {calc.oreMancanti>0&&(
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+          <span style={{fontSize:12,color:T.sub}}>Ore mancanti totali</span>
+          <span style={{fontWeight:700,color:"#dc2626"}}>{calc.oreMancanti.toFixed(2)}h</span>
+        </div>
+      )}
+      <div style={{display:"flex",justifyContent:"space-between"}}>
+        <span style={{fontSize:14,fontWeight:800,color:T.text}}>Totale periodo</span>
+        <span style={{fontSize:20,fontWeight:900,color:"#22c55e"}}>€ {calc.totale.toFixed(2)}</span>
+      </div>
+    </div>
+  );
+}
+
+// Ticket: un ticket per ogni giorno con almeno 6h15 di lavoro effettivo
+// (sommando i turni validi del giorno). Il valore del singolo ticket è
+// impostabile dall'utente, salvato in settings come le altre indennità.
+export function TicketConfig({T, valoreTicket, setValoreTicket, calc, onSave}){
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+      <div style={{background:T.surface,borderRadius:10,padding:"10px 12px",
+        display:"flex",alignItems:"center",gap:10}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:12,fontWeight:700,color:T.text}}>Valore ticket</div>
+          <div style={{fontSize:11,color:T.sub}}>Per ogni giorno con almeno 6h15 lavorate</div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:4}}>
+          <span style={{fontSize:13,color:T.sub}}>€</span>
+          <input type="number" value={valoreTicket||""} onChange={e=>setValoreTicket(e.target.value)}
+            onBlur={onSave} placeholder="0.00" step="0.01"
+            style={{width:70,background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
+              padding:"6px 8px",color:T.text,fontSize:13,outline:"none",textAlign:"right"}}/>
+        </div>
+      </div>
+      <div style={{background:T.surface,borderRadius:10,padding:"10px 12px",
+        display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span style={{fontSize:13,fontWeight:800,color:T.text}}>Ticket maturati</span>
+        <span style={{fontSize:14,fontWeight:800,color:T.text}}>{calc.giorni}</span>
+      </div>
+      <div style={{background:T.surface,borderRadius:10,padding:"10px 12px",
+        display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span style={{fontSize:13,fontWeight:800,color:T.text}}>Totale stimato</span>
+        <span style={{fontSize:16,fontWeight:900,color:"#22c55e"}}>€ {calc.totale.toFixed(2)}</span>
       </div>
     </div>
   );

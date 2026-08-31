@@ -11,7 +11,8 @@ import {
 } from "./4.Rotazione";
 import { CalBadge, SmartTimeInput, AutocompleteInput, ColorPickerModal,
   ModaleErroriMultipli, FasceExpand, ConteggioConfigCard, TurnazioneConfigCard, OreTurnoConfigCard, fmtOreMin,
-  IndennitaConfig, OrePerTurnoView, StraordinariView, StornoRecuperoView, GuadagniView } from "./5.Comuni";
+  IndennitaConfig, OrePerTurnoView, StraordinariView, StornoRecuperoView, GuadagniView,
+  ViabilitaView, TicketConfig } from "./5.Comuni";
 import { ModelloCard, ModelForm, RotazioneCard, RotazioneForm, ModelloSelector,
   GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView } from "./4.Rotazione";
 import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./7.Turni";
@@ -61,7 +62,7 @@ export default function VistaCalendario({ C }){
     reportMeseSel, setReportMeseSel, selezionaReportMese, showMeseReportPicker, setShowMeseReportPicker, reportDateFrom,
     setReportDateFrom, setReportDateFromPersistito, reportDateTo, setReportDateTo, setReportDateToPersistito, intervalliSalvati, salvaIntervalloCorrente,
     applicaIntervalloSalvato, rimuoviIntervalloSalvato, openReportConfig, setOpenReportConfig, showIntervalPicker,
-    setShowIntervalPicker, indennita, setIndennita, conteggioConfigs, setConteggioConfigs, showReportModelliPicker,
+    setShowIntervalPicker, indennita, setIndennita, valoreTicket, setValoreTicket, conteggioConfigs, setConteggioConfigs, showReportModelliPicker,
     setShowReportModelliPicker, editFascia, setEditFascia, showFasciaColorPicker, setShowFasciaColorPicker, userId,
     isInitialized, processaCodaSync, sysDark, dark, T, activeCal,
     mainCal, mainCalId, accent, accentText, hols, fasceAutomatiche,
@@ -77,7 +78,7 @@ export default function VistaCalendario({ C }){
     removeColoreExtra, updateColoreExtraLabel, replaceColoreEverywhere, saveRotazione, deleteRotazione, updateGrigliaRotazione,
     inserisciEventoGenerico, normOrarioImport, trovaModelloPerTitoloOrario, isRigaProtrazione, tipoProtrazione, importaTurniPdfJson,
     delTuttiEventiImport, importaEventiSingoli, applyRotazione, getReportRange, splitColleghi, computeConteggioForReport,
-    computeMinutiForReport, computeStornoRecupero, computeTurnazioneForReport, computeConteggio, computeIndennita, activeReports, inactiveTypes, addReport,
+    computeMinutiForReport, computeStornoRecupero, computeTurnazioneForReport, computeConteggio, computeIndennita, computeViabilita, computeTicket, activeReports, inactiveTypes, addReport,
     removeReport, renameReport, moveReport, getConteggioConfig, updateConteggioConfig, totaleTurni, totaleMinTurni,
     setPrevGrid, REPORT_TEMPLATES, calcolaOrdineModelli, updateFascia, session,
   } = C;
@@ -460,7 +461,10 @@ export default function VistaCalendario({ C }){
     const cfg = getConteggioConfig(r.id, r.type);
     // "ore_turno" somma minuti (computeMinutiForReport), tutti gli altri
     // tipi contano eventi (computeConteggioForReport) come prima.
-    const data = r.type==="ore_turno" ? computeMinutiForReport(cfg) : computeConteggioForReport(cfg);
+    const data = r.type==="ore_turno" ? computeMinutiForReport(cfg)
+      : r.type==="viabilita" ? computeViabilita(cfg.modelliInclusi||[])
+      : r.type==="ticket" ? computeTicket(cfg.modelliInclusi||[], valoreTicket)
+      : computeConteggioForReport(cfg);
     const pct = totaleTurni>0 ? Math.round((data.totale/totaleTurni)*100) : 0;
 
     return (
@@ -485,6 +489,12 @@ export default function VistaCalendario({ C }){
             )}
             {r.type==="storno_recupero"&&(
               <div style={{fontSize:17,color:T.sub}}>{fmtOreMin(computeStornoRecupero().creditoResiduoTotale)} credito residuo</div>
+            )}
+            {r.type==="viabilita"&&(
+              <div style={{fontSize:17,color:T.sub}}>€ {data.totale.toFixed(2)} · {data.giorni} giorni</div>
+            )}
+            {r.type==="ticket"&&(
+              <div style={{fontSize:17,color:T.sub}}>{data.giorni} ticket · € {data.totale.toFixed(2)}</div>
             )}
           </div>
           <div style={{display:"flex",flexDirection:"row",gap:10,marginRight:10,alignItems:"center"}} onClick={e=>e.stopPropagation()}>
@@ -549,6 +559,13 @@ export default function VistaCalendario({ C }){
             {r.type==="storno_recupero" && <StornoRecuperoView T={T} storno={computeStornoRecupero()} store={store} modelli={modelli}/>}
             {r.type==="guadagni" && (
               <GuadagniView T={T} indennita={indennita} calc={computeIndennita(cfg.modelliInclusi||[])}/>
+            )}
+            {r.type==="viabilita" && (
+              <ViabilitaView T={T} calc={data}/>
+            )}
+            {r.type==="ticket" && (
+              <TicketConfig T={T} valoreTicket={valoreTicket} setValoreTicket={setValoreTicket}
+                calc={data} onSave={()=>saveSettings({valore_ticket:valoreTicket})}/>
             )}
           </div>
         )}

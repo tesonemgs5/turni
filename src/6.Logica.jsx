@@ -31,6 +31,8 @@ const REPORT_TEMPLATES = [
   { type:"straordinari",    label:"Straordinari", desc:"Protrazioni e straordinari" },
   { type:"guadagni",        label:"Guadagni", desc:"Stima guadagni da indennità" },
   { type:"storno_recupero", label:"Storno PROTRAZIONE A RECUPERO", desc:"Credito PROTRAZIONE A RECUPERO e consumo -PROTRAZIONE A RECUPERO, con date e minuti" },
+  { type:"viabilita",       label:"Viabilità", desc:"15€/giorno per turno 6h15/6h30/6h01, scalata per ore mancanti" },
+  { type:"ticket",          label:"Ticket", desc:"Un ticket per ogni giorno con almeno 6h15 lavorate" },
 ];
 
 const INIT = { calendars:[], events:{}, theme:"auto", extraHols:[], reports:[], reportSettings:{}, fasceAutomatiche: FASCE_AUTOMATICHE_DEFAULT, sundayColor:"", holidayColor:"", nationalHolsEnabled:FESTIVITA_DEFAULT_ATTIVE, calEventRows:1, calRow1Field:"titolo", calRow2Field:"---" };
@@ -440,6 +442,7 @@ export function useAppCore(session){
   const [openReportConfig, setOpenReportConfig] = useState(null);
   const [showIntervalPicker, setShowIntervalPicker] = useState(false);
   const [indennita, setIndennita] = useState({ diurno:"", notturno:"", festivo:"", notturno_festivo:"" });
+  const [valoreTicket, setValoreTicket] = useState("");
   const [conteggioConfigs, setConteggioConfigs] = useState({});
   const [showReportModelliPicker, setShowReportModelliPicker] = useState(null); // reportId aperto
   const [editFascia, setEditFascia] = useState(null); // key fascia in editing (nome/orario)
@@ -542,6 +545,7 @@ export function useAppCore(session){
         const savedReports = settings?.reports || [];
         const savedReportSettings = settings?.report_settings || {};
         const savedIndennita = settings?.indennita || { diurno:"", notturno:"", festivo:"", notturno_festivo:"" };
+        const savedValoreTicket = settings?.valore_ticket || "";
         const savedConteggioConfigs = settings?.conteggio_configs || {};
         const savedFasce = settings?.fasce_automatiche || FASCE_AUTOMATICHE_DEFAULT;
         const savedSundayColor = settings?.sunday_color || "";
@@ -598,6 +602,7 @@ export function useAppCore(session){
         setSheetsUrl(sUrl);
         setSheetsSecret(sSec);
         setIndennita(savedIndennita);
+        setValoreTicket(savedValoreTicket);
         setConteggioConfigs(savedConteggioConfigs);
 
         // Autocomplete: tabella dedicata, non inclusa nella RPC get_user_data
@@ -2700,7 +2705,7 @@ const importsRecenti = useMemo(()=>{
     const targetCalId = data.calendarId||calId||mainCalId;
     const payload={
       user_id:userId, titolo:(data.titolo||"").toUpperCase(), label:(data.label||"").toUpperCase(), tempo:data.tempo,
-      inizio:data.inizio||null, fine:calcFineModello(data)||null,
+      inizio:data.inizio||null, fine:data.fine||null,
       colore:coloreEff, colore_custom:data.coloreCustom||null,
       posizione:data.posizione||null,
       sort_order:data.sortOrder||modelli.length,
@@ -3894,9 +3899,30 @@ const importsRecenti = useMemo(()=>{
     return computeConteggioForReport({fasceFiltro:[]});
   }
 
+  // Spezza un intervallo [tIn,tOut) (in minuti dalla mezzanotte, tOut può
+  // essere "il giorno dopo" cioè < tIn) in due quantità: minuti che cadono
+  // in fascia diurna (06:00-22:00) e minuti che cadono in fascia notturna
+  // (22:00-06:00). Gestisce anche i turni che attraversano la mezzanotte.
+  function spezzaDiurnoNotturno(tIn, tOut){
+    const m1 = oraInMinuti(tIn), m2raw = oraInMinuti(tOut);
+    if(m1===null||m2raw===null) return {diurno:0, notturno:0};
+    let m2 = m2raw;
+    if(m2<=m1) m2 += 24*60; // turno che passa la mezzanotte
+    let diurno=0, notturno=0;
+    for(let t=m1; t<m2; t++){
+      const h = Math.floor((t%(24*60))/60);
+      if(h>=6 && h<22) diurno++; else notturno++;
+    }
+    return {diurno, notturno};
+  }
+
+  // Indennità di servizio: ore effettive (non turni interi) per ciascuna
+  // delle 4 fasce, spezzando ogni turno tra diurno e notturno quando
+  // attraversa le 06:00 o le 22:00. "Festivo" e "Festivo notturno" sono le
+  // stesse fasce orarie ma applicate nei giorni festivi (isFestivo).
   function computeIndennita(modelliInclusi=[]){
     const {from, to} = getReportRange();
-    const totals = { diurno:0, notturno:0, festivo:0, notturno_festivo:0 };
+    const totaliMin = { diurno:0, notturno:0, festivo:0, notturno_festivo:0 };
     for(const [dateKey, calMap] of Object.entries(store.events)){
       if(dateKey < from || dateKey > to) continue;
       const fest = isFestivo(dateKey);
@@ -3905,15 +3931,132 @@ const importsRecenti = useMemo(()=>{
         for(const e of evts){
           if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
           if(e.allDay) continue;
-          const band = getShiftBand(e.tIn);
-          if(fest && band==="notturno") totals.notturno_festivo++;
-          else if(fest) totals.festivo++;
-          else if(band==="notturno") totals.notturno++;
-          else totals.diurno++;
+          if(!e.tIn||!e.tOut) continue;
+          const {diurno, notturno} = spezzaDiurnoNotturno(e.tIn, e.tOut);
+          if(fest){ totaliMin.festivo += diurno; totaliMin.notturno_festivo += notturno; }
+          else    { totaliMin.diurno  += diurno; totaliMin.notturno         += notturno; }
         }
       }
     }
-    return totals;
+    // Restituite in ORE (decimali), non in minuti: chi consuma questo
+    // oggetto (IndennitaConfig) moltiplica direttamente ore*tariffa_oraria.
+    return {
+      diurno: totaliMin.diurno/60,
+      notturno: totaliMin.notturno/60,
+      festivo: totaliMin.festivo/60,
+      notturno_festivo: totaliMin.notturno_festivo/60,
+    };
+  }
+
+  // Durata PREVISTA di un evento in minuti, basata sul modello collegato
+  // (6h15=375, 6h30=390, personalizzato=differenza inizio/fine del modello).
+  // Se non c'è modello, usa la durata dell'evento stesso come previsione
+  // (nessuno scostamento calcolabile in quel caso).
+  function minutiPrevistiEvento(e){
+    const mod = e.modelloId ? modelli.find(m=>m.id===e.modelloId) : null;
+    if(mod){
+      if(mod.tempo==="6h15") return 375;
+      if(mod.tempo==="6h30") return 390;
+      if(mod.tempo==="personalizzato" && mod.inizio && mod.fine) return calcMinuti(mod.inizio, mod.fine);
+    }
+    if(e.tIn&&e.tOut) return calcMinuti(e.tIn, e.tOut);
+    return 0;
+  }
+
+  // Minuti EFFETTIVAMENTE lavorati in un evento: parte dalla durata
+  // prevista e applica gli scostamenti reali già tracciati altrove nel
+  // progetto (stessi campi usati da sincronizzaEventiProtrazione):
+  //  - Entrata/Uscita effettiva (protMenoRecIn/protMenoRecOut): ritardo in
+  //    entrata + anticipo in uscita, sottratti dalla durata prevista;
+  //  - PROTRAZIONE A PAGAMENTO / A RECUPERO (protPagFine/protRecFine): ore
+  //    lavorate IN PIÙ oltre l'uscita prevista, sommate.
+  function minutiEffettiviEvento(e){
+    const previsti = minutiPrevistiEvento(e);
+    let effettivi = previsti;
+    if(e.protMenoRecIn||e.protMenoRecOut){
+      const previstoIn = oraInMinuti(e.tIn||""), effettivoIn = oraInMinuti(e.protMenoRecIn||"");
+      const previstoOut = oraInMinuti(e.tOut||""), effettivoOut = oraInMinuti(e.protMenoRecOut||"");
+      let ritardoEntrata=0, anticipoUscita=0;
+      if(previstoIn!==null&&effettivoIn!==null){ let d=effettivoIn-previstoIn; if(d<0) d+=24*60; ritardoEntrata=Math.max(0,d); }
+      if(previstoOut!==null&&effettivoOut!==null){ let d=previstoOut-effettivoOut; if(d<0) d+=24*60; anticipoUscita=Math.max(0,d); }
+      effettivi -= (ritardoEntrata+anticipoUscita);
+    }
+    if(e.protPagFine){
+      const uscitaPrevista = oraInMinuti(e.tOut||""), finePag = oraInMinuti(e.protPagFine||"");
+      if(uscitaPrevista!==null&&finePag!==null){ let d=finePag-uscitaPrevista; if(d<0) d+=24*60; effettivi += Math.max(0,d); }
+    }
+    if(e.protRecFine){
+      const uscitaPrevista = oraInMinuti(e.tOut||""), fineRec = oraInMinuti(e.protRecFine||"");
+      if(uscitaPrevista!==null&&fineRec!==null){ let d=fineRec-uscitaPrevista; if(d<0) d+=24*60; effettivi += Math.max(0,d); }
+    }
+    return Math.max(0, effettivi);
+  }
+
+  // Un evento "conta" per viabilità/ticket solo se collegato a un modello
+  // di durata 6h15, 6h30, oppure personalizzato impostato esattamente a
+  // 6h01 (361 minuti) — come richiesto: sono le tre durate-turno valide.
+  function eModelloViabile(e){
+    const mod = e.modelloId ? modelli.find(m=>m.id===e.modelloId) : null;
+    if(!mod) return false;
+    if(mod.tempo==="6h15"||mod.tempo==="6h30") return true;
+    if(mod.tempo==="personalizzato"&&mod.inizio&&mod.fine){
+      return calcMinuti(mod.inizio, mod.fine)===361; // 6h01
+    }
+    return false;
+  }
+
+  // Viabilità: 15€ per ogni giorno con un turno valido (6h15/6h30/6h01),
+  // scalata di 2,4€ per ogni ora (proporzionale) di lavoro effettivo IN
+  // MENO rispetto alle ore previste dal modello di quel turno.
+  const TARIFFA_VIABILITA = 15;
+  const PENALE_VIABILITA_ORA = 2.4;
+  function computeViabilita(modelliInclusi=[]){
+    const {from, to} = getReportRange();
+    let giorni=0, totale=0, oreMancantiTot=0;
+    for(const [dateKey, calMap] of Object.entries(store.events)){
+      if(dateKey < from || dateKey > to) continue;
+      for(const [cid, evts] of Object.entries(calMap)){
+        if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
+        for(const e of evts){
+          if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
+          if(e.allDay) continue;
+          if(!eModelloViabile(e)) continue;
+          const previsti = minutiPrevistiEvento(e);
+          const effettivi = minutiEffettiviEvento(e);
+          const minutiMancanti = Math.max(0, previsti-effettivi);
+          const oreMancanti = minutiMancanti/60;
+          const importo = Math.max(0, TARIFFA_VIABILITA - oreMancanti*PENALE_VIABILITA_ORA);
+          giorni++;
+          totale += importo;
+          oreMancantiTot += oreMancanti;
+        }
+      }
+    }
+    return { giorni, totale, oreMancanti:oreMancantiTot };
+  }
+
+  // Ticket: un ticket per ogni GIORNO in cui le ore effettivamente
+  // lavorate (sommando tutti i turni validi di quel giorno) raggiungono
+  // almeno 6h15 (375 minuti).
+  const SOGLIA_TICKET_MIN = 375; // 6h15
+  function computeTicket(modelliInclusi=[], valoreTicket=0){
+    const {from, to} = getReportRange();
+    let giorniConDiritto=0;
+    for(const [dateKey, calMap] of Object.entries(store.events)){
+      if(dateKey < from || dateKey > to) continue;
+      let minutiGiorno = 0;
+      for(const [cid, evts] of Object.entries(calMap)){
+        if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
+        for(const e of evts){
+          if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
+          if(e.allDay) continue;
+          if(!eModelloViabile(e)) continue;
+          minutiGiorno += minutiEffettiviEvento(e);
+        }
+      }
+      if(minutiGiorno>=SOGLIA_TICKET_MIN) giorniConDiritto++;
+    }
+    return { giorni:giorniConDiritto, totale:giorniConDiritto*(parseFloat(valoreTicket)||0) };
   }
 
   const activeReports = (store.reports||[]).filter(r=>r.active);
@@ -4224,6 +4367,8 @@ const importsRecenti = useMemo(()=>{
     setShowIntervalPicker,
     indennita,
     setIndennita,
+    valoreTicket,
+    setValoreTicket,
     conteggioConfigs,
     setConteggioConfigs,
     showReportModelliPicker,
@@ -4323,6 +4468,8 @@ const importsRecenti = useMemo(()=>{
     computeTurnazioneForReport,
     computeConteggio,
     computeIndennita,
+    computeViabilita,
+    computeTicket,
     activeReports,
     inactiveTypes,
     addReport,
