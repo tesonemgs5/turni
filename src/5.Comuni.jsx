@@ -608,9 +608,9 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, acce
                               {isOpenG && (
                                 <div style={{background:T.s2,borderRadius:"0 0 8px 8px",border:`1px solid ${g.color}44`,
                                   borderTop:"none",padding:"8px 10px"}}>
-                                  {modelli.length===0?(
-                                    <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"6px 0"}}>Nessun modello</div>
-                                  ):modelli.map(m=>{
+                                  {(cfg.modelliInclusi?.length>0 ? modelli.filter(m=>cfg.modelliInclusi.includes(m.id)) : modelli).length===0?(
+                                    <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"6px 0"}}>Nessun modello incluso nel filtro del report</div>
+                                  ):(cfg.modelliInclusi?.length>0 ? modelli.filter(m=>cfg.modelliInclusi.includes(m.id)) : modelli).map(m=>{
                                     const attivo = assegnazioni[m.id]===g.key;
                                     const c=m.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
                                     const info = perGruppoSm[g.key]?.[m.id];
@@ -919,9 +919,9 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
                               {isOpenG && (
                                 <div style={{background:T.s2,borderRadius:"0 0 8px 8px",border:`1px solid ${g.color}44`,
                                   borderTop:"none",padding:"8px 10px"}}>
-                                  {modelli.length===0?(
-                                    <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"6px 0"}}>Nessun modello</div>
-                                  ):modelli.map(m=>{
+                                  {(cfg.modelliInclusi?.length>0 ? modelli.filter(m=>cfg.modelliInclusi.includes(m.id)) : modelli).length===0?(
+                                    <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"6px 0"}}>Nessun modello incluso nel filtro del report</div>
+                                  ):(cfg.modelliInclusi?.length>0 ? modelli.filter(m=>cfg.modelliInclusi.includes(m.id)) : modelli).map(m=>{
                                     const attivo = assegnazioni[m.id]===g.key;
                                     const c=m.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
                                     const info = perGruppoSm[g.key]?.[m.id];
