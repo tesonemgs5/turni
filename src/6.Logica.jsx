@@ -1622,10 +1622,14 @@ export function useAppCore(session){
           return ns;
         });
         const match = { id: esistente.id, user_id: userId };
+        // storeRef.current, non "store": setStore è asincrono, quindi lo
+        // stato React "store" qui sopra può essere ancora quello vecchio
+        // (senza la modifica appena fatta). storeRef.current viene invece
+        // aggiornato in modo sincrono dentro l'updater qui sopra.
         await scriviConBackup({
           tipo:"update", table:"events", payload, matchObj:match,
           contesto:`Aggiornamento protrazione ${tipo}`, ts:new Date().toISOString(),
-          eventsPerSheets: store.events, calendarsPerSheets: store.calendars,
+          eventsPerSheets: storeRef.current.events, calendarsPerSheets: storeRef.current.calendars,
           opzioni:{ soloLog:true },
         });
       } else {
@@ -1654,10 +1658,12 @@ export function useAppCore(session){
           storeRef.current = ns;
           return ns;
         });
+        // storeRef.current, non "store": vedi nota sull'altro scriviConBackup
+        // poco sopra in questa stessa funzione.
         await scriviConBackup({
           tipo:"insert", table:"events", payload, matchObj:null,
           contesto:`Creazione protrazione ${tipo}`, ts:new Date().toISOString(),
-          eventsPerSheets: store.events, calendarsPerSheets: store.calendars,
+          eventsPerSheets: storeRef.current.events, calendarsPerSheets: storeRef.current.calendars,
           opzioni:{ soloLog:true },
         });
       }
