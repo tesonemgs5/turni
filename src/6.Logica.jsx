@@ -2842,6 +2842,16 @@ const importsRecenti = useMemo(()=>{
     if(!userId) return;
     const coloreEff=data.coloreCustom||(data.tempo==="h24"?"#64748b":colByTime(data.inizio));
     const targetCalId = data.calendarId||calId||mainCalId;
+    // GUARDIA: senza un calendario di destinazione valido, il modello
+    // finirebbe "orfano" (calendar_id nullo o sbagliato) e sparirebbe dai
+    // filtri per calendario, dando l'impressione di "non essere stato
+    // salvato" anche se una riga sul DB in realtà esisteva. Meglio
+    // bloccare subito con un errore chiaro che salvare dati incompleti.
+    if(!targetCalId){
+      const erroreCalendario = { message: "Nessun calendario di destinazione valido: il modello non è stato salvato. Riprova selezionando prima un calendario (es. tocca 'M' e scegli un calendario, oppure apri il form da Modelli)." };
+      segnalaErrore(erroreCalendario, "Salvataggio modello (calendario mancante)");
+      return { ok:false, errore: erroreCalendario };
+    }
     const payload={
       user_id:userId, titolo:(data.titolo||"").toUpperCase(), label:(data.label||"").toUpperCase(), tempo:data.tempo,
       inizio:data.inizio||null, fine:data.fine||null,
