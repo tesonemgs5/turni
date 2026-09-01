@@ -218,11 +218,21 @@ export function useAppCore(session){
   // della sola assenza di errore nella risposta dell'insert/update.
   // Confronta solo i campi presenti nel payload effettivamente inviato
   // (quello sopravvissuto agli eventuali retry di colonna mancante).
+  // Un fallimento di rete DURANTE la verifica non è come un fallimento di
+  // rete durante la scrittura vera e propria: qui la scrittura (provaSupabase)
+  // è già andata a buon fine senza errori, si sta solo ricontrollando. Se il
+  // fetch di verifica cade per rete instabile, non vuol dire che il dato sia
+  // andato perso: lo segnaliamo con direte:true così il chiamante lo accoda
+  // silenziosamente invece di bloccare con un modale come se fosse un errore vero.
+  function eRoreDiRete(e){
+    const msg = (e?.message||"").toLowerCase();
+    return msg.includes("failed to fetch") || msg.includes("networkerror") || msg.includes("network request failed") || e?.name==="TypeError";
+  }
   async function verificaScrittura(tipo, table, payloadCorrente, matchObj){
     try{
       if(tipo==="delete"){
         const { data, error } = await supabase.from(table).select("id").match(matchObj).limit(1);
-        if(error) return { verificata:false, motivo:`Verifica cancellazione fallita: ${error.message}` };
+        if(error) return { verificata:false, direte:eRoreDiRete(error), motivo:`Verifica cancellazione fallita: ${error.message}` };
         if(data && data.length>0) return { verificata:false, motivo:"La riga risulta ancora presente su Supabase dopo la cancellazione." };
         return { verificata:true };
       }
@@ -233,7 +243,7 @@ export function useAppCore(session){
         : (matchObj || (payloadCorrente?.id ? { id: payloadCorrente.id } : null));
       if(!filtro) return { verificata:true }; // niente su cui confrontare: non blocchiamo per questo
       const { data, error } = await supabase.from(table).select("*").match(filtro).maybeSingle();
-      if(error) return { verificata:false, motivo:`Verifica lettura fallita: ${error.message}` };
+      if(error) return { verificata:false, direte:eRoreDiRete(error), motivo:`Verifica lettura fallita: ${error.message}` };
       if(!data) return { verificata:false, motivo:"La riga non risulta presente su Supabase dopo il salvataggio." };
       const campiDiversi = [];
       for(const k of Object.keys(payloadCorrente||{})){
@@ -248,7 +258,9 @@ export function useAppCore(session){
       if(campiDiversi.length>0) return { verificata:false, motivo:`Dati diversi da quelli inviati su Supabase per: ${campiDiversi.join(", ")}` };
       return { verificata:true };
     }catch(e){
-      return { verificata:false, motivo:`Eccezione durante la verifica: ${e?.message||e}` };
+      // eccezione lanciata (non un {error} nella risposta): quasi sempre
+      // un TypeError: Failed to fetch per rete caduta a metà della verifica.
+      return { verificata:false, direte:eRoreDiRete(e), motivo:`Eccezione durante la verifica: ${e?.message||e}` };
     }
   }
 
@@ -292,6 +304,16 @@ export function useAppCore(session){
       // (RLS silenziosa, rete instabile con risposta falsata, ecc).
       const verifica = await verificaScrittura(tipo, table, risSupabase.payloadUsato ?? payload, matchObj);
       if(!verifica.verificata){
+        // La scrittura sopra (provaSupabase) è già andata a buon fine senza
+        // errori: Supabase ha confermato di aver scritto/cancellato la riga.
+        // Se il RICONTROLLO fallisce solo per rete instabile, non significa
+        // che il dato sia andato perso — è solo il secondo fetch che non è
+        // arrivato a destinazione. Non blocchiamo l'utente per questo: lo
+        // segnaliamo nel solo log tecnico e consideriamo l'operazione riuscita.
+        if(verifica.direte){
+          segnalaErroreSoloLog(`Rete instabile durante il controllo post-salvataggio (il salvataggio stesso è andato a buon fine su Supabase). Dettaglio: ${verifica.motivo}`, `${contesto} (verifica offline)`);
+          return { ok:true, verificaSaltata:true, errore:null };
+        }
         const erroreVerifica = { message: verifica.motivo };
         segnalaErroreDb(erroreVerifica, `${contesto} (controllo dopo il salvataggio)`);
         return { ok:false, errore: erroreVerifica };
