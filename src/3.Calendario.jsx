@@ -112,13 +112,14 @@ export default function VistaCalendario({ C }){
     // 1) SUBITO in locale: l'utente vede il turno all'istante, online o offline.
     const evt = { id:idLocale, color, label, allDay, tIn, tOut, place:"", map:"", note:"",
       modelloId:mod.id, collega:"", auto:"" };
-    let nuovoStore;
-    setStore(prev=>{
-      const ns = withEventoAggiunto(prev, key, calId, evt);
-      saveToLocalStorage(ns.events, ns.calendars, modelli);
-      nuovoStore = ns;
-      return ns;
-    });
+    // Calcolato QUI, in modo sincrono, invece che dentro il callback di
+    // setStore: setStore è asincrono (React esegue l'updater durante il
+    // proprio ciclo, non subito), quindi leggere la variabile assegnata
+    // al suo interno subito dopo la chiamata poteva restare undefined
+    // e far fallire "nuovoStore.events" più sotto.
+    const nuovoStore = withEventoAggiunto(store, key, calId, evt);
+    saveToLocalStorage(nuovoStore.events, nuovoStore.calendars, modelli);
+    setStore(nuovoStore);
 
     // 2) Backup su Supabase (con retry colonna) + Sheets in parallelo.
     // Se offline, o se la scrittura fallisce per un motivo di rete, va in
