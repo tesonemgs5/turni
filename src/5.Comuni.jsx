@@ -1209,16 +1209,73 @@ function fmtOreDecimali(ore){
   return `${h}h${m>0?` ${m}m`:""}`;
 }
 
-export function IndennitaConfig({T, values, setValues, calc, onSave}){
+// Indennità di servizio: le 4 fasce restano fisse in cima (compenso a
+// ore, non a turni). Sotto, stesso meccanismo "+ Aggiungi sottomenu" di
+// ConteggioConfigCard/OreTurnoConfigCard, con in più due sottomenu
+// speciali non ripetibili: Viabilità e Ticket, ciascuno con la propria
+// logica di calcolo (computeViabilita/computeTicket, passate come prop).
+export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename,
+  cfg, onUpdateCfg, accent, viabilitaCalc, ticketCalc, valoreTicket, setValoreTicket, onSaveValoreTicket}){
+  const [editingName, setEditingName] = useState(false);
+  const [tmpName, setTmpName] = useState(r?.label||"Indennità di servizio");
+  const [openSottomenu, setOpenSottomenu] = useState(null);
+  const [showAggiungiMenu, setShowAggiungiMenu] = useState(false);
+
+  const sottomenu = cfg?.sottomenu || [];
+  const haViabilita = sottomenu.some(sm=>sm.tipo==="viabilita");
+  const haTicket = sottomenu.some(sm=>sm.tipo==="ticket");
+
+  function aggiungiSottomenu(tipo){
+    const id = "sm_"+Date.now()+"_"+Math.random().toString(36).slice(2,7);
+    let nuovo;
+    if(tipo==="collega") nuovo = { id, tipo:"collega", nome:"Per collega" };
+    else if(tipo==="modello") nuovo = { id, tipo:"modello", nome:"Per modello" };
+    else if(tipo==="viabilita") nuovo = { id, tipo:"viabilita", nome:"Viabilità" };
+    else if(tipo==="ticket") nuovo = { id, tipo:"ticket", nome:"Ticket" };
+    else nuovo = { id, tipo:"libero", nome:"Nuovo sottomenu",
+      gruppi:[{key:"a",label:"Gruppo A",color:"#3b82f6"},{key:"b",label:"Gruppo B",color:"#8b5cf6"}],
+      assegnazioni:{} };
+    onUpdateCfg({...(cfg||{}), sottomenu:[...sottomenu, nuovo]});
+    setShowAggiungiMenu(false);
+    setOpenSottomenu(id);
+  }
+  function rimuoviSottomenu(id){
+    onUpdateCfg({...(cfg||{}), sottomenu: sottomenu.filter(sm=>sm.id!==id)});
+    if(openSottomenu===id) setOpenSottomenu(null);
+  }
+
   const fasce = [
     { key:"diurno",          label:"Diurno (06:00 - 22:00)", count:calc.diurno },
     { key:"notturno",        label:"Notturno",                count:calc.notturno },
     { key:"festivo",         label:"Festivo",                 count:calc.festivo },
     { key:"notturno_festivo",label:"Notturno festivo",        count:calc.notturno_festivo },
   ];
+
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:8}}>
-      <div style={{fontSize:10,color:T.sub,marginBottom:2}}>Imposta il compenso per ora</div>
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      {r&&onRename&&(
+        <div style={{background:T.surface,borderRadius:10,padding:"10px 12px"}}>
+          <div style={{fontSize:12,color:"#0f172a",marginBottom:4}}>NOME REPORT</div>
+          {editingName?(
+            <div style={{display:"flex",gap:6}}>
+              <input value={tmpName} onChange={e=>setTmpName(e.target.value)}
+                style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
+                  borderRadius:8,padding:"6px 10px",color:T.text,fontSize:13,outline:"none"}}/>
+              <button onClick={()=>{onRename(tmpName);setEditingName(false);}}
+                style={{background:accent,border:"none",borderRadius:8,color:getContrastTextColor(accent),
+                  padding:"6px 12px",cursor:"pointer",fontWeight:800,fontSize:12}}>✓</button>
+            </div>
+          ):(
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:14,fontWeight:700,color:T.text,flex:1}}>{r.label}</span>
+              <button onClick={()=>setEditingName(true)}
+                style={{background:"none",border:"none",color:accent,cursor:"pointer",fontSize:16,padding:"0 4px"}}>✏️</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div style={{fontSize:10,color:T.sub,marginBottom:-4}}>Imposta il compenso per ora</div>
       {fasce.map(f=>(
         <div key={f.key} style={{background:T.surface,borderRadius:10,padding:"10px 12px",
           display:"flex",alignItems:"center",gap:10}}>
@@ -1245,6 +1302,89 @@ export function IndennitaConfig({T, values, setValues, calc, onSave}){
           },0).toFixed(2)}
         </span>
       </div>
+
+      {/* Sottomenu: Per collega / Per modello / Sottomenu libero (già
+          esistenti altrove) più Viabilità e Ticket, specifici di questa
+          card. Viabilità e Ticket non sono ripetibili: una volta
+          aggiunti, spariscono dalla scelta successiva. */}
+      {onUpdateCfg&&(
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {sottomenu.map(sm=>{
+            const isOpen = openSottomenu===sm.id;
+            return (
+              <div key={sm.id} style={{background:T.surface,borderRadius:10,overflow:"hidden"}}>
+                <div onClick={()=>setOpenSottomenu(isOpen?null:sm.id)}
+                  style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+                    padding:"10px 12px",cursor:"pointer"}}>
+                  <span style={{fontSize:13,fontWeight:700,color:T.text}}>{sm.nome}</span>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <button onClick={e=>{e.stopPropagation();rimuoviSottomenu(sm.id);}}
+                      style={{background:"none",border:"none",color:"#dc2626",cursor:"pointer",fontSize:14}}>🗑</button>
+                    <span style={{color:T.sub,fontSize:12}}>{isOpen?"▲":"▼"}</span>
+                  </div>
+                </div>
+                {isOpen && sm.tipo==="viabilita" && (
+                  <div style={{padding:"0 12px 12px"}}>
+                    <ViabilitaView T={T} calc={viabilitaCalc}/>
+                  </div>
+                )}
+                {isOpen && sm.tipo==="ticket" && (
+                  <div style={{padding:"0 12px 12px"}}>
+                    <TicketConfig T={T} valoreTicket={valoreTicket} setValoreTicket={setValoreTicket}
+                      calc={ticketCalc} onSave={onSaveValoreTicket}/>
+                  </div>
+                )}
+                {isOpen && (sm.tipo==="collega"||sm.tipo==="modello"||sm.tipo==="libero") && (
+                  <div style={{padding:"0 12px 12px",fontSize:12,color:T.sub}}>
+                    Disponibile anche per Indennità: elenco {sm.tipo==="collega"?"per collega":sm.tipo==="modello"?"per modello":"libero"} basato sugli stessi eventi del periodo.
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          <div style={{background:T.surface,borderRadius:10,overflow:"hidden"}}>
+            <div onClick={()=>setShowAggiungiMenu(s=>!s)}
+              style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,
+                padding:"10px 12px",cursor:"pointer",color:accent,fontWeight:700,fontSize:13}}>
+              + Aggiungi sottomenu {showAggiungiMenu?"▲":"▼"}
+            </div>
+            {showAggiungiMenu && (
+              <div style={{padding:"0 12px 12px",display:"flex",flexDirection:"column",gap:6}}>
+                {!haViabilita&&(
+                  <button onClick={()=>aggiungiSottomenu("viabilita")}
+                    style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,
+                      background:T.s2,color:T.text,textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:700}}>
+                    Viabilità <span style={{fontWeight:400,color:T.sub}}>— 15€/giorno turno 6h15/6h30/6h01, scalata per ore mancanti</span>
+                  </button>
+                )}
+                {!haTicket&&(
+                  <button onClick={()=>aggiungiSottomenu("ticket")}
+                    style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,
+                      background:T.s2,color:T.text,textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:700}}>
+                    Ticket <span style={{fontWeight:400,color:T.sub}}>— un ticket per giorno con almeno 6h15 lavorate</span>
+                  </button>
+                )}
+                <button onClick={()=>aggiungiSottomenu("collega")}
+                  style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,
+                    background:T.s2,color:T.text,textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:700}}>
+                  Per collega <span style={{fontWeight:400,color:T.sub}}>— elenco automatico, con date</span>
+                </button>
+                <button onClick={()=>aggiungiSottomenu("modello")}
+                  style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,
+                    background:T.s2,color:T.text,textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:700}}>
+                  Per modello <span style={{fontWeight:400,color:T.sub}}>— elenco automatico, con date</span>
+                </button>
+                <button onClick={()=>aggiungiSottomenu("libero")}
+                  style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,
+                    background:T.s2,color:T.text,textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:700}}>
+                  Sottomenu libero <span style={{fontWeight:400,color:T.sub}}>— gruppi a scelta, assegnazione manuale</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1350,109 +1490,6 @@ export function StraordinariView({T, data, store, reportRange, modelliInclusi=[]
             </span>
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-// Report dedicato allo storno PROTRAZIONE A RECUPERO / -PROTRAZIONE A
-// RECUPERO: mostra il credito totale ancora disponibile e, evento per
-// evento, quali date sono state usate per compensare cosa (con minuti e
-// ore), esattamente come richiesto: "nella statistica deve risultare 30m
-// con le date e i minuti e ore". "storno" viene giÃ  calcolato da
-// computeStornoRecupero() e passato qui come prop "storno".
-export function StornoRecuperoView({T, storno, store, modelli}){
-  const { perEvento, creditoResiduoTotale } = storno;
-
-  function fmtMin(m){
-    if(m<=0) return "0m";
-    return Math.floor(m/60)+"h"+(m%60>0?" "+(m%60)+"m":"");
-  }
-  function fmtData(dateKey){
-    const [y,mm,d] = dateKey.split("-");
-    return `${d}/${mm}/${y}`;
-  }
-  // Ricostruisco l'elenco date/calId per ogni evento coinvolto, leggendo
-  // store.events (perEvento non porta la dateKey dell'evento stesso, solo
-  // quella degli storni collegati).
-  const infoDateEvento = {};
-  for(const [dateKey, calMap] of Object.entries(store?.events||{})){
-    for(const evts of Object.values(calMap)){
-      for(const e of evts){
-        if(perEvento[e.id]) infoDateEvento[e.id] = dateKey;
-      }
-    }
-  }
-  const idsRecupero = Object.keys(perEvento).filter(id=>perEvento[id].tipo==="recupero")
-    .sort((a,b)=>(infoDateEvento[a]||"").localeCompare(infoDateEvento[b]||""));
-  const idsConsumo = Object.keys(perEvento).filter(id=>perEvento[id].tipo==="meno_recupero")
-    .sort((a,b)=>(infoDateEvento[a]||"").localeCompare(infoDateEvento[b]||""));
-
-  return (
-    <div style={{display:"flex",flexDirection:"column",gap:10}}>
-      <div style={{background:T.surface,borderRadius:10,padding:12}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <span style={{fontSize:12,color:T.sub,fontWeight:700}}>CREDITO RESIDUO TOTALE</span>
-          <span style={{fontSize:20,fontWeight:900,color:creditoResiduoTotale>0?"#16a34a":T.text}}>
-            {fmtMin(creditoResiduoTotale)}
-          </span>
-        </div>
-      </div>
-
-      <div style={{background:T.surface,borderRadius:10,padding:12}}>
-        <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8}}>PROTRAZIONE A RECUPERO (credito)</div>
-        {idsRecupero.length===0?(
-          <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"8px 0"}}>Nessun evento nel periodo</div>
-        ):idsRecupero.map(id=>{
-          const info = perEvento[id];
-          return (
-            <div key={id} style={{marginBottom:8,paddingBottom:8,borderBottom:`1px solid ${T.border}`}}>
-              <div style={{display:"flex",justifyContent:"space-between",marginBottom:info.storni.length>0?4:0}}>
-                <span style={{fontSize:12,fontWeight:700,color:T.text}}>{fmtData(infoDateEvento[id]||"")}</span>
-                <span style={{fontSize:12,color:T.sub}}>
-                  {fmtMin(info.minutiTotali)} totali ·{" "}
-                  <span style={{fontWeight:800,color:info.minutiResidui>0?"#16a34a":T.sub}}>
-                    {fmtMin(info.minutiResidui)} residui
-                  </span>
-                </span>
-              </div>
-              {info.storni.map((s,i)=>(
-                <div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:11,paddingLeft:8,color:T.sub}}>
-                  <span>↳ usato da {fmtData(s.dateKey)}</span>
-                  <span style={{fontWeight:700,color:"#dc2626"}}>{fmtMin(s.minuti)}</span>
-                </div>
-              ))}
-            </div>
-          );
-        })}
-      </div>
-
-      <div style={{background:T.surface,borderRadius:10,padding:12}}>
-        <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8}}>-PROTRAZIONE A RECUPERO (consumo)</div>
-        {idsConsumo.length===0?(
-          <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"8px 0"}}>Nessun evento nel periodo</div>
-        ):idsConsumo.map(id=>{
-          const info = perEvento[id];
-          return (
-            <div key={id} style={{marginBottom:8,paddingBottom:8,borderBottom:`1px solid ${T.border}`}}>
-              <div style={{display:"flex",justifyContent:"space-between",marginBottom:info.storni.length>0?4:0}}>
-                <span style={{fontSize:12,fontWeight:700,color:T.text}}>{fmtData(infoDateEvento[id]||"")}</span>
-                <span style={{fontSize:12,color:T.sub}}>
-                  {fmtMin(info.minutiTotali)} totali ·{" "}
-                  <span style={{fontWeight:800,color:info.minutiResidui>0?"#dc2626":T.sub}}>
-                    {info.minutiResidui>0?fmtMin(info.minutiResidui)+" non coperti":"coperto"}
-                  </span>
-                </span>
-              </div>
-              {info.storni.map((s,i)=>(
-                <div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:11,paddingLeft:8,color:T.sub}}>
-                  <span>↳ coperto da {fmtData(s.dateKey)}</span>
-                  <span style={{fontWeight:700,color:"#16a34a"}}>{fmtMin(s.minuti)}</span>
-                </div>
-              ))}
-            </div>
-          );
-        })}
       </div>
     </div>
   );

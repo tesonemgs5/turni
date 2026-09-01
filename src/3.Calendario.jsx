@@ -11,7 +11,7 @@ import {
 } from "./4.Rotazione";
 import { CalBadge, SmartTimeInput, AutocompleteInput, ColorPickerModal,
   ModaleErroriMultipli, FasceExpand, ConteggioConfigCard, TurnazioneConfigCard, OreTurnoConfigCard, fmtOreMin,
-  IndennitaConfig, OrePerTurnoView, StraordinariView, StornoRecuperoView, GuadagniView,
+  IndennitaConfig, OrePerTurnoView, StraordinariView, GuadagniView,
   ViabilitaView, TicketConfig } from "./5.Comuni";
 import { ModelloCard, ModelForm, RotazioneCard, RotazioneForm, ModelloSelector,
   GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView } from "./4.Rotazione";
@@ -78,7 +78,7 @@ export default function VistaCalendario({ C }){
     removeColoreExtra, updateColoreExtraLabel, replaceColoreEverywhere, saveRotazione, deleteRotazione, updateGrigliaRotazione,
     inserisciEventoGenerico, normOrarioImport, trovaModelloPerTitoloOrario, isRigaProtrazione, tipoProtrazione, importaTurniPdfJson,
     delTuttiEventiImport, importaEventiSingoli, applyRotazione, getReportRange, splitColleghi, computeConteggioForReport,
-    computeMinutiForReport, computeStornoRecupero, computeTurnazioneForReport, computeConteggio, computeIndennita, computeViabilita, computeTicket, activeReports, inactiveTypes, addReport,
+    computeMinutiForReport, computeTurnazioneForReport, computeConteggio, computeIndennita, computeViabilita, computeTicket, activeReports, inactiveTypes, addReport,
     removeReport, renameReport, moveReport, getConteggioConfig, updateConteggioConfig, totaleTurni, totaleMinTurni,
     setPrevGrid, REPORT_TEMPLATES, calcolaOrdineModelli, updateFascia, session,
   } = C;
@@ -461,10 +461,7 @@ export default function VistaCalendario({ C }){
     const cfg = getConteggioConfig(r.id, r.type);
     // "ore_turno" somma minuti (computeMinutiForReport), tutti gli altri
     // tipi contano eventi (computeConteggioForReport) come prima.
-    const data = r.type==="ore_turno" ? computeMinutiForReport(cfg)
-      : r.type==="viabilita" ? computeViabilita(cfg.modelliInclusi||[])
-      : r.type==="ticket" ? computeTicket(cfg.modelliInclusi||[], valoreTicket)
-      : computeConteggioForReport(cfg);
+    const data = r.type==="ore_turno" ? computeMinutiForReport(cfg) : computeConteggioForReport(cfg);
     const pct = totaleTurni>0 ? Math.round((data.totale/totaleTurni)*100) : 0;
 
     return (
@@ -486,15 +483,6 @@ export default function VistaCalendario({ C }){
             )}
             {r.type==="ore_turno"&&(
               <div style={{fontSize:17,color:T.sub}}>{fmtOreMin(data.totaleMin)}</div>
-            )}
-            {r.type==="storno_recupero"&&(
-              <div style={{fontSize:17,color:T.sub}}>{fmtOreMin(computeStornoRecupero().creditoResiduoTotale)} credito residuo</div>
-            )}
-            {r.type==="viabilita"&&(
-              <div style={{fontSize:17,color:T.sub}}>€ {data.totale.toFixed(2)} · {data.giorni} giorni</div>
-            )}
-            {r.type==="ticket"&&(
-              <div style={{fontSize:17,color:T.sub}}>{data.giorni} ticket · € {data.totale.toFixed(2)}</div>
             )}
           </div>
           <div style={{display:"flex",flexDirection:"row",gap:10,marginRight:10,alignItems:"center"}} onClick={e=>e.stopPropagation()}>
@@ -546,8 +534,14 @@ export default function VistaCalendario({ C }){
               );
             })()}
             {r.type==="indennita" && (
-              <IndennitaConfig T={T} values={indennita} setValues={setIndennita}
-                calc={computeIndennita(cfg.modelliInclusi||[])} onSave={()=>saveSettings({indennita})}/>
+              <IndennitaConfig T={T} r={r} values={indennita} setValues={setIndennita}
+                calc={computeIndennita(cfg.modelliInclusi||[])} onSave={()=>saveSettings({indennita})}
+                onRename={label=>renameReport(r.id, label)}
+                cfg={cfg} onUpdateCfg={newCfg=>updateConteggioConfig(r.id, newCfg)} accent={accent}
+                viabilitaCalc={computeViabilita(cfg.modelliInclusi||[])}
+                ticketCalc={computeTicket(cfg.modelliInclusi||[], valoreTicket)}
+                valoreTicket={valoreTicket} setValoreTicket={setValoreTicket}
+                onSaveValoreTicket={()=>saveSettings({valore_ticket:valoreTicket})}/>
             )}
             {r.type==="ore_turno" && (
               <OreTurnoConfigCard T={T} r={r} cfg={cfg} data={data} totaleMinPeriodo={totaleMinTurni}
@@ -556,16 +550,8 @@ export default function VistaCalendario({ C }){
                 onUpdateCfg={newCfg=>updateConteggioConfig(r.id, newCfg)}/>
             )}
             {r.type==="straordinari" && <StraordinariView T={T} data={data} store={store} reportRange={{from:range.from,to:range.to}} modelliInclusi={cfg.modelliInclusi||[]} reportCalIds={reportCalIds}/>}
-            {r.type==="storno_recupero" && <StornoRecuperoView T={T} storno={computeStornoRecupero()} store={store} modelli={modelli}/>}
             {r.type==="guadagni" && (
               <GuadagniView T={T} indennita={indennita} calc={computeIndennita(cfg.modelliInclusi||[])}/>
-            )}
-            {r.type==="viabilita" && (
-              <ViabilitaView T={T} calc={data}/>
-            )}
-            {r.type==="ticket" && (
-              <TicketConfig T={T} valoreTicket={valoreTicket} setValoreTicket={setValoreTicket}
-                calc={data} onSave={()=>saveSettings({valore_ticket:valoreTicket})}/>
             )}
           </div>
         )}

@@ -26,13 +26,10 @@ import {
 const REPORT_TEMPLATES = [
   { type:"conteggio_turni", label:"Conteggio turni", desc:"Conta i turni per fascia oraria" },
   { type:"turnazione",      label:"Turnazione", desc:"Turni per modello con date, 1°/2° turno automatico" },
-  { type:"indennita",       label:"Indennità di servizio", desc:"Calcola le indennità per fascia" },
+  { type:"indennita",       label:"Indennità di servizio", desc:"Calcola le indennità per fascia, con Viabilità/Ticket come sottomenu" },
   { type:"ore_turno",       label:"Ore per turno", desc:"Stima ore lavorate" },
   { type:"straordinari",    label:"Straordinari", desc:"Protrazioni e straordinari" },
   { type:"guadagni",        label:"Guadagni", desc:"Stima guadagni da indennità" },
-  { type:"storno_recupero", label:"Storno PROTRAZIONE A RECUPERO", desc:"Credito PROTRAZIONE A RECUPERO e consumo -PROTRAZIONE A RECUPERO, con date e minuti" },
-  { type:"viabilita",       label:"Viabilità", desc:"15€/giorno per turno 6h15/6h30/6h01, scalata per ore mancanti" },
-  { type:"ticket",          label:"Ticket", desc:"Un ticket per ogni giorno con almeno 6h15 lavorate" },
 ];
 
 const INIT = { calendars:[], events:{}, theme:"auto", extraHols:[], reports:[], reportSettings:{}, fasceAutomatiche: FASCE_AUTOMATICHE_DEFAULT, sundayColor:"", holidayColor:"", nationalHolsEnabled:FESTIVITA_DEFAULT_ATTIVE, calEventRows:1, calRow1Field:"titolo", calRow2Field:"---" };
