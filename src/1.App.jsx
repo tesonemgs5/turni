@@ -568,7 +568,15 @@ function AppInterno({ session }){
                 </div>
                 <button onClick={()=>{
                   setEditModello(null);
-                  setModelForm({titolo:"",tempo:"personalizzato",inizio:"",fine:"",coloreCustom:null,posizione:""});
+                  // FIX: qui mancava calendarId — a differenza degli altri due
+                  // punti dell'app dove si crea un modello (lista Modelli),
+                  // questo passava sempre calendarId esplicito. Senza,
+                  // saveModello ripiegava su calId/mainCalId che, in certi
+                  // percorsi (es. entrando in modalità Modifica "M" senza
+                  // calendari selezionati), possono essere entrambi vuoti,
+                  // causando un modello salvato senza calendario valido.
+                  setModelForm({titolo:"",tempo:"personalizzato",inizio:"",fine:"",coloreCustom:null,posizione:"",
+                    calendarId: calId||mainCalId||null});
                   setOrigineModelForm("picker");
                   setShowModelForm(true);
                   setShowModelloPicker(false);
