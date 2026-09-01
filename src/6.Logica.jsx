@@ -124,6 +124,34 @@ export function useAppCore(session){
     });
     return ()=>registraListenerCodaErrori(null);
   }, []);
+  // ─── Rete di sicurezza FINALE, a livello di intera pagina: qualsiasi
+  // eccezione non gestita — sia una Promise async senza try/catch da
+  // qualche parte non ancora coperta, sia un errore sincrono generico —
+  // ora arriva comunque qui invece di sparire silenziosamente in
+  // console (F12) senza che l'utente ne sappia nulla. Non sostituisce i
+  // try/catch mirati già messi sulle azioni principali (salva turno,
+  // salva/elimina modello): quelli danno un messaggio specifico e utile;
+  // questo è l'ultima rete, generica, per tutto il resto.
+  useEffect(()=>{
+    function onUnhandledRejection(ev){
+      segnalaErrore(
+        { message: ev?.reason?.message || String(ev?.reason||"Errore asincrono non gestito") },
+        "Errore imprevisto (operazione non completata)"
+      );
+    }
+    function onGlobalError(ev){
+      segnalaErrore(
+        { message: ev?.message || "Errore sconosciuto" },
+        "Errore imprevisto dell'app"
+      );
+    }
+    window.addEventListener("unhandledrejection", onUnhandledRejection);
+    window.addEventListener("error", onGlobalError);
+    return ()=>{
+      window.removeEventListener("unhandledrejection", onUnhandledRejection);
+      window.removeEventListener("error", onGlobalError);
+    };
+  }, []);
   function segnalaErroreDb(error, contesto){
     segnalaErrore(error, contesto);
     const msg = error?.message || "Errore sconosciuto";
@@ -187,6 +215,46 @@ export function useAppCore(session){
   // (non di quando questa funzione viene eseguita) — usato per decidere la
   // precedenza se due dispositivi modificano la stessa riga mentre uno era
   // offline: vince sempre la modifica con ts più recente.
+  // ─── Verifica indipendente: dopo che Supabase ha risposto "nessun
+  // errore", RILEGGE la riga (o l'assenza di riga, per i delete) per
+  // essere certi che sia davvero scritta/cancellata — non ci si fida
+  // della sola assenza di errore nella risposta dell'insert/update.
+  // Confronta solo i campi presenti nel payload effettivamente inviato
+  // (quello sopravvissuto agli eventuali retry di colonna mancante).
+  async function verificaScrittura(tipo, table, payloadCorrente, matchObj){
+    try{
+      if(tipo==="delete"){
+        const { data, error } = await supabase.from(table).select("id").match(matchObj).limit(1);
+        if(error) return { verificata:false, motivo:`Verifica cancellazione fallita: ${error.message}` };
+        if(data && data.length>0) return { verificata:false, motivo:"La riga risulta ancora presente su Supabase dopo la cancellazione." };
+        return { verificata:true };
+      }
+      // insert/update: individua la riga scritta. Per insert uso l'id del
+      // payload se presente (generato in locale), altrimenti matchObj.
+      const filtro = (tipo==="insert" && payloadCorrente?.id)
+        ? { id: payloadCorrente.id }
+        : (matchObj || (payloadCorrente?.id ? { id: payloadCorrente.id } : null));
+      if(!filtro) return { verificata:true }; // niente su cui confrontare: non blocchiamo per questo
+      const { data, error } = await supabase.from(table).select("*").match(filtro).maybeSingle();
+      if(error) return { verificata:false, motivo:`Verifica lettura fallita: ${error.message}` };
+      if(!data) return { verificata:false, motivo:"La riga non risulta presente su Supabase dopo il salvataggio." };
+      const campiDiversi = [];
+      for(const k of Object.keys(payloadCorrente||{})){
+        if(k==="id") continue;
+        const inviato = payloadCorrente[k];
+        const letto = data[k];
+        // Confronto tollerante: null/undefined/"" sono equivalenti (Supabase
+        // e il payload locale a volte differiscono solo su questo).
+        const norm = v => (v===undefined||v===null) ? "" : v;
+        if(JSON.stringify(norm(inviato))!==JSON.stringify(norm(letto))) campiDiversi.push(k);
+      }
+      if(campiDiversi.length>0) return { verificata:false, motivo:`Dati diversi da quelli inviati su Supabase per: ${campiDiversi.join(", ")}` };
+      return { verificata:true };
+    }catch(e){
+      return { verificata:false, motivo:`Eccezione durante la verifica: ${e?.message||e}` };
+    }
+  }
+
   async function scriviConBackup({ tipo, table, payload, matchObj, contesto, ts, eventsPerSheets, calendarsPerSheets, modelliPerSheets, opzioni={} }){
     async function provaSupabase(payloadCorrente, tentativi=0){
       if(tentativi>=10) return { error:{message:"Troppi tentativi di retry sullo schema"} };
@@ -195,14 +263,14 @@ export function useAppCore(session){
       else if(tipo==="update") q = supabase.from(table).update(payloadCorrente).match(matchObj);
       else q = supabase.from(table).delete().match(matchObj);
       const { error } = await q;
-      if(!error) return { error:null };
+      if(!error) return { error:null, payloadUsato:payloadCorrente };
       const m = /Could not find the '([^']+)' column/.exec(error.message||"");
       if(m && payloadCorrente && m[1] in payloadCorrente){
         segnalaErroreSoloLog(`Colonna '${m[1]}' assente su Supabase: omessa e riprovato automaticamente. Esegui l'ALTER TABLE per abilitarla stabilmente.`, `${contesto} (schema database)`);
         const { [m[1]]: _omessa, ...resto } = payloadCorrente;
         return provaSupabase(resto, tentativi+1);
       }
-      return { error };
+      return { error, payloadUsato:payloadCorrente };
     }
     try{
       const [risSupabase] = await Promise.all([
@@ -217,14 +285,31 @@ export function useAppCore(session){
         // della stessa azione utente) lo mostra lui stesso, una volta sola.
         if(opzioni.soloLog) segnalaErroreSoloLog(risSupabase.error, `${contesto} (backup su Supabase)`);
         else segnalaErroreDb(risSupabase.error, `${contesto} (backup su Supabase)`);
+        return { ok:false, errore: risSupabase.error };
       }
-      return { ok: !risSupabase.error, errore: risSupabase.error||null };
+      // ─── DOPPIO CONTROLLO: Supabase non ha segnalato errori, ma
+      // rileggiamo comunque per essere sicuri che il dato sia davvero lì
+      // (o davvero sparito, per i delete) prima di considerare l'operazione
+      // riuscita per davvero. Questo intercetta anche i casi in cui
+      // Supabase risponde "ok" senza aver realmente applicato la scrittura
+      // (RLS silenziosa, rete instabile con risposta falsata, ecc).
+      const verifica = await verificaScrittura(tipo, table, risSupabase.payloadUsato ?? payload, matchObj);
+      if(!verifica.verificata){
+        const erroreVerifica = { message: verifica.motivo };
+        segnalaErroreDb(erroreVerifica, `${contesto} (controllo dopo il salvataggio)`);
+        return { ok:false, errore: erroreVerifica };
+      }
+      return { ok:true, errore:null };
     }catch(e){
       // Eccezione di rete: l'intera operazione (con il suo timestamp
       // originale) resta in coda, riparte identica al ritorno online.
       const coda = leggiCodaSync();
       coda.push({ id: generaIdLocale(), ts: ts||new Date().toISOString(), tipo, table, payload, match: matchObj, contesto });
       scriviCodaSync(coda);
+      // Errore visibile anche in questo caso (prima veniva inghiottito in
+      // silenzio): l'utente deve sapere che il salvataggio remoto è solo
+      // in coda, non ancora confermato, anche se il locale è già a posto.
+      segnalaErroreSoloLog(`Nessuna connessione o errore di rete: l'operazione è stata messa in coda e ripartirà automaticamente al ritorno della connessione. Dettaglio: ${e?.message||e}`, `${contesto} (offline)`);
       return { ok:true, accodato:true, errore:null }; // ok:true perché il locale è comunque salvato, è solo il backup remoto in sospeso
     }
   }
@@ -575,6 +660,36 @@ export function useAppCore(session){
           modelloRSId:r.modello_rs_id||null,
           griglia:r.griglia||{},
         }));
+
+        // ─── GUARDIA ANTI-CANCELLAZIONE: prima di sovrascrivere TUTTO lo
+        // store locale con quanto arrivato da Supabase, controlliamo che il
+        // numero di eventi non sia crollato in modo sospetto rispetto a
+        // quello che avevamo già in cache. Una risposta "valida" (nessun
+        // errore RPC) ma con MOLTI MENO eventi di prima è quasi sempre un
+        // sintomo di dati parziali (RLS, query troncata, sync a metà) e
+        // NON deve mai risultare in una cancellazione silenziosa di ciò che
+        // l'utente vede sul calendario. In quel caso: non si applica la
+        // sovrascrittura, si segnala l'errore, e si tiene la cache buona.
+        function contaEventiTotali(ev){
+          let n=0;
+          for(const dk of Object.keys(ev||{})) for(const cid of Object.keys(ev[dk]||{})) n += (ev[dk][cid]||[]).length;
+          return n;
+        }
+        const nEventiNuovi = contaEventiTotali(events);
+        const nEventiCache = contaEventiTotali(cached?.events);
+        // Soglia: un calo superiore al 30% (e comunque di almeno 3 eventi,
+        // per non far scattare l'allarme su differenze minime/normali tipo
+        // un'eliminazione volontaria di un paio di turni) blocca l'applicazione.
+        const caloSospetto = nEventiCache>=5 && nEventiNuovi < nEventiCache*0.7 && (nEventiCache-nEventiNuovi)>=3;
+
+        if(caloSospetto){
+          segnalaErrore(
+            { message: `La sincronizzazione ha restituito ${nEventiNuovi} eventi contro i ${nEventiCache} già presenti in locale: per sicurezza NON è stata applicata, per evitare di cancellare turni per errore. I tuoi dati locali sono intatti. Riprova più tardi o controlla la connessione.` },
+            "Sincronizzazione dati (calo eventi sospetto)"
+          );
+          setLoading(false);
+          return;
+        }
 
         // Applico TUTTO insieme, in un solo giro di render: niente più
         // calendario che appare prima e modelli/colori che arrivano dopo.
@@ -1575,6 +1690,14 @@ export function useAppCore(session){
   }
 
   async function saveEvt(){
+    try{
+      return await saveEvtInterno();
+    }catch(e){
+      segnalaErrore(e, "Salvataggio turno (errore imprevisto)");
+      alert("Si è verificato un errore imprevisto salvando il turno. L'errore è stato registrato nel Log (Impostazioni → Log). Controlla il calendario: il turno potrebbe non essere stato salvato.");
+    }
+  }
+  async function saveEvtInterno(){
     if(!form||!dayKey||!calId||!userId) return;
     const cal = store.calendars.find(c=>c.id===calId);
     if(!cal) return;
@@ -1661,6 +1784,14 @@ export function useAppCore(session){
   }
 
   async function updateEvt(){
+    try{
+      return await updateEvtInterno();
+    }catch(e){
+      segnalaErrore(e, "Modifica turno (errore imprevisto)");
+      alert("Si è verificato un errore imprevisto modificando il turno. L'errore è stato registrato nel Log (Impostazioni → Log). Controlla il calendario: la modifica potrebbe non essere stata salvata.");
+    }
+  }
+  async function updateEvtInterno(){
     const editCalId = form?.editCid || calId;
     if(!form||!dayKey||!editCalId||!userId||!form.editId) return;
     const cal = store.calendars.find(c=>c.id===editCalId);
@@ -2700,6 +2831,14 @@ const importsRecenti = useMemo(()=>{
   }
 
   async function saveModello(data){
+    try{
+      return await saveModelloInterno(data);
+    }catch(e){
+      segnalaErrore(e, "Salvataggio modello (errore imprevisto)");
+      return { ok:false, errore:{message:e?.message||String(e)} };
+    }
+  }
+  async function saveModelloInterno(data){
     if(!userId) return;
     const coloreEff=data.coloreCustom||(data.tempo==="h24"?"#64748b":colByTime(data.inizio));
     const targetCalId = data.calendarId||calId||mainCalId;
@@ -2881,6 +3020,14 @@ const importsRecenti = useMemo(()=>{
   }
 
   async function deleteModello(id){
+    try{
+      return await deleteModelloInterno(id);
+    }catch(e){
+      segnalaErrore(e, "Eliminazione modello (errore imprevisto)");
+      return { ok:false, errore:{message:e?.message||String(e)} };
+    }
+  }
+  async function deleteModelloInterno(id){
     // Con la nuova architettura (posizioni assolute, non riferimenti tra
     // modelli) l'eliminazione è semplice: nessun altro modello punta a
     // questo tramite id, quindi non serve "riparare" nessun riferimento.
@@ -2891,13 +3038,18 @@ const importsRecenti = useMemo(()=>{
       modelliAggiornati = updated;
       return updated;
     });
-    // 2) Backup su Supabase (con retry colonna) + Sheets in parallelo.
+    // 2) Backup su Supabase (con retry colonna) + Sheets in parallelo,
+    // CON verifica post-scrittura (vedi scriviConBackup): se la riga
+    // risultasse ancora presente su Supabase dopo la cancellazione,
+    // viene segnalato invece di considerarsi "andata a buon fine" solo
+    // perché la chiamata non ha restituito errore.
     const match = { id, user_id: userId };
-    await scriviConBackup({
+    const esito = await scriviConBackup({
       tipo:"delete", table:"modelli", payload:null, matchObj:match,
       contesto:"Eliminazione modello", ts:new Date().toISOString(),
       eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelliAggiornati,
     });
+    return esito;
   }
 
   // ── COLORI: aggiunta/rimozione dalla sezione + assegnazione esclusiva ai modelli

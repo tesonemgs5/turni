@@ -1,14 +1,65 @@
-    import { useState, useRef, useMemo, Fragment } from "react";
+    import { useState, useRef, useMemo, Fragment, Component } from "react";
 import { useAppCore } from "./6.Logica";
 import VistaCalendario from "./3.Calendario";
 import VistaModelli from "./2.Modelli";
 import { ModaleErroriMultipli } from "./5.Comuni";
 import {
   getContrastTextColor, NOMI_MESI_IT, calcFine6h15, calcFine6h30, calcDurata,
-  fmtDataIT, impostaSilenziamentoErrore,
+  fmtDataIT, impostaSilenziamentoErrore, segnalaErrore,
   ModelForm, GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView,
 } from "./4.Rotazione";
 import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./7.Turni";
+
+// ═══════════════════════════════════════════════════════════════
+// ErrorBoundary — rete di sicurezza per QUALSIASI crash React che
+// prima spariva solo in console (F12) senza che l'utente vedesse
+// nulla in app. Cattura l'eccezione, la manda comunque nel Log
+// persistente tramite segnalaErrore (stesso meccanismo usato per
+// gli errori Supabase), e mostra una schermata con un bottone per
+// tornare a usare l'app invece di restare bloccati su una pagina
+// bianca o rotta.
+// NB: un Error Boundary React cattura errori di RENDER, non quelli
+// dentro onClick/async — quelli sono gestiti a parte (vedi i
+// try/catch aggiunti attorno a onSave). I due meccanismi insieme
+// coprono l'intera superficie: sia i crash di rendering sia le
+// eccezioni impreviste dentro le azioni utente.
+// ═══════════════════════════════════════════════════════════════
+class ErrorBoundary extends Component {
+  constructor(props){
+    super(props);
+    this.state = { errore: null };
+  }
+  static getDerivedStateFromError(errore){
+    return { errore };
+  }
+  componentDidCatch(errore, info){
+    segnalaErrore(
+      { message: `${errore?.message||errore} — ${info?.componentStack?.split("\n").slice(0,4).join(" › ")||""}` },
+      "Errore imprevisto dell'app (crash di rendering)"
+    );
+  }
+  render(){
+    if(this.state.errore){
+      return (
+        <div style={{position:"fixed", inset:0, display:"flex", flexDirection:"column",
+          alignItems:"center", justifyContent:"center", padding:24, background:"#0f172a",
+          color:"#fff", fontFamily:"system-ui,sans-serif", textAlign:"center", zIndex:999999}}>
+          <div style={{fontSize:40, marginBottom:12}}>⚠️</div>
+          <div style={{fontSize:16, fontWeight:900, marginBottom:8}}>Si è verificato un errore imprevisto</div>
+          <div style={{fontSize:13, color:"#cbd5e1", marginBottom:20, maxWidth:340, lineHeight:1.4}}>
+            L'errore è stato registrato nel Log (Impostazioni → Log). I dati già salvati in locale non sono stati toccati.
+          </div>
+          <button onClick={()=>{ this.setState({errore:null}); window.location.reload(); }}
+            style={{background:"#3b82f6", border:"none", borderRadius:10, color:"#fff",
+              padding:"12px 24px", fontWeight:800, fontSize:14, cursor:"pointer"}}>
+            Ricarica l'app
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════
 // BottomNav — barra di navigazione in basso, come componente React
@@ -60,7 +111,7 @@ function BottomNav({ screen, setScreen, T, accent }) {
 // Per aggiungere nuovo stato condiviso, apri useAppCore.js.
 // ═══════════════════════════════════════════════════════════════
 
-export default function App({ session }){
+function AppInterno({ session }){
   const C = useAppCore(session);
   const { calView, reportView, goPrevMonth, goNextMonth } = VistaCalendario({ C });
   const { modelliView, settingsView, dayModal, dbModal } = VistaModelli({ C });
@@ -243,18 +294,32 @@ export default function App({ session }){
               suggerimentiTitolo={autocompleteValori.titolo} suggerimentiNomeVis={autocompleteValori.nome_visualizzato}
               onRimuoviSuggerimento={rimuoviValoreAutocomplete}
               onSave={async()=>{
-                const esito = await saveModello({...modelForm,id:editModello?.id});
-                if(esito?.ok){
-                  setShowModelForm(false);
-                  // Torna da dove si era partiti: se il form era stato aperto dal
-                  // picker "Scegli modello" (creazione al volo mentre si sceglieva
-                  // un modello per un evento), si riapre il picker; se era stato
-                  // aperto dalla lista Modelli, si resta semplicemente sulla lista
-                  // (nessun picker da riaprire — prima si andava sempre al picker
-                  // anche partendo dalla lista, comportamento non voluto).
-                  if(origineModelForm==="picker") setShowModelloPicker(true);
-                } else {
-                  alert("Errore nel salvataggio del modello: "+(esito?.error||"errore sconosciuto")+"\n\nIl modello NON è stato salvato, controlla i dati e riprova.");
+                // try/catch qui: un ErrorBoundary React NON intercetta le
+                // eccezioni dentro handler async come questo (sono fuori dal
+                // ciclo di rendering) — senza questo blocco, un errore come
+                // "Cannot read properties of undefined" dentro saveModello
+                // sparisce silenziosamente in console (Uncaught in promise)
+                // senza che l'utente veda nulla, e il form resta aperto senza
+                // spiegazioni. Ora qualsiasi eccezione, attesa o no, arriva
+                // comunque al modale di errore standard dell'app.
+                try{
+                  const esito = await saveModello({...modelForm,id:editModello?.id});
+                  if(esito?.ok){
+                    setShowModelForm(false);
+                    // Torna da dove si era partiti: se il form era stato aperto dal
+                    // picker "Scegli modello" (creazione al volo mentre si sceglieva
+                    // un modello per un evento), si riapre il picker; se era stato
+                    // aperto dalla lista Modelli, si resta semplicemente sulla lista
+                    // (nessun picker da riaprire — prima si andava sempre al picker
+                    // anche partendo dalla lista, comportamento non voluto).
+                    if(origineModelForm==="picker") setShowModelloPicker(true);
+                  } else {
+                    segnalaErrore(esito?.errore||"Errore sconosciuto", "Salvataggio modello");
+                    alert("Errore nel salvataggio del modello: "+(esito?.errore?.message||esito?.errore||"errore sconosciuto")+"\n\nIl modello NON è stato salvato, controlla i dati e riprova.");
+                  }
+                }catch(e){
+                  segnalaErrore(e, "Salvataggio modello (errore imprevisto)");
+                  alert("Si è verificato un errore imprevisto salvando il modello. L'errore è stato registrato nel Log (Impostazioni → Log). Il modello potrebbe NON essere stato salvato: controlla in \"Modelli\" e riprova.");
                 }
               }}/>
           </div>
@@ -663,4 +728,13 @@ export default function App({ session }){
   );
 }
 
-    
+// Export reale: avvolge tutto in ErrorBoundary. Qualsiasi crash di
+// rendering, in qualunque schermata dell'app, ora finisce qui invece
+// che in una pagina bianca silenziosa vista solo in F12.
+export default function App({ session }){
+  return (
+    <ErrorBoundary>
+      <AppInterno session={session}/>
+    </ErrorBoundary>
+  );
+}
