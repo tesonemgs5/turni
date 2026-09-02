@@ -612,6 +612,16 @@ export function useAppCore(session){
         // dando la falsa impressione che i modelli/dati siano stati persi,
         // quando in realtà sono ancora sul server e il problema era solo di
         // rete/caricamento.
+        // Se non c'è proprio linea, non ha senso nemmeno provare la RPC:
+        // sarebbero solo secondi di attesa a vuoto prima del fallimento.
+        // Si resta sulla cache locale già mostrata sopra, senza alcun
+        // banner: l'assenza di connessione non è un errore, è uno stato
+        // normale di attesa — riparte da sola quando la linea torna
+        // (vedi il retry periodico e l'evento 'online' più sotto nel file).
+        if(typeof navigator!=="undefined" && navigator.onLine===false){
+          setLoading(false);
+          return;
+        }
         let all, rpcErr;
         for(let tentativo=0; tentativo<3; tentativo++){
           const risultato = await supabase.rpc("get_user_data", { p_user_id: userId });
@@ -620,9 +630,16 @@ export function useAppCore(session){
           if(tentativo<2) await new Promise(r=>setTimeout(r, 800*(tentativo+1)));
         }
         if(rpcErr){
-          // Tutti i tentativi falliti: avviso VISIBILE invece di lasciare la
-          // UI silenziosamente con la cache (che potrebbe sembrare "dati
-          // spariti" mentre sono solo non ancora ricaricati).
+          // Errore di rete (linea caduta a metà dei retry, instabile): non
+          // è un errore vero, resta sulla cache locale già mostrata, senza
+          // banner. Riparte da sola al ritorno della connessione.
+          if(eRoreDiRete(rpcErr)){
+            setLoading(false);
+            return;
+          }
+          // Errore vero (non di rete): avviso VISIBILE invece di lasciare
+          // la UI silenziosamente con la cache (che potrebbe sembrare
+          // "dati spariti" mentre sono solo non ancora ricaricati).
           setBanner("⚠️ Impossibile caricare i dati dal server. Controlla la connessione e riprova (i tuoi dati sono al sicuro, non sono stati toccati).");
           setTimeout(()=>setBanner(null), 8000);
           setLoading(false);
