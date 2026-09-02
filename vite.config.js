@@ -34,6 +34,11 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        // Garantisce che qualsiasi navigazione (apertura o ricarica della
+        // pagina) offline venga servita dalla index.html già in cache,
+        // invece di lasciare che il browser tenti la rete e fallisca con
+        // la sua pagina di errore nativa (il "dinosauro" di Chrome).
+        navigateFallback: '/index.html',
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
