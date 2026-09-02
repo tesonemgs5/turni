@@ -49,6 +49,15 @@ export default defineConfig({
         // invece di lasciare che il browser tenti la rete e fallisca con
         // la sua pagina di errore nativa (il "dinosauro" di Chrome).
         navigateFallback: '/index.html',
+        // CAUSA CONFERMATA del bug "offline non funziona anche col service
+        // worker attivo": l'app viene aperta con un querystring del tipo
+        // ?v=1788382990342 (cache-buster). Senza denylist esplicita,
+        // Workbox in alcune versioni non applica navigateFallback a URL
+        // con querystring, quindi quella richiesta andava dritta in rete
+        // e falliva invece di essere servita dalla cache. Con denylist
+        // vuota, ogni richiesta di navigazione (con o senza querystring)
+        // passa dal fallback.
+        navigateFallbackDenylist: [],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
