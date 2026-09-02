@@ -265,6 +265,17 @@ export function useAppCore(session){
   }
 
   async function scriviConBackup({ tipo, table, payload, matchObj, contesto, ts, eventsPerSheets, calendarsPerSheets, modelliPerSheets, opzioni={} }){
+    // Riconosce un errore "di rete/momentaneo" (fetch fallito, timeout,
+    // connessione instabile) da uno "vero" (validazione, permessi, colonna
+    // mancante...). Solo il primo tipo vale la pena ritentarlo in automatico
+    // prima di disturbare l'utente con un popup: una rete lenta che si
+    // riprende da sola in 1-2 secondi non deve generare un alert.
+    function sembraErroreDiRete(error){
+      const msg = String(error?.message||error||"").toLowerCase();
+      return msg.includes("fetch") || msg.includes("network") || msg.includes("timeout")
+        || msg.includes("connection") || msg.includes("failed to fetch");
+    }
+    const attesa = (ms)=>new Promise(res=>setTimeout(res, ms));
     async function provaSupabase(payloadCorrente, tentativi=0){
       if(tentativi>=10) return { error:{message:"Troppi tentativi di retry sullo schema"} };
       let q;
@@ -281,9 +292,23 @@ export function useAppCore(session){
       }
       return { error, payloadUsato:payloadCorrente };
     }
+    // Riprova fino a 3 volte con backoff (1s, 2s) SOLO se l'errore sembra
+    // di rete/momentaneo, prima di considerarlo un errore persistente da
+    // segnalare. Un errore "vero" (permessi, validazione) non viene
+    // ritentato: si segnala subito, ritentarlo non cambierebbe nulla.
+    async function provaSupabaseConRetry(payloadCorrente){
+      let risultato = await provaSupabase(payloadCorrente);
+      let tentativo = 0;
+      while(risultato.error && sembraErroreDiRete(risultato.error) && tentativo<2){
+        tentativo++;
+        await attesa(tentativo*1000); // 1s, poi 2s
+        risultato = await provaSupabase(payloadCorrente);
+      }
+      return risultato;
+    }
     try{
       const [risSupabase] = await Promise.all([
-        provaSupabase(payload),
+        provaSupabaseConRetry(payload),
         (eventsPerSheets!==undefined) ? syncSeAttivo(eventsPerSheets, calendarsPerSheets, modelliPerSheets) : Promise.resolve(),
       ]);
       if(risSupabase.error){
@@ -292,6 +317,9 @@ export function useAppCore(session){
         // backup remoto non aggiunge nulla — resta nel log tecnico e basta.
         // Il chiamante che ha bisogno di un riepilogo (es. più scritture
         // della stessa azione utente) lo mostra lui stesso, una volta sola.
+        // NB: qui si arriva solo dopo i retry automatici falliti (vedi
+        // provaSupabaseConRetry sopra), quindi è un errore persistente,
+        // non un semplice intoppo di rete lenta che si è già risolto da sé.
         if(opzioni.soloLog) segnalaErroreSoloLog(risSupabase.error, `${contesto} (backup su Supabase)`);
         else segnalaErroreDb(risSupabase.error, `${contesto} (backup su Supabase)`);
         return { ok:false, errore: risSupabase.error };
@@ -1214,9 +1242,17 @@ export function useAppCore(session){
         }
       } catch(e){
         // Eccezione di rete (offline di nuovo, timeout...): resta in coda,
-        // si ritenterà al prossimo giro. Nessun alert per questo caso —
-        // è lo scenario normale "sto ancora aspettando la connessione".
-        rimasti.push(op);
+        // si ritenterà al prossimo giro. Dopo troppi giri falliti di
+        // seguito, però, l'utente deve saperlo con un popup — non deve
+        // restare silenziosa per sempre se il problema persiste.
+        const tentativiFalliti = (op.tentativiFalliti||0) + 1;
+        if(tentativiFalliti>=5){
+          segnalaErrore(
+            { message: `L'operazione è ancora in coda dopo ${tentativiFalliti} tentativi di sincronizzazione. Controlla la connessione. Dettaglio: ${e?.message||e}` },
+            `Sincronizzazione in sospeso — ${op.contesto}`
+          );
+        }
+        rimasti.push({ ...op, tentativiFalliti });
       }
     }
     scriviCodaSync(rimasti.filter(Boolean));
