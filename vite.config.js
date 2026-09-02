@@ -14,7 +14,17 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // 'prompt' invece di 'autoUpdate': con autoUpdate, ad ogni apertura o
+      // reload il service worker tenta subito di controllare se c'è una
+      // versione più recente. Se quel controllo fallisce per assenza di
+      // rete (esattamente il caso "utente offline che ricarica la pagina"),
+      // il worker già attivo può finire in stato 'redundant' e smettere di
+      // servire la cache — mandando in errore proprio lo scenario offline
+      // che deve invece continuare a funzionare. Con 'prompt' il worker
+      // attivo resta sempre in servizio; il controllo di una versione più
+      // recente avviene solo quando la registerSW() lo richiede
+      // esplicitamente (vedi 9.main.jsx), non ad ogni reload automatico.
+      registerType: 'prompt',
       includeAssets: ['favicon.ico', 'favicon.svg'],
       manifest: {
         name: 'Calendario Turni',
