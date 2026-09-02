@@ -1204,6 +1204,12 @@ export function useAppCore(session){
   async function processaCodaSync(){
     const coda = leggiCodaSync();
     if(coda.length===0) return;
+    // Se il browser segnala che non c'è connessione, non si tenta nemmeno
+    // di svuotare la coda: nessuna richiesta parte, quindi nessun errore
+    // in F12. Si riproverà al prossimo giro (evento 'online' o timer
+    // periodico più sotto) — la linea assente non è un errore, è uno
+    // stato normale di attesa.
+    if(typeof navigator!=="undefined" && navigator.onLine===false) return;
     // Le operazioni più vecchie (ts più basso) vanno riprovate per prime:
     // se due dispositivi hanno modificato la stessa riga mentre uno era
     // offline, applicarle in ordine cronologico fa sì che l'ultima
@@ -1266,7 +1272,18 @@ export function useAppCore(session){
     // precedente (es. l'app è stata chiusa mentre era offline), si prova
     // subito a smaltirle.
     if(navigator.onLine) processaCodaSync();
-    return ()=>{ window.removeEventListener('online', goOnline); window.removeEventListener('offline', goOffline); };
+    // Timer periodico: la linea "ballerina" (navigator.onLine resta true
+    // ma le richieste cadono comunque) non genera mai l'evento 'online' del
+    // browser, quindi senza un timer la coda potrebbe restare in sospeso a
+    // tempo indeterminato pur avendo la connessione tornata realmente
+    // disponibile. Si riprova ogni 2 minuti, in silenzio — nessun popup,
+    // nessun indicatore: è solo un nuovo tentativo di routine.
+    const timerRetryCoda = setInterval(()=>{ processaCodaSync(); }, 2*60*1000);
+    return ()=>{
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
+      clearInterval(timerRetryCoda);
+    };
   },[]);
 // #endregion
 
