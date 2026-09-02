@@ -4,6 +4,16 @@ import App from './1.App.jsx'
 import Auth from './10.auth.jsx'
 import { supabase } from './11.supabase.js'
 import { useState, useEffect } from 'react'
+import { registerSW } from 'virtual:pwa-register'
+
+// Registra il service worker generato da vite-plugin-pwa: senza questa
+// chiamata il plugin produce comunque sw.js in fase di build, ma nessuno
+// lo installa mai nel browser — quindi l'app (HTML/JS/CSS) non finisce
+// mai in cache e, aprendo/ricaricando la pagina senza connessione, il
+// browser mostra la sua pagina di errore invece dell'app. Con questa
+// chiamata, dopo la prima visita con linea l'app resta disponibile anche
+// a freddo, senza connessione.
+registerSW({ immediate: true })
 
 function leggiSessioneLocale() {
   try {
