@@ -225,8 +225,11 @@ export function useAppCore(session){
   // andato perso: lo segnaliamo con direte:true così il chiamante lo accoda
   // silenziosamente invece di bloccare con un modale come se fosse un errore vero.
   function eRoreDiRete(e){
-    const msg = (e?.message||"").toLowerCase();
-    return msg.includes("failed to fetch") || msg.includes("networkerror") || msg.includes("network request failed") || e?.name==="TypeError";
+    const msg = (e?.message||String(e)||"").toLowerCase();
+    return msg.includes("failed to fetch") || msg.includes("networkerror") || msg.includes("network request failed")
+      || msg.includes("network") || msg.includes("timeout") || msg.includes("connection")
+      || msg.includes("name_not_resolved") || msg.includes("internet_disconnected")
+      || e?.name==="TypeError";
   }
   async function verificaScrittura(tipo, table, payloadCorrente, matchObj){
     try{
@@ -265,17 +268,23 @@ export function useAppCore(session){
   }
 
   async function scriviConBackup({ tipo, table, payload, matchObj, contesto, ts, eventsPerSheets, calendarsPerSheets, modelliPerSheets, opzioni={} }){
-    // Riconosce un errore "di rete/momentaneo" (fetch fallito, timeout,
-    // connessione instabile) da uno "vero" (validazione, permessi, colonna
-    // mancante...). Solo il primo tipo vale la pena ritentarlo in automatico
-    // prima di disturbare l'utente con un popup: una rete lenta che si
-    // riprende da sola in 1-2 secondi non deve generare un alert.
-    function sembraErroreDiRete(error){
-      const msg = String(error?.message||error||"").toLowerCase();
-      return msg.includes("fetch") || msg.includes("network") || msg.includes("timeout")
-        || msg.includes("connection") || msg.includes("failed to fetch");
+    function accodaSilenziosamente(){
+      // Locale è già scritto dal chiamante prima di arrivare qui: qui si
+      // accoda solo il backup remoto, senza disturbare l'utente. Nessun
+      // popup, nemmeno un banner — è lo stato normale "sto aspettando
+      // che torni la linea", non un errore da segnalare.
+      const coda = leggiCodaSync();
+      coda.push({ id: generaIdLocale(), ts: ts||new Date().toISOString(), tipo, table, payload, match: matchObj, contesto });
+      scriviCodaSync(coda);
+      return { ok:true, accodato:true, errore:null };
     }
-    const attesa = (ms)=>new Promise(res=>setTimeout(res, ms));
+    // ─── Se il browser segnala che non c'è connessione, non si tenta
+    // nemmeno la scrittura: si accoda direttamente. Provare e fallire non
+    // aggiunge informazione, aggiunge solo un giro a vuoto e rischio di
+    // popup.
+    if(typeof navigator!=="undefined" && navigator.onLine===false){
+      return accodaSilenziosamente();
+    }
     async function provaSupabase(payloadCorrente, tentativi=0){
       if(tentativi>=10) return { error:{message:"Troppi tentativi di retry sullo schema"} };
       let q;
@@ -292,34 +301,26 @@ export function useAppCore(session){
       }
       return { error, payloadUsato:payloadCorrente };
     }
-    // Riprova fino a 3 volte con backoff (1s, 2s) SOLO se l'errore sembra
-    // di rete/momentaneo, prima di considerarlo un errore persistente da
-    // segnalare. Un errore "vero" (permessi, validazione) non viene
-    // ritentato: si segnala subito, ritentarlo non cambierebbe nulla.
-    async function provaSupabaseConRetry(payloadCorrente){
-      let risultato = await provaSupabase(payloadCorrente);
-      let tentativo = 0;
-      while(risultato.error && sembraErroreDiRete(risultato.error) && tentativo<2){
-        tentativo++;
-        await attesa(tentativo*1000); // 1s, poi 2s
-        risultato = await provaSupabase(payloadCorrente);
-      }
-      return risultato;
-    }
     try{
       const [risSupabase] = await Promise.all([
-        provaSupabaseConRetry(payload),
+        provaSupabase(payload),
         (eventsPerSheets!==undefined) ? syncSeAttivo(eventsPerSheets, calendarsPerSheets, modelliPerSheets) : Promise.resolve(),
       ]);
       if(risSupabase.error){
+        // Se l'errore sembra di rete (connessione ballerina che ha lasciato
+        // cadere questa singola richiesta, anche se navigator.onLine
+        // risultava true) NON è un errore vero: si accoda silenziosamente,
+        // esattamente come nel caso offline sopra. Il popup è riservato
+        // solo agli errori che una nuova connessione non risolverebbe da
+        // sola (permessi, validazione, RLS...).
+        if(eRoreDiRete(risSupabase.error)){
+          return accodaSilenziosamente();
+        }
         // soloLog: il locale è comunque già scritto dal chiamante prima di
         // arrivare qui, quindi un modale bloccante per un errore di solo
         // backup remoto non aggiunge nulla — resta nel log tecnico e basta.
         // Il chiamante che ha bisogno di un riepilogo (es. più scritture
         // della stessa azione utente) lo mostra lui stesso, una volta sola.
-        // NB: qui si arriva solo dopo i retry automatici falliti (vedi
-        // provaSupabaseConRetry sopra), quindi è un errore persistente,
-        // non un semplice intoppo di rete lenta che si è già risolto da sé.
         if(opzioni.soloLog) segnalaErroreSoloLog(risSupabase.error, `${contesto} (backup su Supabase)`);
         else segnalaErroreDb(risSupabase.error, `${contesto} (backup su Supabase)`);
         return { ok:false, errore: risSupabase.error };
@@ -348,16 +349,11 @@ export function useAppCore(session){
       }
       return { ok:true, errore:null };
     }catch(e){
-      // Eccezione di rete: l'intera operazione (con il suo timestamp
-      // originale) resta in coda, riparte identica al ritorno online.
-      const coda = leggiCodaSync();
-      coda.push({ id: generaIdLocale(), ts: ts||new Date().toISOString(), tipo, table, payload, match: matchObj, contesto });
-      scriviCodaSync(coda);
-      // Errore visibile anche in questo caso (prima veniva inghiottito in
-      // silenzio): l'utente deve sapere che il salvataggio remoto è solo
-      // in coda, non ancora confermato, anche se il locale è già a posto.
-      segnalaErroreSoloLog(`Nessuna connessione o errore di rete: l'operazione è stata messa in coda e ripartirà automaticamente al ritorno della connessione. Dettaglio: ${e?.message||e}`, `${contesto} (offline)`);
-      return { ok:true, accodato:true, errore:null }; // ok:true perché il locale è comunque salvato, è solo il backup remoto in sospeso
+      // Eccezione di rete (offline, DNS non risolto, timeout...): l'intera
+      // operazione (con il suo timestamp originale) resta in coda, riparte
+      // identica al ritorno online. Nessun popup: è lo stato normale
+      // "sto aspettando che torni la linea", non un errore dell'utente.
+      return accodaSilenziosamente();
     }
   }
   // Normalizza un campo testo in maiuscolo, gestendo null/undefined.
@@ -1234,25 +1230,24 @@ export function useAppCore(session){
       try{
         const res = await provaSupabase(op.payload);
         if(res.error){
-          // Errore non di connessione (es. validazione, permessi): non ha
-          // senso ritentarlo all'infinito, si segnala e si scarta.
-          segnalaErrore(res.error, `Sincronizzazione in sospeso — ${op.contesto}`);
+          if(eRoreDiRete(res.error)){
+            // Rete ballerina: la richiesta è arrivata ma è caduta a metà,
+            // senza generare un'eccezione JS. Stesso trattamento del
+            // ramo catch sotto: si riaccoda in silenzio, nessun popup.
+            rimasti.push(op);
+          } else {
+            // Errore vero (validazione, permessi...): non ha senso
+            // ritentarlo all'infinito, si segnala e si scarta.
+            segnalaErrore(res.error, `Sincronizzazione in sospeso — ${op.contesto}`);
+          }
         } else {
           rimasti.push(null); // marcato come completato, verrà filtrato sotto
         }
       } catch(e){
         // Eccezione di rete (offline di nuovo, timeout...): resta in coda,
-        // si ritenterà al prossimo giro. Dopo troppi giri falliti di
-        // seguito, però, l'utente deve saperlo con un popup — non deve
-        // restare silenziosa per sempre se il problema persiste.
-        const tentativiFalliti = (op.tentativiFalliti||0) + 1;
-        if(tentativiFalliti>=5){
-          segnalaErrore(
-            { message: `L'operazione è ancora in coda dopo ${tentativiFalliti} tentativi di sincronizzazione. Controlla la connessione. Dettaglio: ${e?.message||e}` },
-            `Sincronizzazione in sospeso — ${op.contesto}`
-          );
-        }
-        rimasti.push({ ...op, tentativiFalliti });
+        // si ritenterà al prossimo giro. Nessun popup — è lo stato normale
+        // "sto ancora aspettando la connessione", per quanto duri.
+        rimasti.push(op);
       }
     }
     scriviCodaSync(rimasti.filter(Boolean));
@@ -1754,6 +1749,11 @@ export function useAppCore(session){
     try{
       return await saveEvtInterno();
     }catch(e){
+      // Il locale è già stato scritto dentro saveEvtInterno prima di
+      // arrivare a scriviConBackup, quindi un'eccezione di rete qui è solo
+      // il backup remoto non riuscito — niente popup, silenziosamente
+      // riprovato più avanti (coda). Solo un errore "vero" merita l'alert.
+      if(eRoreDiRete(e)) return;
       segnalaErrore(e, "Salvataggio turno (errore imprevisto)");
       alert("Si è verificato un errore imprevisto salvando il turno. L'errore è stato registrato nel Log (Impostazioni → Log). Controlla il calendario: il turno potrebbe non essere stato salvato.");
     }
@@ -1848,6 +1848,9 @@ export function useAppCore(session){
     try{
       return await updateEvtInterno();
     }catch(e){
+      // Stesso ragionamento di saveEvt: rete instabile qui non è un errore
+      // vero, il locale è già a posto. Silenzioso, non un doppio popup.
+      if(eRoreDiRete(e)) return;
       segnalaErrore(e, "Modifica turno (errore imprevisto)");
       alert("Si è verificato un errore imprevisto modificando il turno. L'errore è stato registrato nel Log (Impostazioni → Log). Controlla il calendario: la modifica potrebbe non essere stata salvata.");
     }
