@@ -3,6 +3,12 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
+  // Path relativi negli asset generati (dist/index.html usa "./assets/..."
+  // invece di "/assets/..."), indispensabile perché l'app Electron carica
+  // index.html da file:// e non da un server web: con path assoluti il
+  // browser li interpreta come percorso radice del disco e fallisce con
+  // ERR_FILE_NOT_FOUND.
+  base: './',
   build: {
     minify: 'terser',
     terserOptions: {
