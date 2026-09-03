@@ -13,7 +13,16 @@ import { registerSW } from 'virtual:pwa-register'
 // browser mostra la sua pagina di errore invece dell'app. Con questa
 // chiamata, dopo la prima visita con linea l'app resta disponibile anche
 // a freddo, senza connessione.
-registerSW({ immediate: true })
+//
+// NB: "immediate: true" è stato rimosso apposta. Con quel flag, ad ogni
+// avvio il service worker controllava SUBITO se esisteva una versione
+// più recente e, se la trovava, scaricava e ricaricava l'app in automatico
+// — causando il "flash" visibile all'apertura (un istante con la versione
+// vecchia, poi refresh silenzioso alla nuova). Senza "immediate", il
+// service worker si registra comunque in background (quindi l'offline
+// continua a funzionare), ma non forza nessun controllo/reload immediato:
+// l'utente vede da subito la versione già in cache, stabile, senza salti.
+registerSW()
 
 function leggiSessioneLocale() {
   try {
@@ -102,6 +111,13 @@ function Root() {
     );
   }
   return session ? <App session={session} /> : <Auth />
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <Root />
+  </React.StrictMode>
+)
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(
