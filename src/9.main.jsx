@@ -6,23 +6,29 @@ import { supabase } from './11.supabase.js'
 import { useState, useEffect } from 'react'
 import { registerSW } from 'virtual:pwa-register'
 
-// Registra il service worker generato da vite-plugin-pwa: senza questa
-// chiamata il plugin produce comunque sw.js in fase di build, ma nessuno
-// lo installa mai nel browser — quindi l'app (HTML/JS/CSS) non finisce
-// mai in cache e, aprendo/ricaricando la pagina senza connessione, il
-// browser mostra la sua pagina di errore invece dell'app. Con questa
-// chiamata, dopo la prima visita con linea l'app resta disponibile anche
-// a freddo, senza connessione.
-//
-// NB: "immediate: true" è stato rimosso apposta. Con quel flag, ad ogni
-// avvio il service worker controllava SUBITO se esisteva una versione
-// più recente e, se la trovava, scaricava e ricaricava l'app in automatico
-// — causando il "flash" visibile all'apertura (un istante con la versione
-// vecchia, poi refresh silenzioso alla nuova). Senza "immediate", il
-// service worker si registra comunque in background (quindi l'offline
-// continua a funzionare), ma non forza nessun controllo/reload immediato:
-// l'utente vede da subito la versione già in cache, stabile, senza salti.
-registerSW()
+// Registra il service worker SOLO quando l'app gira in un vero browser
+// (versione PWA su web/telefono). Dentro Electron l'app è già interamente
+// sul disco (vedi electron/main.cjs, che carica i file con loadFile),
+// quindi il service worker è superfluo lì — e se si prova comunque a
+// registrarlo, genera solo errori "Failed to fetch" in console (visti nel
+// primo test con npm run electron:start), perché tenta di usare
+// meccanismi pensati per un vero server web che qui non esiste.
+// `window.electronAPI` non esiste in Electron per questa app (non è
+// stato esposto via preload, di proposito: non serve integrazione
+// Node.js nella pagina), quindi il modo affidabile per distinguere i due
+// contesti è lo user agent, che Electron include sempre nella propria
+// stringa.
+const staGirandoInElectron = typeof navigator!=="undefined" && /electron/i.test(navigator.userAgent||"");
+if(!staGirandoInElectron){
+  // Registra il service worker generato da vite-plugin-pwa: senza questa
+  // chiamata il plugin produce comunque sw.js in fase di build, ma nessuno
+  // lo installa mai nel browser — quindi l'app (HTML/JS/CSS) non finisce
+  // mai in cache e, aprendo/ricaricando la pagina senza connessione, il
+  // browser mostra la sua pagina di errore invece dell'app. Con questa
+  // chiamata, dopo la prima visita con linea l'app resta disponibile anche
+  // a freddo, senza connessione.
+  registerSW({ immediate: true });
+}
 
 function leggiSessioneLocale() {
   try {
