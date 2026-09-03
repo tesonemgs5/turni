@@ -35,6 +35,12 @@ function creaFinestraPrincipale() {
   // esattamente come nella versione PWA già sistemata.
   finestra.loadFile(path.join(__dirname, '../dist/index.html'));
 
+  // Apre DevTools automaticamente all'avvio: utile in questa fase di
+  // test per capire eventuali errori, dato che le scorciatoie da
+  // tastiera (F12, Ctrl+Shift+I) non sembrano funzionare in questo
+  // ambiente. Da togliere prima della build finale per l'utente reale.
+  finestra.webContents.openDevTools();
+
   // Rimuove la barra dei menu di default di Electron (File/Edit/View/...)
   // che non serve per questa app e sarebbe solo rumore per l'utente.
   Menu.setApplicationMenu(null);
