@@ -1,4 +1,4 @@
-    import { useState, useRef, useMemo, Fragment, Component } from "react";
+import { useState, useRef, useMemo, Fragment, Component } from "react";
 import { useAppCore } from "./6.Logica";
 import VistaCalendario from "./3.Calendario";
 import VistaModelli from "./2.Modelli";
@@ -169,7 +169,7 @@ function AppInterno({ session }){
   } = C;
 
   return (
-    <div style={{display:"flex",flexDirection:"column",height:"100vh",height:"100dvh",background:T.bg,
+    <div style={{display:"flex",flexDirection:"column",height:"100dvh",background:T.bg,
       fontFamily:"system-ui,sans-serif",maxWidth:480,margin:"0 auto",overflow:"hidden"}}
       onClick={()=>pal&&setPal(null)}>
       {codaErrori.length>0 && (()=>{
