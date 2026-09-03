@@ -4,10 +4,32 @@
 // programma Windows, installabile con un .exe, che si avvia offline dal
 // primissimo avvio perché tutto il codice è già dentro il file installato
 // (non deve scaricare nulla da internet per partire).
-const { app, BrowserWindow, Menu } = require('electron');
+
+const { app, BrowserWindow, Menu, session } = require('electron');
 const path = require('path');
 
 function creaFinestraPrincipale() {
+  // Content-Security-Policy esplicita: senza questa, Electron mostra
+  // sempre un warning giallo in console ("Insecure Content-Security-
+  // Policy") durante lo sviluppo, anche se l'app non ha bisogno di
+  // "unsafe-eval" per funzionare. Dichiarandola qui, il warning sparisce
+  // sia in sviluppo (electron:start) sia nell'app impacchettata.
+  // - default-src 'self': tutto viene caricato solo dai file dell'app.
+  // - connect-src include https: perché l'app deve poter parlare con
+  //   Supabase (e Google Sheets, se configurato) per il backup.
+  // - img-src include data: perché l'app genera/mostra immagini inline
+  //   (es. anteprime, icone) come data URL.
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [
+          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:; font-src 'self' data:;"
+        ],
+      },
+    });
+  });
+
   const finestra = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -33,9 +55,6 @@ function creaFinestraPrincipale() {
   // in avanti, l'unica rete usata è quella verso Supabase per il backup,
   // esattamente come nella versione PWA già sistemata.
   finestra.loadFile(path.join(__dirname, '../dist/index.html'));
-
-  // TEMPORANEO: apre gli strumenti sviluppatore per vedere eventuali errori
-  finestra.webContents.openDevTools();
 
   // Rimuove la barra dei menu di default di Electron (File/Edit/View/...)
   // che non serve per questa app e sarebbe solo rumore per l'utente.
