@@ -4,7 +4,6 @@
 // programma Windows, installabile con un .exe, che si avvia offline dal
 // primissimo avvio perché tutto il codice è già dentro il file installato
 // (non deve scaricare nulla da internet per partire).
-
 const { app, BrowserWindow, Menu } = require('electron');
 const path = require('path');
 
@@ -34,6 +33,9 @@ function creaFinestraPrincipale() {
   // in avanti, l'unica rete usata è quella verso Supabase per il backup,
   // esattamente come nella versione PWA già sistemata.
   finestra.loadFile(path.join(__dirname, '../dist/index.html'));
+
+  // TEMPORANEO: apre gli strumenti sviluppatore per vedere eventuali errori
+  finestra.webContents.openDevTools();
 
   // Rimuove la barra dei menu di default di Electron (File/Edit/View/...)
   // che non serve per questa app e sarebbe solo rumore per l'utente.
