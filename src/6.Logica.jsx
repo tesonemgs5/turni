@@ -2965,12 +2965,12 @@ const importsRecenti = useMemo(()=>{
         .insert({ user_id:userId, campo, valore:v });
       // Violazione unique (valore già presente per un altro motivo, es. race
       // condition fra dispositivi) non è un errore reale: il valore è comunque lì.
-      if(error && error.code!=="23505") { segnalaErrore(error, `Registrazione valore autocomplete (${campo})`); return; }
+      if(error && error.code!=="23505") { segnalaErroreSoloLog(error.message||String(error), `Registrazione valore autocomplete (${campo})`); return; }
       setAutocompleteValori(prev=>({
         ...prev,
         [campo]: prev[campo].includes(v) ? prev[campo] : [...prev[campo], v].sort((a,b)=>a.localeCompare(b)),
       }));
-    } catch(e){ segnalaErrore(e, `Registrazione valore autocomplete (${campo})`); }
+    } catch(e){ segnalaErroreSoloLog(e?.message||String(e), `Registrazione valore autocomplete (${campo})`); }
   }
 
   // Registra più valori insieme (es. il campo collega, multi-riga: ogni riga
