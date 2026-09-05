@@ -768,6 +768,7 @@ export function useAppCore(session){
           theme, extraHols, sundayColor: savedSundayColor, holidayColor: savedHolidayColor,
           fasceAutomatiche: savedFasce, nationalHolsEnabled: savedNationalHolsEnabled,
           calEventRows: savedCalEventRows, calRow1Field: savedCalRow1Field, calRow2Field: savedCalRow2Field,
+          reports: savedReports, reportSettings: savedReportSettings,
         });
         if(!modelliUguali){
           setModelli(modelliMappati);

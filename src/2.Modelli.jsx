@@ -760,6 +760,42 @@ export default function VistaModelli({ C }){
         </button>
       </Sec>
 
+      <Sec label="MANUTENZIONE" T={T}>
+        <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
+          Usa questa funzione solo se il calendario mostra dati non aggiornati o
+          sbagliati dopo una modifica fatta da un altro dispositivo. Cancella la
+          copia locale e ripesca tutto da capo dal server: richiede connessione
+          internet, altrimenti i dati resterebbero vuoti finché la linea non torna.
+        </div>
+        <button onClick={async()=>{
+            if(!navigator.onLine){
+              setBanner("📡 Serve connessione per svuotare la cache. I tuoi dati locali non sono stati toccati.");
+              setTimeout(()=>setBanner(null), 5000);
+              return;
+            }
+            if(!confirm("Svuotare la cache locale e ricaricare tutto dal server? Serve connessione internet.")) return;
+            setBanner("⏳ Svuotamento cache...");
+            clearLocalStorageCache();
+            try {
+              if("caches" in window){
+                const cacheNames = await caches.keys();
+                await Promise.all(cacheNames.map(name=>caches.delete(name)));
+              }
+            } catch(e){ segnalaErrore(e, "Svuotamento cache (Service Worker)"); }
+            try {
+              if("serviceWorker" in navigator){
+                const regs = await navigator.serviceWorker.getRegistrations();
+                await Promise.all(regs.map(r=>r.unregister()));
+              }
+            } catch(e){ segnalaErrore(e, "Disattivazione Service Worker"); }
+            window.location.href = window.location.href.split('?')[0] + '?v=' + Date.now();
+          }}
+          style={{width:"100%",background:"none",border:"1px solid #ef4444",borderRadius:10,color:"#ef4444",
+            padding:"10px 0",fontWeight:800,fontSize:12,cursor:"pointer"}}>
+          🔄 Svuota cache e ricarica tutto
+        </button>
+      </Sec>
+
       <SecCollapsible label="LOG ERRORI" T={T}
         onToggle={(aperta)=>{
           if(aperta){
