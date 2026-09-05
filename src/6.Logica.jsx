@@ -3853,19 +3853,33 @@ const importsRecenti = useMemo(()=>{
       const modNL = modelli.find(m=>m.id===rot.modelloNLId);
       const primoModello = modPartenza==="NL" ? modNL : modRS;
       const secondoModello = modPartenza==="NL" ? modRS : modNL;
+      const GIORNI_CICLO = [6, 5, 4, 3, 2, 1];
 
       const [y0, m0, d0] = startDayKey.split("-").map(Number);
-      let dataCorr = new Date(y0, m0-1, d0);
-      const totalWeeks = numRipetizioni * 2;
+      let dataCorrRS = new Date(y0, m0-1, d0);
+      let giornoCicloIdx = GIORNI_CICLO.indexOf(dataCorrRS.getDay());
+      if(giornoCicloIdx === -1) giornoCicloIdx = 0;
 
-      for(let w = 0; w < totalWeeks; w++) {
-        const isPrimo = (w % 2) === 0;
-        const mod = isPrimo ? primoModello : secondoModello;
+      for(let i=0; i<numRipetizioni; i++) {
+        const dataRS = new Date(dataCorrRS);
+        const dataNL = new Date(dataCorrRS);
+        dataNL.setDate(dataNL.getDate() + 7);
 
-        if(mod) await inserisciEvento(mod, dataCorr);
+        await inserisciEvento(primoModello, dataRS);
+        await inserisciEvento(secondoModello, dataNL);
 
-        const daysToAdd = dataCorr.getDay() === 1 ? 5 : 6;
-        dataCorr.setDate(dataCorr.getDate() + daysToAdd);
+        giornoCicloIdx = (giornoCicloIdx + 1) % GIORNI_CICLO.length;
+        const prossimoDow = GIORNI_CICLO[giornoCicloIdx];
+
+        const base = new Date(dataCorrRS);
+        base.setDate(base.getDate() + 27);
+        let tentativo = new Date(base);
+        let iter = 0;
+        while(tentativo.getDay() !== prossimoDow && iter < 7) {
+          tentativo.setDate(tentativo.getDate() - 1);
+          iter++;
+        }
+        dataCorrRS = tentativo;
       }
     } else if(rot.tipo === "domeniche") {
       const modLav = modelli.find(m=>m.id===rot.modellaLavoroId);
