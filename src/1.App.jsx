@@ -469,6 +469,17 @@ function AppInterno({ session }){
                   }}
                   style={{background:"none",border:"none",color:"#ef4444",fontSize:20,cursor:"pointer",width:32}}>🗑️</button>
               </div>
+            ):showModelloPicker!=="quick"?(
+              <button onClick={()=>{
+                  setEditModello(null);
+                  setModelForm({titolo:"",tempo:"personalizzato",inizio:"",fine:"",coloreCustom:null,posizione:"",
+                    calendarId: calId||mainCalId||null});
+                  setOrigineModelForm("picker");
+                  setShowModelForm(true);
+                  setShowModelloPicker(false);
+                }}
+                title="Nuovo modello"
+                style={{background:"none",border:"none",color:accent,fontSize:24,cursor:"pointer",width:32,fontWeight:900}}>+</button>
             ):(
               <div style={{width:32}}/>
             )}
