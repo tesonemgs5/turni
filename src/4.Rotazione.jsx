@@ -1825,15 +1825,14 @@ export function NLRSView({rot, T, accent, modelli}){
   const modRS=modelli.find(m=>m.id===rot.modelloRSId);
   function getCiclo(){
     if(!rot.dataInizio) return [];
-    const start = new Date(rot.dataInizio);
-    const ciclo = [];
-    let dataCorr = new Date(start);
-    for(let s=0; s<(rot.nSettimane||52); s++){
+    const inizio=new Date(rot.dataInizio);
+    const ciclo=[];
+    for(let s=0;s<(rot.nSettimane||52);s++){
       const isNL = (s % 2) === 0;
-      const k = dkey(dataCorr.getFullYear(), dataCorr.getMonth(), dataCorr.getDate());
-      ciclo.push({key:k, date:new Date(dataCorr), tipo: isNL ? "NL" : "RS", sett: s+1});
-      const daysToAdd = dataCorr.getDay() === 1 ? 5 : 6;
-      dataCorr.setDate(dataCorr.getDate() + daysToAdd);
+      const d = new Date(inizio);
+      d.setDate(d.getDate() + s * 7);
+      const k = dkey(d.getFullYear(), d.getMonth(), d.getDate());
+      ciclo.push({key:k, date:d, tipo: isNL ? "NL" : "RS", sett: s+1});
     }
     return ciclo;
   }

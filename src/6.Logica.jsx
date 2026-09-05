@@ -3848,7 +3848,7 @@ const importsRecenti = useMemo(()=>{
       await inserisciEventoGenerico(mod, dataEv, rot.id, nuoviEventiLocali);
     }
 
-    if(rot.tipo === "nlrs_scalante" || rot.tipo === "nlrs") {
+    if(rot.tipo === "nlrs_scalante") {
       const modRS = modelli.find(m=>m.id===rot.modelloRSId);
       const modNL = modelli.find(m=>m.id===rot.modelloNLId);
       const primoModello = modPartenza==="NL" ? modNL : modRS;
@@ -3880,6 +3880,21 @@ const importsRecenti = useMemo(()=>{
           iter++;
         }
         dataCorrRS = tentativo;
+      }
+    } else if(rot.tipo === "nlrs") {
+      const modNL = modelli.find(m=>m.id===rot.modelloNLId);
+      const modRS = modelli.find(m=>m.id===rot.modelloRSId);
+      const [y0, m0, d0] = startDayKey.split("-").map(Number);
+      const start = new Date(y0, m0-1, d0);
+      const totalWeeks = numRipetizioni * 2;
+
+      for(let s=0; s<totalWeeks; s++) {
+        const isNL = (s % 2) === 0;
+        const mod = isNL ? modNL : modRS;
+        if(!mod) continue;
+        const d = new Date(start);
+        d.setDate(d.getDate() + s * 7);
+        await inserisciEvento(mod, d);
       }
     } else if(rot.tipo === "domeniche") {
       const modLav = modelli.find(m=>m.id===rot.modellaLavoroId);
