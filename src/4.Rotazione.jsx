@@ -1648,7 +1648,8 @@ export function NLRSScalanteView({rot, T, accent, modelli}){
     if(!rot.dataInizio) return [];
     const primoRS = new Date(rot.dataInizio);
     const coppie = [];
-    let giornoCicloIdx = 0;
+    let giornoCicloIdx = GIORNI_CICLO.indexOf(primoRS.getDay());
+    if(giornoCicloIdx === -1) giornoCicloIdx = 0;
     let dataCorrRS = new Date(primoRS);
 
     const maxSettimane = rot.nSettimane || 52;
@@ -1664,19 +1665,27 @@ export function NLRSScalanteView({rot, T, accent, modelli}){
         rs: { date: dataRS, key: dkey(dataRS.getFullYear(), dataRS.getMonth(), dataRS.getDate()) },
         nl: { date: dataNL, key: dkey(dataNL.getFullYear(), dataNL.getMonth(), dataNL.getDate()) },
         giorno: GIORNI_CICLO[giornoCicloIdx],
-        cicloN: giornoCicloIdx + 1,
+        cicloN: coppie.length + 1,
       });
 
       giornoCicloIdx = (giornoCicloIdx + 1) % GIORNI_CICLO.length;
       const prossimoDow = GIORNI_CICLO[giornoCicloIdx];
 
       const base = new Date(dataCorrRS);
-      base.setDate(base.getDate() + 21);
+      base.setDate(base.getDate() + 14);
       let tentativo = new Date(base);
       let iter = 0;
-      while(tentativo.getDay() !== prossimoDow && iter < 14){
-        tentativo.setDate(tentativo.getDate() + 1);
+      while(tentativo.getDay() !== prossimoDow && iter < 7){
+        tentativo.setDate(tentativo.getDate() - 1);
         iter++;
+      }
+      if(tentativo.getDay() !== prossimoDow){
+        tentativo = new Date(base);
+        iter = 0;
+        while(tentativo.getDay() !== prossimoDow && iter < 7){
+          tentativo.setDate(tentativo.getDate() + 1);
+          iter++;
+        }
       }
       dataCorrRS = tentativo;
     }
@@ -1818,21 +1827,12 @@ export function NLRSView({rot, T, accent, modelli}){
     if(!rot.dataInizio) return [];
     const inizio=new Date(rot.dataInizio);
     const ciclo=[];
-    let giornoCiclo=inizio.getDay()===0?6:inizio.getDay()-1;
-    let settCiclo=0;
     for(let s=0;s<(rot.nSettimane||52);s++){
-      const posNelCiclo=settCiclo%4;
-      const d=new Date(inizio);
-      d.setDate(d.getDate()+s*7);
-      const lunedi=new Date(d);
-      while(lunedi.getDay()!==1) lunedi.setDate(lunedi.getDate()-1);
-      const target=new Date(lunedi);
-      target.setDate(target.getDate()+giornoCiclo);
-      const k=dkey(target.getFullYear(),target.getMonth(),target.getDate());
-      if(posNelCiclo===0) ciclo.push({key:k,date:target,tipo:"NL",sett:s+1});
-      else if(posNelCiclo===1) ciclo.push({key:k,date:target,tipo:"RS",sett:s+1});
-      settCiclo++;
-      if(settCiclo%4===0) giornoCiclo=((giornoCiclo-1)+7)%7;
+      const isNL = (s % 2) === 0;
+      const d = new Date(inizio);
+      d.setDate(d.getDate() + s * 7);
+      const k = dkey(d.getFullYear(), d.getMonth(), d.getDate());
+      ciclo.push({key:k, date:d, tipo: isNL ? "NL" : "RS", sett: s+1});
     }
     return ciclo;
   }
