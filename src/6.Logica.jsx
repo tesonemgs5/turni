@@ -3855,7 +3855,8 @@ const importsRecenti = useMemo(()=>{
       const GIORNI_CICLO = [5, 4, 3, 2, 1, 6];
       const [y0, m0, d0] = startDayKey.split("-").map(Number);
       let dataCorrRS = new Date(y0, m0-1, d0);
-      let giornoCicloIdx = 0;
+      let giornoCicloIdx = GIORNI_CICLO.indexOf(dataCorrRS.getDay());
+      if(giornoCicloIdx === -1) giornoCicloIdx = 0;
       const totalCicli = numRipetizioni * GIORNI_CICLO.length;
 
       for(let i=0; i<totalCicli; i++) {
@@ -3869,16 +3870,39 @@ const importsRecenti = useMemo(()=>{
         giornoCicloIdx = (giornoCicloIdx + 1) % GIORNI_CICLO.length;
         const prossimoDow = GIORNI_CICLO[giornoCicloIdx];
         const base = new Date(dataCorrRS);
-        base.setDate(base.getDate() + 21);
+        base.setDate(base.getDate() + 14);
         let tentativo = new Date(base);
         let iter = 0;
-        while(tentativo.getDay() !== prossimoDow && iter < 14) {
-          tentativo.setDate(tentativo.getDate() + 1);
+        while(tentativo.getDay() !== prossimoDow && iter < 7) {
+          tentativo.setDate(tentativo.getDate() - 1);
           iter++;
+        }
+        if(tentativo.getDay() !== prossimoDow){
+          tentativo = new Date(base);
+          iter = 0;
+          while(tentativo.getDay() !== prossimoDow && iter < 7){
+            tentativo.setDate(tentativo.getDate() + 1);
+            iter++;
+          }
         }
         dataCorrRS = tentativo;
       }
-    } else {
+    } else if(rot.tipo === "nlrs") {
+      const modNL = modelli.find(m=>m.id===rot.modelloNLId);
+      const modRS = modelli.find(m=>m.id===rot.modelloRSId);
+      const [y0, m0, d0] = startDayKey.split("-").map(Number);
+      const start = new Date(y0, m0-1, d0);
+      const totalWeeks = numRipetizioni * 4;
+
+      for(let s=0; s<totalWeeks; s++) {
+        const isNL = (s % 2) === 0;
+        const mod = isNL ? modNL : modRS;
+        if(!mod) continue;
+        const d = new Date(start);
+        d.setDate(d.getDate() + s * 7);
+        await inserisciEvento(mod, d);
+      }
+    } else if(rot.tipo === "domeniche") {
       const modLav = modelli.find(m=>m.id===rot.modellaLavoroId);
       const modRip = modelli.find(m=>m.id===rot.modelloNLId);
       const totalWeeks = numRipetizioni * 4;
@@ -3891,7 +3915,25 @@ const importsRecenti = useMemo(()=>{
         d.setDate(d.getDate() + i * 7);
         const isLavoro = (i % 4) === 0;
         const mod = isLavoro ? modLav : modRip;
-        await inserisciEvento(mod, d);
+        if(mod) await inserisciEvento(mod, d);
+      }
+    } else if(rot.tipo === "personalizzata") {
+      const griglia = rot.griglia || {};
+      const [y0, m0, d0] = startDayKey.split("-").map(Number);
+      const rotInizio = rot.dataInizio ? new Date(rot.dataInizio) : new Date(y0, m0-1, d0);
+      const diffDays = Math.floor((new Date(y0, m0-1, d0).getTime() - rotInizio.getTime()) / (1000 * 3600 * 24));
+      const nDays = (rot.nSettimane || 52) * 7;
+
+      for(let rep=0; rep<numRipetizioni; rep++) {
+        for(const [dateKey, modId] of Object.entries(griglia)) {
+          if(!modId) continue;
+          const mod = modelli.find(m=>m.id===modId);
+          if(!mod) continue;
+          const [gy, gm, gd] = dateKey.split("-").map(Number);
+          const targetDate = new Date(gy, gm-1, gd);
+          targetDate.setDate(targetDate.getDate() + diffDays + rep * nDays);
+          await inserisciEvento(mod, targetDate);
+        }
       }
     }
 
