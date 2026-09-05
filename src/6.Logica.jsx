@@ -3837,70 +3837,35 @@ const importsRecenti = useMemo(()=>{
     const rot = rotazioni.find(r=>r.id===rotId);
     if(!rot) return;
 
-    const { error } = await dbUpdate("rotazioni", {dataInizio:startDayKey, nSettimane:numRipetizioni}, {id:rotId, user_id:userId}, "Applicazione rotazione", {soloLog:true});
+    const { error } = await dbUpdate("rotazioni", {data_inizio:startDayKey, n_settimane:numRipetizioni}, {id:rotId, user_id:userId}, "Applicazione rotazione", {soloLog:true});
     if(error) segnalaErrore("La rotazione è stata applicata al calendario ma il salvataggio della configurazione potrebbe non essere andato a buon fine.", "Applicazione rotazione");
     setRotazioni(prev=>prev.map(r=>r.id===rotId?{...r,dataInizio:startDayKey,nSettimane:numRipetizioni}:r));
 
     const nuoviEventiLocali = {};
 
     async function inserisciEvento(mod, dataEv){
+      if(!mod) return;
       await inserisciEventoGenerico(mod, dataEv, rot.id, nuoviEventiLocali);
     }
 
-    if(rot.tipo === "nlrs_scalante") {
+    if(rot.tipo === "nlrs_scalante" || rot.tipo === "nlrs") {
       const modRS = modelli.find(m=>m.id===rot.modelloRSId);
       const modNL = modelli.find(m=>m.id===rot.modelloNLId);
       const primoModello = modPartenza==="NL" ? modNL : modRS;
       const secondoModello = modPartenza==="NL" ? modRS : modNL;
-      const GIORNI_CICLO = [5, 4, 3, 2, 1, 6];
+
       const [y0, m0, d0] = startDayKey.split("-").map(Number);
-      let dataCorrRS = new Date(y0, m0-1, d0);
-      let giornoCicloIdx = GIORNI_CICLO.indexOf(dataCorrRS.getDay());
-      if(giornoCicloIdx === -1) giornoCicloIdx = 0;
-      const totalCicli = numRipetizioni * GIORNI_CICLO.length;
+      let dataCorr = new Date(y0, m0-1, d0);
+      const totalWeeks = numRipetizioni * 2;
 
-      for(let i=0; i<totalCicli; i++) {
-        const dataRS = new Date(dataCorrRS);
-        const dataNL = new Date(dataCorrRS);
-        dataNL.setDate(dataNL.getDate() + 7);
+      for(let w = 0; w < totalWeeks; w++) {
+        const isPrimo = (w % 2) === 0;
+        const mod = isPrimo ? primoModello : secondoModello;
 
-        await inserisciEvento(primoModello, dataRS);
-        await inserisciEvento(secondoModello, dataNL);
+        if(mod) await inserisciEvento(mod, dataCorr);
 
-        giornoCicloIdx = (giornoCicloIdx + 1) % GIORNI_CICLO.length;
-        const prossimoDow = GIORNI_CICLO[giornoCicloIdx];
-        const base = new Date(dataCorrRS);
-        base.setDate(base.getDate() + 14);
-        let tentativo = new Date(base);
-        let iter = 0;
-        while(tentativo.getDay() !== prossimoDow && iter < 7) {
-          tentativo.setDate(tentativo.getDate() - 1);
-          iter++;
-        }
-        if(tentativo.getDay() !== prossimoDow){
-          tentativo = new Date(base);
-          iter = 0;
-          while(tentativo.getDay() !== prossimoDow && iter < 7){
-            tentativo.setDate(tentativo.getDate() + 1);
-            iter++;
-          }
-        }
-        dataCorrRS = tentativo;
-      }
-    } else if(rot.tipo === "nlrs") {
-      const modNL = modelli.find(m=>m.id===rot.modelloNLId);
-      const modRS = modelli.find(m=>m.id===rot.modelloRSId);
-      const [y0, m0, d0] = startDayKey.split("-").map(Number);
-      const start = new Date(y0, m0-1, d0);
-      const totalWeeks = numRipetizioni * 4;
-
-      for(let s=0; s<totalWeeks; s++) {
-        const isNL = (s % 2) === 0;
-        const mod = isNL ? modNL : modRS;
-        if(!mod) continue;
-        const d = new Date(start);
-        d.setDate(d.getDate() + s * 7);
-        await inserisciEvento(mod, d);
+        const daysToAdd = dataCorr.getDay() === 1 ? 5 : 6;
+        dataCorr.setDate(dataCorr.getDate() + daysToAdd);
       }
     } else if(rot.tipo === "domeniche") {
       const modLav = modelli.find(m=>m.id===rot.modellaLavoroId);

@@ -1642,52 +1642,33 @@ export function NLRSScalanteView({rot, T, accent, modelli}){
   const modRS=modelli.find(m=>m.id===rot.modelloRSId);
   const modNL=modelli.find(m=>m.id===rot.modelloNLId);
 
-  const GIORNI_CICLO = [5, 4, 3, 2, 1, 6];
-
   function getCoppie(){
     if(!rot.dataInizio) return [];
-    const primoRS = new Date(rot.dataInizio);
+    const start = new Date(rot.dataInizio);
     const coppie = [];
-    let giornoCicloIdx = GIORNI_CICLO.indexOf(primoRS.getDay());
-    if(giornoCicloIdx === -1) giornoCicloIdx = 0;
-    let dataCorrRS = new Date(primoRS);
-
     const maxSettimane = rot.nSettimane || 52;
-    const dataFine = new Date(primoRS);
-    dataFine.setDate(dataFine.getDate() + maxSettimane * 7);
 
-    while(dataCorrRS < dataFine){
-      const dataRS = new Date(dataCorrRS);
-      const dataNL = new Date(dataCorrRS);
-      dataNL.setDate(dataNL.getDate() + 7);
-
-      coppie.push({
-        rs: { date: dataRS, key: dkey(dataRS.getFullYear(), dataRS.getMonth(), dataRS.getDate()) },
-        nl: { date: dataNL, key: dkey(dataNL.getFullYear(), dataNL.getMonth(), dataNL.getDate()) },
-        giorno: GIORNI_CICLO[giornoCicloIdx],
-        cicloN: coppie.length + 1,
-      });
-
-      giornoCicloIdx = (giornoCicloIdx + 1) % GIORNI_CICLO.length;
-      const prossimoDow = GIORNI_CICLO[giornoCicloIdx];
-
-      const base = new Date(dataCorrRS);
-      base.setDate(base.getDate() + 14);
-      let tentativo = new Date(base);
-      let iter = 0;
-      while(tentativo.getDay() !== prossimoDow && iter < 7){
-        tentativo.setDate(tentativo.getDate() - 1);
-        iter++;
-      }
-      if(tentativo.getDay() !== prossimoDow){
-        tentativo = new Date(base);
-        iter = 0;
-        while(tentativo.getDay() !== prossimoDow && iter < 7){
-          tentativo.setDate(tentativo.getDate() + 1);
-          iter++;
+    let dataCorr = new Date(start);
+    for(let w = 0; w < maxSettimane; w++){
+      const isRS = (w % 2) === 0;
+      const key = dkey(dataCorr.getFullYear(), dataCorr.getMonth(), dataCorr.getDate());
+      const dObj = { date: new Date(dataCorr), key };
+      
+      if(isRS){
+        coppie.push({
+          rs: dObj,
+          nl: null,
+          giorno: dataCorr.getDay(),
+          cicloN: coppie.length + 1,
+        });
+      } else {
+        if(coppie.length > 0){
+          coppie[coppie.length - 1].nl = dObj;
         }
       }
-      dataCorrRS = tentativo;
+
+      const daysToAdd = dataCorr.getDay() === 1 ? 5 : 6;
+      dataCorr.setDate(dataCorr.getDate() + daysToAdd);
     }
     return coppie;
   }
@@ -1712,7 +1693,7 @@ export function NLRSScalanteView({rot, T, accent, modelli}){
             <span style={{fontWeight:700,color:"#3b82f6"}}>NL</span> — {modNL?.titolo||"Non assegnato"}
           </div>
           <div style={{fontSize:11,color:T.sub,width:"100%"}}>
-            Ciclo scalante: Ven → Gio → Mer → Mar → Lun → Sab → ...
+            Ciclo scalante settimanale: Sab → Ven → Gio → Mer → Mar → Lun → (salta Dom) → Sab ...
           </div>
         </div>
       )}
@@ -1731,17 +1712,25 @@ export function NLRSScalanteView({rot, T, accent, modelli}){
               <div style={{display:"flex",gap:0}}>
                 <div style={{flex:1,padding:"10px 12px",borderRight:`1px solid ${T.border}`}}>
                   <div style={{fontSize:10,fontWeight:800,color:cRS,marginBottom:3}}>RS</div>
-                  <div style={{fontSize:12,fontWeight:700,color:T.text}}>
-                    {NOMI_GIORNI_IT[cp.rs.date.getDay()].slice(0,3)} {fmtDataIT(cp.rs.date)}
-                  </div>
-                  <div style={{fontSize:11,color:T.sub,marginTop:2}}>{modRS?.titolo||"—"}</div>
+                  {cp.rs ? (
+                    <>
+                      <div style={{fontSize:12,fontWeight:700,color:T.text}}>
+                        {NOMI_GIORNI_IT[cp.rs.date.getDay()].slice(0,3)} {fmtDataIT(cp.rs.date)}
+                      </div>
+                      <div style={{fontSize:11,color:T.sub,marginTop:2}}>{modRS?.titolo||"—"}</div>
+                    </>
+                  ) : <div style={{fontSize:12,color:T.sub}}>—</div>}
                 </div>
                 <div style={{flex:1,padding:"10px 12px"}}>
-                  <div style={{fontSize:10,fontWeight:800,color:cNL,marginBottom:3}}>NL (+7gg)</div>
-                  <div style={{fontSize:12,fontWeight:700,color:T.text}}>
-                    {NOMI_GIORNI_IT[cp.nl.date.getDay()].slice(0,3)} {fmtDataIT(cp.nl.date)}
-                  </div>
-                  <div style={{fontSize:11,color:T.sub,marginTop:2}}>{modNL?.titolo||"—"}</div>
+                  <div style={{fontSize:10,fontWeight:800,color:cNL,marginBottom:3}}>NL</div>
+                  {cp.nl ? (
+                    <>
+                      <div style={{fontSize:12,fontWeight:700,color:T.text}}>
+                        {NOMI_GIORNI_IT[cp.nl.date.getDay()].slice(0,3)} {fmtDataIT(cp.nl.date)}
+                      </div>
+                      <div style={{fontSize:11,color:T.sub,marginTop:2}}>{modNL?.titolo||"—"}</div>
+                    </>
+                  ) : <div style={{fontSize:12,color:T.sub}}>—</div>}
                 </div>
               </div>
             </div>
@@ -1825,14 +1814,15 @@ export function NLRSView({rot, T, accent, modelli}){
   const modRS=modelli.find(m=>m.id===rot.modelloRSId);
   function getCiclo(){
     if(!rot.dataInizio) return [];
-    const inizio=new Date(rot.dataInizio);
-    const ciclo=[];
-    for(let s=0;s<(rot.nSettimane||52);s++){
+    const start = new Date(rot.dataInizio);
+    const ciclo = [];
+    let dataCorr = new Date(start);
+    for(let s=0; s<(rot.nSettimane||52); s++){
       const isNL = (s % 2) === 0;
-      const d = new Date(inizio);
-      d.setDate(d.getDate() + s * 7);
-      const k = dkey(d.getFullYear(), d.getMonth(), d.getDate());
-      ciclo.push({key:k, date:d, tipo: isNL ? "NL" : "RS", sett: s+1});
+      const k = dkey(dataCorr.getFullYear(), dataCorr.getMonth(), dataCorr.getDate());
+      ciclo.push({key:k, date:new Date(dataCorr), tipo: isNL ? "NL" : "RS", sett: s+1});
+      const daysToAdd = dataCorr.getDay() === 1 ? 5 : 6;
+      dataCorr.setDate(dataCorr.getDate() + daysToAdd);
     }
     return ciclo;
   }
