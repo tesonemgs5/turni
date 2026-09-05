@@ -1297,10 +1297,28 @@ export function useAppCore(session){
     // disponibile. Si riprova ogni 2 minuti, in silenzio — nessun popup,
     // nessun indicatore: è solo un nuovo tentativo di routine.
     const timerRetryCoda = setInterval(()=>{ processaCodaSync(); }, 2*60*1000);
+    // Controllo diretto di navigator.onLine ogni pochi secondi: su Capacitor
+    // Android gli eventi 'online'/'offline' del browser spesso non scattano
+    // affatto quando si attiva/disattiva la modalità aereo (limite noto della
+    // WebView nativa), lasciando l'indicatore 🟢 SYNC bloccato sul valore
+    // letto all'avvio anche se nel frattempo si è passati offline. Questo
+    // controllo periodico è indipendente dagli eventi ed è la fonte di
+    // verità più affidabile: aggiorna isOnline solo quando il valore letto
+    // è davvero diverso da quello già mostrato, per non causare re-render
+    // inutili ad ogni giro.
+    const timerCheckOnline = setInterval(()=>{
+      setIsOnline(prev => {
+        const reale = navigator.onLine;
+        if(reale === prev) return prev;
+        if(reale) processaCodaSync();
+        return reale;
+      });
+    }, 3000);
     return ()=>{
       window.removeEventListener('online', goOnline);
       window.removeEventListener('offline', goOffline);
       clearInterval(timerRetryCoda);
+      clearInterval(timerCheckOnline);
     };
   },[]);
 // #endregion
@@ -1372,6 +1390,75 @@ export function useAppCore(session){
     if(n.includes("RECUPERO")) return "recupero";
     if(n.includes("PAGAMENTO")) return "pagamento";
     return null;
+  }
+  // Gemella di tipoModelloProtrazione, stesso principio (riconoscimento per
+  // titolo del modello, tollerante a refusi), applicata alla coppia
+  // Piano Incentivante (il credito, maturato lavorando di domenica) /
+  // RC PI - Recupero Compensativo PI (il consumo, un giorno di riposo).
+  // A differenza della Protrazione qui non si lavora in minuti frazionabili:
+  // ogni evento vale "1 giorno" intero, indivisibile.
+  function tipoModelloPI(modelloId){
+    if(!modelloId) return null;
+    const mod = modelli.find(m=>m.id===modelloId);
+    if(!mod) return null;
+    const n = (mod.titolo||"").trim().toUpperCase().replace(/\s+/g,"");
+    if(n.includes("RCPI") || (n.includes("RECUPERO") && n.includes("PI"))) return "rc_pi";
+    if(n.includes("PIANOINCENTIVANTE") || n === "PI") return "piano_incentivante";
+    return null;
+  }
+  // Vero se dateKey (formato YYYY-MM-DD) cade di domenica. Solo i Piani
+  // Incentivanti di domenica maturano un giorno di riposo — quelli nei
+  // festivi infrasettimanali (es. 19 settembre) non generano credito.
+  function eDomenica(dateKey){
+    const [y,m,d] = dateKey.split("-").map(Number);
+    return new Date(y, m-1, d).getDay() === 0;
+  }
+  // Stesso principio di computeStornoRecupero (calcolo dinamico, mai
+  // salvato, sempre ricoerente con lo stato attuale del calendario — così
+  // aggiungere/spostare/cancellare un evento anche mesi dopo riallinea
+  // tutto da solo al giro successivo), applicato alla coppia Piano
+  // Incentivante/RC PI. Differenze rispetto alla Protrazione:
+  // - il credito vale solo se il Piano Incentivante cade di domenica
+  // - ogni credito/consumo vale "1", non è frazionabile in minuti
+  // Ritorna { perEvento } dove perEvento[eventId] = { tipo, collegatoId,
+  // collegatoDateKey } — un Piano Incentivante è collegato a UN SOLO RC PI
+  // (quello più vecchio libero al momento del consumo) e viceversa.
+  function computeStornoPI(){
+    const eventiPI = [];    // { id, dateKey } - Piani Incentivanti di domenica
+    const eventiRcPi = [];  // { id, dateKey } - giorni di RC PI presi
+    for(const [dateKey, calMap] of Object.entries(store.events)){
+      for(const [calId, evts] of Object.entries(calMap)){
+        for(const e of evts){
+          const tipo = tipoModelloPI(e.modelloId);
+          if(tipo==="piano_incentivante" && eDomenica(dateKey)) eventiPI.push({ id:e.id, dateKey });
+          else if(tipo==="rc_pi") eventiRcPi.push({ id:e.id, dateKey });
+        }
+      }
+    }
+    function cmp(a,b){
+      if(a.dateKey!==b.dateKey) return a.dateKey<b.dateKey?-1:1;
+      return a.id<b.id?-1:(a.id>b.id?1:0);
+    }
+    eventiPI.sort(cmp);
+    eventiRcPi.sort(cmp);
+
+    const perEvento = {};
+    eventiPI.forEach(ev=>{ perEvento[ev.id] = { tipo:"piano_incentivante", collegatoId:null, collegatoDateKey:null }; });
+    eventiRcPi.forEach(ev=>{ perEvento[ev.id] = { tipo:"rc_pi", collegatoId:null, collegatoDateKey:null }; });
+
+    // FIFO: per ogni RC PI (in ordine cronologico), prendo il primo Piano
+    // Incentivante di domenica non ancora assegnato a un altro RC PI.
+    const piAssegnati = new Set();
+    for(const consumo of eventiRcPi){
+      const credito = eventiPI.find(p=>!piAssegnati.has(p.id));
+      if(!credito) continue; // nessun Piano Incentivante libero da recuperare
+      piAssegnati.add(credito.id);
+      perEvento[consumo.id].collegatoId = credito.id;
+      perEvento[consumo.id].collegatoDateKey = credito.dateKey;
+      perEvento[credito.id].collegatoId = consumo.id;
+      perEvento[credito.id].collegatoDateKey = consumo.dateKey;
+    }
+    return { perEvento };
   }
   function allEvts(key){
     const res=[];
@@ -4726,6 +4813,8 @@ const importsRecenti = useMemo(()=>{
     computeConteggioForReport,
     computeMinutiForReport,
     computeStornoRecupero,
+    computeStornoPI,
+    tipoModelloPI,
     computeTurnazioneForReport,
     computeConteggio,
     computeIndennita,

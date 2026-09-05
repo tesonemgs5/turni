@@ -58,7 +58,7 @@ function ColorRow({ T, hex, label, sub, count, onClick, onRemove }) {
 
 export default function VistaModelli({ C }){
   const {
-    today, tipoModelloProtrazione, computeStornoRecupero, store, setStore, loading, setLoading, year,
+    today, tipoModelloProtrazione, computeStornoRecupero, computeStornoPI, tipoModelloPI, store, setStore, loading, setLoading, year,
     ripristinaModelliMancanti, ripristinoInCorso, setRipristinoInCorso, ripristinoEsito, setRipristinoEsito,
     setYear, month, setMonth, calId, setCalId, editMode,
     setEditMode, selectedCalIds, setSelectedCalIds, reportCalIds, setReportCalIds, selectedModelloIds,
@@ -1551,6 +1551,31 @@ export default function VistaModelli({ C }){
               {(e.auto||e.collega)&&<div style={{color:cardSubColor,fontSize:17,marginTop:3}}>
                 {e.auto&&<>🚗 {e.auto}</>}{e.collega&&e.auto?"  ·  ":""}{e.collega&&<>👮 {e.collega}</>}
               </div>}
+              {e.note&&<div style={{color:cardSubColor,fontSize:13,marginTop:3,fontStyle:"italic"}}>
+                📝 {e.note}
+              </div>}
+              {(()=>{
+                // Collegamento Piano Incentivante ↔ RC PI: calcolo dinamico
+                // (mai salvato, sempre coerente con lo stato attuale del
+                // calendario), stesso principio della Protrazione a
+                // Recupero. Mostra la data dell'evento collegato su
+                // ENTRAMBI i lati della coppia.
+                const tipoPIEvt = tipoModelloPI(e.modelloId);
+                if(!tipoPIEvt) return null;
+                const { perEvento } = computeStornoPI();
+                const info = perEvento[e.id];
+                if(!info || !info.collegatoDateKey) return null;
+                const [y,mm,d] = info.collegatoDateKey.split("-");
+                const dataFmt = `${d}/${mm}/${y}`;
+                const etichetta = tipoPIEvt==="piano_incentivante"
+                  ? `↔ Recuperato con riposo del ${dataFmt}`
+                  : `↔ Riposo per Piano Incentivante del ${dataFmt}`;
+                return (
+                  <div style={{color:cardSubColor,fontSize:13,marginTop:3,fontWeight:700}}>
+                    {etichetta}
+                  </div>
+                );
+              })()}
 
             </div>
             <button onClick={e2=>{e2.stopPropagation();
