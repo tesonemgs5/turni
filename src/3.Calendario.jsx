@@ -290,24 +290,16 @@ export default function VistaCalendario({ C }){
             borderRadius:20,padding:"2px 10px",cursor:"pointer",flexShrink:0}}>
           <span style={{color:editMode?"#ffffff":"#0f172a",fontSize:11,fontWeight:800}}>M</span>
         </button>
-        <button onClick={async()=>{
-          setBanner("⏳ Svuotamento cache...");
-          clearLocalStorageCache();
-          try {
-            if("caches" in window){
-              const cacheNames = await caches.keys();
-              await Promise.all(cacheNames.map(name=>caches.delete(name)));
-            }
-          } catch(e){ segnalaErrore(e, "Svuotamento cache (Service Worker)"); }
-          try {
-            if("serviceWorker" in navigator){
-              const regs = await navigator.serviceWorker.getRegistrations();
-              await Promise.all(regs.map(r=>r.unregister()));
-            }
-          } catch(e){ segnalaErrore(e, "Disattivazione Service Worker"); }
-          window.location.href = window.location.href.split('?')[0] + '?v=' + Date.now();
+        <button onClick={()=>{
+          // Refresh "leggero": NON tocca la cache locale (a differenza di
+          // "Svuota cache", ora spostato in Impostazioni). Ricarica solo la
+          // pagina: online, l'avvio dell'app riprende subito i dati freschi
+          // da Supabase; offline, l'avvio ripristina semplicemente quanto
+          // già presente in cache — nessuna perdita di dati in nessuno dei
+          // due casi, perché non viene mai cancellato nulla prima.
+          window.location.reload();
         }}
-          title="Svuota cache e ricarica tutto"
+          title="Aggiorna (ricarica i dati)"
           style={{background:"#f1f5f9",border:"1px solid #e2e8f0",
             borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:"#0f172a",flexShrink:0}}>
           🔄

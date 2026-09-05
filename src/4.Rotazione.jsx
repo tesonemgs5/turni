@@ -102,6 +102,9 @@ export function saveToLocalStorage(events, calendars, modelli, calId, impostazio
     // istante al valore di default finché Supabase non rispondeva, prima
     // di "scattare" al valore vero scelto dall'utente — il flash di colore
     // sui giorni festivi visibile ad ogni apertura dell'app.
+    // Include anche reports/reportSettings: prima non c'erano, quindi la
+    // sezione Report restava sempre vuota quando l'app partiva offline
+    // (leggeva solo dalla cache, che non li conteneva mai).
     if(impostazioni) localStorage.setItem('cache_impostazioni', JSON.stringify(impostazioni));
   } catch(e){ console.warn('localStorage error:', e); }
 }
