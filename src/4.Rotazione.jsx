@@ -1642,33 +1642,44 @@ export function NLRSScalanteView({rot, T, accent, modelli}){
   const modRS=modelli.find(m=>m.id===rot.modelloRSId);
   const modNL=modelli.find(m=>m.id===rot.modelloNLId);
 
+  const GIORNI_CICLO = [6, 5, 4, 3, 2, 1];
+
   function getCoppie(){
     if(!rot.dataInizio) return [];
-    const start = new Date(rot.dataInizio);
+    const primoRS = new Date(rot.dataInizio);
     const coppie = [];
+    let giornoCicloIdx = GIORNI_CICLO.indexOf(primoRS.getDay());
+    if(giornoCicloIdx === -1) giornoCicloIdx = 0;
+    let dataCorrRS = new Date(primoRS);
+
     const maxSettimane = rot.nSettimane || 52;
+    const dataFine = new Date(primoRS);
+    dataFine.setDate(dataFine.getDate() + maxSettimane * 7);
 
-    let dataCorr = new Date(start);
-    for(let w = 0; w < maxSettimane; w++){
-      const isRS = (w % 2) === 0;
-      const key = dkey(dataCorr.getFullYear(), dataCorr.getMonth(), dataCorr.getDate());
-      const dObj = { date: new Date(dataCorr), key };
-      
-      if(isRS){
-        coppie.push({
-          rs: dObj,
-          nl: null,
-          giorno: dataCorr.getDay(),
-          cicloN: coppie.length + 1,
-        });
-      } else {
-        if(coppie.length > 0){
-          coppie[coppie.length - 1].nl = dObj;
-        }
+    while(dataCorrRS < dataFine){
+      const dataRS = new Date(dataCorrRS);
+      const dataNL = new Date(dataCorrRS);
+      dataNL.setDate(dataNL.getDate() + 7);
+
+      coppie.push({
+        rs: { date: dataRS, key: dkey(dataRS.getFullYear(), dataRS.getMonth(), dataRS.getDate()) },
+        nl: { date: dataNL, key: dkey(dataNL.getFullYear(), dataNL.getMonth(), dataNL.getDate()) },
+        giorno: GIORNI_CICLO[giornoCicloIdx],
+        cicloN: coppie.length + 1,
+      });
+
+      giornoCicloIdx = (giornoCicloIdx + 1) % GIORNI_CICLO.length;
+      const prossimoDow = GIORNI_CICLO[giornoCicloIdx];
+
+      const base = new Date(dataCorrRS);
+      base.setDate(base.getDate() + 27);
+      let tentativo = new Date(base);
+      let iter = 0;
+      while(tentativo.getDay() !== prossimoDow && iter < 7){
+        tentativo.setDate(tentativo.getDate() - 1);
+        iter++;
       }
-
-      const daysToAdd = dataCorr.getDay() === 1 ? 5 : 6;
-      dataCorr.setDate(dataCorr.getDate() + daysToAdd);
+      dataCorrRS = tentativo;
     }
     return coppie;
   }
