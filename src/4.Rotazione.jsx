@@ -1473,7 +1473,7 @@ export function RotazioneForm({T, form, setForm, accent, modelli, onSave, sorted
           </div>
           <div style={{background:"#3b82f611",border:"1px solid #3b82f633",borderRadius:10,
             padding:"10px 12px",marginBottom:10,fontSize:12,color:T.sub}}>
-            📅 Ciclo: RS venerdì → NL venerdì+7gg → 2 sett. pausa → RS giovedì → NL giovedì+7gg → 2 sett. pausa → RS mercoledì → ... (salta domenica)
+            📅 Ciclo: RS/NL agganciati alla settimana della quartina (ogni 4 sett.). RS nel giorno scalante: venerdì → giovedì → mercoledì → martedì → lunedì → sabato (salta domenica), NL = RS + 7gg
           </div>
           <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
             <ModelloSelector label="RS (Riposo Settimanale)" value={form.modelloRSId}
