@@ -3851,6 +3851,7 @@ const importsRecenti = useMemo(()=>{
     if(rot.tipo === "nlrs_scalante") {
       const modRS = modelli.find(m=>m.id===rot.modelloRSId);
       const modNL = modelli.find(m=>m.id===rot.modelloNLId);
+      const modQuartina = modelli.find(m=>m.id===rot.modelloQuartinaId);
       const primoModello = modPartenza==="NL" ? modNL : modRS;
       const secondoModello = modPartenza==="NL" ? modRS : modNL;
       // Sequenza dei giorni RS che scala ad ogni quartina: Ven, Gio, Mer,
@@ -3858,36 +3859,45 @@ const importsRecenti = useMemo(()=>{
       // da Date.getDay(): Dom=0, Lun=1, Mar=2, Mer=3, Gio=4, Ven=5, Sab=6.
       const SEQ_GIORNI_RS = [5, 4, 3, 2, 1, 6];
 
-      const [y0, m0, d0] = startDayKey.split("-").map(Number);
-      const primoRS = new Date(y0, m0-1, d0);
-      let idx = SEQ_GIORNI_RS.indexOf(primoRS.getDay());
-      if(idx === -1) idx = 0;
+      if(modQuartina){
+        // Le quartine sono lette dagli eventi già presenti a calendario con
+        // il modello Quartina, in ordine cronologico a partire da
+        // startDayKey — qualunque sia la cadenza tra una e l'altra (4, 3, 5,
+        // 8 settimane...), senza nessun passo fisso calcolato qui. Una volta
+        // inseriti, RS e NL restano fissi anche se in futuro si sposta la
+        // quartina: questa funzione li scrive una sola volta, non li tiene
+        // agganciati "in diretta".
+        const dateQuartine = [];
+        for(const [dateKey, calMap] of Object.entries(store.events||{})){
+          if(dateKey < startDayKey) continue;
+          const evts = calMap?.[calId] || [];
+          if(evts.some(ev => ev.modelloId === modQuartina.id)) dateQuartine.push(dateKey);
+        }
+        dateQuartine.sort();
 
-      // Prima quartina = la Domenica della stessa settimana del primo RS.
-      // Ogni RS/NL successivo si aggancia direttamente alla quartina di
-      // competenza (ogni 4 settimane esatte), invece di sommare giorni al
-      // RS precedente: questo evita che l'errore nel punto di chiusura del
-      // ciclo (Lunedì->Sabato, dove si salta la Domenica) faccia sparire
-      // una settimana nel calendario.
-      let quartina = new Date(primoRS);
-      while(quartina.getDay() !== 0) quartina.setDate(quartina.getDate() + 1);
+        const [y0, m0, d0] = startDayKey.split("-").map(Number);
+        const primoRS = new Date(y0, m0-1, d0);
+        let idx = SEQ_GIORNI_RS.indexOf(primoRS.getDay());
+        if(idx === -1) idx = 0;
 
-      for(let i=0; i<numRipetizioni; i++) {
-        const lunediSettimana = new Date(quartina);
-        lunediSettimana.setDate(lunediSettimana.getDate() - 6);
+        for(let i=0; i<numRipetizioni && i<dateQuartine.length; i++){
+          const [qy, qm, qd] = dateQuartine[i].split("-").map(Number);
+          const quartina = new Date(qy, qm-1, qd);
+          const lunediSettimana = new Date(quartina);
+          lunediSettimana.setDate(lunediSettimana.getDate() - 6);
 
-        const giornoAtteso = SEQ_GIORNI_RS[idx];
-        const offset = giornoAtteso === 0 ? 6 : giornoAtteso - 1; // giorni dopo il Lunedì
-        const dataRS = new Date(lunediSettimana);
-        dataRS.setDate(dataRS.getDate() + offset);
-        const dataNL = new Date(dataRS);
-        dataNL.setDate(dataNL.getDate() + 7);
+          const giornoAtteso = SEQ_GIORNI_RS[idx];
+          const offset = giornoAtteso === 0 ? 6 : giornoAtteso - 1; // giorni dopo il Lunedì
+          const dataRS = new Date(lunediSettimana);
+          dataRS.setDate(dataRS.getDate() + offset);
+          const dataNL = new Date(dataRS);
+          dataNL.setDate(dataNL.getDate() + 7);
 
-        await inserisciEvento(primoModello, dataRS);
-        await inserisciEvento(secondoModello, dataNL);
+          await inserisciEvento(primoModello, dataRS);
+          await inserisciEvento(secondoModello, dataNL);
 
-        idx = (idx + 1) % SEQ_GIORNI_RS.length;
-        quartina.setDate(quartina.getDate() + 28);
+          idx = (idx + 1) % SEQ_GIORNI_RS.length;
+        }
       }
     } else if(rot.tipo === "nlrs") {
       const modNL = modelli.find(m=>m.id===rot.modelloNLId);
