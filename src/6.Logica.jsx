@@ -1626,7 +1626,17 @@ export function useAppCore(session){
         // scostamento reale usa i campi dedicati "Entrata/Uscita effettiva"
         // sotto PROTRAZIONE A RECUPERO, pensati apposta per questo.
         if(mod.tempo==="h24"){ tInFinal=""; tOutFinal=""; }
-        else { tInFinal = mod.inizio||""; tOutFinal = mod.fine||""; }
+        else {
+          tInFinal = mod.inizio||"";
+          // Se il modello ha una fine propria, quella resta "ufficiale" e
+          // non modificabile dal campo Uscita in alto (comportamento
+          // voluto, vedi commento sopra). Ma se il modello NON ha una fine
+          // fissa (es. "PERSONALIZZATO" con solo l'ingresso definito),
+          // non esiste alcun valore "ufficiale" da imporre: in quel caso
+          // l'uscita inserita a mano in form.tOut è l'unica fonte, quindi
+          // va rispettata invece di essere azzerata a "".
+          tOutFinal = mod.fine || form.tOut || "";
+        }
       }
     } else if(form.shiftId){
       const sh = cal.shifts?.find(s=>s.id===form.shiftId);
