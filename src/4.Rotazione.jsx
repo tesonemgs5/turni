@@ -1476,8 +1476,6 @@ export function RotazioneForm({T, form, setForm, accent, modelli, onSave, sorted
             📅 Ciclo: per ogni quartina già presente a calendario, l'RS cade nella sua settimana, nel giorno scalante Ven → Gio → Mer → Mar → Lun → Sab (salta domenica), poi ricomincia da Ven. Il NL cade 7 giorni dopo l'RS. La cadenza tra una quartina e l'altra non è vincolata (può variare).
           </div>
           <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
-            <ModelloSelector label="Quartina (rif. per lo scalante)" value={form.modelloQuartinaId}
-              onChange={id=>setForm(f=>({...f,modelloQuartinaId:id}))} modelli={modelli} T={T} last sortedModelli={sortedModelli}/>
             <ModelloSelector label="RS (Riposo Settimanale)" value={form.modelloRSId}
               onChange={id=>setForm(f=>({...f,modelloRSId:id}))} modelli={modelli} T={T} sortedModelli={sortedModelli}/>
             <ModelloSelector label="NL (Non Lavoro)" value={form.modelloNLId}
