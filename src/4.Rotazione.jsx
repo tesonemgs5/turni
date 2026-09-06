@@ -1642,19 +1642,42 @@ export function NLRSScalanteView({rot, T, accent, modelli}){
   const modRS=modelli.find(m=>m.id===rot.modelloRSId);
   const modNL=modelli.find(m=>m.id===rot.modelloNLId);
 
+  // Sequenza dei giorni RS che scala ad ogni quartina: Ven, Gio, Mer, Mar,
+  // Lun, Sab (salta Domenica), poi ricomincia da Ven. Valori come da
+  // Date.getDay(): Dom=0, Lun=1, Mar=2, Mer=3, Gio=4, Ven=5, Sab=6.
+  const SEQ_GIORNI_RS = [5, 4, 3, 2, 1, 6];
+
   function getCoppie(){
     if(!rot.dataInizio) return [];
     const primoRS = new Date(rot.dataInizio);
     const coppie = [];
-    let dataCorrRS = new Date(primoRS);
+
+    let idx = SEQ_GIORNI_RS.indexOf(primoRS.getDay());
+    if(idx === -1) idx = 0;
+
+    // Prima quartina = la Domenica della stessa settimana del primo RS.
+    // Le quartine successive sono ancorate ogni 4 settimane esatte da qui:
+    // agganciare RS/NL direttamente a ciascuna quartina (invece di
+    // calcolare ogni RS sommando giorni al precedente) evita che un errore
+    // di arrotondamento nel punto di chiusura del ciclo (Lunedì->Sabato,
+    // dove si salta la Domenica) si propaghi facendo "sparire" una
+    // settimana, come succedeva con l'approccio "+27/+33 giorni in cascata".
+    let quartina = new Date(primoRS);
+    while(quartina.getDay() !== 0) quartina.setDate(quartina.getDate() + 1);
 
     const maxSettimane = rot.nSettimane || 52;
     const dataFine = new Date(primoRS);
     dataFine.setDate(dataFine.getDate() + maxSettimane * 7);
 
-    while(dataCorrRS < dataFine){
-      const dataRS = new Date(dataCorrRS);
-      const dataNL = new Date(dataCorrRS);
+    while(quartina < dataFine){
+      const lunediSettimana = new Date(quartina);
+      lunediSettimana.setDate(lunediSettimana.getDate() - 6);
+
+      const giornoAtteso = SEQ_GIORNI_RS[idx];
+      const offset = giornoAtteso === 0 ? 6 : giornoAtteso - 1; // giorni dopo il Lunedì
+      const dataRS = new Date(lunediSettimana);
+      dataRS.setDate(dataRS.getDate() + offset);
+      const dataNL = new Date(dataRS);
       dataNL.setDate(dataNL.getDate() + 7);
 
       coppie.push({
@@ -1664,20 +1687,8 @@ export function NLRSScalanteView({rot, T, accent, modelli}){
         cicloN: coppie.length + 1,
       });
 
-      // Regola verificata sui calendari reali: il prossimo RS è sempre a
-      // +27 giorni dal RS attuale. L'unica eccezione è quando questo calcolo
-      // cadrebbe proprio di Domenica (il giorno vietato) — cosa che succede
-      // solo nel punto di chiusura del ciclo Lunedì->Sabato — nel qual caso
-      // bisogna spostarsi al Sabato della settimana SUCCESSIVA (+6 giorni
-      // in più, quindi +33 totali dal RS attuale), non tornare indietro di
-      // un giorno: è proprio lì che la vecchia logica "perdeva una
-      // settimana" nel calendario.
-      const prossimo = new Date(dataCorrRS);
-      prossimo.setDate(prossimo.getDate() + 27);
-      if(prossimo.getDay() === 0){ // 0 = Domenica
-        prossimo.setDate(prossimo.getDate() + 6);
-      }
-      dataCorrRS = prossimo;
+      idx = (idx + 1) % SEQ_GIORNI_RS.length;
+      quartina.setDate(quartina.getDate() + 28);
     }
     return coppie;
   }
