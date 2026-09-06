@@ -244,6 +244,19 @@ export function AutocompleteInput({ as="input", value, onChange, suggestions=[],
     };
   }, [open]);
 
+  // Quando il valore arriva già pronto (es. apertura di un evento in
+  // modifica, con "collega" già compilato) l'altezza della textarea resta
+  // quella di default: l'auto-resize nel suo onChange scatta solo quando
+  // l'utente digita, non al mount/aggiornamento programmatico del value.
+  // Risultato visibile: il testo lungo si legge "a metà", tagliato dalla
+  // textarea troppo bassa. Ricalcoliamo qui ad ogni cambio di value.
+  useEffect(()=>{
+    if(as==="textarea" && fieldRef.current){
+      fieldRef.current.style.height = "auto";
+      fieldRef.current.style.height = fieldRef.current.scrollHeight + "px";
+    }
+  }, [as, value]);
+
   const rawValue = (value||"").toString();
   const righe = rawValue.split(/\r?\n/);
   const ultimaRiga = as==="textarea" ? righe[righe.length-1] : rawValue;

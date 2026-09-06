@@ -1548,8 +1548,9 @@ export default function VistaModelli({ C }){
                   🕐 {tInMostrato}{tOutMostrato?` → ${tOutMostrato}`:""}{durataEvt?` · ${durataEvt}`:""}
                 </div>
               )}
-              {(e.auto||e.collega)&&<div style={{color:cardSubColor,fontSize:17,marginTop:3}}>
-                {e.auto&&<>🚗 {e.auto}</>}{e.collega&&e.auto?"  ·  ":""}{e.collega&&<>👮 {e.collega}</>}
+              {(e.auto||e.collega)&&<div style={{color:cardSubColor,fontSize:17,marginTop:3,
+                whiteSpace:"pre-wrap",wordBreak:"break-word"}}>
+                {e.auto&&<>🚗 {e.auto}</>}{e.collega&&e.auto?<br/>:""}{e.collega&&<>👮 {e.collega}</>}
               </div>}
               {e.note&&<div style={{color:cardSubColor,fontSize:13,marginTop:3,fontStyle:"italic"}}>
                 📝 {e.note}
