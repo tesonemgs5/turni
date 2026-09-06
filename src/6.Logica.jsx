@@ -3851,7 +3851,8 @@ const importsRecenti = useMemo(()=>{
     if(rot.tipo === "nlrs_scalante") {
       const modRS = modelli.find(m=>m.id===rot.modelloRSId);
       const modNL = modelli.find(m=>m.id===rot.modelloNLId);
-      const modQuartina = modelli.find(m=>m.id===rot.modelloQuartinaId);
+      const rotDomeniche = rotazioni.find(r=>r.tipo==="domeniche");
+      const modQuartina = modelli.find(m=>m.id===rotDomeniche?.modellaLavoroId);
       const primoModello = modPartenza==="NL" ? modNL : modRS;
       const secondoModello = modPartenza==="NL" ? modRS : modNL;
       // Sequenza dei giorni RS che scala ad ogni quartina: Ven, Gio, Mer,
