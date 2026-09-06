@@ -1642,14 +1642,10 @@ export function NLRSScalanteView({rot, T, accent, modelli}){
   const modRS=modelli.find(m=>m.id===rot.modelloRSId);
   const modNL=modelli.find(m=>m.id===rot.modelloNLId);
 
-  const GIORNI_CICLO = [6, 5, 4, 3, 2, 1];
-
   function getCoppie(){
     if(!rot.dataInizio) return [];
     const primoRS = new Date(rot.dataInizio);
     const coppie = [];
-    let giornoCicloIdx = GIORNI_CICLO.indexOf(primoRS.getDay());
-    if(giornoCicloIdx === -1) giornoCicloIdx = 0;
     let dataCorrRS = new Date(primoRS);
 
     const maxSettimane = rot.nSettimane || 52;
@@ -1664,22 +1660,24 @@ export function NLRSScalanteView({rot, T, accent, modelli}){
       coppie.push({
         rs: { date: dataRS, key: dkey(dataRS.getFullYear(), dataRS.getMonth(), dataRS.getDate()) },
         nl: { date: dataNL, key: dkey(dataNL.getFullYear(), dataNL.getMonth(), dataNL.getDate()) },
-        giorno: GIORNI_CICLO[giornoCicloIdx],
+        giorno: dataRS.getDay(),
         cicloN: coppie.length + 1,
       });
 
-      giornoCicloIdx = (giornoCicloIdx + 1) % GIORNI_CICLO.length;
-      const prossimoDow = GIORNI_CICLO[giornoCicloIdx];
-
-      const base = new Date(dataCorrRS);
-      base.setDate(base.getDate() + 27);
-      let tentativo = new Date(base);
-      let iter = 0;
-      while(tentativo.getDay() !== prossimoDow && iter < 7){
-        tentativo.setDate(tentativo.getDate() - 1);
-        iter++;
+      // Regola verificata sui calendari reali: il prossimo RS è sempre a
+      // +27 giorni dal RS attuale. L'unica eccezione è quando questo calcolo
+      // cadrebbe proprio di Domenica (il giorno vietato) — cosa che succede
+      // solo nel punto di chiusura del ciclo Lunedì->Sabato — nel qual caso
+      // bisogna spostarsi al Sabato della settimana SUCCESSIVA (+6 giorni
+      // in più, quindi +33 totali dal RS attuale), non tornare indietro di
+      // un giorno: è proprio lì che la vecchia logica "perdeva una
+      // settimana" nel calendario.
+      const prossimo = new Date(dataCorrRS);
+      prossimo.setDate(prossimo.getDate() + 27);
+      if(prossimo.getDay() === 0){ // 0 = Domenica
+        prossimo.setDate(prossimo.getDate() + 6);
       }
-      dataCorrRS = tentativo;
+      dataCorrRS = prossimo;
     }
     return coppie;
   }
