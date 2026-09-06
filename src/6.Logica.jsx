@@ -414,7 +414,9 @@ export function useAppCore(session){
   // salvataggio riportava sempre al picker anche partendo dalla lista.
   const [origineModelForm, setOrigineModelForm] = useState("lista");
   const [editModello, setEditModello] = useState(null);
-  const [modelForm, setModelForm] = useState({ titolo:"", tempo:"personalizzato", inizio:"", fine:"", coloreCustom:null, posizione:"" });
+  // "posizione" non fa più parte del form: l'ordine è sempre gestito in
+  // automatico (sort_order denso 1..N), non esiste più un campo manuale.
+  const [modelForm, setModelForm] = useState({ titolo:"", tempo:"personalizzato", inizio:"", fine:"", coloreCustom:null });
 
   // ── Colori: popup assegnazione modelli + palette colori extra creati dall'utente
   const [showColorAssignPicker, setShowColorAssignPicker] = useState(null); // colore hex attualmente aperto nel popup
@@ -2522,7 +2524,7 @@ export function useAppCore(session){
       for(const m of (backup.modelli||[])){
         const {data, error:errM} = await dbInsert("modelli", {
           user_id:userId, titolo:m.titolo, tempo:m.tempo, inizio:m.inizio, fine:m.fine,
-          colore:m.colore, colore_custom:m.colore_custom, posizione:m.posizione||"", // flag "manuale"/vuoto, non un id: nessun rimapping necessario
+          colore:m.colore, colore_custom:m.colore_custom, posizione:"", // campo non più usato come flag: sempre vuoto, l'ordine è solo sort_order
           sort_order:m.sort_order, calendar_id: calIdMap[m.calendar_id]||null,
         }, `Ripristino backup — modello "${m.titolo}"`, {soloLog:true});
         if(errM) erroriRiscontrati++;
@@ -2717,37 +2719,29 @@ export function useAppCore(session){
 // ═══════════════════════════════════════════════════════════════
 // Memoizzato: prima veniva ricalcolato (sort completo) ad ogni singolo
 // render dell'app, anche quando i modelli non erano cambiati.
-// Flag salvato nel campo "posizione" (riusato come semplice stringa, niente
-// nuove colonne Supabase): "manuale" se il modello è stato spostato almeno
-// una volta dall'utente (freccia o drag), stringa vuota se è ancora nella
-// lista automatica per orario. Sostituisce il vecchio sistema di riferimenti
-// a catena (un modello agganciato "sopra" un altro id), che era la causa
-// architetturale dell'instabilità: un riferimento relativo può creare cicli,
-// asimmetrie tra "su" e "giù", casi limite in testa/coda alla lista. Con un
-// flag + una posizione numerica scoped per calendario, ogni operazione è un
-// semplice shift di interi, sempre reversibile, senza casi speciali nascosti.
-const FLAG_MANUALE = "manuale";
+// Il campo "posizione" non è più un flag manuale/automatico: ora ogni
+// modello ha SEMPRE e SOLO un sort_order intero, univoco e denso (1..N per
+// calendario), ricalcolato integralmente ad ogni inserimento, eliminazione o
+// spostamento. Sostituisce il vecchio sistema di riferimenti a catena (un
+// modello agganciato "sopra" un altro id) e il successivo sistema a flag
+// manuale/automatico: entrambi introducevano casi speciali (cicli,
+// asimmetrie su/giù, incoerenze tra le due liste). Con un solo campo intero
+// scoped per calendario, ogni operazione è un semplice shift di interi,
+// sempre reversibile, senza casi speciali nascosti — e soprattutto: non
+// possono mai esistere due modelli con lo stesso sort_order.
 
 // ── Calcola l'ordine dei modelli PER UN DATO SOTTOINSIEME (già filtrato per
 // calendario dal chiamante — mai calcolato sull'insieme completo di più
 // calendari insieme, altrimenti un modello potrebbe confrontarsi con
 // "vicini" che nella vista reale non esistono).
 //
-// Architettura a 3 fasi, come da richiesta esplicita:
-// 1) Lista AUTOMATICA per orario: tutti i modelli con flag!==FLAG_MANUALE,
-//    ordinati per orario di inizio (h24/senza orario sempre in cima).
-// 2) Lista MANUALE/libera: tutti i modelli con flag===FLAG_MANUALE, ordinati
-//    semplicemente per sort_order crescente — un numero intero, niente
-//    riferimenti relativi tra modelli.
-// 3) Le due liste si "intrecciano" leggendo sort_order come UNA POSIZIONE
-//    ASSOLUTA CONDIVISA: ogni modello (automatico o manuale) occupa lo slot
-//    sort_order nell'elenco finale. Un nuovo modello automatico si inserisce
-//    calcolando il suo sort_order in base all'orario rispetto agli altri
-//    automatici, e chi viene dopo (automatico O manuale) scala di uno.
+// ARCHITETTURA SEMPLIFICATA (niente più "posizione manuale"): sort_order è
+// SEMPRE un intero UNIVOCO e DENSO, 1..N per calendario, senza buchi e senza
+// duplicati. Ogni inserimento, eliminazione o spostamento rinumera l'intero
+// sottoinsieme coinvolto da capo (vedi rinumeraSottoinsieme): non esiste più
+// alcun flag "manuale"/"automatico" da conciliare, un solo criterio, un solo
+// campo, nessuna eccezione.
 function calcolaOrdineModelli(sottoinsieme){
-  // sort_order è semplicemente la posizione finale: ordino tutto insieme,
-  // un solo criterio, nessuna eccezione — la stabilità viene proprio dal
-  // non avere più casi speciali da conciliare tra loro.
   return [...sottoinsieme].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
 }
 
@@ -2797,26 +2791,23 @@ const importsRecenti = useMemo(()=>{
   }
 
   // ── Sposta un modello di UNA posizione (freccia ▲▼) all'interno del suo
-  // calendario. Operazione: scambio diretto del sort_order con il vicino
-  // immediato nella direzione scelta — un semplice swap fra due interi,
-  // sempre reversibile e senza casi limite nascosti (a differenza del vecchio
+  // calendario. Operazione: rinumerazione completa e densa (1..N, senza
+  // buchi né duplicati) dell'intero sottoinsieme riordinato — sempre
+  // reversibile e senza casi limite nascosti (a differenza del vecchio
   // sistema a riferimenti relativi, che poteva creare cicli e asimmetrie tra
-  // "su" e "giù"). Il modello spostato viene marcato FLAG_MANUALE: da questo
-  // momento appartiene alla lista libera e non torna più a riordinarsi da
-  // solo per orario.
-  // Riassegna sort_order 0,10,20... a un sottoinsieme già riordinato,
-  // aggiornando solo i modelli coinvolti sull'elenco completo "prev".
-  // idsManuali: quali di questi modelli diventano FLAG_MANUALE (gli altri
-  // vengono solo rinumerati, restando automatici se non toccati direttamente).
-  // Funzione condivisa da spostaModelloPuro (frecce) e trascinaModelloPuro
-  // (drag & drop): stessa identica logica di rinumerazione in entrambi i casi.
-  function rinumeraSottoinsieme(prev, riordinato, idsManuali){
-    const nuoviValori = new Map(riordinato.map((m,i)=>[m.id, i*10]));
+  // "su" e "giù"). Non esiste più alcun flag "manuale": ogni spostamento,
+  // inserimento o eliminazione ricalcola sempre sort_order da capo su tutto
+  // il sottoinsieme coinvolto.
+  // Riassegna sort_order 1,2,3... (denso, univoco) a un sottoinsieme già
+  // riordinato, aggiornando solo i modelli coinvolti sull'elenco completo
+  // "prev". Funzione condivisa da spostaModelloPuro (frecce) e
+  // trascinaModelloPuro (drag & drop): stessa identica logica di
+  // rinumerazione in entrambi i casi.
+  function rinumeraSottoinsieme(prev, riordinato){
+    const nuoviValori = new Map(riordinato.map((m,i)=>[m.id, i+1]));
     return prev.map(m=>{
       if(!nuoviValori.has(m.id)) return m;
-      const nuovoSort = nuoviValori.get(m.id);
-      const diventaManuale = idsManuali.has(m.id);
-      return {...m, sortOrder:nuovoSort, posizione: diventaManuale ? FLAG_MANUALE : m.posizione};
+      return {...m, sortOrder:nuoviValori.get(m.id), posizione:""};
     });
   }
 
@@ -2840,12 +2831,10 @@ const importsRecenti = useMemo(()=>{
     // di limitarci a scambiare due numeri potenzialmente ambigui.
     const riordinato = [...sottoinsieme];
     [riordinato[idx], riordinato[vicinoIdx]] = [riordinato[vicinoIdx], riordinato[idx]];
-    // Solo i due modelli effettivamente spostati dall'utente diventano
-    // "manuali": gli altri vengono solo rinumerati (stesso ordine relativo)
-    // per restare univoci, senza uscire dalla lista automatica per orario
-    // se non sono mai stati toccati direttamente.
-    const idsManuali = new Set([sottoinsieme[idx].id, sottoinsieme[vicinoIdx].id]);
-    return rinumeraSottoinsieme(prev, riordinato, idsManuali);
+    // Rinumerazione densa 1..N dell'intero sottoinsieme: es. con A1 B2 C3 D4,
+    // spostando C sopra B si ottiene A1 C2 B3 D4 — ogni modello ha sempre una
+    // posizione intera univoca, senza buchi.
+    return rinumeraSottoinsieme(prev, riordinato);
   }
 
   // ── Trascina un modello (drag & drop) fino alla posizione esatta di
@@ -2873,10 +2862,9 @@ const importsRecenti = useMemo(()=>{
     const riordinato = [...ordinato];
     const [tolto] = riordinato.splice(srcIdx,1);
     riordinato.splice(dstIdx,0,tolto);
-    // Rinumerazione sequenziale: tutti i modelli toccati da un drag esplicito
-    // diventano manuali (comportamento invariato rispetto a prima).
-    const idsManuali = new Set(riordinato.map(m=>m.id));
-    return rinumeraSottoinsieme(prev, riordinato, idsManuali);
+    // Rinumerazione densa 1..N di tutto il sottoinsieme: es. inserendo X tra
+    // B e C in A1 B2 C3 D4 si ottiene A1 B2 X3 C4 D5.
+    return rinumeraSottoinsieme(prev, riordinato);
   }
 
   // Salva su Supabase i modelli effettivamente cambiati (confronto tra stato
@@ -2885,7 +2873,7 @@ const importsRecenti = useMemo(()=>{
     const prevById = new Map(prevElenco.map(m=>[m.id,m]));
     const daSalvare = nuovoElenco.filter(m=>{
       const prima = prevById.get(m.id);
-      return !prima || prima.sortOrder!==m.sortOrder || prima.posizione!==m.posizione;
+      return !prima || prima.sortOrder!==m.sortOrder;
     });
     let primoErrore = null;
     let bloccatoDaPolicy = false;
@@ -2898,7 +2886,7 @@ const importsRecenti = useMemo(()=>{
       // scritto nulla: al refresh torna quello vecchio. Senza questo controllo
       // il caso passava inosservato perché `error` da solo non lo rileva.
       const { data, error } = await supabase.from("modelli")
-        .update({sort_order:m.sortOrder, posizione:m.posizione||""})
+        .update({sort_order:m.sortOrder, posizione:""})
         .eq("id",m.id).eq("user_id",userId)
         .select();
       if(error && !primoErrore) primoErrore = error;
@@ -3052,7 +3040,11 @@ const importsRecenti = useMemo(()=>{
       user_id:userId, titolo:(data.titolo||"").toUpperCase(), label:(data.label||"").toUpperCase(), tempo:data.tempo,
       inizio:data.inizio||null, fine:data.fine||null,
       colore:coloreEff, colore_custom:data.coloreCustom||null,
-      posizione:data.posizione||null,
+      // "posizione" non è più un flag manuale/automatico: resta solo per
+      // compatibilità con lo schema Supabase esistente, sempre vuoto.
+      // L'unica fonte di verità per l'ordine è sort_order, sempre un intero
+      // univoco e denso 1..N per calendario.
+      posizione:"",
       sort_order:data.sortOrder||modelli.length,
       calendar_id: targetCalId,
       categoria: (data.categoria==="primo"||data.categoria==="secondo") ? data.categoria : null,
@@ -3132,15 +3124,21 @@ const importsRecenti = useMemo(()=>{
       const calendarioModelli = modelli.filter(m=>(m.calendarId||mainCalId)===targetCalId);
       const tutti = calcolaOrdineModelli(calendarioModelli);
 
+      // Rinumerazione DENSA 1..N+1: il nuovo modello occupa la posizione
+      // idxInserimento+1, e tutti quelli che nell'elenco ordinato "tutti"
+      // vengono da lì in poi scalano semplicemente di uno. Nessun buco,
+      // nessun passo da "*10": la posizione è sempre un intero progressivo
+      // univoco, esattamente come richiesto (es. inserendo X tra B2 e C3 si
+      // ottiene A1 B2 X3 C4 D5).
       const rinumerazioniApplicate = []; // {id, nuovoVal} per ogni modello il cui sort_order cambia
       function rinumeraEInserisci(idxInserimento){
         for(let i=0;i<tutti.length;i++){
-          const nuovoVal = i>=idxInserimento ? (i+1)*10 : i*10;
+          const nuovoVal = i>=idxInserimento ? (i+2) : (i+1);
           if(nuovoVal!==tutti[i].sortOrder){
             rinumerazioniApplicate.push({id:tutti[i].id, nuovoVal});
           }
         }
-        return idxInserimento*10 + 5;
+        return idxInserimento+1;
       }
 
       let nuovoSortOrder;
@@ -3234,13 +3232,30 @@ const importsRecenti = useMemo(()=>{
     }
   }
   async function deleteModelloInterno(id){
-    // Con la nuova architettura (posizioni assolute, non riferimenti tra
-    // modelli) l'eliminazione è semplice: nessun altro modello punta a
-    // questo tramite id, quindi non serve "riparare" nessun riferimento.
-    // 1) SUBITO in locale.
+    // Dopo l'eliminazione, il calendario del modello tolto deve restare con
+    // sort_order sempre denso 1..N-1 (nessun buco lasciato dal modello
+    // rimosso): rinumero subito i restanti dello stesso calendario.
+    const modelloDaEliminare = modelli.find(m=>m.id===id);
+    const calendarioEliminato = modelloDaEliminare ? (modelloDaEliminare.calendarId||mainCalId) : null;
     let modelliAggiornati;
+    let rinumerazioniApplicate = [];
     setModelli(prev=>{
-      const updated=prev.filter(m=>m.id!==id);
+      const rimanenti = prev.filter(m=>m.id!==id);
+      if(calendarioEliminato==null){
+        modelliAggiornati = rimanenti;
+        return rimanenti;
+      }
+      const sottoinsieme = calcolaOrdineModelli(rimanenti.filter(m=>(m.calendarId||mainCalId)===calendarioEliminato));
+      const nuoviValori = new Map(sottoinsieme.map((m,i)=>[m.id, i+1]));
+      rinumerazioniApplicate = sottoinsieme
+        .map(m=>({id:m.id, nuovoVal:nuoviValori.get(m.id)}))
+        .filter(r=>{
+          const originale = rimanenti.find(m=>m.id===r.id);
+          return originale && originale.sortOrder!==r.nuovoVal;
+        });
+      const updated = rimanenti.map(m=>
+        nuoviValori.has(m.id) ? {...m, sortOrder:nuoviValori.get(m.id), posizione:""} : m
+      );
       modelliAggiornati = updated;
       return updated;
     });
@@ -3249,12 +3264,23 @@ const importsRecenti = useMemo(()=>{
     // risultasse ancora presente su Supabase dopo la cancellazione,
     // viene segnalato invece di considerarsi "andata a buon fine" solo
     // perché la chiamata non ha restituito errore.
+    const ts = new Date().toISOString();
     const match = { id, user_id: userId };
     const esito = await scriviConBackup({
       tipo:"delete", table:"modelli", payload:null, matchObj:match,
-      contesto:"Eliminazione modello", ts:new Date().toISOString(),
+      contesto:"Eliminazione modello", ts,
       eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelliAggiornati,
     });
+    // Rinumerazione dei modelli rimasti nello stesso calendario: stesso
+    // timestamp dell'eliminazione, così restano in ordine in coda se offline.
+    for(const {id:idRinum, nuovoVal} of rinumerazioniApplicate){
+      await scriviConBackup({
+        tipo:"update", table:"modelli", payload:{sort_order:nuovoVal, posizione:""}, matchObj:{id:idRinum, user_id:userId},
+        contesto:"Eliminazione modello — rinumerazione posizioni restanti", ts,
+        eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelliAggiornati,
+        opzioni:{soloLog:true},
+      });
+    }
     return esito;
   }
 
