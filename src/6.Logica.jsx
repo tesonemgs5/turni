@@ -3853,33 +3853,41 @@ const importsRecenti = useMemo(()=>{
       const modNL = modelli.find(m=>m.id===rot.modelloNLId);
       const primoModello = modPartenza==="NL" ? modNL : modRS;
       const secondoModello = modPartenza==="NL" ? modRS : modNL;
-      const GIORNI_CICLO = [6, 5, 4, 3, 2, 1];
+      // Sequenza dei giorni RS che scala ad ogni quartina: Ven, Gio, Mer,
+      // Mar, Lun, Sab (salta Domenica), poi ricomincia da Ven. Valori come
+      // da Date.getDay(): Dom=0, Lun=1, Mar=2, Mer=3, Gio=4, Ven=5, Sab=6.
+      const SEQ_GIORNI_RS = [5, 4, 3, 2, 1, 6];
 
       const [y0, m0, d0] = startDayKey.split("-").map(Number);
-      let dataCorrRS = new Date(y0, m0-1, d0);
-      let giornoCicloIdx = GIORNI_CICLO.indexOf(dataCorrRS.getDay());
-      if(giornoCicloIdx === -1) giornoCicloIdx = 0;
+      const primoRS = new Date(y0, m0-1, d0);
+      let idx = SEQ_GIORNI_RS.indexOf(primoRS.getDay());
+      if(idx === -1) idx = 0;
+
+      // Prima quartina = la Domenica della stessa settimana del primo RS.
+      // Ogni RS/NL successivo si aggancia direttamente alla quartina di
+      // competenza (ogni 4 settimane esatte), invece di sommare giorni al
+      // RS precedente: questo evita che l'errore nel punto di chiusura del
+      // ciclo (Lunedì->Sabato, dove si salta la Domenica) faccia sparire
+      // una settimana nel calendario.
+      let quartina = new Date(primoRS);
+      while(quartina.getDay() !== 0) quartina.setDate(quartina.getDate() + 1);
 
       for(let i=0; i<numRipetizioni; i++) {
-        const dataRS = new Date(dataCorrRS);
-        const dataNL = new Date(dataCorrRS);
+        const lunediSettimana = new Date(quartina);
+        lunediSettimana.setDate(lunediSettimana.getDate() - 6);
+
+        const giornoAtteso = SEQ_GIORNI_RS[idx];
+        const offset = giornoAtteso === 0 ? 6 : giornoAtteso - 1; // giorni dopo il Lunedì
+        const dataRS = new Date(lunediSettimana);
+        dataRS.setDate(dataRS.getDate() + offset);
+        const dataNL = new Date(dataRS);
         dataNL.setDate(dataNL.getDate() + 7);
 
         await inserisciEvento(primoModello, dataRS);
         await inserisciEvento(secondoModello, dataNL);
 
-        giornoCicloIdx = (giornoCicloIdx + 1) % GIORNI_CICLO.length;
-        const prossimoDow = GIORNI_CICLO[giornoCicloIdx];
-
-        const base = new Date(dataCorrRS);
-        base.setDate(base.getDate() + 27);
-        let tentativo = new Date(base);
-        let iter = 0;
-        while(tentativo.getDay() !== prossimoDow && iter < 7) {
-          tentativo.setDate(tentativo.getDate() - 1);
-          iter++;
-        }
-        dataCorrRS = tentativo;
+        idx = (idx + 1) % SEQ_GIORNI_RS.length;
+        quartina.setDate(quartina.getDate() + 28);
       }
     } else if(rot.tipo === "nlrs") {
       const modNL = modelli.find(m=>m.id===rot.modelloNLId);
