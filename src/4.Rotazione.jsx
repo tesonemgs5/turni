@@ -1495,12 +1495,21 @@ export function RotazioneForm({T, form, setForm, accent, modelli, onSave, sorted
 export function ModelloSelector({label, value, onChange, modelli, T, required=false, last=false, sortedModelli}){
   const sel = modelli.find(m=>m.id===value);
   const [open, setOpen] = useState(false);
+  const [ricerca, setRicerca] = useState("");
   const colore = sel?(sel.coloreCustom||getColorByTime(sel.inizio)):"#94a3b8";
   const listaOrdinata = sortedModelli || modelli;
+  const listaFiltrata = ricerca.trim()
+    ? listaOrdinata.filter(m=>{
+        const q = ricerca.trim().toLowerCase();
+        return (m.titolo||"").toLowerCase().includes(q) ||
+               (m.label||"").toLowerCase().includes(q) ||
+               (m.inizio||"").toLowerCase().includes(q);
+      })
+    : listaOrdinata;
   return (
     <div style={{borderBottom:last?"none":`1px solid ${T.border}`}}>
       <div style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}
-        onClick={()=>setOpen(o=>!o)}>
+        onClick={()=>setOpen(o=>{ if(o) setRicerca(""); return !o; })}>
         <div style={{flex:1}}>
           <div style={{fontSize:13,color:T.sub,marginBottom:2}}>{label}</div>
           {sel?(
@@ -1519,17 +1528,29 @@ export function ModelloSelector({label, value, onChange, modelli, T, required=fa
       </div>
       {open&&(
         <div style={{background:T.s2,padding:"6px 0"}}>
+          <div style={{padding:"0 12px 8px"}} onClick={e=>e.stopPropagation()}>
+            <input value={ricerca} onChange={e=>setRicerca(e.target.value)}
+              placeholder="🔎 Cerca modello..." autoFocus
+              style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
+                borderRadius:8,padding:"8px 10px",color:T.text,fontSize:13,
+                boxSizing:"border-box",outline:"none"}}/>
+          </div>
           {!required&&(
-            <div onClick={()=>{onChange(null);setOpen(false);}}
+            <div onClick={()=>{onChange(null);setOpen(false);setRicerca("");}}
               style={{padding:"10px 16px",fontSize:13,color:T.sub,cursor:"pointer",
                 background:!value?"rgba(0,0,0,0.05)":"transparent"}}>
               — Nessuno
             </div>
           )}
-          {listaOrdinata.map(m=>{
+          {listaFiltrata.length===0&&(
+            <div style={{padding:"10px 16px",fontSize:12,color:T.sub,fontStyle:"italic"}}>
+              Nessun modello trovato
+            </div>
+          )}
+          {listaFiltrata.map(m=>{
             const c=m.coloreCustom||getColorByTime(m.inizio);
             return (
-              <div key={m.id} onClick={()=>{onChange(m.id);setOpen(false);}}
+              <div key={m.id} onClick={()=>{onChange(m.id);setOpen(false);setRicerca("");}}
                 style={{display:"flex",alignItems:"center",gap:10,padding:"10px 16px",
                   cursor:"pointer",background:value===m.id?"rgba(0,0,0,0.05)":"transparent"}}>
                 <div style={{width:12,height:12,borderRadius:"50%",background:c,flexShrink:0}}/>

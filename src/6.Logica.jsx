@@ -3108,18 +3108,22 @@ const importsRecenti = useMemo(()=>{
       if(orarioCambiato){
         const calendarioModelli = modelliAggiornati.filter(m=>(m.calendarId||mainCalId)===targetCalId);
         const senzaQuesto = calcolaOrdineModelli(calendarioModelli.filter(m=>m.id!==data.id));
-        const nuovoE24 = modelloAggiornato.tempo==="h24";
-        const nuovoOrarioKey = modelloAggiornato.inizio||"";
+        // Inserimento per FASCIA ORARIA (stessa logica di calcolaOrdinePerFasciaOraria):
+        // prima si trova il blocco corretto (NOTTE/MATTINA/POMERIGGIO/3°TURNO/altri),
+        // poi dentro il blocco si inserisce in ordine crescente di minuti.
+        // Un confronto a stringa sull'orario non basta perché non rispetta i confini
+        // di fascia: dopo un "Riordina posizione modelli" bastava modificare un
+        // modello per rimischiare tutto.
+        const fasciaNuovo = classificaFasciaOrariaModello(modelloAggiornato);
+        const minutiNuovo = oraInMinuti(modelloAggiornato.inizio||"") ?? 0;
         let idxInserimento = senzaQuesto.length;
-        if(!nuovoE24){
-          idxInserimento = 0;
-          for(let i=0;i<senzaQuesto.length;i++){
-            const m = senzaQuesto[i];
-            const mE24 = m.tempo==="h24" || !m.inizio;
-            if(mE24) break;
-            if((m.inizio||"") <= nuovoOrarioKey) idxInserimento = i+1;
-            else break;
-          }
+        for(let i=0;i<senzaQuesto.length;i++){
+          const m = senzaQuesto[i];
+          const fasciaM = classificaFasciaOrariaModello(m);
+          const minutiM = oraInMinuti(m.inizio||"") ?? 0;
+          if(fasciaM > fasciaNuovo){ idxInserimento = i; break; }
+          if(fasciaM === fasciaNuovo && minutiM > minutiNuovo){ idxInserimento = i; break; }
+          idxInserimento = i+1;
         }
         const riordinato = [...senzaQuesto];
         riordinato.splice(idxInserimento, 0, modelloAggiornato);
@@ -3177,18 +3181,24 @@ const importsRecenti = useMemo(()=>{
       // che ha un orario "non successivo" al nuovo (stesso principio di un
       // inserimento ordinato in un array). Regola: h24/senza orario sempre
       // in fondo a tutti; gli altri per orario di inizio crescente.
-      const nuovoE24 = data.tempo==="h24";
-      const nuovoOrarioKey = data.inizio||"";
+      // Inserimento per FASCIA ORARIA (stessa logica di calcolaOrdinePerFasciaOraria):
+      // prima si trova il blocco corretto (NOTTE/MATTINA/POMERIGGIO/3°TURNO/altri),
+      // poi dentro il blocco si inserisce in ordine crescente di minuti. Un
+      // confronto a stringa sull'orario non basta perché non rispetta i confini
+      // di fascia: dopo un "Riordina posizione modelli" bastava aggiungere un
+      // modello per rimischiare tutto (es. NOTTE 00:00 finiva scavalcato in cima
+      // solo perché la stringa "00:00" è la più piccola in assoluto).
+      const modelloTemp = { tempo:data.tempo, inizio:data.inizio||"" };
+      const fasciaNuovo = classificaFasciaOrariaModello(modelloTemp);
+      const minutiNuovo = oraInMinuti(data.inizio||"") ?? 0;
       let idxInserimento = tutti.length;
-      if(!nuovoE24){
-        idxInserimento = 0;
-        for(let i=0;i<tutti.length;i++){
-          const m = tutti[i];
-          const mE24 = m.tempo==="h24" || !m.inizio;
-          if(mE24) break; // i modelli h24 sono sempre in fondo: ci si ferma qui
-          if((m.inizio||"") <= nuovoOrarioKey) idxInserimento = i+1;
-          else break;
-        }
+      for(let i=0;i<tutti.length;i++){
+        const m = tutti[i];
+        const fasciaM = classificaFasciaOrariaModello(m);
+        const minutiM = oraInMinuti(m.inizio||"") ?? 0;
+        if(fasciaM > fasciaNuovo){ idxInserimento = i; break; }
+        if(fasciaM === fasciaNuovo && minutiM > minutiNuovo){ idxInserimento = i; break; }
+        idxInserimento = i+1;
       }
 
       const modelloCreato = {...(({silenzioso,...rest})=>rest)(data),id:idLocale,colore:coloreEff,sortOrder:0,calendarId:targetCalId};
