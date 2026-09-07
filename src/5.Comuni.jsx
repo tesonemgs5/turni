@@ -1721,6 +1721,52 @@ export function HexColorPicker({T, value, onChange}){
           cursor:"pointer",
         }}/>
 
+      {/* Saturazione e Luminosità: sono le due dimensioni del riquadro 2D
+          sopra (asse orizzontale = saturazione, verticale = luminosità),
+          il punto più impreciso da toccare col dito su schermo piccolo.
+          Aggiungiamo qui campi numerici diretti (0-100) con pulsanti −/+
+          per uno step preciso di 1 unità, per chi preferisce digitare o
+          affinare invece di trascinare. */}
+      <div style={{display:"flex",gap:8,marginBottom:10}}>
+        {[["s","Saturazione"],["v","Luminosità"]].map(([field,label])=>(
+          <div key={field} style={{flex:1}}>
+            <div style={{fontSize:9,color:T.sub,fontWeight:700,marginBottom:3,textAlign:"center"}}>{label}</div>
+            <div style={{display:"flex",alignItems:"center",gap:4}}>
+              <button type="button"
+                onClick={()=>{
+                  const cur = field==="s"?sv.s:sv.v;
+                  const next = Math.max(0, Math.round(cur)-1);
+                  const newSv = field==="s"?{...sv,s:next}:{...sv,v:next};
+                  setSv(newSv); emit(hue, newSv.s, newSv.v);
+                }}
+                style={{width:26,height:30,flexShrink:0,background:T.s2,border:`1px solid ${T.border}`,
+                  borderRadius:6,color:T.text,fontSize:16,fontWeight:700,cursor:"pointer",
+                  display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>−</button>
+              <input type="number" min="0" max="100"
+                value={Math.round(field==="s"?sv.s:sv.v)}
+                onChange={e=>{
+                  const n = Math.max(0, Math.min(100, parseInt(e.target.value)||0));
+                  const newSv = field==="s"?{...sv,s:n}:{...sv,v:n};
+                  setSv(newSv); emit(hue, newSv.s, newSv.v);
+                }}
+                style={{width:"100%",background:T.s2,border:`1px solid ${T.border}`,borderRadius:6,
+                  padding:"6px 2px",color:T.text,fontSize:13,textAlign:"center",
+                  outline:"none",boxSizing:"border-box"}}/>
+              <button type="button"
+                onClick={()=>{
+                  const cur = field==="s"?sv.s:sv.v;
+                  const next = Math.min(100, Math.round(cur)+1);
+                  const newSv = field==="s"?{...sv,s:next}:{...sv,v:next};
+                  setSv(newSv); emit(hue, newSv.s, newSv.v);
+                }}
+                style={{width:26,height:30,flexShrink:0,background:T.s2,border:`1px solid ${T.border}`,
+                  borderRadius:6,color:T.text,fontSize:16,fontWeight:700,cursor:"pointer",
+                  display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>+</button>
+            </div>
+          </div>
+        ))}
+      </div>
+
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
         <div style={{width:36,height:36,borderRadius:8,flexShrink:0,
           background:rgbToHex(rgbNow.r,rgbNow.g,rgbNow.b),
