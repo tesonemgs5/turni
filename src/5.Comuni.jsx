@@ -1798,8 +1798,66 @@ export function HexColorPicker({T, value, onChange}){
   );
 }
 
+// ── Modalità alternativa: griglia di pallini precalcolati, stile
+// "Campioni" (colonna = tonalità fissa, riga = quanto chiaro/scuro), come
+// nelle palette a griglia comuni. Il tocco su un pallino intero è più
+// preciso col dito rispetto al gradiente continuo del riquadro 2D sopra,
+// perché non richiede di centrare un punto esatto: basta toccare la cella.
+// Prima riga: scala di grigi neutri (bianco→nero). Righe successive: una
+// tonalità fissa per colonna, con luminosità decrescente riga per riga
+// (dall'alto/chiaro al basso/scuro) a saturazione fissa, replicando lo
+// schema delle immagini di riferimento.
+const GRID_HUES = [0,20,40,60,90,140,170,190,210,240,270,300,330]; // tonalità per colonna
+const GRID_ROWS_SATURAZIONE_LUMINOSITA = [
+  {s:20, v:98}, {s:35, v:92}, {s:55, v:85}, {s:70, v:75},
+  {s:80, v:62}, {s:85, v:50}, {s:90, v:38}, {s:90, v:25},
+];
+function GridColorPicker({T, value, onChange}){
+  const grigiRiga = [255,225,195,165,135,105,75,45,20,0].map(g=>rgbToHex(g,g,g));
+  return (
+    <div>
+      <div style={{display:"grid",gridTemplateColumns:`repeat(${GRID_HUES.length},1fr)`,gap:4,marginBottom:4}}>
+        {grigiRiga.slice(0,GRID_HUES.length).map((hex,i)=>(
+          <button key={"grigio-"+i} type="button" onClick={()=>onChange(hex)}
+            title={hex}
+            style={{aspectRatio:"1",borderRadius:"50%",background:hex,cursor:"pointer",padding:0,
+              border:value?.toUpperCase()===hex.toUpperCase()?`2px solid ${T.text}`:`1px solid ${T.border}`,
+              outline:"none"}}/>
+        ))}
+      </div>
+      {GRID_ROWS_SATURAZIONE_LUMINOSITA.map((row,ri)=>(
+        <div key={ri} style={{display:"grid",gridTemplateColumns:`repeat(${GRID_HUES.length},1fr)`,gap:4,marginBottom:4}}>
+          {GRID_HUES.map(h=>{
+            const rgb = hsvToRgb(h,row.s,row.v);
+            const hex = rgbToHex(rgb.r,rgb.g,rgb.b);
+            return (
+              <button key={h+"-"+ri} type="button" onClick={()=>onChange(hex)}
+                title={hex}
+                style={{aspectRatio:"1",borderRadius:"50%",background:hex,cursor:"pointer",padding:0,
+                  border:value?.toUpperCase()===hex.toUpperCase()?`2px solid ${T.text}`:`1px solid ${T.border}`,
+                  outline:"none"}}/>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, title="Scegli colore"}){
   const [pos,setPos]=useState(null); // null = centrato di default
+  // Modalità del selettore ("preciso" = riquadro 2D+hue+numeri esistente,
+  // "griglia" = pallini precalcolati): PERSISTENTE e GLOBALE in localStorage,
+  // condivisa da ogni ColorPickerModal dell'app. Resta sulla modalità scelta
+  // finché l'utente non ne seleziona manualmente un'altra, anche aprendo un
+  // color picker diverso o riavviando l'app.
+  const [modalitaPicker, setModalitaPicker] = useState(()=>{
+    try{ return localStorage.getItem('colorPickerModalita')==='griglia'?'griglia':'preciso'; }catch(e){ return 'preciso'; }
+  });
+  function selezionaModalita(m){
+    setModalitaPicker(m);
+    try{ localStorage.setItem('colorPickerModalita', m); }catch(e){}
+  }
   const [previewColor,setPreviewColor]=useState(cur);
   const dragState = useRef(null);
   const boxRef = useRef(null);
@@ -1868,8 +1926,33 @@ export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, tit
           </>
         )}
 
-        <div data-hex-picker style={{fontSize:12,color:T.sub,fontWeight:700,marginBottom:8}}>Colore personalizzato (HEX)</div>
-        <HexColorPicker T={T} value={previewColor} onChange={setPreviewColor}/>
+        <div style={{display:"flex",gap:6,marginBottom:14,background:T.s2,borderRadius:10,padding:4}}>
+          <button type="button" onClick={()=>selezionaModalita('preciso')}
+            style={{flex:1,border:"none",borderRadius:8,padding:"7px 0",cursor:"pointer",
+              fontWeight:800,fontSize:12,
+              background:modalitaPicker==='preciso'?T.surface:"transparent",
+              color:modalitaPicker==='preciso'?T.text:T.sub}}>
+            Preciso
+          </button>
+          <button type="button" onClick={()=>selezionaModalita('griglia')}
+            style={{flex:1,border:"none",borderRadius:8,padding:"7px 0",cursor:"pointer",
+              fontWeight:800,fontSize:12,
+              background:modalitaPicker==='griglia'?T.surface:"transparent",
+              color:modalitaPicker==='griglia'?T.text:T.sub}}>
+            Griglia
+          </button>
+        </div>
+
+        {modalitaPicker==='preciso'?(
+          <>
+            <div data-hex-picker style={{fontSize:12,color:T.sub,fontWeight:700,marginBottom:8}}>Colore personalizzato (HEX)</div>
+            <HexColorPicker T={T} value={previewColor} onChange={setPreviewColor}/>
+          </>
+        ):(
+          <div data-hex-picker>
+            <GridColorPicker T={T} value={previewColor} onChange={setPreviewColor}/>
+          </div>
+        )}
 
         <div style={{display:"flex",gap:8,marginTop:16}}>
           <button onClick={onClose}
