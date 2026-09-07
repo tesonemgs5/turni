@@ -2853,41 +2853,34 @@ const importsRecenti = useMemo(()=>{
 
   // Salva su Supabase i modelli effettivamente cambiati (confronto tra stato
   // precedente e nuovo), scoperti passando entrambi gli elenchi.
+  //
+  // Lo stato locale (React + eventuale cache) è GIÀ aggiornato dal chiamante
+  // prima di arrivare qui: il nuovo ordine è quindi visibile e utilizzabile
+  // da subito, a prescindere da Supabase. Da qui in poi si usa
+  // scriviConBackup (lo stesso meccanismo usato per turni/eventi) così che:
+  //   - se la rete è instabile o assente, il salvataggio va in coda silenziosa
+  //     e riparte da solo alla riconnessione — nessun popup, nessun blocco;
+  //   - solo un errore "vero" (permessi, RLS, validazione — qualcosa che una
+  //     nuova connessione non risolverebbe da sola) resta nel log tecnico.
+  // In nessun caso l'utente resta bloccato in attesa che Supabase risponda.
   async function salvaModifichePosizioni(prevElenco, nuovoElenco){
     const prevById = new Map(prevElenco.map(m=>[m.id,m]));
     const daSalvare = nuovoElenco.filter(m=>{
       const prima = prevById.get(m.id);
       return !prima || prima.sortOrder!==m.sortOrder;
     });
-    let primoErrore = null;
-    let bloccatoDaPolicy = false;
-    for(const m of daSalvare){
-      // .select() dopo l'update: se Supabase risponde error:null ma restituisce
-      // un array VUOTO, significa che l'update ha toccato zero righe pur senza
-      // segnalare un errore esplicito — il sintomo tipico di una riga esclusa
-      // da una policy RLS di UPDATE (o USING/WITH CHECK troppo restrittiva).
-      // In quel caso l'ordine sembra salvato lato client, ma il server non ha
-      // scritto nulla: al refresh torna quello vecchio. Senza questo controllo
-      // il caso passava inosservato perché `error` da solo non lo rileva.
-      const { data, error } = await supabase.from("modelli")
-        .update({sort_order:m.sortOrder})
-        .eq("id",m.id).eq("user_id",userId)
-        .select();
-      if(error && !primoErrore) primoErrore = error;
-      else if(!error && (!data || data.length===0)) bloccatoDaPolicy = true;
-    }
-    if(primoErrore){
-      // Il salvataggio su Supabase è fallito: lo stato locale mostra il nuovo
-      // ordine, ma al prossimo caricamento dati tornerebbe quello vecchio
-      // (sort_order non aggiornato sul server). Avviso subito invece di
-      // lasciare che l'utente scopra il problema solo dopo un refresh.
-      segnalaErroreDb(primoErrore, "Salvataggio posizione modello");
-    } else if(bloccatoDaPolicy){
-      segnalaErroreDb(
-        {message:"nessuna riga aggiornata sul server (probabile permesso RLS mancante sulla tabella modelli)"},
-        "Salvataggio posizione modello"
-      );
-    }
+    const ts = new Date().toISOString();
+    await Promise.all(daSalvare.map(m =>
+      scriviConBackup({
+        tipo: "update",
+        table: "modelli",
+        payload: { sort_order: m.sortOrder },
+        matchObj: { id: m.id, user_id: userId },
+        contesto: "Salvataggio posizione modello",
+        ts,
+        opzioni: { soloLog: true },
+      })
+    ));
   }
 
   async function moveH24(id, dir, calIdFiltro){
