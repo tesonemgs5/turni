@@ -2715,28 +2715,49 @@ export function useAppCore(session){
 
 // #region SEZIONE 13: CRUD MODELLI + COLORI
 // ═══════════════════════════════════════════════════════════════
-// Sistema di ordinamento a POSIZIONE UNICA E SEQUENZIALE (1,2,3...) per
-// calendario: nessun flag "manuale" separato, nessuno step arbitrario da
-// 10. La posizione di un modello e' semplicemente il suo indice+1 nella
-// lista di quel calendario: ogni volta che un modello viene inserito,
-// spostato o eliminato, TUTTI i modelli dello stesso calendario vengono
-// rinumerati da 1 a N senza buchi ne' duplicati -- mai due modelli con la
-// stessa posizione. Un nuovo modello entra in automatico nel punto giusto
-// in base all'orario; uno spostamento manuale (freccia/drag) lo reinserisce
-// semplicemente nella posizione scelta e fa scalare gli altri.
+// Sistema di ordinamento a BLOCCHI CONTIGUI GLOBALI: ogni calendario occupa
+// un intervallo continuo di numeri (es. Turni 1-150, B 151-190, C 191-250),
+// nell'ordine in cui i calendari sono elencati in Impostazioni (store.calendars,
+// già ordinato per sort_order). Il sortOrder di un modello è quindi univoco
+// su TUTTA l'app, non solo dentro il suo calendario: inserire un modello in
+// mezzo al blocco di un calendario fa scalare di +1 anche tutti i modelli
+// dei calendari successivi, per mantenere i blocchi sempre contigui e senza
+// sovrapposizioni. Le frecce ↑↓ restano vincolate a muovere un modello solo
+// dentro il blocco del proprio calendario (non lo fanno mai "sconfinare" nel
+// blocco di un altro), ma il numero assoluto risultante riflette lo shift
+// globale se necessario.
 function calcolaOrdineModelli(sottoinsieme){
   return [...sottoinsieme].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
 }
 
-// -- Rinumerazione TOTALE e incondizionata delle posizioni di un calendario,
-// da richiamare dopo OGNI inserimento, modifica, eliminazione o spostamento
-// di un modello. "ordineDesiderato" e' l'array gia' ordinato secondo il
-// criterio del chiamante (per orario, o con un modello reinserito a mano in
-// un punto preciso): qui ci si limita a riscrivere sortOrder come sequenza
-// 1,2,3... su TUTTI i modelli dell'elenco completo "prev" che appartengono
-// a quel calendario, eliminando alla radice buchi e duplicati.
-function ricalcolaPosizioniCalendario(prev, ordineDesiderato){
-  const nuoviValori = new Map(ordineDesiderato.map((m,i)=>[m.id, i+1]));
+// ── Rinumerazione GLOBALE a blocchi contigui. "ordiniPerCalendario" è una
+// Map calendarId -> array di modelli di quel calendario, già nell'ordine
+// interno desiderato dal chiamante (per orario in caso di inserimento/
+// modifica, o l'ordine con cui erano già visti in caso di riordino "silenzioso").
+// "calendarsOrdinati" è l'elenco dei calendarId nell'ordine di Impostazioni:
+// determina QUALE blocco viene prima. I calendari non presenti in
+// ordiniPerCalendario (non toccati da questa operazione) mantengono il loro
+// ordine interno attuale, letto da "prev".
+function ricalcolaPosizioniGlobali(prev, calendarsOrdinati, ordiniPerCalendario, mainCalId){
+  const idsTutti = new Set(calendarsOrdinati);
+  // Aggiungo in coda eventuali calendari presenti nei modelli ma assenti
+  // dall'elenco Impostazioni (caso limite: calendario cancellato o dati
+  // orfani), così nessun modello resta senza una posizione assegnata.
+  prev.forEach(m=>{
+    const cId = m.calendarId||mainCalId;
+    if(!idsTutti.has(cId)){ idsTutti.add(cId); calendarsOrdinati = [...calendarsOrdinati, cId]; }
+  });
+  let cursore = 1;
+  const nuoviValori = new Map();
+  for(const cId of calendarsOrdinati){
+    const ordineBlocco = ordiniPerCalendario.has(cId)
+      ? ordiniPerCalendario.get(cId)
+      : calcolaOrdineModelli(prev.filter(m=>(m.calendarId||mainCalId)===cId));
+    for(const m of ordineBlocco){
+      nuoviValori.set(m.id, cursore);
+      cursore++;
+    }
+  }
   return prev.map(m=> nuoviValori.has(m.id) ? {...m, sortOrder:nuoviValori.get(m.id)} : m);
 }
 
@@ -2787,8 +2808,9 @@ const importsRecenti = useMemo(()=>{
 
   // -- Sposta un modello di UNA posizione (freccia ^) all'interno del suo
   // calendario: lo scambia con il vicino immediato nella direzione scelta,
-  // poi rinumera TUTTO il calendario con ricalcolaPosizioniCalendario cosi'
-  // le posizioni restano sempre 1,2,3... senza buchi ne' duplicati.
+  // poi rinumera tutta l'app a blocchi globali (vedi ricalcolaPosizioniGlobali)
+  // cosi' il blocco di questo calendario resta contiguo e ordinato, e gli
+  // altri calendari mantengono la loro posizione relativa.
   function spostaModelloPuro(prev, id, dir, calIdFiltro){
     const sottoinsieme = calcolaOrdineModelli(modelliDelCalendario(prev, calIdFiltro));
     const idx = sottoinsieme.findIndex(m=>m.id===id);
@@ -2797,14 +2819,16 @@ const importsRecenti = useMemo(()=>{
     if(vicinoIdx<0 || vicinoIdx>=sottoinsieme.length) return prev; // gia' al limite, nessun movimento
     const riordinato = [...sottoinsieme];
     [riordinato[idx], riordinato[vicinoIdx]] = [riordinato[vicinoIdx], riordinato[idx]];
-    return ricalcolaPosizioniCalendario(prev, riordinato);
+    const calendarsOrdinati = store.calendars.map(c=>c.id);
+    const ordiniPerCalendario = new Map([[calIdFiltro, riordinato]]);
+    return ricalcolaPosizioniGlobali(prev, calendarsOrdinati, ordiniPerCalendario, mainCalId);
   }
 
   // -- Trascina un modello (drag & drop) fino alla posizione esatta di
   // dstId, all'interno dello stesso calendario: lo rimuove dalla sua
   // posizione, lo reinserisce nell'indice di destinazione, poi rinumera
-  // TUTTO il calendario con ricalcolaPosizioniCalendario (1,2,3... sempre,
-  // nessun caso speciale).
+  // tutta l'app a blocchi globali, mantenendo il blocco di questo
+  // calendario contiguo e gli altri calendari invariati.
   function trascinaModelloPuro(prev, srcId, dstId, calIdFiltro){
     if(!srcId || !dstId || srcId===dstId){
       return prev;
@@ -2822,7 +2846,9 @@ const importsRecenti = useMemo(()=>{
     const riordinato = [...ordinato];
     const [tolto] = riordinato.splice(srcIdx,1);
     riordinato.splice(dstIdx,0,tolto);
-    return ricalcolaPosizioniCalendario(prev, riordinato);
+    const calendarsOrdinati = store.calendars.map(c=>c.id);
+    const ordiniPerCalendario = new Map([[calIdFiltro, riordinato]]);
+    return ricalcolaPosizioniGlobali(prev, calendarsOrdinati, ordiniPerCalendario, mainCalId);
   }
 
   // Salva su Supabase i modelli effettivamente cambiati (confronto tra stato
@@ -3061,7 +3087,9 @@ const importsRecenti = useMemo(()=>{
         }
         const riordinato = [...senzaQuesto];
         riordinato.splice(idxInserimento, 0, modelloAggiornato);
-        modelliAggiornati = ricalcolaPosizioniCalendario(modelliAggiornati, riordinato);
+        const calendarsOrdinati = nuovoStore.calendars.map(c=>c.id);
+        const ordiniPerCalendario = new Map([[targetCalId, riordinato]]);
+        modelliAggiornati = ricalcolaPosizioniGlobali(modelliAggiornati, calendarsOrdinati, ordiniPerCalendario, mainCalId);
       }
       saveToLocalStorage(nuovoStore.events, nuovoStore.calendars, modelliAggiornati);
       setStore(nuovoStore);
@@ -3131,13 +3159,15 @@ const importsRecenti = useMemo(()=>{
       const riordinato = [...tutti];
       riordinato.splice(idxInserimento, 0, modelloCreato);
 
-      // Subito in locale: nuovo modello inserito + rinumerazione TOTALE del
-      // calendario (1,2,3...), sempre e comunque -- nessun alert, nessun
-      // "blocco spezzato": ogni inserimento riordina l'intera lista.
+      // Subito in locale: nuovo modello inserito + rinumerazione GLOBALE a
+      // blocchi contigui (il blocco di questo calendario resta ordinato,
+      // gli altri calendari restano invariati nella loro posizione relativa).
       let modelliAggiornati;
       setModelli(prev=>{
         const updated=[...prev, modelloCreato];
-        const ricalcolato = ricalcolaPosizioniCalendario(updated, riordinato);
+        const calendarsOrdinati = store.calendars.map(c=>c.id);
+        const ordiniPerCalendario = new Map([[targetCalId, riordinato]]);
+        const ricalcolato = ricalcolaPosizioniGlobali(updated, calendarsOrdinati, ordiniPerCalendario, mainCalId);
         modelliAggiornati = ricalcolato;
         return ricalcolato;
       });
@@ -3184,9 +3214,9 @@ const importsRecenti = useMemo(()=>{
     }
   }
   async function deleteModelloInterno(id){
-    // 1) SUBITO in locale: rimozione + rinumerazione TOTALE del calendario
-    // di appartenenza, per chiudere il buco lasciato dal modello eliminato
-    // (stessa logica di inserimento/modifica: sempre 1,2,3... senza buchi).
+    // 1) SUBITO in locale: rimozione + rinumerazione GLOBALE a blocchi
+    // contigui, per chiudere il buco lasciato dal modello eliminato nel
+    // suo blocco/calendario (gli altri calendari restano invariati).
     let modelliAggiornati;
     const modelloEliminato = modelli.find(m=>m.id===id);
     const calDelModello = modelloEliminato ? (modelloEliminato.calendarId||mainCalId) : null;
@@ -3194,7 +3224,9 @@ const importsRecenti = useMemo(()=>{
       const updated=prev.filter(m=>m.id!==id);
       if(!calDelModello){ modelliAggiornati = updated; return updated; }
       const ordineCalendario = calcolaOrdineModelli(updated.filter(m=>(m.calendarId||mainCalId)===calDelModello));
-      const ricalcolato = ricalcolaPosizioniCalendario(updated, ordineCalendario);
+      const calendarsOrdinati = store.calendars.map(c=>c.id);
+      const ordiniPerCalendario = new Map([[calDelModello, ordineCalendario]]);
+      const ricalcolato = ricalcolaPosizioniGlobali(updated, calendarsOrdinati, ordiniPerCalendario, mainCalId);
       modelliAggiornati = ricalcolato;
       return ricalcolato;
     });
@@ -3212,33 +3244,28 @@ const importsRecenti = useMemo(()=>{
     return esito;
   }
 
-  // ── Riordino UNA TANTUM di TUTTI i calendari: rinumera ogni calendario
-  // (1,2,3... senza buchi né duplicati) usando la stessa regola di ordine
-  // per orario delle creazioni automatiche (h24 in fondo, resto per orario
-  // crescente). Serve a sistemare in un colpo solo i dati vecchi che hanno
-  // sortOrder sparsi/duplicati da prima di questa modifica — dopo averla
-  // lanciata una volta, ogni creazione/modifica/eliminazione/spostamento
-  // futuro si mantiene da solo in ordine, senza bisogno di rilanciarla.
+  // ── Riordino UNA TANTUM di TUTTI i calendari: NON cambia l'ordine visivo
+  // esistente dei modelli (nessun sort per orario/h24) — prende l'ordine
+  // attuale di ciascun calendario (per sortOrder corrente) e lo dispone a
+  // blocchi contigui globali, nell'ordine dei calendari in Impostazioni,
+  // rinumerando tutto in sequenza pulita 1,2,3... senza buchi né duplicati.
+  // Serve a sistemare in un colpo solo i dati vecchi (sortOrder sparsi o
+  // ripetuti tra calendari diversi da prima di questa modifica) senza
+  // toccare l'ordine relativo che l'utente vede già dentro ogni calendario
+  // — dopo averla lanciata una volta, ogni creazione/modifica/eliminazione/
+  // spostamento futuro mantiene da solo i blocchi in ordine.
   async function ripulisciTutteLePosizioniModelli(){
-    const calendarIds = [...new Set(modelli.map(m=>m.calendarId||mainCalId))];
-    let modelliRicalcolati = modelli;
-    for(const cId of calendarIds){
-      const delCalendario = modelliRicalcolati.filter(m=>(m.calendarId||mainCalId)===cId);
-      const automatici = calcolaOrdineModelli(delCalendario).slice();
-      automatici.sort((a,b)=>{
-        const aH24 = a.tempo==="h24" || !a.inizio;
-        const bH24 = b.tempo==="h24" || !b.inizio;
-        if(aH24 && !bH24) return 1;
-        if(!aH24 && bH24) return -1;
-        if(aH24 && bH24) return 0;
-        return (a.inizio||"").localeCompare(b.inizio||"");
-      });
-      modelliRicalcolati = ricalcolaPosizioniCalendario(modelliRicalcolati, automatici);
+    const calendarsOrdinati = store.calendars.map(c=>c.id);
+    const ordiniPerCalendario = new Map();
+    for(const cId of calendarsOrdinati){
+      const delCalendario = calcolaOrdineModelli(modelli.filter(m=>(m.calendarId||mainCalId)===cId));
+      ordiniPerCalendario.set(cId, delCalendario);
     }
+    const modelliRicalcolati = ricalcolaPosizioniGlobali(modelli, calendarsOrdinati, ordiniPerCalendario, mainCalId);
     setModelli(modelliRicalcolati);
     saveToLocalStorage(store.events, store.calendars, modelliRicalcolati);
     await salvaModifichePosizioni(modelli, modelliRicalcolati);
-    return { ok:true, totaleModelli: modelliRicalcolati.length, totaleCalendari: calendarIds.length };
+    return { ok:true, totaleModelli: modelliRicalcolati.length, totaleCalendari: calendarsOrdinati.length };
   }
 
   // ── COLORI: aggiunta/rimozione dalla sezione + assegnazione esclusiva ai modelli
