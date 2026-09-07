@@ -1811,14 +1811,31 @@ export function HexColorPicker({T, value, onChange}){
 const GRID_HUES = [0,24,48,72,96,120,144,168,192,216,240,264,288,312,336]; // 15 tonalità
 const GRID_ROWS = 16;
 function calcolaRigaGriglia(riga){
-  // riga 0 = quasi bianco, riga metà = colore pieno, riga finale = quasi nero.
+  // riga 0 = quasi bianco puro, riga metà = colore pieno e saturo,
+  // riga finale = quasi nero puro. Servono 3 tratti (non 2) per coprire
+  // davvero gli estremi: un conto è "chiaro" (v alto, s bassa), un altro è
+  // "colore pieno" (s e v entrambe alte), un altro ancora "scuro" (v basso).
+  // Con solo 2 tratti lineari s parte già troppo alta e v scende troppo
+  // poco, quindi i pastelli e i quasi-neri veri non comparivano mai.
   const t = riga/(GRID_ROWS-1); // 0..1
-  if(t<=0.5){
-    const k = t/0.5; // 0..1 nella prima metà: da chiarissimo a colore pieno
-    return { s: 15+k*85, v: 100-k*30 };
+  if(t<=0.15){
+    // quasi bianco -> pastello leggero
+    const k = t/0.15;
+    return { s: k*20, v: 100 };
   }
-  const k = (t-0.5)/0.5; // 0..1 nella seconda metà: da colore pieno a scurissimo
-  return { s: 100-k*15, v: 70-k*60 };
+  if(t<=0.5){
+    // pastello -> colore pieno
+    const k = (t-0.15)/0.35;
+    return { s: 20+k*80, v: 100 };
+  }
+  if(t<=0.85){
+    // colore pieno -> inizio scurimento
+    const k = (t-0.5)/0.35;
+    return { s: 100, v: 100-k*55 };
+  }
+  // inizio scurimento -> quasi nero puro
+  const k = (t-0.85)/0.15;
+  return { s: 100-k*40, v: 45-k*40 };
 }
 function GridColorPicker({T, value, onChange}){
   const coloreCella = (hex)=>(
@@ -1835,9 +1852,12 @@ function GridColorPicker({T, value, onChange}){
       const rgb = hsvToRgb(h,s,v);
       return rgbToHex(rgb.r,rgb.g,rgb.b);
     });
-    // Colonna finale (16ª) della riga: grigio puro alla stessa "altezza"
-    // luminosità della riga, per completare 15+1=16 colonne × 16 righe = 256.
-    const grigioVal = Math.round(255*(v/100));
+    // Colonna finale (16ª) della riga: grigio puro con la sua PROPRIA
+    // progressione lineare da bianco a nero su tutte le 16 righe — indipendente
+    // dalla curva s/v usata per le colonne colorate (che tiene v=100 a lungo
+    // per privilegiare i toni pieni, e quindi da sola darebbe troppi bianchi
+    // ripetuti in questa colonna).
+    const grigioVal = Math.round(255*(1-r/(GRID_ROWS-1)));
     const grigioHex = rgbToHex(grigioVal,grigioVal,grigioVal);
     righe.push([...celleColore, grigioHex]);
   }
