@@ -2758,6 +2758,13 @@ function classificaFasciaOrariaModello(m){
   // precedenza o non ripulito): senza questo controllo esplicito su m.tempo,
   // un H24 con inizio="00:00" veniva scambiato per un modello NOTTE e
   // finiva mischiato in mezzo ai modelli con orario reale.
+  //
+  // ECCEZIONE: i 4 modelli "etichetta di fascia" (titolo letteralmente
+  // NOTTE / MATTINA / POMERIGGIO / 3 TURNO) non vanno in coda con gli
+  // "altri": vanno nella fascia che rappresentano, per comparire in testa
+  // al blocco di quella fascia. Vedi fasciaModelloEtichetta più sotto.
+  const fasciaEtichetta = fasciaModelloEtichetta(m);
+  if(fasciaEtichetta!=null) return fasciaEtichetta;
   if(m.tempo==="h24") return 4;
   const mins = oraInMinuti(m.inizio||"");
   if(mins==null) return 4; // senza orario valido -> in coda con gli "altri"
@@ -2767,11 +2774,29 @@ function classificaFasciaOrariaModello(m){
   if(mins>1035 && mins<=1080) return 3; // 3° TURNO: 17:15–18:00
   return 4; // altri (H24, ecc.)
 }
+// Riconosce i 4 modelli "etichetta di fascia" dal titolo (case-insensitive,
+// tollerante a spazi e simbolo gradi): restituisce il numero di fascia
+// (0=NOTTE,1=MATTINA,2=POMERIGGIO,3=3 TURNO) se il titolo corrisponde,
+// altrimenti null (modello normale, classificato per orario come sempre).
+function fasciaModelloEtichetta(m){
+  const t = (m.titolo||"").toUpperCase().replace(/[°.\s]/g,"");
+  if(t==="NOTTE") return 0;
+  if(t==="MATTINA") return 1;
+  if(t==="POMERIGGIO") return 2;
+  if(t==="3TURNO"||t==="3ETURNO"||t==="TERZOTURNO") return 3;
+  return null;
+}
 function calcolaOrdinePerFasciaOraria(sottoinsieme){
   return [...sottoinsieme].sort((a,b)=>{
     const fa = classificaFasciaOrariaModello(a);
     const fb = classificaFasciaOrariaModello(b);
     if(fa!==fb) return fa-fb;
+    // I 4 modelli "etichetta di fascia" vanno sempre per primi dentro il
+    // loro blocco, prima di qualunque altro modello della stessa fascia
+    // (anche se quell'altro modello ha un orario di inizio più basso).
+    const etichettaA = fasciaModelloEtichetta(a)!=null;
+    const etichettaB = fasciaModelloEtichetta(b)!=null;
+    if(etichettaA!==etichettaB) return etichettaA ? -1 : 1;
     // Per gli H24 (fascia 4) l'orario di inizio non è significativo anche se
     // il campo contiene ancora un valore residuo: si ignora e si passa
     // direttamente allo spareggio per sortOrder, così due H24 non vengono
@@ -3145,14 +3170,19 @@ const importsRecenti = useMemo(()=>{
         // di fascia: dopo un "Riordina posizione modelli" bastava modificare un
         // modello per rimischiare tutto.
         const fasciaNuovo = classificaFasciaOrariaModello(modelloAggiornato);
+        const etichettaNuovo = fasciaModelloEtichetta(modelloAggiornato)!=null;
         const minutiNuovo = modelloAggiornato.tempo==="h24" ? 0 : (oraInMinuti(modelloAggiornato.inizio||"") ?? 0);
         let idxInserimento = senzaQuesto.length;
         for(let i=0;i<senzaQuesto.length;i++){
           const m = senzaQuesto[i];
           const fasciaM = classificaFasciaOrariaModello(m);
+          const etichettaM = fasciaModelloEtichetta(m)!=null;
           const minutiM = m.tempo==="h24" ? 0 : (oraInMinuti(m.inizio||"") ?? 0);
           if(fasciaM > fasciaNuovo){ idxInserimento = i; break; }
-          if(fasciaM === fasciaNuovo && minutiM > minutiNuovo){ idxInserimento = i; break; }
+          if(fasciaM === fasciaNuovo && etichettaM!==etichettaNuovo){
+            if(etichettaNuovo){ idxInserimento = i; break; } // il nuovo è l'etichetta: va prima di questo
+            // il nuovo non è l'etichetta ma m sì: m resta prima, si continua
+          } else if(fasciaM === fasciaNuovo && minutiM > minutiNuovo){ idxInserimento = i; break; }
           idxInserimento = i+1;
         }
         const riordinato = [...senzaQuesto];
@@ -3218,16 +3248,20 @@ const importsRecenti = useMemo(()=>{
       // di fascia: dopo un "Riordina posizione modelli" bastava aggiungere un
       // modello per rimischiare tutto (es. NOTTE 00:00 finiva scavalcato in cima
       // solo perché la stringa "00:00" è la più piccola in assoluto).
-      const modelloTemp = { tempo:data.tempo, inizio:data.inizio||"" };
+      const modelloTemp = { tempo:data.tempo, inizio:data.inizio||"", titolo:data.titolo||"" };
       const fasciaNuovo = classificaFasciaOrariaModello(modelloTemp);
+      const etichettaNuovo = fasciaModelloEtichetta(modelloTemp)!=null;
       const minutiNuovo = data.tempo==="h24" ? 0 : (oraInMinuti(data.inizio||"") ?? 0);
       let idxInserimento = tutti.length;
       for(let i=0;i<tutti.length;i++){
         const m = tutti[i];
         const fasciaM = classificaFasciaOrariaModello(m);
+        const etichettaM = fasciaModelloEtichetta(m)!=null;
         const minutiM = m.tempo==="h24" ? 0 : (oraInMinuti(m.inizio||"") ?? 0);
         if(fasciaM > fasciaNuovo){ idxInserimento = i; break; }
-        if(fasciaM === fasciaNuovo && minutiM > minutiNuovo){ idxInserimento = i; break; }
+        if(fasciaM === fasciaNuovo && etichettaM!==etichettaNuovo){
+          if(etichettaNuovo){ idxInserimento = i; break; } // il nuovo è l'etichetta: va prima di questo
+        } else if(fasciaM === fasciaNuovo && minutiM > minutiNuovo){ idxInserimento = i; break; }
         idxInserimento = i+1;
       }
 
