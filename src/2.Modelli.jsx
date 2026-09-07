@@ -102,6 +102,7 @@ export default function VistaModelli({ C }){
     normalizzaEventiTempo, modelliOrdinati, importsRecenti, modelliDelCalendario, rinumeraSottoinsieme, spostaModelloPuro,
     trascinaModelloPuro, salvaModifichePosizioni, moveH24, reorderModelli, ensureColoreRegistrato, registraValoreAutocomplete,
     registraValoriAutocomplete, rimuoviValoreAutocomplete, supabaseUpsertConRetry, saveModello, deleteModello, addColoreExtra,
+    ripulisciTutteLePosizioniModelli,
     removeColoreExtra, updateColoreExtraLabel, replaceColoreEverywhere, saveRotazione, deleteRotazione, updateGrigliaRotazione,
     inserisciEventoGenerico, normOrarioImport, trovaModelloPerTitoloOrario, isRigaProtrazione, tipoProtrazione, importaTurniPdfJson,
     delTuttiEventiImport, importaEventiSingoli, applyRotazione, getReportRange, splitColleghi, computeConteggioForReport,
@@ -793,6 +794,32 @@ export default function VistaModelli({ C }){
           style={{width:"100%",background:"none",border:"1px solid #ef4444",borderRadius:10,color:"#ef4444",
             padding:"10px 0",fontWeight:800,fontSize:12,cursor:"pointer"}}>
           🔄 Svuota cache e ricarica tutto
+        </button>
+
+        <div style={{fontSize:11,color:T.sub,margin:"14px 0 10px"}}>
+          Se i modelli in un calendario appaiono in un ordine strano, o
+          l'app segnala di non riuscire a posizionare automaticamente un
+          nuovo modello, usa questo pulsante: rinumera tutti i modelli di
+          tutti i calendari da capo (per orario, senza toccare titoli o
+          orari), eliminando eventuali sovrapposizioni o "buchi" di
+          posizione accumulati nel tempo. Non serve rifarlo dopo: da qui in
+          poi ogni modifica ai modelli mantiene l'ordine da sola.
+        </div>
+        <button onClick={async()=>{
+            if(!confirm("Riordinare tutti i modelli in tutti i calendari? L'operazione non tocca titoli, orari o colori, solo l'ordine di visualizzazione.")) return;
+            setBanner("⏳ Riordino modelli in corso...");
+            try {
+              const esito = await ripulisciTutteLePosizioniModelli();
+              setBanner(`✅ Ordine ricalcolato: ${esito.totaleModelli} modelli su ${esito.totaleCalendari} calendari.`);
+            } catch(e){
+              segnalaErrore(e, "Riordino posizioni modelli");
+              setBanner("❌ Errore durante il riordino. Controlla il Log.");
+            }
+            setTimeout(()=>setBanner(null), 5000);
+          }}
+          style={{width:"100%",background:"none",border:"1px solid #3b82f6",borderRadius:10,color:"#3b82f6",
+            padding:"10px 0",fontWeight:800,fontSize:12,cursor:"pointer"}}>
+          📐 Riordina posizione modelli
         </button>
       </Sec>
 
