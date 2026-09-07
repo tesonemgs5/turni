@@ -57,6 +57,7 @@ function ColorRow({ T, hex, label, sub, count, onClick, onRemove }) {
 // ═══════════════════════════════════════════════════════════════
 
 export default function VistaModelli({ C }){
+  const [ricercaModelli, setRicercaModelli] = useState("");
   const {
     today, tipoModelloProtrazione, computeStornoRecupero, computeStornoPI, tipoModelloPI, store, setStore, loading, setLoading, year,
     ripristinaModelliMancanti, ripristinoInCorso, setRipristinoInCorso, ripristinoEsito, setRipristinoEsito,
@@ -241,19 +242,37 @@ export default function VistaModelli({ C }){
         );
       })()}
 
+      {modelliTab==="turni"&&(
+        <div style={{margin:"0 12px 10px"}}>
+          <input value={ricercaModelli} onChange={e=>setRicercaModelli(e.target.value)}
+            placeholder="🔎 Cerca modello per nome o orario..."
+            style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
+              borderRadius:10,padding:"10px 12px",color:T.text,fontSize:13,
+              boxSizing:"border-box",outline:"none"}}/>
+        </div>
+      )}
       <div ref={modelliScrollRef} style={{flex:1,overflowY:"auto",padding:"0 12px 80px"}}>
         {modelliTab==="turni"&&(()=>{
-          const modelliVisibili = calId===null
+          const modelliDelCal = calId===null
             ? modelliOrdinati
             : calcolaOrdineModelli(modelli.filter(m=>{
                 const mcid = m.calendarId||mainCalId;
                 return mcid===calId;
               }));
+          const q = ricercaModelli.trim().toLowerCase();
+          const modelliVisibili = q
+            ? modelliDelCal.filter(m=>
+                (m.titolo||"").toLowerCase().includes(q) ||
+                (m.label||"").toLowerCase().includes(q) ||
+                (m.inizio||"").toLowerCase().includes(q))
+            : modelliDelCal;
           return modelliVisibili.length===0?(
             <div style={{textAlign:"center",padding:"40px 24px",color:T.sub}}>
               <div style={{fontSize:36,marginBottom:10}}>📋</div>
-              <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Nessun modello</div>
-              <div style={{fontSize:13}}>Premi + per creare il tuo primo modello turno</div>
+              <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>
+                {q?"Nessun modello trovato":"Nessun modello"}
+              </div>
+              <div style={{fontSize:13}}>{q?"Prova con un altro termine di ricerca":"Premi + per creare il tuo primo modello turno"}</div>
             </div>
           ):(
             <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
@@ -288,8 +307,13 @@ export default function VistaModelli({ C }){
                     // Frecce ▲▼: sempre disponibili, spostano di UNA posizione
                     // nell'elenco realmente visibile (modelliVisibili, filtrato
                     // per calendario se un calendario specifico è selezionato).
-                    onMoveUp={modalitaSpostamento&&i>0?()=>moveH24(m.id,"up",calId):null}
-                    onMoveDown={modalitaSpostamento&&i<arr.length-1?()=>moveH24(m.id,"down",calId):null}
+                    // Disattivate quando la ricerca è attiva: modelliVisibili in
+                    // quel caso è un sottoinsieme filtrato per testo, e l'indice i
+                    // non corrisponde più alla posizione reale tra i modelli del
+                    // calendario, quindi uno spostamento sposterebbe il modello
+                    // nel posto sbagliato.
+                    onMoveUp={modalitaSpostamento&&!q&&i>0?()=>moveH24(m.id,"up",calId):null}
+                    onMoveDown={modalitaSpostamento&&!q&&i<arr.length-1?()=>moveH24(m.id,"down",calId):null}
                     // Drag & drop: disponibile solo in modalitaSpostamento, per
                     // spostamenti più ampi rispetto alle frecce ▲▼.
                     isDragging={draggingId===m.id}
