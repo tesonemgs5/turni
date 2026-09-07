@@ -2753,6 +2753,12 @@ function calcolaOrdineModelli(sottoinsieme){
 //      lasciati in coda, ordinati anch'essi per orario di inizio crescente.
 // All'interno di ciascun blocco l'ordine è per orario di inizio crescente.
 function classificaFasciaOrariaModello(m){
+  // GUARDIA: un modello H24 va SEMPRE in coda con gli "altri", anche se il
+  // campo inizio conserva ancora un valore residuo (es. "00:00" salvato in
+  // precedenza o non ripulito): senza questo controllo esplicito su m.tempo,
+  // un H24 con inizio="00:00" veniva scambiato per un modello NOTTE e
+  // finiva mischiato in mezzo ai modelli con orario reale.
+  if(m.tempo==="h24") return 4;
   const mins = oraInMinuti(m.inizio||"");
   if(mins==null) return 4; // senza orario valido -> in coda con gli "altri"
   if(mins===0) return 0; // NOTTE: 00:00
@@ -2766,8 +2772,12 @@ function calcolaOrdinePerFasciaOraria(sottoinsieme){
     const fa = classificaFasciaOrariaModello(a);
     const fb = classificaFasciaOrariaModello(b);
     if(fa!==fb) return fa-fb;
-    const ma = oraInMinuti(a.inizio||"") ?? 0;
-    const mb = oraInMinuti(b.inizio||"") ?? 0;
+    // Per gli H24 (fascia 4) l'orario di inizio non è significativo anche se
+    // il campo contiene ancora un valore residuo: si ignora e si passa
+    // direttamente allo spareggio per sortOrder, così due H24 non vengono
+    // riordinati tra loro in base a un orario che per loro non ha senso.
+    const ma = a.tempo==="h24" ? 0 : (oraInMinuti(a.inizio||"") ?? 0);
+    const mb = b.tempo==="h24" ? 0 : (oraInMinuti(b.inizio||"") ?? 0);
     if(ma!==mb) return ma-mb;
     return (a.sortOrder||0)-(b.sortOrder||0); // spareggio stabile, non tocca H24 tra loro
   });
@@ -2781,6 +2791,20 @@ function calcolaOrdinePerFasciaOraria(sottoinsieme){
 // determina QUALE blocco viene prima. I calendari non presenti in
 // ordiniPerCalendario (non toccati da questa operazione) mantengono il loro
 // ordine interno attuale, letto da "prev".
+// Dimensione del blocco riservato a ciascun calendario nella numerazione
+// globale dei modelli. Il PRIMO calendario in Impostazioni è il numero 1
+// (non 0), il secondo è il 2, ecc. Ogni calendario N riceve il blocco
+// N*1000+1 .. N*1000+999:
+//   calendario 1 (es. TURNI)       -> 1001-1999
+//   calendario 2 (es. FURERIA)     -> 2001-2999
+//   calendario 3 (es. PROGRAMMAZIONE) -> 3001-3999
+//   calendario 4 (es. COT)         -> 4001-4999
+//   calendario 5 (es. MARY)        -> 5001-5999
+//   calendario 6                   -> 6001-6999
+// e così via. 999 posizioni utili per calendario: margine ampio per
+// crescere senza mai far sconfinare un blocco nell'altro.
+const BLOCCO_POSIZIONI_CALENDARIO = 1000;
+
 function ricalcolaPosizioniGlobali(prev, calendarsOrdinati, ordiniPerCalendario, mainCalId){
   const idsTutti = new Set(calendarsOrdinati);
   // Aggiungo in coda eventuali calendari presenti nei modelli ma assenti
@@ -2790,16 +2814,22 @@ function ricalcolaPosizioniGlobali(prev, calendarsOrdinati, ordiniPerCalendario,
     const cId = m.calendarId||mainCalId;
     if(!idsTutti.has(cId)){ idsTutti.add(cId); calendarsOrdinati = [...calendarsOrdinati, cId]; }
   });
-  let cursore = 1;
+  // BUG FIX: prima qui c'era un cursore UNICO e progressivo (1,2,3...) che
+  // attraversava tutti i calendari senza soluzione di continuità — un
+  // calendario finiva a 194, il successivo ripartiva da 195 invece che dal
+  // suo blocco dedicato. Ora ogni calendario riceve SEMPRE lo stesso range
+  // fisso, indipendente da quanti modelli contiene.
   const nuoviValori = new Map();
-  for(const cId of calendarsOrdinati){
+  for(let i=0; i<calendarsOrdinati.length; i++){
+    const numeroCalendario = i+1; // il primo calendario è il numero 1, non 0
+    const cId = calendarsOrdinati[i];
     const ordineBlocco = ordiniPerCalendario.has(cId)
       ? ordiniPerCalendario.get(cId)
       : calcolaOrdineModelli(prev.filter(m=>(m.calendarId||mainCalId)===cId));
-    for(const m of ordineBlocco){
-      nuoviValori.set(m.id, cursore);
-      cursore++;
-    }
+    const basePosizione = numeroCalendario*BLOCCO_POSIZIONI_CALENDARIO + 1;
+    ordineBlocco.forEach((m, indiceNelBlocco)=>{
+      nuoviValori.set(m.id, basePosizione + indiceNelBlocco);
+    });
   }
   return prev.map(m=> nuoviValori.has(m.id) ? {...m, sortOrder:nuoviValori.get(m.id)} : m);
 }
@@ -3115,12 +3145,12 @@ const importsRecenti = useMemo(()=>{
         // di fascia: dopo un "Riordina posizione modelli" bastava modificare un
         // modello per rimischiare tutto.
         const fasciaNuovo = classificaFasciaOrariaModello(modelloAggiornato);
-        const minutiNuovo = oraInMinuti(modelloAggiornato.inizio||"") ?? 0;
+        const minutiNuovo = modelloAggiornato.tempo==="h24" ? 0 : (oraInMinuti(modelloAggiornato.inizio||"") ?? 0);
         let idxInserimento = senzaQuesto.length;
         for(let i=0;i<senzaQuesto.length;i++){
           const m = senzaQuesto[i];
           const fasciaM = classificaFasciaOrariaModello(m);
-          const minutiM = oraInMinuti(m.inizio||"") ?? 0;
+          const minutiM = m.tempo==="h24" ? 0 : (oraInMinuti(m.inizio||"") ?? 0);
           if(fasciaM > fasciaNuovo){ idxInserimento = i; break; }
           if(fasciaM === fasciaNuovo && minutiM > minutiNuovo){ idxInserimento = i; break; }
           idxInserimento = i+1;
@@ -3190,12 +3220,12 @@ const importsRecenti = useMemo(()=>{
       // solo perché la stringa "00:00" è la più piccola in assoluto).
       const modelloTemp = { tempo:data.tempo, inizio:data.inizio||"" };
       const fasciaNuovo = classificaFasciaOrariaModello(modelloTemp);
-      const minutiNuovo = oraInMinuti(data.inizio||"") ?? 0;
+      const minutiNuovo = data.tempo==="h24" ? 0 : (oraInMinuti(data.inizio||"") ?? 0);
       let idxInserimento = tutti.length;
       for(let i=0;i<tutti.length;i++){
         const m = tutti[i];
         const fasciaM = classificaFasciaOrariaModello(m);
-        const minutiM = oraInMinuti(m.inizio||"") ?? 0;
+        const minutiM = m.tempo==="h24" ? 0 : (oraInMinuti(m.inizio||"") ?? 0);
         if(fasciaM > fasciaNuovo){ idxInserimento = i; break; }
         if(fasciaM === fasciaNuovo && minutiM > minutiNuovo){ idxInserimento = i; break; }
         idxInserimento = i+1;
