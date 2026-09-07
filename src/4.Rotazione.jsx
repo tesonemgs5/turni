@@ -94,7 +94,20 @@ export function saveToLocalStorage(events, calendars, modelli, calId, impostazio
   try {
     localStorage.setItem('cache_events', JSON.stringify(events));
     localStorage.setItem('cache_calendars', JSON.stringify(calendars));
-    localStorage.setItem('cache_modelli', JSON.stringify(modelli));
+    // FIX: prima l'array veniva salvato così com'è, nell'ordine "storico" di
+    // creazione/modifica in memoria — l'indice di riga in localStorage
+    // (quello che si vede aprendo cache_modelli, o con console.table) non
+    // coincideva quasi mai con sortOrder, il campo che invece decide
+    // l'ordine vero mostrato in UI. Due numerazioni diverse per lo stesso
+    // dato, causa di confusione quando si ispezionano i dati grezzi. Ora
+    // l'array viene sempre riscritto ordinato per sortOrder prima di
+    // salvarlo: la riga N nella cache corrisponde sempre al modello con la
+    // N-esima posizione più bassa, stessa numerazione che vedi in UI e con
+    // console.table.
+    const modelliOrdinatiPerSalvataggio = Array.isArray(modelli)
+      ? [...modelli].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0))
+      : modelli;
+    localStorage.setItem('cache_modelli', JSON.stringify(modelliOrdinatiPerSalvataggio));
     localStorage.setItem('cache_timestamp', new Date().toISOString());
     if(calId) localStorage.setItem('cache_calId', calId);
     // Impostazioni visive (colori domenica/festivi, tema, fasce orarie,
