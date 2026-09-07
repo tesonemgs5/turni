@@ -414,9 +414,7 @@ export function useAppCore(session){
   // salvataggio riportava sempre al picker anche partendo dalla lista.
   const [origineModelForm, setOrigineModelForm] = useState("lista");
   const [editModello, setEditModello] = useState(null);
-  // "posizione" non fa più parte del form: l'ordine è sempre gestito in
-  // automatico (sort_order denso 1..N), non esiste più un campo manuale.
-  const [modelForm, setModelForm] = useState({ titolo:"", tempo:"personalizzato", inizio:"", fine:"", coloreCustom:null });
+  const [modelForm, setModelForm] = useState({ titolo:"", tempo:"personalizzato", inizio:"", fine:"", coloreCustom:null, posizione:"" });
 
   // ── Colori: popup assegnazione modelli + palette colori extra creati dall'utente
   const [showColorAssignPicker, setShowColorAssignPicker] = useState(null); // colore hex attualmente aperto nel popup
@@ -2524,7 +2522,7 @@ export function useAppCore(session){
       for(const m of (backup.modelli||[])){
         const {data, error:errM} = await dbInsert("modelli", {
           user_id:userId, titolo:m.titolo, tempo:m.tempo, inizio:m.inizio, fine:m.fine,
-          colore:m.colore, colore_custom:m.colore_custom, posizione:"", // campo non più usato come flag: sempre vuoto, l'ordine è solo sort_order
+          colore:m.colore, colore_custom:m.colore_custom, posizione:m.posizione||"", // flag "manuale"/vuoto, non un id: nessun rimapping necessario
           sort_order:m.sort_order, calendar_id: calIdMap[m.calendar_id]||null,
         }, `Ripristino backup — modello "${m.titolo}"`, {soloLog:true});
         if(errM) erroriRiscontrati++;
@@ -2716,33 +2714,30 @@ export function useAppCore(session){
 // #endregion
 
 // #region SEZIONE 13: CRUD MODELLI + COLORI
-// ═══════════════════════════════════════════════════════════════
-// Memoizzato: prima veniva ricalcolato (sort completo) ad ogni singolo
-// render dell'app, anche quando i modelli non erano cambiati.
-// Il campo "posizione" non è più un flag manuale/automatico: ora ogni
-// modello ha SEMPRE e SOLO un sort_order intero, univoco e denso (1..N per
-// calendario), ricalcolato integralmente ad ogni inserimento, eliminazione o
-// spostamento. Sostituisce il vecchio sistema di riferimenti a catena (un
-// modello agganciato "sopra" un altro id) e il successivo sistema a flag
-// manuale/automatico: entrambi introducevano casi speciali (cicli,
-// asimmetrie su/giù, incoerenze tra le due liste). Con un solo campo intero
-// scoped per calendario, ogni operazione è un semplice shift di interi,
-// sempre reversibile, senza casi speciali nascosti — e soprattutto: non
-// possono mai esistere due modelli con lo stesso sort_order.
-
-// ── Calcola l'ordine dei modelli PER UN DATO SOTTOINSIEME (già filtrato per
-// calendario dal chiamante — mai calcolato sull'insieme completo di più
-// calendari insieme, altrimenti un modello potrebbe confrontarsi con
-// "vicini" che nella vista reale non esistono).
-//
-// ARCHITETTURA SEMPLIFICATA (niente più "posizione manuale"): sort_order è
-// SEMPRE un intero UNIVOCO e DENSO, 1..N per calendario, senza buchi e senza
-// duplicati. Ogni inserimento, eliminazione o spostamento rinumera l'intero
-// sottoinsieme coinvolto da capo (vedi rinumeraSottoinsieme): non esiste più
-// alcun flag "manuale"/"automatico" da conciliare, un solo criterio, un solo
-// campo, nessuna eccezione.
+// ═══════════════════════════════════════════════════════════════
+// Sistema di ordinamento a POSIZIONE UNICA E SEQUENZIALE (1,2,3...) per
+// calendario: nessun flag "manuale" separato, nessuno step arbitrario da
+// 10. La posizione di un modello e' semplicemente il suo indice+1 nella
+// lista di quel calendario: ogni volta che un modello viene inserito,
+// spostato o eliminato, TUTTI i modelli dello stesso calendario vengono
+// rinumerati da 1 a N senza buchi ne' duplicati -- mai due modelli con la
+// stessa posizione. Un nuovo modello entra in automatico nel punto giusto
+// in base all'orario; uno spostamento manuale (freccia/drag) lo reinserisce
+// semplicemente nella posizione scelta e fa scalare gli altri.
 function calcolaOrdineModelli(sottoinsieme){
   return [...sottoinsieme].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
+}
+
+// -- Rinumerazione TOTALE e incondizionata delle posizioni di un calendario,
+// da richiamare dopo OGNI inserimento, modifica, eliminazione o spostamento
+// di un modello. "ordineDesiderato" e' l'array gia' ordinato secondo il
+// criterio del chiamante (per orario, o con un modello reinserito a mano in
+// un punto preciso): qui ci si limita a riscrivere sortOrder come sequenza
+// 1,2,3... su TUTTI i modelli dell'elenco completo "prev" che appartengono
+// a quel calendario, eliminando alla radice buchi e duplicati.
+function ricalcolaPosizioniCalendario(prev, ordineDesiderato){
+  const nuoviValori = new Map(ordineDesiderato.map((m,i)=>[m.id, i+1]));
+  return prev.map(m=> nuoviValori.has(m.id) ? {...m, sortOrder:nuoviValori.get(m.id)} : m);
 }
 
 // Elenco completo (tutti i calendari insieme), usato dove serve una vista
@@ -2790,61 +2785,26 @@ const importsRecenti = useMemo(()=>{
     return prev.filter(m=>(m.calendarId||mainCalId)===calIdFiltro);
   }
 
-  // ── Sposta un modello di UNA posizione (freccia ▲▼) all'interno del suo
-  // calendario. Operazione: rinumerazione completa e densa (1..N, senza
-  // buchi né duplicati) dell'intero sottoinsieme riordinato — sempre
-  // reversibile e senza casi limite nascosti (a differenza del vecchio
-  // sistema a riferimenti relativi, che poteva creare cicli e asimmetrie tra
-  // "su" e "giù"). Non esiste più alcun flag "manuale": ogni spostamento,
-  // inserimento o eliminazione ricalcola sempre sort_order da capo su tutto
-  // il sottoinsieme coinvolto.
-  // Riassegna sort_order 1,2,3... (denso, univoco) a un sottoinsieme già
-  // riordinato, aggiornando solo i modelli coinvolti sull'elenco completo
-  // "prev". Funzione condivisa da spostaModelloPuro (frecce) e
-  // trascinaModelloPuro (drag & drop): stessa identica logica di
-  // rinumerazione in entrambi i casi.
-  function rinumeraSottoinsieme(prev, riordinato){
-    const nuoviValori = new Map(riordinato.map((m,i)=>[m.id, i+1]));
-    return prev.map(m=>{
-      if(!nuoviValori.has(m.id)) return m;
-      return {...m, sortOrder:nuoviValori.get(m.id), posizione:""};
-    });
-  }
-
+  // -- Sposta un modello di UNA posizione (freccia ^) all'interno del suo
+  // calendario: lo scambia con il vicino immediato nella direzione scelta,
+  // poi rinumera TUTTO il calendario con ricalcolaPosizioniCalendario cosi'
+  // le posizioni restano sempre 1,2,3... senza buchi ne' duplicati.
   function spostaModelloPuro(prev, id, dir, calIdFiltro){
     const sottoinsieme = calcolaOrdineModelli(modelliDelCalendario(prev, calIdFiltro));
     const idx = sottoinsieme.findIndex(m=>m.id===id);
     if(idx===-1) return prev;
     const vicinoIdx = dir==="up" ? idx-1 : idx+1;
-    if(vicinoIdx<0 || vicinoIdx>=sottoinsieme.length) return prev; // già al limite, nessun movimento
-    // Scambio le POSIZIONI nell'array ordinato (non i valori di sortOrder:
-    // se due o più modelli del sottoinsieme condividessero già lo stesso
-    // sortOrder — es. modelli automatici mai "toccati" prima, o dati
-    // storici da uno schema precedente — uno swap puntuale dei soli due
-    // valori coinvolti può lasciare duplicati residui altrove nella lista.
-    // Con duplicati, l'ordine risulta corretto solo finché resta in
-    // memoria: dopo un refresh, la query dal server (senza ORDER BY
-    // secondario) può restituire le righe pari-valore in un ordine diverso,
-    // facendo "saltare" il modello in una posizione inattesa. Rinumerando
-    // l'intero sottoinsieme con passo fisso ad ogni spostamento, come già
-    // fa trascinaModelloPuro, eliminiamo qui i duplicati alla fonte invece
-    // di limitarci a scambiare due numeri potenzialmente ambigui.
+    if(vicinoIdx<0 || vicinoIdx>=sottoinsieme.length) return prev; // gia' al limite, nessun movimento
     const riordinato = [...sottoinsieme];
     [riordinato[idx], riordinato[vicinoIdx]] = [riordinato[vicinoIdx], riordinato[idx]];
-    // Rinumerazione densa 1..N dell'intero sottoinsieme: es. con A1 B2 C3 D4,
-    // spostando C sopra B si ottiene A1 C2 B3 D4 — ogni modello ha sempre una
-    // posizione intera univoca, senza buchi.
-    return rinumeraSottoinsieme(prev, riordinato);
+    return ricalcolaPosizioniCalendario(prev, riordinato);
   }
 
-  // ── Trascina un modello (drag & drop) fino alla posizione esatta di
-  // dstId, all'interno dello stesso calendario. Operazione: rimuovo il
-  // modello dalla sua posizione, lo reinserisco nell'indice di destinazione,
-  // e riassegno sort_order 0,1,2... a tutto il sottoinsieme in ordine —
-  // uno shift completo ma su un insieme piccolo (i modelli di un calendario),
-  // quindi economico, e soprattutto sempre corretto per costruzione: non
-  // c'è modo che questo produca cicli o incoerenze, perché non uso mai
-  // riferimenti tra modelli, solo una rinumerazione sequenziale.
+  // -- Trascina un modello (drag & drop) fino alla posizione esatta di
+  // dstId, all'interno dello stesso calendario: lo rimuove dalla sua
+  // posizione, lo reinserisce nell'indice di destinazione, poi rinumera
+  // TUTTO il calendario con ricalcolaPosizioniCalendario (1,2,3... sempre,
+  // nessun caso speciale).
   function trascinaModelloPuro(prev, srcId, dstId, calIdFiltro){
     if(!srcId || !dstId || srcId===dstId){
       return prev;
@@ -2862,9 +2822,7 @@ const importsRecenti = useMemo(()=>{
     const riordinato = [...ordinato];
     const [tolto] = riordinato.splice(srcIdx,1);
     riordinato.splice(dstIdx,0,tolto);
-    // Rinumerazione densa 1..N di tutto il sottoinsieme: es. inserendo X tra
-    // B e C in A1 B2 C3 D4 si ottiene A1 B2 X3 C4 D5.
-    return rinumeraSottoinsieme(prev, riordinato);
+    return ricalcolaPosizioniCalendario(prev, riordinato);
   }
 
   // Salva su Supabase i modelli effettivamente cambiati (confronto tra stato
@@ -2886,7 +2844,7 @@ const importsRecenti = useMemo(()=>{
       // scritto nulla: al refresh torna quello vecchio. Senza questo controllo
       // il caso passava inosservato perché `error` da solo non lo rileva.
       const { data, error } = await supabase.from("modelli")
-        .update({sort_order:m.sortOrder, posizione:""})
+        .update({sort_order:m.sortOrder})
         .eq("id",m.id).eq("user_id",userId)
         .select();
       if(error && !primoErrore) primoErrore = error;
@@ -3040,11 +2998,6 @@ const importsRecenti = useMemo(()=>{
       user_id:userId, titolo:(data.titolo||"").toUpperCase(), label:(data.label||"").toUpperCase(), tempo:data.tempo,
       inizio:data.inizio||null, fine:data.fine||null,
       colore:coloreEff, colore_custom:data.coloreCustom||null,
-      // "posizione" non è più un flag manuale/automatico: resta solo per
-      // compatibilità con lo schema Supabase esistente, sempre vuoto.
-      // L'unica fonte di verità per l'ordine è sort_order, sempre un intero
-      // univoco e denso 1..N per calendario.
-      posizione:"",
       sort_order:data.sortOrder||modelli.length,
       calendar_id: targetCalId,
       categoria: (data.categoria==="primo"||data.categoria==="secondo") ? data.categoria : null,
@@ -3074,12 +3027,42 @@ const importsRecenti = useMemo(()=>{
       });
       const { silenzioso: _silenziosoUpd, ...datiUpdatePuliti } = data;
       let modelloAggiornato;
-      const modelliAggiornati = modelli.map(m=>{
+      let modelliAggiornati = modelli.map(m=>{
         if(m.id!==data.id) return m;
         const nuovo = {...m,...datiUpdatePuliti,colore:coloreEff,calendarId:targetCalId};
         modelloAggiornato = nuovo;
         return nuovo;
       });
+      // Se orario o tipo (h24/personalizzato) sono cambiati, la posizione
+      // del modello nel suo calendario potrebbe non essere più quella
+      // giusta: si ricalcola l'ordine per orario e si rinumera TUTTO il
+      // calendario (1,2,3...), stessa logica usata in creazione.
+      const modelloPrimaModifica = modelli.find(m=>m.id===data.id);
+      const orarioCambiato = modelloPrimaModifica && (
+        modelloPrimaModifica.inizio!==modelloAggiornato.inizio ||
+        modelloPrimaModifica.tempo!==modelloAggiornato.tempo ||
+        (modelloPrimaModifica.calendarId||mainCalId)!==targetCalId
+      );
+      if(orarioCambiato){
+        const calendarioModelli = modelliAggiornati.filter(m=>(m.calendarId||mainCalId)===targetCalId);
+        const senzaQuesto = calcolaOrdineModelli(calendarioModelli.filter(m=>m.id!==data.id));
+        const nuovoE24 = modelloAggiornato.tempo==="h24";
+        const nuovoOrarioKey = modelloAggiornato.inizio||"";
+        let idxInserimento = senzaQuesto.length;
+        if(!nuovoE24){
+          idxInserimento = 0;
+          for(let i=0;i<senzaQuesto.length;i++){
+            const m = senzaQuesto[i];
+            const mE24 = m.tempo==="h24" || !m.inizio;
+            if(mE24) break;
+            if((m.inizio||"") <= nuovoOrarioKey) idxInserimento = i+1;
+            else break;
+          }
+        }
+        const riordinato = [...senzaQuesto];
+        riordinato.splice(idxInserimento, 0, modelloAggiornato);
+        modelliAggiornati = ricalcolaPosizioniCalendario(modelliAggiornati, riordinato);
+      }
       saveToLocalStorage(nuovoStore.events, nuovoStore.calendars, modelliAggiornati);
       setStore(nuovoStore);
       setModelli(modelliAggiornati);
@@ -3117,77 +3100,46 @@ const importsRecenti = useMemo(()=>{
       })();
       return { ok:true, modello: modelloAggiornato };
     } else {
-      // INSERT: il calcolo del posizionamento usa solo dati già in memoria
-      // (modelli, calcolaOrdineModelli) — non serve aspettare Supabase per
-      // deciderlo. L'id è generato qui, subito, come per gli eventi.
+      // INSERT: il calcolo del posizionamento usa solo dati gia' in memoria
+      // (modelli, calcolaOrdineModelli) -- non serve aspettare Supabase per
+      // deciderlo. L'id e' generato qui, subito, come per gli eventi.
       const idLocale = generaIdLocale();
       const calendarioModelli = modelli.filter(m=>(m.calendarId||mainCalId)===targetCalId);
       const tutti = calcolaOrdineModelli(calendarioModelli);
 
-      // Rinumerazione DENSA 1..N+1: il nuovo modello occupa la posizione
-      // idxInserimento+1, e tutti quelli che nell'elenco ordinato "tutti"
-      // vengono da lì in poi scalano semplicemente di uno. Nessun buco,
-      // nessun passo da "*10": la posizione è sempre un intero progressivo
-      // univoco, esattamente come richiesto (es. inserendo X tra B2 e C3 si
-      // ottiene A1 B2 X3 C4 D5).
-      const rinumerazioniApplicate = []; // {id, nuovoVal} per ogni modello il cui sort_order cambia
-      function rinumeraEInserisci(idxInserimento){
+      // Trova l'indice di inserimento in base all'orario, sempre in modo
+      // deterministico anche se i modelli con lo stesso orario non sono
+      // vicini tra loro in lista: si inserisce subito dopo l'ultimo modello
+      // che ha un orario "non successivo" al nuovo (stesso principio di un
+      // inserimento ordinato in un array). Regola: h24/senza orario sempre
+      // in fondo a tutti; gli altri per orario di inizio crescente.
+      const nuovoE24 = data.tempo==="h24";
+      const nuovoOrarioKey = data.inizio||"";
+      let idxInserimento = tutti.length;
+      if(!nuovoE24){
+        idxInserimento = 0;
         for(let i=0;i<tutti.length;i++){
-          const nuovoVal = i>=idxInserimento ? (i+2) : (i+1);
-          if(nuovoVal!==tutti[i].sortOrder){
-            rinumerazioniApplicate.push({id:tutti[i].id, nuovoVal});
-          }
-        }
-        return idxInserimento+1;
-      }
-
-      let nuovoSortOrder;
-      if(data.tempo==="h24"){
-        // Regola 1: h24 sempre in fondo a tutto, senza eccezioni.
-        nuovoSortOrder = rinumeraEInserisci(tutti.length);
-      } else {
-        const nuovoOrarioKey = data.inizio||"";
-        const indiciStessoOrario = [];
-        tutti.forEach((m,i)=>{
-          const k = m.tempo==="h24" ? "h24" : (m.inizio||"");
-          if(k===nuovoOrarioKey) indiciStessoOrario.push(i);
-        });
-        const coeso = indiciStessoOrario.length>0 &&
-          indiciStessoOrario.every((v,i)=>i===0 || v===indiciStessoOrario[i-1]+1);
-        if(coeso){
-          const ultimoIdx = indiciStessoOrario[indiciStessoOrario.length-1];
-          nuovoSortOrder = rinumeraEInserisci(ultimoIdx+1);
-        } else {
-          const esistonoAltriModelliConOrario = tutti.some(m=>m.tempo!=="h24" && m.inizio);
-          nuovoSortOrder = rinumeraEInserisci(tutti.length);
-          if(esistonoAltriModelliConOrario){
-            const messaggio = indiciStessoOrario.length===0
-              ? `Non ci sono altri modelli con l'orario ${nuovoOrarioKey} in questo calendario, quindi non ho un riferimento per posizionarlo: ho messo "${(data.titolo||"il nuovo modello").toUpperCase()}" in fondo alla lista. Spostalo manualmente quando vuoi.`
-              : `Ci sono già più modelli con l'orario ${nuovoOrarioKey} ma in posizioni diverse della lista, quindi non posso capire automaticamente dove raggrupparlo: ho messo "${(data.titolo||"il nuovo modello").toUpperCase()}" in fondo alla lista. Spostalo manualmente quando vuoi.`;
-            // Le creazioni automatiche (es. modello di protrazione generato
-            // al volo da trovaOCreaModelloProtrazione) non devono mai
-            // interrompere l'utente con un popup bloccante: non è
-            // un'azione manuale sua, quindi finisce solo nei log.
-            if(data.silenzioso) segnalaErroreSoloLog(messaggio, "Creazione automatica modello");
-            else window.alert(messaggio);
-          }
+          const m = tutti[i];
+          const mE24 = m.tempo==="h24" || !m.inizio;
+          if(mE24) break; // i modelli h24 sono sempre in fondo: ci si ferma qui
+          if((m.inizio||"") <= nuovoOrarioKey) idxInserimento = i+1;
+          else break;
         }
       }
 
-      // Subito in locale: nuovo modello + rinumerazioni già visibili all'istante.
-      // (silenzioso è solo un flag interno per sopprimere l'alert sopra:
-      // non deve restare agganciato all'oggetto modello salvato in stato.)
-      const { silenzioso: _silenzioso, ...datiModelloPuliti } = data;
-      const modelloCreato = {...datiModelloPuliti,id:idLocale,colore:coloreEff,sortOrder:nuovoSortOrder,posizione:"",calendarId:targetCalId};
+      const modelloCreato = {...(({silenzioso,...rest})=>rest)(data),id:idLocale,colore:coloreEff,sortOrder:0,calendarId:targetCalId};
+      const riordinato = [...tutti];
+      riordinato.splice(idxInserimento, 0, modelloCreato);
+
+      // Subito in locale: nuovo modello inserito + rinumerazione TOTALE del
+      // calendario (1,2,3...), sempre e comunque -- nessun alert, nessun
+      // "blocco spezzato": ogni inserimento riordina l'intera lista.
       let modelliAggiornati;
       setModelli(prev=>{
-        const rinumerazioniMap = new Map(rinumerazioniApplicate.map(r=>[r.id, r.nuovoVal]));
-        const conRinumerazioni = prev.map(m=>
-          rinumerazioniMap.has(m.id) ? {...m, sortOrder:rinumerazioniMap.get(m.id)} : m
-        );
-        const updated=[...conRinumerazioni, modelloCreato];
-        modelliAggiornati = updated;
-        return updated;
+        const updated=[...prev, modelloCreato];
+        const ricalcolato = ricalcolaPosizioniCalendario(updated, riordinato);
+        modelliAggiornati = ricalcolato;
+        return ricalcolato;
       });
       // FIX: a differenza del ramo UPDATE, qui la cache locale non veniva
       // mai riscritta con il nuovo modello. Risultato: il modello compariva
@@ -3232,56 +3184,61 @@ const importsRecenti = useMemo(()=>{
     }
   }
   async function deleteModelloInterno(id){
-    // Dopo l'eliminazione, il calendario del modello tolto deve restare con
-    // sort_order sempre denso 1..N-1 (nessun buco lasciato dal modello
-    // rimosso): rinumero subito i restanti dello stesso calendario.
-    const modelloDaEliminare = modelli.find(m=>m.id===id);
-    const calendarioEliminato = modelloDaEliminare ? (modelloDaEliminare.calendarId||mainCalId) : null;
+    // 1) SUBITO in locale: rimozione + rinumerazione TOTALE del calendario
+    // di appartenenza, per chiudere il buco lasciato dal modello eliminato
+    // (stessa logica di inserimento/modifica: sempre 1,2,3... senza buchi).
     let modelliAggiornati;
-    let rinumerazioniApplicate = [];
+    const modelloEliminato = modelli.find(m=>m.id===id);
+    const calDelModello = modelloEliminato ? (modelloEliminato.calendarId||mainCalId) : null;
     setModelli(prev=>{
-      const rimanenti = prev.filter(m=>m.id!==id);
-      if(calendarioEliminato==null){
-        modelliAggiornati = rimanenti;
-        return rimanenti;
-      }
-      const sottoinsieme = calcolaOrdineModelli(rimanenti.filter(m=>(m.calendarId||mainCalId)===calendarioEliminato));
-      const nuoviValori = new Map(sottoinsieme.map((m,i)=>[m.id, i+1]));
-      rinumerazioniApplicate = sottoinsieme
-        .map(m=>({id:m.id, nuovoVal:nuoviValori.get(m.id)}))
-        .filter(r=>{
-          const originale = rimanenti.find(m=>m.id===r.id);
-          return originale && originale.sortOrder!==r.nuovoVal;
-        });
-      const updated = rimanenti.map(m=>
-        nuoviValori.has(m.id) ? {...m, sortOrder:nuoviValori.get(m.id), posizione:""} : m
-      );
-      modelliAggiornati = updated;
-      return updated;
+      const updated=prev.filter(m=>m.id!==id);
+      if(!calDelModello){ modelliAggiornati = updated; return updated; }
+      const ordineCalendario = calcolaOrdineModelli(updated.filter(m=>(m.calendarId||mainCalId)===calDelModello));
+      const ricalcolato = ricalcolaPosizioniCalendario(updated, ordineCalendario);
+      modelliAggiornati = ricalcolato;
+      return ricalcolato;
     });
     // 2) Backup su Supabase (con retry colonna) + Sheets in parallelo,
     // CON verifica post-scrittura (vedi scriviConBackup): se la riga
     // risultasse ancora presente su Supabase dopo la cancellazione,
     // viene segnalato invece di considerarsi "andata a buon fine" solo
     // perché la chiamata non ha restituito errore.
-    const ts = new Date().toISOString();
     const match = { id, user_id: userId };
     const esito = await scriviConBackup({
       tipo:"delete", table:"modelli", payload:null, matchObj:match,
-      contesto:"Eliminazione modello", ts,
+      contesto:"Eliminazione modello", ts:new Date().toISOString(),
       eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelliAggiornati,
     });
-    // Rinumerazione dei modelli rimasti nello stesso calendario: stesso
-    // timestamp dell'eliminazione, così restano in ordine in coda se offline.
-    for(const {id:idRinum, nuovoVal} of rinumerazioniApplicate){
-      await scriviConBackup({
-        tipo:"update", table:"modelli", payload:{sort_order:nuovoVal, posizione:""}, matchObj:{id:idRinum, user_id:userId},
-        contesto:"Eliminazione modello — rinumerazione posizioni restanti", ts,
-        eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelliAggiornati,
-        opzioni:{soloLog:true},
-      });
-    }
     return esito;
+  }
+
+  // ── Riordino UNA TANTUM di TUTTI i calendari: rinumera ogni calendario
+  // (1,2,3... senza buchi né duplicati) usando la stessa regola di ordine
+  // per orario delle creazioni automatiche (h24 in fondo, resto per orario
+  // crescente). Serve a sistemare in un colpo solo i dati vecchi che hanno
+  // sortOrder sparsi/duplicati da prima di questa modifica — dopo averla
+  // lanciata una volta, ogni creazione/modifica/eliminazione/spostamento
+  // futuro si mantiene da solo in ordine, senza bisogno di rilanciarla.
+  async function ripulisciTutteLePosizioniModelli(){
+    const calendarIds = [...new Set(modelli.map(m=>m.calendarId||mainCalId))];
+    let modelliRicalcolati = modelli;
+    for(const cId of calendarIds){
+      const delCalendario = modelliRicalcolati.filter(m=>(m.calendarId||mainCalId)===cId);
+      const automatici = calcolaOrdineModelli(delCalendario).slice();
+      automatici.sort((a,b)=>{
+        const aH24 = a.tempo==="h24" || !a.inizio;
+        const bH24 = b.tempo==="h24" || !b.inizio;
+        if(aH24 && !bH24) return 1;
+        if(!aH24 && bH24) return -1;
+        if(aH24 && bH24) return 0;
+        return (a.inizio||"").localeCompare(b.inizio||"");
+      });
+      modelliRicalcolati = ricalcolaPosizioniCalendario(modelliRicalcolati, automatici);
+    }
+    setModelli(modelliRicalcolati);
+    saveToLocalStorage(store.events, store.calendars, modelliRicalcolati);
+    await salvaModifichePosizioni(modelli, modelliRicalcolati);
+    return { ok:true, totaleModelli: modelliRicalcolati.length, totaleCalendari: calendarIds.length };
   }
 
   // ── COLORI: aggiunta/rimozione dalla sezione + assegnazione esclusiva ai modelli
@@ -4869,7 +4826,6 @@ const importsRecenti = useMemo(()=>{
     modelliOrdinati,
     importsRecenti,
     modelliDelCalendario,
-    rinumeraSottoinsieme,
     spostaModelloPuro,
     trascinaModelloPuro,
     salvaModifichePosizioni,
@@ -4882,6 +4838,7 @@ const importsRecenti = useMemo(()=>{
     supabaseUpsertConRetry,
     saveModello,
     deleteModello,
+    ripulisciTutteLePosizioniModelli,
     addColoreExtra,
     removeColoreExtra,
     updateColoreExtraLabel,
