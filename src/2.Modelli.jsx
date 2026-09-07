@@ -261,10 +261,11 @@ export default function VistaModelli({ C }){
                 <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                   <ModelloCard m={m} T={T} accent={accent} fasceAutomatiche={fasceAutomatiche}
                     // La modalità selezione multipla (checkbox) resta legata a editMode
-                    // (serve per azioni di gruppo, es. eliminazione multipla), ma le
-                    // frecce ▲▼ e il drag & drop per il riordino devono essere SEMPRE
-                    // disponibili nella lista Modelli, indipendentemente da editMode:
-                    // prima erano condizionate allo stesso flag e sparivano di default.
+                    // (serve per azioni di gruppo, es. eliminazione multipla). Le frecce
+                    // ▲▼ e il drag & drop per il riordino sono invece condizionate a
+                    // modalitaSpostamento (toggle dedicato ↕ in alto): fuori da editMode
+                    // ma anche fuori da modalitaSpostamento, riordino disattivato — non
+                    // devono più dipendere da editMode come accadeva in precedenza.
                     selectMode={!editMode&&!modalitaSpostamento}
                     selected={selectedModelloIds.includes(m.id)}
                     onToggleSelect={()=>setSelectedModelloIds(prev=>prev.includes(m.id)?prev.filter(id=>id!==m.id):[...prev,m.id])}
@@ -289,7 +290,8 @@ export default function VistaModelli({ C }){
                     // per calendario se un calendario specifico è selezionato).
                     onMoveUp={modalitaSpostamento&&i>0?()=>moveH24(m.id,"up",calId):null}
                     onMoveDown={modalitaSpostamento&&i<arr.length-1?()=>moveH24(m.id,"down",calId):null}
-                    // Drag & drop: sempre disponibile, per spostamenti più ampi.
+                    // Drag & drop: disponibile solo in modalitaSpostamento, per
+                    // spostamenti più ampi rispetto alle frecce ▲▼.
                     isDragging={draggingId===m.id}
                     isDropTarget={dragOverId===m.id && draggingId!==m.id}
                     onTouchStart={modalitaSpostamento?()=>{ touchSrcId.current=m.id; setDraggingId(m.id); }:null}
@@ -321,13 +323,18 @@ export default function VistaModelli({ C }){
                     // elementFromPoint, invece di fidarmi di quale card ha generato
                     // l'evento onDragOver/onDrop. Così mouse e touch condividono
                     // esattamente la stessa logica di targeting, niente più divergenze.
-                    onDragStart={(e)=>{
+                    //
+                    // Condizionati a modalitaSpostamento (come i touch handler sopra):
+                    // ModelloCard imposta draggable={!!(onDragStart)}, quindi passare
+                    // null qui disattiva anche l'attributo HTML draggable, non solo la
+                    // logica — fuori da modalitaSpostamento la card non è più afferrabile.
+                    onDragStart={modalitaSpostamento?(e)=>{
                       dragSrcId.current=m.id;
                       dragTargetId.current=m.id;
                       setDraggingId(m.id);
                       if(e?.dataTransfer){ e.dataTransfer.effectAllowed="move"; try{e.dataTransfer.setData("text/plain",m.id);}catch(_){} }
-                    }}
-                    onDragOver={(e)=>{
+                    }:null}
+                    onDragOver={modalitaSpostamento?(e)=>{
                       e.preventDefault();
                       updateAutoScroll(e.clientY);
                       const el=document.elementFromPoint(e.clientX,e.clientY);
@@ -335,8 +342,8 @@ export default function VistaModelli({ C }){
                       const id=card?card.getAttribute("data-modello-id"):m.id;
                       dragTargetId.current=id;
                       if(dragOverId!==id) setDragOverId(id);
-                    }}
-                    onDrop={async(e)=>{
+                    }:null}
+                    onDrop={modalitaSpostamento?async(e)=>{
                       stopAutoScroll();
                       // Uso sempre dragTargetId (calcolato via elementFromPoint),
                       // MAI l'id della card che ha ricevuto l'evento onDrop: quella
@@ -345,14 +352,14 @@ export default function VistaModelli({ C }){
                       await reorderModelli(dragSrcId.current, dragTargetId.current, calId);
                       dragSrcId.current=null; dragTargetId.current=null;
                       setDraggingId(null); setDragOverId(null);
-                    }}
-                    onDragEnd={()=>{
+                    }:null}
+                    onDragEnd={modalitaSpostamento?()=>{
                       // Copre il caso di drag rilasciato fuori da una card valida
                       // (es. fuori dalla lista): ripulisce comunque lo stato visivo.
                       stopAutoScroll();
                       dragSrcId.current=null; dragTargetId.current=null;
                       setDraggingId(null); setDragOverId(null);
-                    }}/>
+                    }:null}/>
                 </div>
               ))}
             </div>
