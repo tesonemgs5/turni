@@ -2741,6 +2741,38 @@ function calcolaOrdineModelli(sottoinsieme){
   return [...sottoinsieme].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
 }
 
+// ── Ordinamento per FASCIA ORARIA D'INIZIO, usato SOLO dal pulsante
+// "Riordina posizione modelli" (non tocca il comportamento normale di
+// calcolaOrdineModelli, usato ovunque altrove). Dentro ogni calendario i
+// modelli vengono raggruppati in blocchi, nell'ordine:
+//   1) NOTTE        — inizio esattamente 00:00
+//   2) MATTINA       — inizio da 06:00 a 11:45
+//   3) POMERIGGIO    — inizio da 12:00 a 17:15
+//   4) 3° TURNO      — inizio da 17:15 a 18:00
+//   5) tutti gli altri (H24 e qualsiasi orario fuori dalle fasce sopra),
+//      lasciati in coda, ordinati anch'essi per orario di inizio crescente.
+// All'interno di ciascun blocco l'ordine è per orario di inizio crescente.
+function classificaFasciaOrariaModello(m){
+  const mins = oraInMinuti(m.inizio||"");
+  if(mins==null) return 4; // senza orario valido -> in coda con gli "altri"
+  if(mins===0) return 0; // NOTTE: 00:00
+  if(mins>=360 && mins<=705) return 1; // MATTINA: 06:00–11:45
+  if(mins>=720 && mins<=1035) return 2; // POMERIGGIO: 12:00–17:15
+  if(mins>1035 && mins<=1080) return 3; // 3° TURNO: 17:15–18:00
+  return 4; // altri (H24, ecc.)
+}
+function calcolaOrdinePerFasciaOraria(sottoinsieme){
+  return [...sottoinsieme].sort((a,b)=>{
+    const fa = classificaFasciaOrariaModello(a);
+    const fb = classificaFasciaOrariaModello(b);
+    if(fa!==fb) return fa-fb;
+    const ma = oraInMinuti(a.inizio||"") ?? 0;
+    const mb = oraInMinuti(b.inizio||"") ?? 0;
+    if(ma!==mb) return ma-mb;
+    return (a.sortOrder||0)-(b.sortOrder||0); // spareggio stabile, non tocca H24 tra loro
+  });
+}
+
 // ── Rinumerazione GLOBALE a blocchi contigui. "ordiniPerCalendario" è una
 // Map calendarId -> array di modelli di quel calendario, già nell'ordine
 // interno desiderato dal chiamante (per orario in caso di inserimento/
@@ -3248,21 +3280,21 @@ const importsRecenti = useMemo(()=>{
     return esito;
   }
 
-  // ── Riordino UNA TANTUM di TUTTI i calendari: NON cambia l'ordine visivo
-  // esistente dei modelli (nessun sort per orario/h24) — prende l'ordine
-  // attuale di ciascun calendario (per sortOrder corrente) e lo dispone a
-  // blocchi contigui globali, nell'ordine dei calendari in Impostazioni,
-  // rinumerando tutto in sequenza pulita 1,2,3... senza buchi né duplicati.
-  // Serve a sistemare in un colpo solo i dati vecchi (sortOrder sparsi o
-  // ripetuti tra calendari diversi da prima di questa modifica) senza
-  // toccare l'ordine relativo che l'utente vede già dentro ogni calendario
-  // — dopo averla lanciata una volta, ogni creazione/modifica/eliminazione/
-  // spostamento futuro mantiene da solo i blocchi in ordine.
+  // ── Riordino UNA TANTUM di TUTTI i calendari: dentro ogni calendario i
+  // modelli vengono ora raggruppati per FASCIA ORARIA D'INIZIO (NOTTE 00:00,
+  // MATTINA 06:00–11:45, POMERIGGIO 12:00–17:15, 3° TURNO 17:15–18:00, poi
+  // tutti gli altri/H24 in coda), ordinati per orario crescente dentro
+  // ciascun blocco — vedi calcolaOrdinePerFasciaOraria. I blocchi vengono
+  // poi disposti a blocchi contigui globali, nell'ordine dei calendari in
+  // Impostazioni, rinumerando tutto in sequenza pulita 1,2,3... senza buchi
+  // né duplicati. Dopo averla lanciata una volta, ogni creazione/modifica/
+  // eliminazione/spostamento futuro mantiene da solo l'ordine così ottenuto
+  // (le operazioni successive usano calcolaOrdineModelli, non questa).
   async function ripulisciTutteLePosizioniModelli(){
     const calendarsOrdinati = store.calendars.map(c=>c.id);
     const ordiniPerCalendario = new Map();
     for(const cId of calendarsOrdinati){
-      const delCalendario = calcolaOrdineModelli(modelli.filter(m=>(m.calendarId||mainCalId)===cId));
+      const delCalendario = calcolaOrdinePerFasciaOraria(modelli.filter(m=>(m.calendarId||mainCalId)===cId));
       ordiniPerCalendario.set(cId, delCalendario);
     }
     const modelliRicalcolati = ricalcolaPosizioniGlobali(modelli, calendarsOrdinati, ordiniPerCalendario, mainCalId);
