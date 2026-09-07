@@ -710,7 +710,18 @@ export function useAppCore(session){
           categoriaAppAuto:(m.categoria_app_auto==="app"||m.categoria_app_auto==="auto")?m.categoria_app_auto:((m.categoria==="app"||m.categoria==="auto")?m.categoria:""),
           turnoVuoto: !!m.categoria_turno_vuoto,
           appAutoVuoto: !!m.categoria_app_auto_vuoto,
-        }));
+        // La RPC get_user_data non garantisce l'ordine delle righe (nessun
+        // ORDER BY lato server): senza un sort esplicito qui, l'ordine
+        // visualizzato dipende dall'ordine fisico di Postgres, che può
+        // cambiare dopo un update (es. dopo un drag&drop + refresh
+        // ravvicinato) finché non si "ristabilizza" da solo. Ordiniamo
+        // sempre per sortOrder (poi per id come spareggio stabile) così
+        // il risultato è deterministico ad ogni caricamento.
+        })).sort((a,b)=>{
+          const sa = a.sortOrder, sb = b.sortOrder;
+          if(sa!==sb) return sa-sb;
+          return String(a.id).localeCompare(String(b.id));
+        });
 
         const rotazioniMappate = (rotazioniDb||[]).map(r=>({
           id:r.id, tipo:r.tipo, titolo:r.titolo,
