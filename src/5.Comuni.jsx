@@ -1798,46 +1798,54 @@ export function HexColorPicker({T, value, onChange}){
   );
 }
 
-// ── Modalità alternativa: griglia di pallini precalcolati, stile
-// "Campioni" (colonna = tonalità fissa, riga = quanto chiaro/scuro), come
-// nelle palette a griglia comuni. Il tocco su un pallino intero è più
-// preciso col dito rispetto al gradiente continuo del riquadro 2D sopra,
-// perché non richiede di centrare un punto esatto: basta toccare la cella.
-// Prima riga: scala di grigi neutri (bianco→nero). Righe successive: una
-// tonalità fissa per colonna, con luminosità decrescente riga per riga
-// (dall'alto/chiaro al basso/scuro) a saturazione fissa, replicando lo
-// schema delle immagini di riferimento.
-const GRID_HUES = [0,20,40,60,90,140,170,190,210,240,270,300,330]; // tonalità per colonna
-const GRID_ROWS_SATURAZIONE_LUMINOSITA = [
-  {s:20, v:98}, {s:35, v:92}, {s:55, v:85}, {s:70, v:75},
-  {s:80, v:62}, {s:85, v:50}, {s:90, v:38}, {s:90, v:25},
-];
+// ── Modalità alternativa: griglia di 256 pallini (16 colonne × 16 righe),
+// stile "Campioni" delle palette a griglia comuni (Material Design e
+// simili): colonna = tonalità fissa, riga = quanto chiaro/scuro. Il tocco
+// su un pallino intero è più preciso col dito rispetto al gradiente
+// continuo del riquadro 2D sopra, perché non richiede di centrare un punto
+// esatto: basta toccare la cella.
+// 15 colonne di tonalità (in ordine di ruota cromatica, passo 24°, come le
+// immagini di riferimento) + 1 colonna finale di grigi puri. Ogni colonna
+// scorre in 16 righe da chiarissimo/desaturato in alto a scurissimo/saturo
+// in basso, stessa progressione che si vede nelle palette a griglia note.
+const GRID_HUES = [0,24,48,72,96,120,144,168,192,216,240,264,288,312,336]; // 15 tonalità
+const GRID_ROWS = 16;
+function calcolaRigaGriglia(riga){
+  // riga 0 = quasi bianco, riga metà = colore pieno, riga finale = quasi nero.
+  const t = riga/(GRID_ROWS-1); // 0..1
+  if(t<=0.5){
+    const k = t/0.5; // 0..1 nella prima metà: da chiarissimo a colore pieno
+    return { s: 15+k*85, v: 100-k*30 };
+  }
+  const k = (t-0.5)/0.5; // 0..1 nella seconda metà: da colore pieno a scurissimo
+  return { s: 100-k*15, v: 70-k*60 };
+}
 function GridColorPicker({T, value, onChange}){
-  const grigiRiga = [255,225,195,165,135,105,75,45,20,0].map(g=>rgbToHex(g,g,g));
+  const coloreCella = (hex)=>(
+    <button key={hex} type="button" onClick={()=>onChange(hex)}
+      title={hex}
+      style={{aspectRatio:"1",borderRadius:"50%",background:hex,cursor:"pointer",padding:0,
+        border:value?.toUpperCase()===hex.toUpperCase()?`2px solid ${T.text}`:`1px solid ${T.border}`,
+        outline:"none"}}/>
+  );
+  const righe = [];
+  for(let r=0;r<GRID_ROWS;r++){
+    const {s,v} = calcolaRigaGriglia(r);
+    const celleColore = GRID_HUES.map(h=>{
+      const rgb = hsvToRgb(h,s,v);
+      return rgbToHex(rgb.r,rgb.g,rgb.b);
+    });
+    // Colonna finale (16ª) della riga: grigio puro alla stessa "altezza"
+    // luminosità della riga, per completare 15+1=16 colonne × 16 righe = 256.
+    const grigioVal = Math.round(255*(v/100));
+    const grigioHex = rgbToHex(grigioVal,grigioVal,grigioVal);
+    righe.push([...celleColore, grigioHex]);
+  }
   return (
     <div>
-      <div style={{display:"grid",gridTemplateColumns:`repeat(${GRID_HUES.length},1fr)`,gap:4,marginBottom:4}}>
-        {grigiRiga.slice(0,GRID_HUES.length).map((hex,i)=>(
-          <button key={"grigio-"+i} type="button" onClick={()=>onChange(hex)}
-            title={hex}
-            style={{aspectRatio:"1",borderRadius:"50%",background:hex,cursor:"pointer",padding:0,
-              border:value?.toUpperCase()===hex.toUpperCase()?`2px solid ${T.text}`:`1px solid ${T.border}`,
-              outline:"none"}}/>
-        ))}
-      </div>
-      {GRID_ROWS_SATURAZIONE_LUMINOSITA.map((row,ri)=>(
-        <div key={ri} style={{display:"grid",gridTemplateColumns:`repeat(${GRID_HUES.length},1fr)`,gap:4,marginBottom:4}}>
-          {GRID_HUES.map(h=>{
-            const rgb = hsvToRgb(h,row.s,row.v);
-            const hex = rgbToHex(rgb.r,rgb.g,rgb.b);
-            return (
-              <button key={h+"-"+ri} type="button" onClick={()=>onChange(hex)}
-                title={hex}
-                style={{aspectRatio:"1",borderRadius:"50%",background:hex,cursor:"pointer",padding:0,
-                  border:value?.toUpperCase()===hex.toUpperCase()?`2px solid ${T.text}`:`1px solid ${T.border}`,
-                  outline:"none"}}/>
-            );
-          })}
+      {righe.map((riga,ri)=>(
+        <div key={ri} style={{display:"grid",gridTemplateColumns:`repeat(${GRID_HUES.length+1},1fr)`,gap:3,marginBottom:3}}>
+          {riga.map(hex=>coloreCella(hex))}
         </div>
       ))}
     </div>
