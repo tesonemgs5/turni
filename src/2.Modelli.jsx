@@ -151,6 +151,24 @@ export default function VistaModelli({ C }){
                   color:modalitaSpostamento?"#fff":T.sub,
                   transition:"background 0.12s ease, border-color 0.12s ease"}}>↑↓</button>
               )}
+              {modelliTab==="turni"&&(
+              <button onClick={async()=>{
+                  setBanner("⏳ Salvataggio disposizione in corso...");
+                  try {
+                    const esito = await salvaDisposizioneModelli();
+                    if(esito.ok) setBanner(`✅ Disposizione salvata: ${esito.totale} modelli.`);
+                    else setBanner(`❌ ${esito.errore||"Errore durante il salvataggio."}`);
+                  } catch(e){
+                    segnalaErrore(e, "Salvataggio disposizione modelli");
+                    setBanner("❌ Errore durante il salvataggio. Controlla il Log.");
+                  }
+                  setTimeout(()=>setBanner(null), 5000);
+                }}
+                title="Salva la disposizione attuale dei modelli come backup"
+                style={{background:T.s2,border:`1.5px solid ${T.border}`,borderRadius:8,
+                  padding:"6px 10px",fontSize:16,fontWeight:700,cursor:"pointer",
+                  color:T.sub}}>💾</button>
+              )}
               <button onClick={()=>{
                 let dati, nomeFile;
                 if(modelliTab==="turni"){
