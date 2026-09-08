@@ -339,8 +339,8 @@ export function useAppCore(session){
         // che il dato sia andato perso — è solo il secondo fetch che non è
         // arrivato a destinazione. Non blocchiamo l'utente per questo: lo
         // segnaliamo nel solo log tecnico e consideriamo l'operazione riuscita.
-        if(verifica.direte){
-          segnalaErroreSoloLog(`Rete instabile durante il controllo post-salvataggio (il salvataggio stesso è andato a buon fine su Supabase). Dettaglio: ${verifica.motivo}`, `${contesto} (verifica offline)`);
+        if(verifica.direte || opzioni.soloLog){
+          segnalaErroreSoloLog(`Verifica post-salvataggio non confermata (il salvataggio stesso è andato a buon fine su Supabase). Dettaglio: ${verifica.motivo}`, `${contesto} (verifica saltata)`);
           return { ok:true, verificaSaltata:true, errore:null };
         }
         const erroreVerifica = { message: verifica.motivo };
