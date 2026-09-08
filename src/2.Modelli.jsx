@@ -58,6 +58,11 @@ function ColorRow({ T, hex, label, sub, count, onClick, onRemove }) {
 
 export default function VistaModelli({ C }){
   const [ricercaModelli, setRicercaModelli] = useState("");
+  // Feedback visivo immediato sul pulsante "Salva disposizione" in alto:
+  // il banner in basso passa facilmente inosservato mentre si lavora sui
+  // pulsanti in alto, quindi qui l'icona stessa cambia temporaneamente
+  // (💾 -> ✅ o ❌) per un riscontro impossibile da non notare.
+  const [statoSalvaDisposizione, setStatoSalvaDisposizione] = useState("idle"); // idle | salvando | ok | errore
   const {
     today, tipoModelloProtrazione, computeStornoRecupero, computeStornoPI, tipoModelloPI, store, setStore, loading, setLoading, year,
     ripristinaModelliMancanti, ripristinoInCorso, setRipristinoInCorso, ripristinoEsito, setRipristinoEsito,
@@ -153,21 +158,27 @@ export default function VistaModelli({ C }){
               )}
               {modelliTab==="turni"&&(
               <button onClick={async()=>{
-                  setBanner("⏳ Salvataggio disposizione in corso...");
+                  setStatoSalvaDisposizione("salvando");
                   try {
                     const esito = await salvaDisposizioneModelli();
-                    if(esito.ok) setBanner(`✅ Disposizione salvata: ${esito.totale} modelli.`);
-                    else setBanner(`❌ ${esito.errore||"Errore durante il salvataggio."}`);
+                    setStatoSalvaDisposizione(esito.ok ? "ok" : "errore");
+                    setBanner(esito.ok ? `✅ Disposizione salvata: ${esito.totale} modelli.` : `❌ ${esito.errore||"Errore durante il salvataggio."}`);
                   } catch(e){
                     segnalaErrore(e, "Salvataggio disposizione modelli");
+                    setStatoSalvaDisposizione("errore");
                     setBanner("❌ Errore durante il salvataggio. Controlla il Log.");
                   }
+                  setTimeout(()=>setStatoSalvaDisposizione("idle"), 2000);
                   setTimeout(()=>setBanner(null), 5000);
                 }}
                 title="Salva la disposizione attuale dei modelli come backup"
-                style={{background:T.s2,border:`1.5px solid ${T.border}`,borderRadius:8,
-                  padding:"6px 10px",fontSize:16,fontWeight:700,cursor:"pointer",
-                  color:T.sub}}>💾</button>
+                style={{background:statoSalvaDisposizione==="ok"?"#10b981":statoSalvaDisposizione==="errore"?"#ef4444":T.s2,
+                  border:`1.5px solid ${statoSalvaDisposizione==="ok"?"#10b981":statoSalvaDisposizione==="errore"?"#ef4444":T.border}`,
+                  borderRadius:8, padding:"6px 10px",fontSize:16,fontWeight:700,cursor:"pointer",
+                  color:statoSalvaDisposizione==="ok"||statoSalvaDisposizione==="errore"?"#fff":T.sub,
+                  transition:"background 0.15s ease, border-color 0.15s ease"}}>
+                {statoSalvaDisposizione==="salvando"?"⏳":statoSalvaDisposizione==="ok"?"✅":statoSalvaDisposizione==="errore"?"❌":"💾"}
+              </button>
               )}
               <button onClick={()=>{
                 let dati, nomeFile;
