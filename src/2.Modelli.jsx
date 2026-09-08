@@ -812,7 +812,7 @@ export default function VistaModelli({ C }){
         </button>
       </Sec>
 
-      <Sec label="MANUTENZIONE" T={T}>
+      <SecCollapsible label="MANUTENZIONE" T={T}>
         <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
           Usa questa funzione solo se il calendario mostra dati non aggiornati o
           sbagliati dopo una modifica fatta da un altro dispositivo. Cancella la
@@ -917,7 +917,7 @@ export default function VistaModelli({ C }){
             padding:"10px 0",fontWeight:800,fontSize:12,cursor:"pointer"}}>
           ♻️ Ripristina disposizione
         </button>
-      </Sec>
+      </SecCollapsible>
 
       <SecCollapsible label="LOG ERRORI" T={T}
         onToggle={(aperta)=>{
