@@ -114,7 +114,7 @@ function BottomNav({ screen, setScreen, T, accent }) {
 function AppInterno({ session }){
   const C = useAppCore(session);
   const { calView, reportView, goPrevMonth, goNextMonth } = VistaCalendario({ C });
-  const { modelliView, settingsView, dayModal, dbModal } = VistaModelli({ C });
+  const { modelliView, settingsView, dayModal, dbModal, salvaDisposizionePopup } = VistaModelli({ C });
 
   const {
     today, store, setStore, loading, setLoading, year,
@@ -273,6 +273,7 @@ function AppInterno({ session }){
         borderRadius:20,fontSize:12,zIndex:9999,pointerEvents:"none"}}>{banner}</div>}
       {dayModal}
       {dbModal}
+      {salvaDisposizionePopup}
       {showModelForm&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:600,
           display:"flex",alignItems:"flex-end"}}

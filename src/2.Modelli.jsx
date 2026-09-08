@@ -104,6 +104,8 @@ export default function VistaModelli({ C }){
     trascinaModelloPuro, salvaModifichePosizioni, moveH24, reorderModelli, ensureColoreRegistrato, registraValoreAutocomplete,
     registraValoriAutocomplete, rimuoviValoreAutocomplete, supabaseUpsertConRetry, saveModello, deleteModello, addColoreExtra,
     ripulisciTutteLePosizioniModelli,
+    salvaDisposizioneModelli, ripristinaDisposizioneModelli,
+    showSalvaDisposizionePopup, setShowSalvaDisposizionePopup, annullaTimerSalvaDisposizione,
     removeColoreExtra, updateColoreExtraLabel, replaceColoreEverywhere, saveRotazione, deleteRotazione, updateGrigliaRotazione,
     inserisciEventoGenerico, normOrarioImport, trovaModelloPerTitoloOrario, isRigaProtrazione, tipoProtrazione, importaTurniPdfJson,
     delTuttiEventiImport, importaEventiSingoli, applyRotazione, getReportRange, splitColleghi, computeConteggioForReport,
@@ -853,6 +855,49 @@ export default function VistaModelli({ C }){
           style={{width:"100%",background:"none",border:"1px solid #3b82f6",borderRadius:10,color:"#3b82f6",
             padding:"10px 0",fontWeight:800,fontSize:12,cursor:"pointer"}}>
           📐 Riordina posizione modelli
+        </button>
+
+        <div style={{fontSize:11,color:T.sub,margin:"14px 0 10px"}}>
+          Protezione extra contro un problema ancora in fase di indagine che
+          a volte rimescola da solo l'ordine dei modelli. "Salva
+          disposizione" congela l'ordine attuale come backup separato (mai
+          sovrascritto in automatico, solo quando premi questo pulsante).
+          Se in futuro l'ordine dovesse rimescolarsi di nuovo, tocca
+          "Ripristina disposizione" per tornare esattamente a come l'avevi
+          salvato, senza dover risistemare i modelli a mano uno per uno.
+        </div>
+        <button onClick={async()=>{
+            setBanner("⏳ Salvataggio disposizione in corso...");
+            try {
+              const esito = await salvaDisposizioneModelli();
+              if(esito.ok) setBanner(`✅ Disposizione salvata: ${esito.totale} modelli.`);
+              else setBanner(`❌ ${esito.errore||"Errore durante il salvataggio."}`);
+            } catch(e){
+              segnalaErrore(e, "Salvataggio disposizione modelli");
+              setBanner("❌ Errore durante il salvataggio. Controlla il Log.");
+            }
+            setTimeout(()=>setBanner(null), 5000);
+          }}
+          style={{width:"100%",background:"#3b82f6",border:"none",borderRadius:10,color:"#fff",
+            padding:"10px 0",fontWeight:800,fontSize:12,cursor:"pointer",marginBottom:8}}>
+          💾 Salva disposizione
+        </button>
+        <button onClick={async()=>{
+            if(!confirm("Ripristinare l'ultima disposizione salvata? L'ordine attuale dei modelli verrà sostituito con quello del backup.")) return;
+            setBanner("⏳ Ripristino disposizione in corso...");
+            try {
+              const esito = await ripristinaDisposizioneModelli();
+              if(esito.ok) setBanner(`✅ Disposizione ripristinata: ${esito.totale} modelli.`);
+              else setBanner(`❌ ${esito.errore||"Nessuna disposizione salvata trovata."}`);
+            } catch(e){
+              segnalaErrore(e, "Ripristino disposizione modelli");
+              setBanner("❌ Errore durante il ripristino. Controlla il Log.");
+            }
+            setTimeout(()=>setBanner(null), 5000);
+          }}
+          style={{width:"100%",background:"none",border:"1px solid #3b82f6",borderRadius:10,color:"#3b82f6",
+            padding:"10px 0",fontWeight:800,fontSize:12,cursor:"pointer"}}>
+          ♻️ Ripristina disposizione
         </button>
       </Sec>
 
@@ -2251,7 +2296,48 @@ export default function VistaModelli({ C }){
     </div>
   );
 
-  return { modelliView, settingsView, dayModal, dbModal };
+  // ── Popup "Vuoi salvare questa disposizione?": appare 30s dopo l'ultima
+  // modifica all'ordine dei modelli (sposta/aggiungi/elimina) se nel
+  // frattempo non è stato premuto "Salva disposizione" a mano. Sì salva lo
+  // snapshot; No annulla solo il timer corrente, in attesa della prossima
+  // modifica — in nessun caso il salvataggio avviene da solo.
+  const salvaDisposizionePopup = showSalvaDisposizionePopup && (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:700,
+      display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div style={{background:T.surface,borderRadius:16,width:"100%",maxWidth:380,padding:20}}>
+        <div style={{fontSize:15,fontWeight:900,color:T.text,marginBottom:8}}>💾 Salvare questa disposizione?</div>
+        <div style={{fontSize:12,color:T.sub,marginBottom:18,lineHeight:1.5}}>
+          Hai spostato, aggiunto o eliminato dei modelli negli ultimi 30
+          secondi. Vuoi salvare l'ordine attuale come backup, così potrai
+          ripristinarlo in caso di problemi?
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={()=>{ annullaTimerSalvaDisposizione(); }}
+            style={{flex:1,background:"none",border:`1px solid ${T.border}`,borderRadius:10,color:T.sub,
+              padding:"10px 0",fontWeight:800,fontSize:12,cursor:"pointer"}}>
+            No, non ora
+          </button>
+          <button onClick={async()=>{
+              setBanner("⏳ Salvataggio disposizione in corso...");
+              try {
+                const esito = await salvaDisposizioneModelli();
+                setBanner(esito.ok ? `✅ Disposizione salvata: ${esito.totale} modelli.` : `❌ ${esito.errore||"Errore durante il salvataggio."}`);
+              } catch(e){
+                segnalaErrore(e, "Salvataggio disposizione modelli");
+                setBanner("❌ Errore durante il salvataggio. Controlla il Log.");
+              }
+              setTimeout(()=>setBanner(null), 5000);
+            }}
+            style={{flex:1,background:"#3b82f6",border:"none",borderRadius:10,color:"#fff",
+              padding:"10px 0",fontWeight:800,fontSize:12,cursor:"pointer"}}>
+            Sì, salva
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  return { modelliView, settingsView, dayModal, dbModal, salvaDisposizionePopup };
 }
 
     
