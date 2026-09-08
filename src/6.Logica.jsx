@@ -416,6 +416,22 @@ export function useAppCore(session){
   const [editModello, setEditModello] = useState(null);
   const [modelForm, setModelForm] = useState({ titolo:"", tempo:"personalizzato", inizio:"", fine:"", coloreCustom:null, posizione:"" });
 
+  // ── Snapshot manuale dell'ordine dei modelli (sortOrder), per proteggersi
+  // da un bug ancora non individuato che a volte rimescola spontaneamente le
+  // posizioni. Il salvataggio NON avviene mai in automatico: solo quando la
+  // persona preme esplicitamente "Salva disposizione" (o conferma il popup
+  // sotto), per non rischiare di congelare uno stato già corrotto dal bug.
+  // Il timer riparte ad ogni modifica (sposta/aggiungi/elimina un modello) e,
+  // se passano 30s senza un salvataggio manuale, chiede conferma con un
+  // popup. Il flag "modifiche non salvate" e l'istante dell'ultima modifica
+  // sono persistiti su localStorage (non solo stato React) così l'avviso
+  // sopravvive alla chiusura dell'app: se lo schermo si spegne o l'app viene
+  // chiusa con il timer ancora pendente, alla riapertura il popup deve
+  // comunque presentarsi.
+  const [showSalvaDisposizionePopup, setShowSalvaDisposizionePopup] = useState(false);
+  const timerSalvaDisposizioneRef = useRef(null);
+  const ULTIMA_MODIFICA_MODELLI_KEY = "ultimaModificaModelliOrdine";
+
   // ── Colori: popup assegnazione modelli + palette colori extra creati dall'utente
   const [showColorAssignPicker, setShowColorAssignPicker] = useState(null); // colore hex attualmente aperto nel popup
   const [colorAssignCalFiltro, setColorAssignCalFiltro] = useState(null); // calendari selezionati per filtrare la lista modelli nel popup colore (null = tutti)
@@ -2991,6 +3007,7 @@ const importsRecenti = useMemo(()=>{
       return nuovoElenco;
     });
     if(prevSnapshot && nuovoElenco) await salvaModifichePosizioni(prevSnapshot, nuovoElenco);
+    segnalaModificaOrdineModelli();
   }
 
   async function reorderModelli(srcId, dstId, calIdFiltro){
@@ -3003,6 +3020,7 @@ const importsRecenti = useMemo(()=>{
     if(prevSnapshot && nuovoElenco){
       await salvaModifichePosizioni(prevSnapshot, nuovoElenco);
     }
+    segnalaModificaOrdineModelli();
   }
 
 
@@ -3091,7 +3109,9 @@ const importsRecenti = useMemo(()=>{
 
   async function saveModello(data){
     try{
-      return await saveModelloInterno(data);
+      const esito = await saveModelloInterno(data);
+      segnalaModificaOrdineModelli();
+      return esito;
     }catch(e){
       segnalaErrore(e, "Salvataggio modello (errore imprevisto)");
       return { ok:false, errore:{message:e?.message||String(e)} };
@@ -3317,7 +3337,9 @@ const importsRecenti = useMemo(()=>{
 
   async function deleteModello(id){
     try{
-      return await deleteModelloInterno(id);
+      const esito = await deleteModelloInterno(id);
+      segnalaModificaOrdineModelli();
+      return esito;
     }catch(e){
       segnalaErrore(e, "Eliminazione modello (errore imprevisto)");
       return { ok:false, errore:{message:e?.message||String(e)} };
@@ -3377,6 +3399,118 @@ const importsRecenti = useMemo(()=>{
     await salvaModifichePosizioni(modelli, modelliRicalcolati);
     return { ok:true, totaleModelli: modelliRicalcolati.length, totaleCalendari: calendarsOrdinati.length };
   }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // SNAPSHOT MANUALE DELL'ORDINE MODELLI (protezione dal bug di rimescolamento)
+  // ══════════════════════════════════════════════════════════════════════
+  // Tabella dedicata e completamente isolata da "modelli": salvataggio SOLO
+  // su azione esplicita della persona, mai automatico. Un upsert per riga
+  // (vincolo unique su user_id+modello_id) così ogni "Salva disposizione"
+  // sovrascrive pulito il backup precedente, senza accumulare storico.
+  async function salvaDisposizioneModelli(){
+    if(!userId) return { ok:false, errore:"Utente non autenticato" };
+    const righe = modelli.map(m=>({
+      user_id:userId, modello_id:m.id, sort_order:m.sortOrder||0, salvato_il:new Date().toISOString()
+    }));
+    try{
+      const { error } = await supabase.from("modelli_sortorder_backup")
+        .upsert(righe, { onConflict:"user_id,modello_id" });
+      if(error){
+        segnalaErroreDb(error, "Salvataggio disposizione modelli");
+        return { ok:false, errore:error.message };
+      }
+      // Snapshot anche in locale: un ripristino deve poter funzionare anche
+      // offline, senza dipendere dalla raggiungibilità di Supabase in quel
+      // momento (stesso principio usato per store.events/calendars).
+      try{
+        localStorage.setItem("disposizioneModelliBackup", JSON.stringify({
+          userId, salvato_il:new Date().toISOString(),
+          voci: modelli.map(m=>({modello_id:m.id, sort_order:m.sortOrder||0}))
+        }));
+      }catch{}
+      annullaTimerSalvaDisposizione();
+      return { ok:true, totale: righe.length };
+    }catch(e){
+      segnalaErroreDb(e, "Salvataggio disposizione modelli");
+      return { ok:false, errore:String(e) };
+    }
+  }
+
+  // ── Ripristina l'ultimo snapshot salvato: rilegge le posizioni salvate e
+  // le riscrive sui modelli CORRENTI. Un modello creato dopo l'ultimo
+  // salvataggio (non presente nello snapshot) mantiene semplicemente il suo
+  // sortOrder attuale; un modello nello snapshot ma nel frattempo eliminato
+  // viene ignorato senza errori.
+  async function ripristinaDisposizioneModelli(){
+    if(!userId) return { ok:false, errore:"Utente non autenticato" };
+    let vociBackup = null;
+    try{
+      const { data, error } = await supabase.from("modelli_sortorder_backup")
+        .select("modello_id, sort_order").eq("user_id", userId);
+      if(error) throw error;
+      if(data && data.length>0) vociBackup = data.map(r=>({modello_id:r.modello_id, sort_order:r.sort_order}));
+    }catch(e){
+      // Supabase irraggiungibile: fallback sull'ultimo snapshot locale,
+      // così il ripristino resta possibile anche offline.
+      try{
+        const raw = localStorage.getItem("disposizioneModelliBackup");
+        if(raw){
+          const parsed = JSON.parse(raw);
+          if(parsed?.userId===userId && Array.isArray(parsed.voci)) vociBackup = parsed.voci;
+        }
+      }catch{}
+    }
+    if(!vociBackup || vociBackup.length===0){
+      return { ok:false, errore:"Nessuna disposizione salvata trovata" };
+    }
+    const sortOrderById = new Map(vociBackup.map(v=>[v.modello_id, v.sort_order]));
+    let modelliRicalcolati;
+    setModelli(prev=>{
+      modelliRicalcolati = prev.map(m=>
+        sortOrderById.has(m.id) ? {...m, sortOrder:sortOrderById.get(m.id)} : m
+      );
+      return modelliRicalcolati;
+    });
+    saveToLocalStorage(store.events, store.calendars, modelliRicalcolati);
+    await salvaModifichePosizioni(modelli, modelliRicalcolati);
+    annullaTimerSalvaDisposizione();
+    return { ok:true, totale: vociBackup.length };
+  }
+
+  // ── Gestione del timer "modifiche non salvate": persistito su localStorage
+  // (non solo stato React) così l'avviso sopravvive alla chiusura dell'app.
+  function segnalaModificaOrdineModelli(){
+    try{ localStorage.setItem(ULTIMA_MODIFICA_MODELLI_KEY, String(Date.now())); }catch{}
+    if(timerSalvaDisposizioneRef.current) clearTimeout(timerSalvaDisposizioneRef.current);
+    timerSalvaDisposizioneRef.current = setTimeout(()=>{
+      setShowSalvaDisposizionePopup(true);
+    }, 30000);
+  }
+  function annullaTimerSalvaDisposizione(){
+    if(timerSalvaDisposizioneRef.current){ clearTimeout(timerSalvaDisposizioneRef.current); timerSalvaDisposizioneRef.current=null; }
+    try{ localStorage.removeItem(ULTIMA_MODIFICA_MODELLI_KEY); }catch{}
+    setShowSalvaDisposizionePopup(false);
+  }
+  // Al mount: se c'era una modifica pendente da prima che l'app si chiudesse
+  // (schermo spento, app terminata), ripristina il timer residuo — se sono
+  // già passati 30s o più, il popup esce subito; altrimenti riparte per il
+  // tempo restante, cosi' la persona ha comunque la finestra di 30s intera
+  // dal momento della modifica per salvare manualmente prima dell'avviso.
+  useEffect(()=>{
+    let raw;
+    try{ raw = localStorage.getItem(ULTIMA_MODIFICA_MODELLI_KEY); }catch{ raw=null; }
+    if(!raw) return;
+    const trascorso = Date.now() - Number(raw);
+    if(trascorso >= 30000){
+      setShowSalvaDisposizionePopup(true);
+    } else {
+      timerSalvaDisposizioneRef.current = setTimeout(()=>{
+        setShowSalvaDisposizionePopup(true);
+      }, 30000 - trascorso);
+    }
+    return ()=>{ if(timerSalvaDisposizioneRef.current) clearTimeout(timerSalvaDisposizioneRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── COLORI: aggiunta/rimozione dalla sezione + assegnazione esclusiva ai modelli
   async function addColoreExtra(hex){
@@ -4976,6 +5110,11 @@ const importsRecenti = useMemo(()=>{
     saveModello,
     deleteModello,
     ripulisciTutteLePosizioniModelli,
+    salvaDisposizioneModelli,
+    ripristinaDisposizioneModelli,
+    showSalvaDisposizionePopup,
+    setShowSalvaDisposizionePopup,
+    annullaTimerSalvaDisposizione,
     addColoreExtra,
     removeColoreExtra,
     updateColoreExtraLabel,
