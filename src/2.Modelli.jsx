@@ -2112,64 +2112,101 @@ export default function VistaModelli({ C }){
 {(()=>{
   // Selettore gruppo report per il SINGOLO EVENTO: escluso per i tre
   // modelli PROTRAZIONE (pagamento/recupero/-recupero), per tutti gli
-  // altri modelli mostra la possibilitÃ  di forzare manualmente il gruppo
-  // (1Â° Turno/2Â° Turno/APP/AUTO) per questo evento, con scelta inline
-  // (niente popup/modale) se applicare solo a questo evento o a tutti gli
-  // eventi di quel modello.
+  // altri modelli replica esattamente la UI del form Modello (Rotazione.jsx):
+  // due sezioni indipendenti, CATEGORIA TURNO (Automatica/1°/2°/Nessuna) e
+  // CATEGORIA APP/AUTO (Automatica/APP/AUTO/Nessuna), ciascuna con il proprio
+  // pulsante "Nessuna categoria per questo asse", con scelta inline (niente
+  // popup/modale) se applicare solo a questo evento o a tutti gli eventi di
+  // quel modello.
   const modelloIdCorrente = form.modelloId || form.evtModelloId || null;
   if(!modelloIdCorrente) return null;
   if(tipoModelloProtrazione(modelloIdCorrente)) return null;
   const modelloCorrente = modelli.find(m=>m.id===modelloIdCorrente);
   if(!modelloCorrente) return null;
 
-  const GRUPPI_EVENTO = [
-    { key:"", label:"Automatico" },
-    { key:"primo", label:"1° Turno" },
-    { key:"secondo", label:"2° Turno" },
-    { key:"app", label:"APP" },
-    { key:"auto", label:"AUTO" },
-  ];
+  const isH24 = form.dur==="allday";
+
+  // Stessi criteri di calcolo dell'automatismo usati in Rotazione.jsx
+  // (categoriaTurnoAutomatica / categoriaAppAutoAutomatica), applicati ai
+  // campi del form evento (tIn/dur/label) invece che ai campi del modello.
+  const catAutoTurno = (()=>{
+    if(isH24 || !form.tIn) return null;
+    const mins = oraInMinuti(form.tIn);
+    if(mins==null) return null;
+    const isPrimo = mins>=360 && mins<705; // 06:00–11:45
+    return isPrimo ? "primo" : "secondo";
+  })();
+  const catAutoAppAuto = (()=>{
+    if(isH24) return null;
+    const titoloEvt = (form.label||"").toUpperCase();
+    return titoloEvt.includes("APP") ? "app" : "auto";
+  })();
+
   const categoriaTurnoAttuale = form.categoriaTurno||"";
   const categoriaAppAutoAttuale = form.categoriaAppAuto||"";
-  const haOverrideAttivo = !!(categoriaTurnoAttuale || categoriaAppAutoAttuale);
+  const turnoVuotoAttivo = !!form.turnoVuoto;
+  const appAutoVuotoAttivo = !!form.appAutoVuoto;
 
-  function selezionaGruppo(key){
-    if(key==="primo"||key==="secondo"){
-      setForm(f=>({...f, categoriaTurno:key}));
-    } else if(key==="app"||key==="auto"){
-      setForm(f=>({...f, categoriaAppAuto:key}));
-    } else {
-      setForm(f=>({...f, categoriaTurno:"", categoriaAppAuto:""}));
-    }
-  }
+  const renderBtn=(campo, catAuto, flagCampo)=>([v,l])=>{
+    const valoreAttuale = form[campo]||"";
+    const selezionato = valoreAttuale===v && !form[flagCampo];
+    const suggeritoDaAuto = !valoreAttuale && v!=="" && v===catAuto && !form[flagCampo];
+    const nuovoValore = (selezionato && v!=="") ? "" : v;
+    return (
+      <button key={v||l} onClick={()=>setForm(f=>({...f,[campo]:nuovoValore,[flagCampo]:false}))}
+        style={{flex:"1 1 30%",padding:"9px 4px",borderRadius:10,cursor:"pointer",
+          fontWeight:700,fontSize:11,
+          border:suggeritoDaAuto?`2px solid ${accent}`:"2px solid transparent",
+          background:selezionato?accent:T.s2,
+          color:selezionato?"#fff":(suggeritoDaAuto?accent:T.sub)}}>{l}</button>
+    );
+  };
+  const renderDeselBtn=(flagCampo, campo)=>{
+    const attivo = !!form[flagCampo];
+    return (
+      <button onClick={()=>setForm(f=>({...f,[flagCampo]:!attivo,[campo]: !attivo ? "" : f[campo]}))}
+        style={{marginTop:6,marginBottom:10,width:"100%",padding:"7px 4px",borderRadius:10,
+          border:attivo?"2px solid #ef4444":"2px solid transparent",cursor:"pointer",
+          fontWeight:700,fontSize:11,
+          background:attivo?"#ef444422":"transparent",
+          color:"#ef4444"}}>
+        {attivo?"✓ Nessuna categoria (riattiva per tornare all'automatismo)":"Nessuna categoria per questo asse"}
+      </button>
+    );
+  };
+
   function applicaATuttiGliEventi(){
-    // "Tutti gli eventi di questo modello": stessa cosa che giÃ  fa il form
+    // "Tutti gli eventi di questo modello": stessa cosa che già fa il form
     // Modello (categoria/categoriaAppAuto sul modello), non un override sul
     // singolo evento. Qui puliamo l'override locale (che avrebbe comunque
-    // prioritÃ  su questo) e mandiamo l'utente a modificare il modello.
-    setForm(f=>({...f, categoriaTurno:"", categoriaAppAuto:""}));
+    // priorità su questo) e mandiamo l'utente a modificare il modello.
+    setForm(f=>({...f, categoriaTurno:"", categoriaAppAuto:"", turnoVuoto:false, appAutoVuoto:false}));
     setScreen("modelli");
   }
 
+  const haOverrideAttivo = !!(categoriaTurnoAttuale || categoriaAppAutoAttuale || turnoVuotoAttivo || appAutoVuotoAttivo);
+
   return (
-    <div style={{marginBottom:10}}>
-      <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:6}}>GRUPPO REPORT (per questo evento)</div>
-      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-        {GRUPPI_EVENTO.map(g=>{
-          const attivo = g.key===""
-            ? !haOverrideAttivo
-            : (categoriaTurnoAttuale===g.key || categoriaAppAutoAttuale===g.key);
-          return (
-            <button key={g.key} onClick={()=>selezionaGruppo(g.key)}
-              style={{padding:"7px 12px",borderRadius:10,cursor:"pointer",
-                fontWeight:700,fontSize:12,border:"2px solid transparent",
-                background:attivo?accent:T.s2,
-                color:attivo?"#fff":T.sub}}>{g.label}</button>
-          );
-        })}
+    <div style={{marginBottom:16}}>
+      <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8}}>CATEGORIA TURNO (per report Turnazione)</div>
+      <div style={{display:"flex",gap:6,marginBottom:10}}>
+        {[["","Automatica"],["primo","1° Turno"],["secondo","2° Turno"]].map(renderBtn("categoriaTurno", catAutoTurno, "turnoVuoto"))}
+      </div>
+      {renderDeselBtn("turnoVuoto","categoriaTurno")}
+      {!isH24 && (
+        <>
+          <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8}}>CATEGORIA APP/AUTO (per report Turnazione)</div>
+          <div style={{display:"flex",gap:6}}>
+            {[["","Automatica"],["app","APP"],["auto","AUTO"]].map(renderBtn("categoriaAppAuto", catAutoAppAuto, "appAutoVuoto"))}
+          </div>
+          {renderDeselBtn("appAutoVuoto","categoriaAppAuto")}
+        </>
+      )}
+      <div style={{fontSize:11,color:T.sub,marginTop:-4,marginBottom:10}}>
+        "Automatica" decide da sola in base a titolo/orario. Scegliendo una categoria qui, questo evento resterà sempre in quel gruppo nel report Turnazione.
       </div>
       {haOverrideAttivo && (
-        <div style={{marginTop:8,display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+        <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
           <span style={{fontSize:11,color:T.sub}}>Applica a:</span>
           <span style={{fontSize:11,fontWeight:800,color:accent,
             background:accent+"22",borderRadius:8,padding:"4px 8px"}}>
