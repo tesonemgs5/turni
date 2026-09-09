@@ -695,6 +695,7 @@ export function useAppCore(session){
             protPagFine: e.prot_pag_fine||"", protRecFine: e.prot_rec_fine||"",
             protMenoRecIn: e.prot_meno_rec_in||"", protMenoRecOut: e.prot_meno_rec_out||"",
             categoriaTurno: e.categoria_turno||"", categoriaAppAuto: e.categoria_app_auto||"",
+            reportOverrides: e.report_overrides||{},
             importId: e.import_id||null,
           });
         });
@@ -1949,6 +1950,11 @@ export function useAppCore(session){
       prot_pag_fine: formEffettivo.protPagFine||null, prot_rec_fine: formEffettivo.protRecFine||null,
       prot_meno_rec_in: formEffettivo.protMenoRecIn||null, prot_meno_rec_out: formEffettivo.protMenoRecOut||null,
       categoria_turno: formEffettivo.categoriaTurno||null, categoria_app_auto: formEffettivo.categoriaAppAuto||null,
+      // Override "solo questo evento" per l'inclusione/esclusione dai report
+      // CATEGORIA REPORT (Turnazione, Piano Incentivante, Indennità, ecc.):
+      // { [reportId]: "incluso"|"escluso" }. Ha priorità massima, sopra la
+      // configurazione del modello nel report.
+      report_overrides: (formEffettivo.reportOverrides && Object.keys(formEffettivo.reportOverrides).length>0) ? formEffettivo.reportOverrides : null,
       // Promemoria di ingresso/uscita realmente digitato dall'utente, separato
       // dagli orari ufficiali dell'evento (time_in/time_out, sempre uguali al
       // modello quando c'è un modello collegato). Serve solo per essere
@@ -1969,6 +1975,7 @@ export function useAppCore(session){
       protPagFine: payload.prot_pag_fine||"", protRecFine: payload.prot_rec_fine||"",
       protMenoRecIn: payload.prot_meno_rec_in||"", protMenoRecOut: payload.prot_meno_rec_out||"",
       categoriaTurno: payload.categoria_turno||"", categoriaAppAuto: payload.categoria_app_auto||"",
+      reportOverrides: payload.report_overrides||{},
     };
     if(!formEffettivo.modelloId && formEffettivo.label) registraValoreAutocomplete("titolo", label);
     if(formEffettivo.auto) registraValoreAutocomplete("auto", formEffettivo.auto);
@@ -2076,6 +2083,9 @@ export function useAppCore(session){
       prot_meno_rec_out: formEffettivo.protMenoRecOut||null,
       categoria_turno: formEffettivo.categoriaTurno||null,
       categoria_app_auto: formEffettivo.categoriaAppAuto||null,
+      // Vedi commento gemello in saveEvt: override "solo questo evento" per
+      // CATEGORIA REPORT.
+      report_overrides: (formEffettivo.reportOverrides && Object.keys(formEffettivo.reportOverrides).length>0) ? formEffettivo.reportOverrides : null,
       // Vedi commento gemello in saveEvt: promemoria separato dagli orari
       // ufficiali, per sopravvivere al refresh senza alterare il turno.
       time_in_note: formEffettivo.modelloId||formEffettivo.evtModelloId ? (formEffettivo.tIn||null) : null,
@@ -2099,6 +2109,7 @@ export function useAppCore(session){
       protPagFine: formEffettivo.protPagFine||"", protRecFine: formEffettivo.protRecFine||"",
       protMenoRecIn: formEffettivo.protMenoRecIn||"", protMenoRecOut: formEffettivo.protMenoRecOut||"",
       categoriaTurno: formEffettivo.categoriaTurno||"", categoriaAppAuto: formEffettivo.categoriaAppAuto||"",
+      reportOverrides: formEffettivo.reportOverrides||{},
     };
     const nuovoStore = withEventoAggiornato(store, dayKey, editCalId, formEffettivo.editId, patch);
     saveToLocalStorage(nuovoStore.events, nuovoStore.calendars, modelli);
@@ -4252,7 +4263,7 @@ const importsRecenti = useMemo(()=>{
     return testo.split(/\r?\n|,/).map(s=>s.trim()).filter(Boolean);
   }
 
-  function computeConteggioForReport(cfg){
+  function computeConteggioForReport(cfg, reportId){
     const {from, to} = getReportRange();
     const result = { totale:0 };
     const perModello = {};
@@ -4269,7 +4280,11 @@ const importsRecenti = useMemo(()=>{
       for(const [cid, evts] of Object.entries(calMap)){
         if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
         for(const e of evts){
-          if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
+          // Override "solo questo evento" su CATEGORIA REPORT: priorità massima,
+          // sopra la whitelist modelliInclusi decisa a livello di modello.
+          const overrideReportEvento = reportId ? (e.reportOverrides||{})[reportId] : null;
+          if(overrideReportEvento==="escluso") continue;
+          if(overrideReportEvento!=="incluso" && modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
           const collegList = splitColleghi(e.collega);
           if(filtraCollega && !collegList.some(c=>c.toUpperCase().includes(filtraCollega))) continue;
 
@@ -4474,7 +4489,7 @@ const importsRecenti = useMemo(()=>{
     return { perEvento, creditoResiduoTotale };
   }
 
-  function computeTurnazioneForReport(cfg){
+  function computeTurnazioneForReport(cfg, reportId){
     const {from, to} = getReportRange();
     const esclusi = cfg?.modelliEsclusi || [];
     const aggiunti = cfg?.modelliAggiunti || [];
@@ -4491,7 +4506,11 @@ const importsRecenti = useMemo(()=>{
       for(const [cid, evts] of Object.entries(calMap)){
         if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
         for(const e of evts){
-          if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
+          // Override "solo questo evento" su CATEGORIA REPORT: priorità massima,
+          // sopra l'inclusione/esclusione decisa a livello di modello.
+          const overrideReportEvento = reportId ? (e.reportOverrides||{})[reportId] : null;
+          if(overrideReportEvento==="escluso") continue;
+          if(overrideReportEvento!=="incluso" && modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
           const collegList = splitColleghi(e.collega);
           if(filtraCollega && !collegList.some(c=>c.toUpperCase().includes(filtraCollega))) continue;
           result.totale++;
@@ -4587,7 +4606,7 @@ const importsRecenti = useMemo(()=>{
   // delle 4 fasce, spezzando ogni turno tra diurno e notturno quando
   // attraversa le 06:00 o le 22:00. "Festivo" e "Festivo notturno" sono le
   // stesse fasce orarie ma applicate nei giorni festivi (isFestivo).
-  function computeIndennita(modelliInclusi=[]){
+  function computeIndennita(modelliInclusi=[], reportId=null){
     const {from, to} = getReportRange();
     const totaliMin = { diurno:0, notturno:0, festivo:0, notturno_festivo:0 };
     for(const [dateKey, calMap] of Object.entries(store.events)){
@@ -4596,7 +4615,10 @@ const importsRecenti = useMemo(()=>{
       for(const [cid, evts] of Object.entries(calMap)){
         if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
         for(const e of evts){
-          if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
+          // Override "solo questo evento" su CATEGORIA REPORT: priorità massima.
+          const overrideReportEvento = reportId ? (e.reportOverrides||{})[reportId] : null;
+          if(overrideReportEvento==="escluso") continue;
+          if(overrideReportEvento!=="incluso" && modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
           if(e.allDay) continue;
           if(!e.tIn||!e.tOut) continue;
           const {diurno, notturno} = spezzaDiurnoNotturno(e.tIn, e.tOut);
