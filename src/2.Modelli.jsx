@@ -122,6 +122,21 @@ export default function VistaModelli({ C }){
     setPrevGrid, REPORT_TEMPLATES, calcolaOrdineModelli, updateFascia, session,
   } = C;
 
+  // Qualsiasi menu a tendina espandibile aperto nel form Modifica Evento
+  // (es. le righe di CATEGORIA REPORT) deve chiudersi non appena si cambia
+  // schermata: i 4 tasti della navigazione in basso (Calendario/Report/
+  // Modelli/Impostazioni) hanno sempre la precedenza su un menu rimasto
+  // aperto, quindi basta reagire a ogni cambio di "screen".
+  useEffect(()=>{
+    setReportEspansoEvento(null);
+  }, [screen]);
+  // Stessa chiusura anche quando si passa da un evento all'altro o si chiude
+  // il form (form diventa null / cambia editId): evita che la tendina
+  // resti aperta "appesa" a un evento che non è più quello in modifica.
+  useEffect(()=>{
+    setReportEspansoEvento(null);
+  }, [form?.editId, !form]);
+
   const modelliView = (
     <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
       {(()=>{
@@ -2169,7 +2184,7 @@ export default function VistaModelli({ C }){
     return (
       <button onClick={()=>setForm(f=>({...f,[flagCampo]:!attivo,[campo]: !attivo ? "" : f[campo]}))}
         style={{marginTop:6,marginBottom:10,width:"100%",padding:"7px 4px",borderRadius:10,
-          border:attivo?"2px solid #ef4444":"2px solid transparent",cursor:"pointer",
+          border:attivo?"2px solid #ef4444":"1.5px dashed #ef444488",cursor:"pointer",
           fontWeight:700,fontSize:11,
           background:attivo?"#ef444422":"transparent",
           color:"#ef4444"}}>
