@@ -40,12 +40,16 @@ export default defineConfig({
         background_color: '#0f172a',
         display: 'standalone',
         orientation: 'portrait',
-        scope: '/',
-        start_url: '/',
+        // Relativi come 'base', non assoluti: con scope/start_url '/' il
+        // browser risolve le icone dalla root del dominio, il che rompe la
+        // risoluzione quando l'app non è servita esattamente dalla root
+        // (o gira via file:// in Electron). './' allinea manifest e app.
+        scope: './',
+        start_url: './',
         icons: [
-          { src: 'icons/icon-192.svg', sizes: '192x192', type: 'image/svg+xml' },
-          { src: 'icons/icon-512.svg', sizes: '512x512', type: 'image/svg+xml' },
-          { src: 'icons/icon-512.svg', sizes: '512x512', type: 'image/svg+xml', purpose: 'any maskable' }
+          { src: './icons/icon-192.svg', sizes: '192x192', type: 'image/svg+xml' },
+          { src: './icons/icon-512.svg', sizes: '512x512', type: 'image/svg+xml' },
+          { src: './icons/icon-512.svg', sizes: '512x512', type: 'image/svg+xml', purpose: 'any maskable' }
         ]
       },
       workbox: {
