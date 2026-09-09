@@ -63,6 +63,9 @@ export default function VistaModelli({ C }){
   // pulsanti in alto, quindi qui l'icona stessa cambia temporaneamente
   // (💾 -> ✅ o ❌) per un riscontro impossibile da non notare.
   const [statoSalvaDisposizione, setStatoSalvaDisposizione] = useState("idle"); // idle | salvando | ok | errore
+  // Quale report è espanso nella tendina "CATEGORIA REPORT (per questo
+  // evento)" del form Modifica Evento (null = tutte chiuse).
+  const [reportEspansoEvento, setReportEspansoEvento] = useState(null);
   const {
     today, tipoModelloProtrazione, computeStornoRecupero, computeStornoPI, tipoModelloPI, store, setStore, loading, setLoading, year,
     ripristinaModelliMancanti, ripristinoInCorso, setRipristinoInCorso, ripristinoEsito, setRipristinoEsito,
@@ -2219,6 +2222,146 @@ export default function VistaModelli({ C }){
           </button>
         </div>
       )}
+    </div>
+  );
+})()}
+
+{(()=>{
+  // CATEGORIA REPORT per il SINGOLO EVENTO, come richiesto: stessa lista di
+  // report vista nel form Modello (Rotazione.jsx: "CATEGORIA REPORT" con
+  // Incluso/Escluso per report), ma qui presentata come un menu a tendina
+  // per report, con la scelta inline "Applica a: solo questo evento / tutti
+  // gli eventi di questo modello" — identica nello spirito a quella già
+  // presente sopra per TURNO e APP/AUTO. L'override "solo questo evento" è
+  // salvato su form.reportOverrides = { [reportId]: "incluso"|"escluso" };
+  // "tutti gli eventi" modifica invece la configurazione del modello
+  // (stessa logica di updateConteggioConfig già usata in Rotazione.jsx) e
+  // riporta l'utente alla schermata Modelli.
+  const modelloIdCorrente = form.modelloId || form.evtModelloId || null;
+  if(!modelloIdCorrente) return null;
+  if(tipoModelloProtrazione(modelloIdCorrente)) return null;
+  const modelloCorrente = modelli.find(m=>m.id===modelloIdCorrente);
+  if(!modelloCorrente) return null;
+  if(!activeReports || activeReports.length===0) return null;
+
+  const reportOverrides = form.reportOverrides || {};
+
+  function statoInclusioneModello(r){
+    const cfg = getConteggioConfig(r.id, r.type);
+    if(r.type==="turnazione"){
+      const esclusi = cfg.modelliEsclusi||[];
+      const aggiunti = cfg.modelliAggiunti||[];
+      const isDefault = isModelloTurnazioneDefault(modelloCorrente);
+      return (isDefault && !esclusi.includes(modelloCorrente.id)) || aggiunti.includes(modelloCorrente.id);
+    }
+    const whitelist = cfg.modelliInclusi||[];
+    return whitelist.length===0 || whitelist.includes(modelloCorrente.id);
+  }
+
+  function setOverrideEvento(reportId, valore){
+    // valore: "incluso" | "escluso" | null (torna al comportamento del modello)
+    setForm(f=>{
+      const next = {...(f.reportOverrides||{})};
+      if(valore) next[reportId]=valore; else delete next[reportId];
+      return {...f, reportOverrides:next};
+    });
+  }
+
+  function applicaATuttiGliEventi(reportId, valore){
+    // Stessa azione di "toggle" già usata in Rotazione.jsx per includere/
+    // escludere un intero modello da un report: qui applicata dal contesto
+    // del singolo evento, quindi puliamo prima l'eventuale override locale
+    // (avrebbe comunque priorità su questa scelta) e mandiamo l'utente al
+    // modello per la conferma visiva.
+    const r = activeReports.find(rr=>rr.id===reportId);
+    if(!r) return;
+    const cfg = getConteggioConfig(r.id, r.type);
+    const incluso = valore==="incluso";
+    if(r.type==="turnazione"){
+      const esclusi = cfg.modelliEsclusi||[];
+      const aggiunti = cfg.modelliAggiunti||[];
+      const isDefault = isModelloTurnazioneDefault(modelloCorrente);
+      if(incluso){
+        if(isDefault) updateConteggioConfig(r.id, {...cfg, modelliEsclusi: esclusi.filter(id=>id!==modelloCorrente.id)});
+        else updateConteggioConfig(r.id, {...cfg, modelliAggiunti:[...new Set([...aggiunti, modelloCorrente.id])]});
+      } else {
+        if(isDefault) updateConteggioConfig(r.id, {...cfg, modelliEsclusi:[...new Set([...esclusi, modelloCorrente.id])]});
+        else updateConteggioConfig(r.id, {...cfg, modelliAggiunti: aggiunti.filter(id=>id!==modelloCorrente.id)});
+      }
+    } else {
+      const whitelist = cfg.modelliInclusi||[];
+      if(incluso){
+        const nuova = whitelist.length===0
+          ? modelli.filter(mm=>mm.id!==modelloCorrente.id).map(mm=>mm.id)
+          : whitelist.filter(id=>id!==modelloCorrente.id);
+        updateConteggioConfig(r.id, {...cfg, modelliInclusi:nuova});
+      } else {
+        updateConteggioConfig(r.id, {...cfg, modelliInclusi:[...new Set([...whitelist, modelloCorrente.id])]});
+      }
+    }
+    setOverrideEvento(reportId, null);
+    setScreen("modelli");
+  }
+
+  return (
+    <div style={{marginBottom:16}}>
+      <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8}}>CATEGORIA REPORT (per questo evento)</div>
+      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+        {activeReports.map(r=>{
+          const overrideAttuale = reportOverrides[r.id]||"";
+          const inclusoDalModello = statoInclusioneModello(r);
+          const inclusoEffettivo = overrideAttuale ? overrideAttuale==="incluso" : inclusoDalModello;
+          const espanso = reportEspansoEvento===r.id;
+          return (
+            <div key={r.id} style={{background:inclusoEffettivo?accent+"1f":T.s2,borderRadius:10,overflow:"hidden"}}>
+              <button onClick={()=>setReportEspansoEvento(espanso?null:r.id)}
+                style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+                  width:"100%",padding:"9px 12px",borderRadius:0,border:"none",cursor:"pointer",
+                  background:"transparent",textAlign:"left"}}>
+                <span style={{fontSize:13,fontWeight:700,color:T.text}}>{r.label}</span>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:11,fontWeight:800,color:inclusoEffettivo?accent:T.sub}}>
+                    {inclusoEffettivo?"✓ Incluso":"Escluso"}
+                  </span>
+                  <span style={{fontSize:11,color:T.sub,padding:"2px 4px"}}>{espanso?"▲":"▼"}</span>
+                </div>
+              </button>
+              {espanso && (
+                <div style={{padding:"0 12px 12px",display:"flex",flexDirection:"column",gap:8}}>
+                  <div style={{display:"flex",gap:6}}>
+                    {[["incluso","Incluso"],["escluso","Escluso"]].map(([v,l])=>(
+                      <button key={v} onClick={()=>setOverrideEvento(r.id, overrideAttuale===v ? null : v)}
+                        style={{flex:1,padding:"7px 4px",borderRadius:8,cursor:"pointer",
+                          fontWeight:700,fontSize:11,border:"none",
+                          background:overrideAttuale===v?accent:T.surface,
+                          color:overrideAttuale===v?"#fff":T.sub}}>{l}</button>
+                    ))}
+                  </div>
+                  {!overrideAttuale && (
+                    <div style={{fontSize:10,color:T.sub}}>
+                      Segue il modello: attualmente {inclusoDalModello?"incluso":"escluso"} in questo report.
+                    </div>
+                  )}
+                  {overrideAttuale && (
+                    <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+                      <span style={{fontSize:11,color:T.sub}}>Applica a:</span>
+                      <span style={{fontSize:11,fontWeight:800,color:accent,
+                        background:accent+"22",borderRadius:8,padding:"4px 8px"}}>
+                        Solo questo evento (attivo)
+                      </span>
+                      <button onClick={()=>applicaATuttiGliEventi(r.id, overrideAttuale)}
+                        style={{fontSize:11,fontWeight:700,color:T.sub,background:"none",
+                          border:`1px solid ${T.border}`,borderRadius:8,padding:"4px 8px",cursor:"pointer"}}>
+                        Tutti gli eventi di "{modelloCorrente.titolo}" →
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 })()}

@@ -454,7 +454,7 @@ export default function VistaCalendario({ C }){
     const cfg = getConteggioConfig(r.id, r.type);
     // "ore_turno" somma minuti (computeMinutiForReport), tutti gli altri
     // tipi contano eventi (computeConteggioForReport) come prima.
-    const data = r.type==="ore_turno" ? computeMinutiForReport(cfg) : computeConteggioForReport(cfg);
+    const data = r.type==="ore_turno" ? computeMinutiForReport(cfg) : computeConteggioForReport(cfg, r.id);
     const pct = totaleTurni>0 ? Math.round((data.totale/totaleTurni)*100) : 0;
 
     return (
@@ -520,7 +520,7 @@ export default function VistaCalendario({ C }){
                 ? modelliOrdinati.filter(m=>reportCalIds.includes(m.calendarId||mainCalId))
                 : modelliOrdinati;
               return (
-                <TurnazioneConfigCard T={T} r={r} cfg={cfg} data={computeTurnazioneForReport(cfg)}
+                <TurnazioneConfigCard T={T} r={r} cfg={cfg} data={computeTurnazioneForReport(cfg, r.id)}
                   modelli={modelliFiltratiPerCal} modelliOrdinati={modelliOrdinatiFiltratiPerCal} accent={accent} fasceAutomatiche={fasceAutomatiche}
                   onRename={label=>renameReport(r.id, label)}
                   onUpdateCfg={newCfg=>updateConteggioConfig(r.id, newCfg)}/>
@@ -528,7 +528,7 @@ export default function VistaCalendario({ C }){
             })()}
             {r.type==="indennita" && (
               <IndennitaConfig T={T} r={r} values={indennita} setValues={setIndennita}
-                calc={computeIndennita(cfg.modelliInclusi||[])} onSave={()=>saveSettings({indennita})}
+                calc={computeIndennita(cfg.modelliInclusi||[], r.id)} onSave={()=>saveSettings({indennita})}
                 onRename={label=>renameReport(r.id, label)}
                 cfg={cfg} onUpdateCfg={newCfg=>updateConteggioConfig(r.id, newCfg)} accent={accent}
                 viabilitaCalc={computeViabilita(cfg.modelliInclusi||[])}
@@ -544,7 +544,7 @@ export default function VistaCalendario({ C }){
             )}
             {r.type==="straordinari" && <StraordinariView T={T} data={data} store={store} reportRange={{from:range.from,to:range.to}} modelliInclusi={cfg.modelliInclusi||[]} reportCalIds={reportCalIds}/>}
             {r.type==="guadagni" && (
-              <GuadagniView T={T} indennita={indennita} calc={computeIndennita(cfg.modelliInclusi||[])}/>
+              <GuadagniView T={T} indennita={indennita} calc={computeIndennita(cfg.modelliInclusi||[], r.id)}/>
             )}
           </div>
         )}
