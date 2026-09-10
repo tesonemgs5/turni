@@ -8,13 +8,13 @@ import {
   loadFromLocalStorage, clearLocalStorageCache, resolveFestivitaCatalogo,
   leggiLogErrori, leggiErroriSilenziati, impostaSilenziamentoErrore,
   cancellaLogErrori, segnalaErrore,
-} from "./4.Rotazione";
+} from "./04-Rotazione";
 import { CalBadge, SmartTimeInput, AutocompleteInput, ColorPickerModal,
   ModaleErroriMultipli, FasceExpand, ConteggioConfigCard, TurnazioneConfigCard,
-  IndennitaConfig, OrePerTurnoView, StraordinariView, GuadagniView, Sec, SecCollapsible } from "./5.Comuni";
+  IndennitaConfig, OrePerTurnoView, StraordinariView, GuadagniView, Sec, SecCollapsible } from "./05-Comuni";
 import { ModelloCard, ModelForm, RotazioneCard, RotazioneForm, ModelloSelector,
-  GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView } from "./4.Rotazione";
-import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./7.Turni";
+  GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView } from "./04-Rotazione";
+import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
 
 // Riga della lista Colori: mostra il pallino colore, etichetta, sottotitolo,
 // contatore di modelli che lo usano e (se applicabile) un pulsante per rimuoverlo.
