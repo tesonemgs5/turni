@@ -506,7 +506,7 @@ function AppInterno({ session }){
                   fontWeight:800,fontSize:12,cursor:"pointer"}}>Fine</button>
             </div>
           )}
-          <div style={{flex:1,overflowY:"auto",padding:12,background:T.bg}}>
+          <div style={{flex:1,overflowY:"auto",padding:"12px 12px calc(12px + env(safe-area-inset-bottom, 0px) + 70px)",background:T.bg}}>
             {modelli.length===0&&(
               <div style={{textAlign:"center",padding:"40px 24px",color:T.sub}}>
                 <div style={{fontSize:36,marginBottom:10}}>📋</div>
