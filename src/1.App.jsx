@@ -277,7 +277,8 @@ function AppInterno({ session }){
           // quello attuale in memoria, non viene azzerato né scartato — se
           // l'utente non ha ancora premuto "Salva" le modifiche restano solo
           // locali fino al salvataggio, esattamente come premendo la ✕.
-          if(form){ setDayKey(null); setForm(null); setPal(null); }
+          if(dayKey){ setDayKey(null); setForm(null); setPal(null); }
+          if(showDbModal) setShowDbModal(false);
         }} />
       {banner&&<div style={{position:"fixed",bottom:20,left:"50%",transform:"translateX(-50%)",
         background:"rgba(0,0,0,0.75)",color:"#fff",padding:"6px 16px",
