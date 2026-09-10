@@ -4889,12 +4889,17 @@ const importsRecenti = useMemo(()=>{
   //  1) subito lo stato locale (store), su tutte le date/calendari;
   //  2) Supabase in blocco (un unico UPDATE con .in("id", [...])).
   // patchEvento: oggetto di patch in formato "locale" (es. {categoriaTurno,
-  // turnoVuoto,...} oppure {reportOverrides}), fuso sopra ai campi esistenti
-  // di ogni evento trovato. patchDb: stesso contenuto ma con i nomi colonna
-  // Supabase (snake_case), passato a supabase.update(...).
+  // turnoVuoto,...}), fuso sopra ai campi esistenti di ogni evento trovato;
+  // oppure una FUNZIONE (eventoEsistente => patchParziale) quando la patch
+  // dipende da cosa l'evento aveva già (es. rimuovere solo la chiave di UN
+  // report da reportOverrides senza cancellare gli override degli altri
+  // report già presenti su quell'evento). patchDb: stesso concetto, in
+  // nomi colonna Supabase — se è una funzione riceve lo stesso evento
+  // "nuovo" (già con patchEvento applicata) per costruire il payload.
   async function applicaReportOverrideATuttiGliEventi(nomeLabel, tInMatch, tOutMatch, patchEvento, patchDb){
     if(!userId) return { idsAggiornati: [] };
     const idsAggiornati = [];
+    const dbPayloadPerId = {};
     setStore(prev=>{
       const eventsBase = prev?.events||{};
       const nextEvents = {};
@@ -4904,7 +4909,10 @@ const importsRecenti = useMemo(()=>{
           nextCalMap[cid] = evts.map(e=>{
             if(e.label===nomeLabel && (e.tIn||"")===(tInMatch||"") && (e.tOut||"")===(tOutMatch||"")){
               idsAggiornati.push(e.id);
-              return {...e, ...patchEvento};
+              const patch = typeof patchEvento==="function" ? patchEvento(e) : patchEvento;
+              const nuovoEvt = {...e, ...patch};
+              dbPayloadPerId[e.id] = typeof patchDb==="function" ? patchDb(nuovoEvt) : patchDb;
+              return nuovoEvt;
             }
             return e;
           });
@@ -4916,8 +4924,19 @@ const importsRecenti = useMemo(()=>{
       return ns;
     });
     if(idsAggiornati.length>0){
-      const { error } = await supabase.from("events").update(patchDb).in("id", idsAggiornati).eq("user_id", userId);
-      if(error) segnalaErrore(error, `Aggiornamento di massa (${idsAggiornati.length} eventi "${nomeLabel}" ${tInMatch}-${tOutMatch})`);
+      if(typeof patchDb==="function"){
+        // Payload diverso per evento (dipende da cosa l'evento aveva già):
+        // un update separato per ciascuno, tutti in parallelo.
+        const risultati = await Promise.all(idsAggiornati.map(id=>
+          supabase.from("events").update(dbPayloadPerId[id]).eq("id", id).eq("user_id", userId)
+        ));
+        const conErrore = risultati.find(r=>r.error);
+        if(conErrore) segnalaErrore(conErrore.error, `Aggiornamento di massa (${idsAggiornati.length} eventi "${nomeLabel}" ${tInMatch}-${tOutMatch})`);
+      } else {
+        // Stesso payload per tutti: un unico UPDATE in blocco.
+        const { error } = await supabase.from("events").update(patchDb).in("id", idsAggiornati).eq("user_id", userId);
+        if(error) segnalaErrore(error, `Aggiornamento di massa (${idsAggiornati.length} eventi "${nomeLabel}" ${tInMatch}-${tOutMatch})`);
+      }
     }
     return { idsAggiornati };
   }
