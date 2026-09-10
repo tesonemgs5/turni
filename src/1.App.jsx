@@ -67,7 +67,7 @@ class ErrorBoundary extends Component {
 // screen/setScreen/T/accent da App e si ridisegna da sola quando
 // cambiano — niente più window.__navGo né getElementById.
 // ═══════════════════════════════════════════════════════════════
-function BottomNav({ screen, setScreen, T, accent }) {
+function BottomNav({ screen, setScreen, T, accent, onBeforeNavigate }) {
   const NAV_ITEMS = [
     { id: "cal", icon: "▦", label: "Calendario" },
     { id: "report", icon: "📊", label: "Report" },
@@ -83,7 +83,7 @@ function BottomNav({ screen, setScreen, T, accent }) {
       {NAV_ITEMS.map(item => {
         const isActive = screen === item.id;
         return (
-          <button key={item.id} onClick={() => setScreen(item.id)}
+          <button key={item.id} onClick={() => { onBeforeNavigate?.(); setScreen(item.id); }}
             aria-label={item.label} aria-current={isActive ? "page" : undefined}
             style={{
               flex: 1, background: "none", border: "none", padding: "5px 0",
@@ -267,7 +267,18 @@ function AppInterno({ session }){
         {screen==="modelli"  && modelliView}
         {screen==="settings" && settingsView}
       </div>
-      <BottomNav screen={screen} setScreen={setScreen} T={T} accent={accent} />
+      <BottomNav screen={screen} setScreen={setScreen} T={T} accent={accent}
+        onBeforeNavigate={()=>{
+          // I 4 tasti della barra di navigazione hanno sempre la precedenza:
+          // se il form Modifica Evento (o qualsiasi popup/finestra a esso
+          // legato) è aperto, lo si chiude prima di cambiare schermata.
+          // "Chiudere" qui significa solo nascondere la UI: lo stato del
+          // form (comprese le scelte già fatte su categorie/report) resta
+          // quello attuale in memoria, non viene azzerato né scartato — se
+          // l'utente non ha ancora premuto "Salva" le modifiche restano solo
+          // locali fino al salvataggio, esattamente come premendo la ✕.
+          if(form){ setDayKey(null); setForm(null); setPal(null); }
+        }} />
       {banner&&<div style={{position:"fixed",bottom:20,left:"50%",transform:"translateX(-50%)",
         background:"rgba(0,0,0,0.75)",color:"#fff",padding:"6px 16px",
         borderRadius:20,fontSize:12,zIndex:9999,pointerEvents:"none"}}>{banner}</div>}

@@ -66,6 +66,13 @@ export default function VistaModelli({ C }){
   // Quale report è espanso nella tendina "CATEGORIA REPORT (per questo
   // evento)" del form Modifica Evento (null = tutte chiuse).
   const [reportEspansoEvento, setReportEspansoEvento] = useState(null);
+  // Se l'intera lista "CATEGORIA REPORT" è mostrata o nascosta (freccia
+  // accanto al titolo della sezione, livello 1 della tendina annidata).
+  const [categoriaReportListaAperta, setCategoriaReportListaAperta] = useState(false);
+  // Quale sottomenu (dentro un report già espanso) è a sua volta espanso
+  // per mostrare i suoi gruppi (es. Piano Incentivante -> "1 turno"/"2
+  // turni"): { [reportId]: sottomenuId }, livello 3 della tendina annidata.
+  const [sottomenuEspansoEvento, setSottomenuEspansoEvento] = useState({});
   const {
     today, tipoModelloProtrazione, computeStornoRecupero, computeStornoPI, tipoModelloPI, store, setStore, loading, setLoading, year,
     ripristinaModelliMancanti, ripristinoInCorso, setRipristinoInCorso, ripristinoEsito, setRipristinoEsito,
@@ -118,7 +125,8 @@ export default function VistaModelli({ C }){
     inserisciEventoGenerico, normOrarioImport, trovaModelloPerTitoloOrario, isRigaProtrazione, tipoProtrazione, importaTurniPdfJson,
     delTuttiEventiImport, importaEventiSingoli, applyRotazione, getReportRange, splitColleghi, computeConteggioForReport,
     computeTurnazioneForReport, computeConteggio, computeIndennita, activeReports, inactiveTypes, addReport,
-    removeReport, renameReport, moveReport, getConteggioConfig, updateConteggioConfig, totaleTurni,
+    removeReport, renameReport, moveReport, getConteggioConfig, updateConteggioConfig,
+    applicaReportOverrideATuttiGliEventi, totaleTurni,
     setPrevGrid, REPORT_TEMPLATES, calcolaOrdineModelli, updateFascia, session,
   } = C;
 
@@ -129,12 +137,16 @@ export default function VistaModelli({ C }){
   // aperto, quindi basta reagire a ogni cambio di "screen".
   useEffect(()=>{
     setReportEspansoEvento(null);
+    setCategoriaReportListaAperta(false);
+    setSottomenuEspansoEvento({});
   }, [screen]);
   // Stessa chiusura anche quando si passa da un evento all'altro o si chiude
   // il form (form diventa null / cambia editId): evita che la tendina
   // resti aperta "appesa" a un evento che non è più quello in modifica.
   useEffect(()=>{
     setReportEspansoEvento(null);
+    setCategoriaReportListaAperta(false);
+    setSottomenuEspansoEvento({});
   }, [form?.editId, !form]);
 
   const modelliView = (
@@ -2194,11 +2206,30 @@ export default function VistaModelli({ C }){
   };
 
   function applicaATuttiGliEventi(){
-    // "Tutti gli eventi di questo modello": stessa cosa che già fa il form
-    // Modello (categoria/categoriaAppAuto sul modello), non un override sul
-    // singolo evento. Qui puliamo l'override locale (che avrebbe comunque
-    // priorità su questo) e mandiamo l'utente a modificare il modello.
-    setForm(f=>({...f, categoriaTurno:"", categoriaAppAuto:"", turnoVuoto:false, appAutoVuoto:false}));
+    // "Tutti gli eventi di questo modello", come richiesto: il match per
+    // trovare quali eventi coinvolgere è nome (label) + orario (tIn/tOut)
+    // identici a questo evento — non solo "stesso modello collegato".
+    // Applichiamo quindi la scelta attuale (categoriaTurno/categoriaAppAuto/
+    // turnoVuoto/appAutoVuoto) sia al modello (comportamento di default per
+    // i futuri eventi creati da esso) sia, retroattivamente, a tutti gli
+    // eventi già esistenti che matchano nome+orario.
+    const patchLocale = {
+      categoriaTurno: form.categoriaTurno||"", categoriaAppAuto: form.categoriaAppAuto||"",
+      turnoVuoto: !!form.turnoVuoto, appAutoVuoto: !!form.appAutoVuoto,
+    };
+    const patchDb = {
+      categoria_turno: form.categoriaTurno||null, categoria_app_auto: form.categoriaAppAuto||null,
+      // turnoVuoto/appAutoVuoto non hanno ancora una colonna dedicata: li
+      // rappresentiamo lato DB come categoria vuota + un marcatore booleano.
+      turno_vuoto: !!form.turnoVuoto, app_auto_vuoto: !!form.appAutoVuoto,
+    };
+    applicaReportOverrideATuttiGliEventi(form.label||"", form.tIn||"", form.tOut||"", patchLocale, patchDb);
+    // Sul modello resta la config di default per i nuovi eventi futuri
+    // (stesso salvataggio, con propagazione e persistenza, usato dal form
+    // Modello in Rotazione.jsx).
+    saveModello({...modelloCorrente,
+      categoria: form.categoriaTurno||"", categoriaAppAuto: form.categoriaAppAuto||"",
+      turnoVuoto: !!form.turnoVuoto, appAutoVuoto: !!form.appAutoVuoto});
     setScreen("modelli");
   }
 
@@ -2242,16 +2273,19 @@ export default function VistaModelli({ C }){
 })()}
 
 {(()=>{
-  // CATEGORIA REPORT per il SINGOLO EVENTO, come richiesto: stessa lista di
-  // report vista nel form Modello (Rotazione.jsx: "CATEGORIA REPORT" con
-  // Incluso/Escluso per report), ma qui presentata come un menu a tendina
-  // per report, con la scelta inline "Applica a: solo questo evento / tutti
-  // gli eventi di questo modello" — identica nello spirito a quella già
-  // presente sopra per TURNO e APP/AUTO. L'override "solo questo evento" è
-  // salvato su form.reportOverrides = { [reportId]: "incluso"|"escluso" };
-  // "tutti gli eventi" modifica invece la configurazione del modello
-  // (stessa logica di updateConteggioConfig già usata in Rotazione.jsx) e
-  // riporta l'utente alla schermata Modelli.
+  // CATEGORIA REPORT per il SINGOLO EVENTO: tendina ANNIDATA a 3 livelli.
+  //  Livello 1: freccia accanto al titolo "CATEGORIA REPORT (per questo
+  //             evento)" mostra/nasconde l'intera lista dei report.
+  //  Livello 2: ogni riga-report (come già prima) si apre per mostrare
+  //             Incluso/Escluso + eventuale "Applica a".
+  //  Livello 3: se il report ha sottomenu liberi con gruppi (es. Piano
+  //             Incentivante -> "1 turno"/"2 turni"), un'ulteriore freccia
+  //             dentro la riga espande la scelta del gruppo specifico.
+  // L'override "solo questo evento" è salvato su form.reportOverrides =
+  // { [reportId]: { stato:"incluso"|"escluso", sottomenu:{[smId]:gruppoKey} } };
+  // "tutti gli eventi" applica la stessa scelta al modello (per i futuri
+  // eventi) E, retroattivamente, a tutti gli eventi esistenti con stesso
+  // nome+orario di questo (match richiesto esplicitamente).
   const modelloIdCorrente = form.modelloId || form.evtModelloId || null;
   if(!modelloIdCorrente) return null;
   if(tipoModelloProtrazione(modelloIdCorrente)) return null;
@@ -2273,110 +2307,189 @@ export default function VistaModelli({ C }){
     return whitelist.length===0 || whitelist.includes(modelloCorrente.id);
   }
 
-  function setOverrideEvento(reportId, valore){
+  function setOverrideStato(reportId, valore){
     // valore: "incluso" | "escluso" | null (torna al comportamento del modello)
     setForm(f=>{
+      const attuale = (f.reportOverrides||{})[reportId] || {};
       const next = {...(f.reportOverrides||{})};
-      if(valore) next[reportId]=valore; else delete next[reportId];
+      if(valore) next[reportId] = {...attuale, stato:valore};
+      else {
+        const senzaStato = {...attuale}; delete senzaStato.stato;
+        if(Object.keys(senzaStato).length===0 || (senzaStato.sottomenu && Object.keys(senzaStato.sottomenu).length===0)) delete next[reportId];
+        else next[reportId] = senzaStato;
+      }
       return {...f, reportOverrides:next};
     });
   }
 
-  function applicaATuttiGliEventi(reportId, valore){
-    // Stessa azione di "toggle" già usata in Rotazione.jsx per includere/
-    // escludere un intero modello da un report: qui applicata dal contesto
-    // del singolo evento, quindi puliamo prima l'eventuale override locale
-    // (avrebbe comunque priorità su questa scelta) e mandiamo l'utente al
-    // modello per la conferma visiva.
+  function setOverrideSottomenu(reportId, smId, gruppoKey){
+    // gruppoKey: chiave del gruppo scelto, o null per tornare all'automatico
+    setForm(f=>{
+      const attuale = (f.reportOverrides||{})[reportId] || {};
+      const sottomenuAttuale = {...(attuale.sottomenu||{})};
+      if(gruppoKey) sottomenuAttuale[smId]=gruppoKey; else delete sottomenuAttuale[smId];
+      const next = {...(f.reportOverrides||{})};
+      const nuovoOverride = {...attuale, sottomenu:sottomenuAttuale};
+      if(!nuovoOverride.stato && Object.keys(sottomenuAttuale).length===0) delete next[reportId];
+      else next[reportId] = nuovoOverride;
+      return {...f, reportOverrides:next};
+    });
+  }
+
+  function applicaATuttiGliEventi(reportId, override){
+    // Match richiesto: nome (label) + orario (tIn/tOut) identici a questo
+    // evento, su TUTTI gli eventi esistenti — non solo "stesso modello".
     const r = activeReports.find(rr=>rr.id===reportId);
     if(!r) return;
     const cfg = getConteggioConfig(r.id, r.type);
+    const valore = override?.stato||"";
     const incluso = valore==="incluso";
-    if(r.type==="turnazione"){
-      const esclusi = cfg.modelliEsclusi||[];
-      const aggiunti = cfg.modelliAggiunti||[];
-      const isDefault = isModelloTurnazioneDefault(modelloCorrente);
-      if(incluso){
-        if(isDefault) updateConteggioConfig(r.id, {...cfg, modelliEsclusi: esclusi.filter(id=>id!==modelloCorrente.id)});
-        else updateConteggioConfig(r.id, {...cfg, modelliAggiunti:[...new Set([...aggiunti, modelloCorrente.id])]});
+    if(valore){
+      if(r.type==="turnazione"){
+        const esclusi = cfg.modelliEsclusi||[];
+        const aggiunti = cfg.modelliAggiunti||[];
+        const isDefault = isModelloTurnazioneDefault(modelloCorrente);
+        if(incluso){
+          if(isDefault) updateConteggioConfig(r.id, {...cfg, modelliEsclusi: esclusi.filter(id=>id!==modelloCorrente.id)});
+          else updateConteggioConfig(r.id, {...cfg, modelliAggiunti:[...new Set([...aggiunti, modelloCorrente.id])]});
+        } else {
+          if(isDefault) updateConteggioConfig(r.id, {...cfg, modelliEsclusi:[...new Set([...esclusi, modelloCorrente.id])]});
+          else updateConteggioConfig(r.id, {...cfg, modelliAggiunti: aggiunti.filter(id=>id!==modelloCorrente.id)});
+        }
       } else {
-        if(isDefault) updateConteggioConfig(r.id, {...cfg, modelliEsclusi:[...new Set([...esclusi, modelloCorrente.id])]});
-        else updateConteggioConfig(r.id, {...cfg, modelliAggiunti: aggiunti.filter(id=>id!==modelloCorrente.id)});
-      }
-    } else {
-      const whitelist = cfg.modelliInclusi||[];
-      if(incluso){
-        const nuova = whitelist.length===0
-          ? modelli.filter(mm=>mm.id!==modelloCorrente.id).map(mm=>mm.id)
-          : whitelist.filter(id=>id!==modelloCorrente.id);
-        updateConteggioConfig(r.id, {...cfg, modelliInclusi:nuova});
-      } else {
-        updateConteggioConfig(r.id, {...cfg, modelliInclusi:[...new Set([...whitelist, modelloCorrente.id])]});
+        const whitelist = cfg.modelliInclusi||[];
+        if(incluso){
+          const nuova = whitelist.length===0
+            ? modelli.filter(mm=>mm.id!==modelloCorrente.id).map(mm=>mm.id)
+            : whitelist.filter(id=>id!==modelloCorrente.id);
+          updateConteggioConfig(r.id, {...cfg, modelliInclusi:nuova});
+        } else {
+          updateConteggioConfig(r.id, {...cfg, modelliInclusi:[...new Set([...whitelist, modelloCorrente.id])]});
+        }
       }
     }
-    setOverrideEvento(reportId, null);
-    setScreen("modelli");
+    // Sottomenu: ogni assegnazione scelta va scritta su cfg.sottomenu[i].assegnazioni[modelloId]
+    if(override?.sottomenu && Object.keys(override.sottomenu).length>0){
+      const nuoviSottomenu = (cfg.sottomenu||[]).map(sm=>{
+        const gruppoScelto = override.sottomenu[sm.id];
+        if(!gruppoScelto) return sm;
+        return {...sm, assegnazioni:{...(sm.assegnazioni||{}), [modelloCorrente.id]:gruppoScelto}};
+      });
+      updateConteggioConfig(r.id, {...cfg, sottomenu:nuoviSottomenu});
+    }
+    // Retroattivo: stessa scelta su tutti gli eventi esistenti con stesso
+    // nome+orario (il modello resta come default per i nuovi eventi futuri,
+    // già coperto sopra da updateConteggioConfig sul report).
+    applicaReportOverrideATuttiGliEventi(form.label||"", form.tIn||"", form.tOut||"",
+      { reportOverrides: {} }, // sull'evento l'override locale si azzera: ora segue report/modello
+      { report_overrides: null });
+    setOverrideStato(reportId, null);
+    setOverrideSottomenu(reportId, null, null);
   }
 
   return (
     <div style={{marginBottom:16}}>
-      <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8}}>CATEGORIA REPORT (per questo evento)</div>
-      <div style={{display:"flex",flexDirection:"column",gap:6}}>
-        {activeReports.map(r=>{
-          const overrideAttuale = reportOverrides[r.id]||"";
-          const inclusoDalModello = statoInclusioneModello(r);
-          const inclusoEffettivo = overrideAttuale ? overrideAttuale==="incluso" : inclusoDalModello;
-          const espanso = reportEspansoEvento===r.id;
-          return (
-            <div key={r.id} style={{background:inclusoEffettivo?accent+"1f":T.s2,borderRadius:10,overflow:"hidden"}}>
-              <button onClick={()=>setReportEspansoEvento(espanso?null:r.id)}
-                style={{display:"flex",alignItems:"center",justifyContent:"space-between",
-                  width:"100%",padding:"9px 12px",borderRadius:0,border:"none",cursor:"pointer",
-                  background:"transparent",textAlign:"left"}}>
-                <span style={{fontSize:13,fontWeight:700,color:T.text}}>{r.label}</span>
-                <div style={{display:"flex",alignItems:"center",gap:8}}>
-                  <span style={{fontSize:11,fontWeight:800,color:inclusoEffettivo?accent:T.sub}}>
-                    {inclusoEffettivo?"✓ Incluso":"Escluso"}
-                  </span>
-                  <span style={{fontSize:11,color:T.sub,padding:"2px 4px"}}>{espanso?"▲":"▼"}</span>
-                </div>
-              </button>
-              {espanso && (
-                <div style={{padding:"0 12px 12px",display:"flex",flexDirection:"column",gap:8}}>
-                  <div style={{display:"flex",gap:6}}>
-                    {[["incluso","Incluso"],["escluso","Escluso"]].map(([v,l])=>(
-                      <button key={v} onClick={()=>setOverrideEvento(r.id, overrideAttuale===v ? null : v)}
-                        style={{flex:1,padding:"7px 4px",borderRadius:8,cursor:"pointer",
-                          fontWeight:700,fontSize:11,border:"none",
-                          background:overrideAttuale===v?accent:T.surface,
-                          color:overrideAttuale===v?"#fff":T.sub}}>{l}</button>
-                    ))}
+      <button onClick={()=>setCategoriaReportListaAperta(v=>!v)}
+        style={{display:"flex",alignItems:"center",gap:6,width:"100%",background:"none",
+          border:"none",padding:0,marginBottom:8,cursor:"pointer",textAlign:"left"}}>
+        <span style={{fontSize:11,color:T.sub,fontWeight:700}}>CATEGORIA REPORT (per questo evento)</span>
+        <span style={{fontSize:11,color:T.sub}}>{categoriaReportListaAperta?"▲":"▼"}</span>
+      </button>
+      {categoriaReportListaAperta && (
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {activeReports.map(r=>{
+            const overrideR = reportOverrides[r.id] || {};
+            const overrideAttuale = overrideR.stato||"";
+            const inclusoDalModello = statoInclusioneModello(r);
+            const inclusoEffettivo = overrideAttuale ? overrideAttuale==="incluso" : inclusoDalModello;
+            const espanso = reportEspansoEvento===r.id;
+            const cfgReport = getConteggioConfig(r.id, r.type);
+            const sottomenuLiberi = (cfgReport.sottomenu||[]).filter(sm=>sm.tipo==="libero" && (sm.gruppi||[]).length>0);
+            const smEspanso = sottomenuEspansoEvento[r.id]||null;
+            const haOverride = !!overrideAttuale || Object.keys(overrideR.sottomenu||{}).length>0;
+            return (
+              <div key={r.id} style={{background:inclusoEffettivo?accent+"1f":T.s2,borderRadius:10,overflow:"hidden"}}>
+                <button onClick={()=>setReportEspansoEvento(espanso?null:r.id)}
+                  style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+                    width:"100%",padding:"9px 12px",borderRadius:0,border:"none",cursor:"pointer",
+                    background:"transparent",textAlign:"left"}}>
+                  <span style={{fontSize:13,fontWeight:700,color:T.text}}>{r.label}</span>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:11,fontWeight:800,color:inclusoEffettivo?accent:T.sub}}>
+                      {inclusoEffettivo?"✓ Incluso":"Escluso"}
+                    </span>
+                    <span style={{fontSize:11,color:T.sub,padding:"2px 4px"}}>{espanso?"▲":"▼"}</span>
                   </div>
-                  {!overrideAttuale && (
-                    <div style={{fontSize:10,color:T.sub}}>
-                      Segue il modello: attualmente {inclusoDalModello?"incluso":"escluso"} in questo report.
+                </button>
+                {espanso && (
+                  <div style={{padding:"0 12px 12px",display:"flex",flexDirection:"column",gap:8}}>
+                    <div style={{display:"flex",gap:6}}>
+                      {[["incluso","Incluso"],["escluso","Escluso"]].map(([v,l])=>(
+                        <button key={v} onClick={()=>setOverrideStato(r.id, overrideAttuale===v ? null : v)}
+                          style={{flex:1,padding:"7px 4px",borderRadius:8,cursor:"pointer",
+                            fontWeight:700,fontSize:11,border:"none",
+                            background:overrideAttuale===v?accent:T.surface,
+                            color:overrideAttuale===v?"#fff":T.sub}}>{l}</button>
+                      ))}
                     </div>
-                  )}
-                  {overrideAttuale && (
-                    <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-                      <span style={{fontSize:11,color:T.sub}}>Applica a:</span>
-                      <span style={{fontSize:11,fontWeight:800,color:accent,
-                        background:accent+"22",borderRadius:8,padding:"4px 8px"}}>
-                        Solo questo evento (attivo)
-                      </span>
-                      <button onClick={()=>applicaATuttiGliEventi(r.id, overrideAttuale)}
-                        style={{fontSize:11,fontWeight:700,color:T.sub,background:"none",
-                          border:`1px solid ${T.border}`,borderRadius:8,padding:"4px 8px",cursor:"pointer"}}>
-                        Tutti gli eventi di "{modelloCorrente.titolo}" →
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+                    {!overrideAttuale && (
+                      <div style={{fontSize:10,color:T.sub}}>
+                        Segue il modello: attualmente {inclusoDalModello?"incluso":"escluso"} in questo report.
+                      </div>
+                    )}
+                    {sottomenuLiberi.map(sm=>{
+                      const smAperto = smEspanso===sm.id;
+                      const gruppoScelto = (overrideR.sottomenu||{})[sm.id]||"";
+                      const gruppoDalModello = (sm.assegnazioni||{})[modelloCorrente.id]||"";
+                      return (
+                        <div key={sm.id} style={{background:T.surface,borderRadius:8,overflow:"hidden"}}>
+                          <button onClick={()=>setSottomenuEspansoEvento(prev=>({...prev,[r.id]: smAperto?null:sm.id}))}
+                            style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+                              width:"100%",padding:"7px 10px",border:"none",cursor:"pointer",
+                              background:"transparent",textAlign:"left"}}>
+                            <span style={{fontSize:12,fontWeight:700,color:T.text}}>{sm.nome||"Sottomenu"}</span>
+                            <div style={{display:"flex",alignItems:"center",gap:6}}>
+                              <span style={{fontSize:10,fontWeight:800,color:gruppoScelto?accent:T.sub}}>
+                                {(sm.gruppi||[]).find(g=>g.key===(gruppoScelto||gruppoDalModello))?.label || "—"}
+                              </span>
+                              <span style={{fontSize:10,color:T.sub}}>{smAperto?"▲":"▼"}</span>
+                            </div>
+                          </button>
+                          {smAperto && (
+                            <div style={{padding:"0 10px 10px",display:"flex",gap:6,flexWrap:"wrap"}}>
+                              {(sm.gruppi||[]).map(g=>(
+                                <button key={g.key} onClick={()=>setOverrideSottomenu(r.id, sm.id, gruppoScelto===g.key ? null : g.key)}
+                                  style={{padding:"6px 10px",borderRadius:8,cursor:"pointer",
+                                    fontWeight:700,fontSize:11,border:"none",
+                                    background:gruppoScelto===g.key?accent:T.s2,
+                                    color:gruppoScelto===g.key?"#fff":T.sub}}>{g.label}</button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {haOverride && (
+                      <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+                        <span style={{fontSize:11,color:T.sub}}>Applica a:</span>
+                        <span style={{fontSize:11,fontWeight:800,color:accent,
+                          background:accent+"22",borderRadius:8,padding:"4px 8px"}}>
+                          Solo questo evento (attivo)
+                        </span>
+                        <button onClick={()=>applicaATuttiGliEventi(r.id, overrideR)}
+                          style={{fontSize:11,fontWeight:700,color:T.sub,background:"none",
+                            border:`1px solid ${T.border}`,borderRadius:8,padding:"4px 8px",cursor:"pointer"}}>
+                          Tutti gli eventi con questo nome+orario →
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 })()}
