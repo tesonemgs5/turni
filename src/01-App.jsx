@@ -1,14 +1,14 @@
 import { useState, useRef, useMemo, Fragment, Component } from "react";
-import { useAppCore } from "./6.Logica";
-import VistaCalendario from "./3.Calendario";
-import VistaModelli from "./2.Modelli";
-import { ModaleErroriMultipli } from "./5.Comuni";
+import { useAppCore } from "./06-Logica";
+import VistaCalendario from "./03-Calendario";
+import VistaModelli from "./02-Modelli";
+import { ModaleErroriMultipli } from "./05-Comuni";
 import {
   getContrastTextColor, NOMI_MESI_IT, calcFine6h15, calcFine6h30, calcDurata,
   fmtDataIT, impostaSilenziamentoErrore, segnalaErrore,
   ModelForm, GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView,
-} from "./4.Rotazione";
-import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./7.Turni";
+} from "./04-Rotazione";
+import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
 
 // ═══════════════════════════════════════════════════════════════
 // ErrorBoundary — rete di sicurezza per QUALSIASI crash React che
