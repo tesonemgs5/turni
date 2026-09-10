@@ -695,6 +695,7 @@ export function useAppCore(session){
             protPagFine: e.prot_pag_fine||"", protRecFine: e.prot_rec_fine||"",
             protMenoRecIn: e.prot_meno_rec_in||"", protMenoRecOut: e.prot_meno_rec_out||"",
             categoriaTurno: e.categoria_turno||"", categoriaAppAuto: e.categoria_app_auto||"",
+            turnoVuoto: !!e.categoria_turno_vuoto, appAutoVuoto: !!e.categoria_app_auto_vuoto,
             reportOverrides: e.report_overrides||{},
             importId: e.import_id||null,
           });
@@ -1950,6 +1951,9 @@ export function useAppCore(session){
       prot_pag_fine: formEffettivo.protPagFine||null, prot_rec_fine: formEffettivo.protRecFine||null,
       prot_meno_rec_in: formEffettivo.protMenoRecIn||null, prot_meno_rec_out: formEffettivo.protMenoRecOut||null,
       categoria_turno: formEffettivo.categoriaTurno||null, categoria_app_auto: formEffettivo.categoriaAppAuto||null,
+      // "Nessuna categoria" scelto esplicitamente per questo asse su questo
+      // singolo evento (disattiva l'automatismo, priorità massima).
+      categoria_turno_vuoto: !!formEffettivo.turnoVuoto, categoria_app_auto_vuoto: !!formEffettivo.appAutoVuoto,
       // Override "solo questo evento" per l'inclusione/esclusione dai report
       // CATEGORIA REPORT (Turnazione, Piano Incentivante, Indennità, ecc.):
       // { [reportId]: "incluso"|"escluso" }. Ha priorità massima, sopra la
@@ -1975,6 +1979,7 @@ export function useAppCore(session){
       protPagFine: payload.prot_pag_fine||"", protRecFine: payload.prot_rec_fine||"",
       protMenoRecIn: payload.prot_meno_rec_in||"", protMenoRecOut: payload.prot_meno_rec_out||"",
       categoriaTurno: payload.categoria_turno||"", categoriaAppAuto: payload.categoria_app_auto||"",
+      turnoVuoto: !!payload.categoria_turno_vuoto, appAutoVuoto: !!payload.categoria_app_auto_vuoto,
       reportOverrides: payload.report_overrides||{},
     };
     if(!formEffettivo.modelloId && formEffettivo.label) registraValoreAutocomplete("titolo", label);
@@ -2083,6 +2088,8 @@ export function useAppCore(session){
       prot_meno_rec_out: formEffettivo.protMenoRecOut||null,
       categoria_turno: formEffettivo.categoriaTurno||null,
       categoria_app_auto: formEffettivo.categoriaAppAuto||null,
+      categoria_turno_vuoto: !!formEffettivo.turnoVuoto,
+      categoria_app_auto_vuoto: !!formEffettivo.appAutoVuoto,
       // Vedi commento gemello in saveEvt: override "solo questo evento" per
       // CATEGORIA REPORT.
       report_overrides: (formEffettivo.reportOverrides && Object.keys(formEffettivo.reportOverrides).length>0) ? formEffettivo.reportOverrides : null,
@@ -2109,6 +2116,7 @@ export function useAppCore(session){
       protPagFine: formEffettivo.protPagFine||"", protRecFine: formEffettivo.protRecFine||"",
       protMenoRecIn: formEffettivo.protMenoRecIn||"", protMenoRecOut: formEffettivo.protMenoRecOut||"",
       categoriaTurno: formEffettivo.categoriaTurno||"", categoriaAppAuto: formEffettivo.categoriaAppAuto||"",
+      turnoVuoto: !!formEffettivo.turnoVuoto, appAutoVuoto: !!formEffettivo.appAutoVuoto,
       reportOverrides: formEffettivo.reportOverrides||{},
     };
     const nuovoStore = withEventoAggiornato(store, dayKey, editCalId, formEffettivo.editId, patch);
@@ -4282,7 +4290,8 @@ const importsRecenti = useMemo(()=>{
         for(const e of evts){
           // Override "solo questo evento" su CATEGORIA REPORT: priorità massima,
           // sopra la whitelist modelliInclusi decisa a livello di modello.
-          const overrideReportEvento = reportId ? (e.reportOverrides||{})[reportId] : null;
+          const overrideReportRaw = reportId ? (e.reportOverrides||{})[reportId] : null;
+          const overrideReportEvento = overrideReportRaw?.stato || null;
           if(overrideReportEvento==="escluso") continue;
           if(overrideReportEvento!=="incluso" && modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
           const collegList = splitColleghi(e.collega);
@@ -4302,13 +4311,17 @@ const importsRecenti = useMemo(()=>{
 
           // Ogni sottomenu libero è un asse indipendente: raggruppa i modelli
           // secondo l'assegnazione manuale salvata su quel sottomenu
-          // (cfg.sottomenu[i].assegnazioni: {modelloId: gruppoKey}). Un
-          // modello senza assegnazione in quel sottomenu semplicemente non
-          // compare in nessun gruppo di quell'asse (comportamento identico a
-          // "escluso" nei report esistenti: niente auto-classificazione).
+          // (cfg.sottomenu[i].assegnazioni: {modelloId: gruppoKey}), a meno
+          // che questo SINGOLO EVENTO non abbia un override esplicito per
+          // quel sottomenu (priorità massima, stessa logica di stato/escluso
+          // qui sopra). Un modello senza assegnazione in quel sottomenu
+          // semplicemente non compare in nessun gruppo di quell'asse
+          // (comportamento identico a "escluso" nei report esistenti: niente
+          // auto-classificazione).
           sottomenu.forEach(sm=>{
-            if(sm.tipo!=="libero" || !e.modelloId) return;
-            const gruppoKey = (sm.assegnazioni||{})[e.modelloId];
+            if(sm.tipo!=="libero") return;
+            const gruppoKeyEvento = (overrideReportRaw?.sottomenu||{})[sm.id];
+            const gruppoKey = gruppoKeyEvento || (e.modelloId ? (sm.assegnazioni||{})[e.modelloId] : null);
             if(!gruppoKey) return;
             if(!perSottomenu[sm.id][gruppoKey]) perSottomenu[sm.id][gruppoKey] = {};
             if(!perSottomenu[sm.id][gruppoKey][e.modelloId]) perSottomenu[sm.id][gruppoKey][e.modelloId] = { count:0, dates:[] };
@@ -4508,7 +4521,7 @@ const importsRecenti = useMemo(()=>{
         for(const e of evts){
           // Override "solo questo evento" su CATEGORIA REPORT: priorità massima,
           // sopra l'inclusione/esclusione decisa a livello di modello.
-          const overrideReportEvento = reportId ? (e.reportOverrides||{})[reportId] : null;
+          const overrideReportEvento = (reportId ? (e.reportOverrides||{})[reportId] : null)?.stato || null;
           if(overrideReportEvento==="escluso") continue;
           if(overrideReportEvento!=="incluso" && modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
           const collegList = splitColleghi(e.collega);
@@ -4527,24 +4540,29 @@ const importsRecenti = useMemo(()=>{
           // report, perché è la scelta più specifica possibile.
           const overrideEventoTurno = (e.categoriaTurno==="primo"||e.categoriaTurno==="secondo") ? e.categoriaTurno : null;
           const overrideEventoAppAuto = (e.categoriaAppAuto==="app"||e.categoriaAppAuto==="auto") ? e.categoriaAppAuto : null;
+          // "Nessuna categoria" scelto esplicitamente sul singolo evento: come
+          // sopra, priorità massima — nessun asse anche se modello/report
+          // avrebbero altrimenti un automatismo.
+          const eventoTurnoVuoto = !!e.turnoVuoto;
+          const eventoAppAutoVuoto = !!e.appAutoVuoto;
 
           // ── Asse 1: TURNO (1°/2°) — indipendente, decide su override evento,
           // poi categoria manuale del modello, poi override di questo
           // report, poi automatico per orario.
           // Se l'utente ha esplicitamente deselezionato questo asse (modello o report), niente auto: nessun gruppo.
-          const gruppoTurno = overrideEventoTurno || ((modelloEvt?.turnoVuoto || escludiTurno)
+          const gruppoTurno = eventoTurnoVuoto ? null : (overrideEventoTurno || ((modelloEvt?.turnoVuoto || escludiTurno)
             ? null
             : ((modelloEvt?.categoria==="primo"||modelloEvt?.categoria==="secondo")
               ? modelloEvt.categoria
-              : (overrideTurno || categoriaTurnoAutomatica(modelloEvt))));
+              : (overrideTurno || categoriaTurnoAutomatica(modelloEvt)))));
 
           // ── Asse 2: APP/AUTO — indipendente, stessa priorità ma decide su titolo.
           // Se l'utente ha esplicitamente deselezionato questo asse (modello o report), niente auto: nessun gruppo.
-          const gruppoAppAuto = overrideEventoAppAuto || ((modelloEvt?.appAutoVuoto || escludiAppAuto)
+          const gruppoAppAuto = eventoAppAutoVuoto ? null : (overrideEventoAppAuto || ((modelloEvt?.appAutoVuoto || escludiAppAuto)
             ? null
             : ((modelloEvt?.categoriaAppAuto==="app"||modelloEvt?.categoriaAppAuto==="auto")
               ? modelloEvt.categoriaAppAuto
-              : (overrideAppAuto || categoriaAppAutoAutomatica(modelloEvt) || "auto")));
+              : (overrideAppAuto || categoriaAppAutoAutomatica(modelloEvt) || "auto"))));
 
           if(e.modelloId){
             if(!perModello[e.modelloId]) perModello[e.modelloId] = { count:0, dates:[] };
@@ -4616,7 +4634,7 @@ const importsRecenti = useMemo(()=>{
         if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
         for(const e of evts){
           // Override "solo questo evento" su CATEGORIA REPORT: priorità massima.
-          const overrideReportEvento = reportId ? (e.reportOverrides||{})[reportId] : null;
+          const overrideReportEvento = (reportId ? (e.reportOverrides||{})[reportId] : null)?.stato || null;
           if(overrideReportEvento==="escluso") continue;
           if(overrideReportEvento!=="incluso" && modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
           if(e.allDay) continue;
@@ -4858,6 +4876,50 @@ const importsRecenti = useMemo(()=>{
       }
     }
     return { totale: orfani.length, risolti, nonRisolti };
+  }
+
+  // ─── "Tutti gli eventi di stesso nome+orario" per CATEGORIA TURNO /
+  // CATEGORIA APP-AUTO / CATEGORIA REPORT del singolo evento ───
+  // Richiesta esplicita: il "match" per capire quali eventi coinvolgere in
+  // un aggiornamento di massa è nome (label) + orario (tIn/tOut) identici,
+  // non semplicemente "stesso modello collegato" — due eventi con lo stesso
+  // modello ma orario diverso NON devono essere toccati, e viceversa un
+  // evento con lo stesso nome+orario ma senza modello collegato (o con un
+  // modello diverso per qualche motivo storico) DEVE esserlo. Aggiorna:
+  //  1) subito lo stato locale (store), su tutte le date/calendari;
+  //  2) Supabase in blocco (un unico UPDATE con .in("id", [...])).
+  // patchEvento: oggetto di patch in formato "locale" (es. {categoriaTurno,
+  // turnoVuoto,...} oppure {reportOverrides}), fuso sopra ai campi esistenti
+  // di ogni evento trovato. patchDb: stesso contenuto ma con i nomi colonna
+  // Supabase (snake_case), passato a supabase.update(...).
+  async function applicaReportOverrideATuttiGliEventi(nomeLabel, tInMatch, tOutMatch, patchEvento, patchDb){
+    if(!userId) return { idsAggiornati: [] };
+    const idsAggiornati = [];
+    setStore(prev=>{
+      const eventsBase = prev?.events||{};
+      const nextEvents = {};
+      for(const [dk, calMap] of Object.entries(eventsBase)){
+        const nextCalMap = {};
+        for(const [cid, evts] of Object.entries(calMap)){
+          nextCalMap[cid] = evts.map(e=>{
+            if(e.label===nomeLabel && (e.tIn||"")===(tInMatch||"") && (e.tOut||"")===(tOutMatch||"")){
+              idsAggiornati.push(e.id);
+              return {...e, ...patchEvento};
+            }
+            return e;
+          });
+        }
+        nextEvents[dk] = nextCalMap;
+      }
+      const ns = {...prev, events: nextEvents};
+      saveToLocalStorage(ns.events, ns.calendars, modelli);
+      return ns;
+    });
+    if(idsAggiornati.length>0){
+      const { error } = await supabase.from("events").update(patchDb).in("id", idsAggiornati).eq("user_id", userId);
+      if(error) segnalaErrore(error, `Aggiornamento di massa (${idsAggiornati.length} eventi "${nomeLabel}" ${tInMatch}-${tOutMatch})`);
+    }
+    return { idsAggiornati };
   }
 
   return {
@@ -5174,6 +5236,7 @@ const importsRecenti = useMemo(()=>{
     moveReport,
     getConteggioConfig,
     updateConteggioConfig,
+    applicaReportOverrideATuttiGliEventi,
     totaleTurni,
     totaleMinTurni,
     setPrevGrid,
