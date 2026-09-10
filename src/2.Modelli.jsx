@@ -2379,10 +2379,17 @@ export default function VistaModelli({ C }){
     }
     // Retroattivo: stessa scelta su tutti gli eventi esistenti con stesso
     // nome+orario (il modello resta come default per i nuovi eventi futuri,
-    // già coperto sopra da updateConteggioConfig sul report).
+    // già coperto sopra da updateConteggioConfig sul report). Rimuoviamo
+    // SOLO l'override di QUESTO report da ciascun evento trovato — un
+    // evento potrebbe avere override attivi anche su altri report, che
+    // devono restare intatti.
     applicaReportOverrideATuttiGliEventi(form.label||"", form.tIn||"", form.tOut||"",
-      { reportOverrides: {} }, // sull'evento l'override locale si azzera: ora segue report/modello
-      { report_overrides: null });
+      (eventoEsistente)=>{
+        const next = {...(eventoEsistente.reportOverrides||{})};
+        delete next[reportId];
+        return { reportOverrides: next };
+      },
+      (eventoNuovo)=>({ report_overrides: Object.keys(eventoNuovo.reportOverrides||{}).length>0 ? eventoNuovo.reportOverrides : null }));
     setOverrideStato(reportId, null);
     setOverrideSottomenu(reportId, null, null);
   }
