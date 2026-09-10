@@ -1,8 +1,8 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import App from './1.App.jsx'
-import Auth from './10.auth.jsx'
-import { supabase } from './11.supabase.js'
+import App from './01-App.jsx'
+import Auth from './10-auth.jsx'
+import { supabase } from './11-supabase.js'
 import { useState, useEffect } from 'react'
 import { registerSW } from 'virtual:pwa-register'
 

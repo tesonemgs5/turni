@@ -1,5 +1,5 @@
     import { useState, useEffect, useRef, useMemo } from "react";
-import { supabase } from "./11.supabase";
+import { supabase } from "./11-supabase";
 import {
   FASCE_AUTOMATICHE_DEFAULT, FESTIVITA_DEFAULT_ATTIVE, MONTHS, NOMI_GIORNI_IT, PALETTE,
   calcFine6h15, calcFine6h30, calcFineModello, categoriaAppAutoAutomatica, categoriaTurnoAutomatica,
@@ -9,7 +9,7 @@ import {
   minutiTurnoModello, normalizzaOraHHMM, oraInMinuti, registraListenerCodaErrori, registraProblemiImport,
   sameData, saveToLocalStorage, scriviCodaSync, segnalaErrore, segnalaErroreSoloLog,
   uid, withEventoAggiornato, withEventoAggiunto, withEventoRimosso,
-} from "./4.Rotazione";
+} from "./04-Rotazione";
 
 // ════════════════════════════════════════════════════════════
 // useAppCore.js — Custom hook che concentra tutto lo stato e la
@@ -3341,6 +3341,22 @@ const importsRecenti = useMemo(()=>{
         });
         // Rinumerazioni: stesso timestamp, così restano in ordine in coda
         // rispetto all'insert del nuovo modello se si finisce offline.
+        // FIX: "rinumerazioniApplicate" non era mai definita (bug preesistente,
+        // promise andava in errore silenzioso e le rinumerazioni non venivano
+        // mai salvate su Supabase). Fonte dati corretta: il diff di sortOrder
+        // tra lo stato prima dell'insert ("modelli") e dopo ricalcolaPosizioniGlobali
+        // ("modelliAggiornati") — stesso principio già usato in
+        // salvaModifichePosizioni per drag&drop e frecce. Si esclude il modello
+        // appena creato (idLocale), che ha già il proprio insert sopra: qui
+        // vanno solo le rinumerazioni degli ALTRI modelli del blocco.
+        const prevById = new Map(modelli.map(m=>[m.id,m]));
+        const rinumerazioniApplicate = modelliAggiornati
+          .filter(m=>m.id!==idLocale)
+          .filter(m=>{
+            const prima = prevById.get(m.id);
+            return prima && prima.sortOrder!==m.sortOrder;
+          })
+          .map(m=>({id:m.id, nuovoVal:m.sortOrder}));
         for(const {id,nuovoVal} of rinumerazioniApplicate){
           await scriviConBackup({
             tipo:"update", table:"modelli", payload:{sort_order:nuovoVal}, matchObj:{id, user_id:userId},

@@ -8,14 +8,14 @@ import {
   loadFromLocalStorage, clearLocalStorageCache, resolveFestivitaCatalogo,
   leggiLogErrori, leggiErroriSilenziati, impostaSilenziamentoErrore,
   cancellaLogErrori, segnalaErrore,
-} from "./4.Rotazione";
+} from "./04-Rotazione";
 import { CalBadge, SmartTimeInput, AutocompleteInput, ColorPickerModal,
   ModaleErroriMultipli, FasceExpand, ConteggioConfigCard, TurnazioneConfigCard, OreTurnoConfigCard, fmtOreMin,
   IndennitaConfig, OrePerTurnoView, StraordinariView, GuadagniView,
-  ViabilitaView, TicketConfig } from "./5.Comuni";
+  ViabilitaView, TicketConfig } from "./05-Comuni";
 import { ModelloCard, ModelForm, RotazioneCard, RotazioneForm, ModelloSelector,
-  GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView } from "./4.Rotazione";
-import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./7.Turni";
+  GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView } from "./04-Rotazione";
+import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
 
 // ═══════════════════════════════════════════════════════════════
 // core1.jsx — Calendario ed Eventi: qui dentro trovi tutto quello
