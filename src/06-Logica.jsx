@@ -3405,10 +3405,11 @@ const importsRecenti = useMemo(()=>{
       // cache). Ora la cache viene aggiornata subito, come per l'update.
       saveToLocalStorage(store.events, store.calendars, modelliAggiornati, calId);
 
-      // Come per l'update: locale già scritto sopra, si ritorna subito e il
-      // backup Supabase/Sheets parte in background senza bloccare il form.
-      (async()=>{
-        await scriviConBackup({
+      // Backup su Supabase + eventuali rinumerazioni: estratto in una
+      // funzione a parte perché, a differenza di prima, non SEMPRE deve
+      // partire "fire and forget" in background.
+      async function backupInsertModello(){
+        const risInsert = await scriviConBackup({
           tipo:"insert", table:"modelli", payload:{...payload, id:idLocale}, matchObj:null,
           contesto:"Creazione modello", ts,
           eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelliAggiornati,
@@ -3438,7 +3439,30 @@ const importsRecenti = useMemo(()=>{
             opzioni:{soloLog:true},
           });
         }
-      })();
+        return risInsert;
+      }
+
+      // FIX BUG "evento sparisce dopo refresh": chi crea un modello e SUBITO
+      // DOPO crea/aggancia un evento a quel modello (vedi
+      // trovaOCreaModelloProtrazione, per gli eventi figli "-PR RECUPERO")
+      // deve avere la GARANZIA che il modello sia davvero arrivato su
+      // Supabase prima di procedere — altrimenti l'evento figlio può essere
+      // scritto sul server con un modello_id che punta a un modello mai
+      // salvato (il suo insert, lanciato qui in background senza await,
+      // poteva ancora essere in corso o fallire silenziosamente). Al refresh
+      // successivo con cache svuotata, l'evento orfano di modello risultava
+      // invisibile. Con data.attendiBackup=true si aspetta qui il vero
+      // esito dell'insert prima di ritornare al chiamante; altrimenti
+      // (comportamento di sempre, usato dal form Modelli) si parte in
+      // background senza bloccare l'utente.
+      if(data.attendiBackup){
+        const risInsert = await backupInsertModello();
+        if(risInsert?.errore){
+          return { ok:false, errore: risInsert.errore, modello: null };
+        }
+        return { ok:true, modello: modelloCreato };
+      }
+      backupInsertModello();
       return { ok:true, modello: modelloCreato };
     }
   }
@@ -3960,6 +3984,18 @@ const importsRecenti = useMemo(()=>{
       coloreCustom: tipo==="recupero" ? "#f9a8d4" : "#ec4899",
       calendarId: targetCalId,
       silenzioso: true,
+      // FIX BUG "evento sparisce dopo refresh": qui il modello appena
+      // creato viene usato SUBITO per agganciarci un evento figlio (vedi
+      // sincronizzaEventiProtrazione, chiamante di questa funzione). Senza
+      // attendiBackup, il salvataggio del modello su Supabase partiva in
+      // background (fire-and-forget) mentre l'evento figlio veniva già
+      // scritto sul server con modello_id puntato a un modello che, in
+      // caso di rete instabile o refresh rapido, poteva non essere ancora
+      // (o mai) arrivato sul server: al refresh successivo con cache
+      // svuotata l'evento risultava orfano e spariva dal calendario.
+      // Con attendiBackup:true aspettiamo qui la conferma reale prima di
+      // procedere a creare l'evento figlio.
+      attendiBackup: true,
     });
     // saveModello ora ritorna direttamente l'oggetto appena creato: niente
     // più bisogno di rileggere modelliRef.current dopo un setTimeout(0),
@@ -3969,7 +4005,13 @@ const importsRecenti = useMemo(()=>{
     const creato = esito?.modello || null;
     if(creato) modelloProtrazioneCacheRef.current[cacheKey] = creato;
     else {
-      segnalaErroreSoloLog(`Impossibile creare/recuperare il modello "${titolo}" per il calendario ${targetCalId}: saveModello non ha ritornato l'oggetto atteso.`, "trovaOCreaModelloProtrazione");
+      // Non solo log: se il modello non è stato davvero salvato su
+      // Supabase, meglio NON creare l'evento figlio (che risulterebbe
+      // orfano e sparirebbe al prossimo refresh) piuttosto che crearlo
+      // comunque senza modello agganciato. Il chiamante
+      // (sincronizzaEventiProtrazione) già gestisce "creato===null"
+      // saltando la creazione di questo evento figlio (continue).
+      segnalaErroreSoloLog(`Impossibile creare/recuperare il modello "${titolo}" per il calendario ${targetCalId}: ${esito?.errore?.message||"saveModello non ha ritornato l'oggetto atteso"}.`, "trovaOCreaModelloProtrazione");
     }
     return creato;
   }
