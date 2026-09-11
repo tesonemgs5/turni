@@ -225,11 +225,30 @@ export function useAppCore(session){
   // andato perso: lo segnaliamo con direte:true così il chiamante lo accoda
   // silenziosamente invece di bloccare con un modale come se fosse un errore vero.
   function eRoreDiRete(e){
-    const msg = (e?.message||String(e)||"").toLowerCase();
-    return msg.includes("failed to fetch") || msg.includes("networkerror") || msg.includes("network request failed")
-      || msg.includes("network") || msg.includes("timeout") || msg.includes("connection")
-      || msg.includes("name_not_resolved") || msg.includes("internet_disconnected")
-      || e?.name==="TypeError";
+    // Raccoglie il testo da TUTTE le forme in cui un errore di rete può
+    // presentarsi qui dentro: un vero Error nativo (.message="Failed to
+    // fetch", .name="TypeError"), un errore Postgrest/Supabase (plain
+    // object con .message, a volte .details con lo stack, a volte .cause),
+    // o un AuthRetryableFetchError. Prima si guardava solo e.message: se
+    // quel campo era assente/vuoto o il testo utile stava altrove (es.
+    // .details, .cause.message), il riconoscimento falliva silenziosamente
+    // e l'errore di rete finiva loggato come se fosse un errore "vero"
+    // invece di essere accodato silenziosamente e ritentato.
+    let testo = "";
+    try{
+      testo = [
+        e?.message, e?.details, e?.hint, e?.cause?.message, e?.name,
+        (typeof e==="string") ? e : "",
+      ].filter(Boolean).join(" ").toLowerCase();
+      if(!testo) testo = JSON.stringify(e||"").toLowerCase();
+    }catch(_e){
+      testo = String(e?.message||e||"").toLowerCase();
+    }
+    return testo.includes("failed to fetch") || testo.includes("networkerror") || testo.includes("network request failed")
+      || testo.includes("fetch failed") || testo.includes("network") || testo.includes("timeout")
+      || testo.includes("connection") || testo.includes("name_not_resolved") || testo.includes("internet_disconnected")
+      || testo.includes("err_internet") || testo.includes("err_network") || testo.includes("err_connection")
+      || e?.name==="TypeError" || e?.name==="AuthRetryableFetchError";
   }
   async function verificaScrittura(tipo, table, payloadCorrente, matchObj){
     try{
@@ -1280,14 +1299,27 @@ export function useAppCore(session){
         }
         return { error };
       }
+      // Da quanto tempo questa operazione è ferma in coda, per decidere se
+      // è ancora "sto aspettando la linea" o se è il caso di avvisare
+      // l'utente che qualcosa non sta arrivando su Supabase da un pezzo.
+      const etaMs = Date.now() - new Date(op.ts||Date.now()).getTime();
+      const SOGLIA_AVVISO_MS = 15*60*1000; // 15 minuti
       try{
         const res = await provaSupabase(op.payload);
         if(res.error){
           if(eRoreDiRete(res.error)){
             // Rete ballerina: la richiesta è arrivata ma è caduta a metà,
             // senza generare un'eccezione JS. Stesso trattamento del
-            // ramo catch sotto: si riaccoda in silenzio, nessun popup.
+            // ramo catch sotto: si riaccoda, ma se è lì da troppo tempo
+            // l'utente va avvisato — non basta più dire "sto aspettando".
             rimasti.push(op);
+            if(etaMs>SOGLIA_AVVISO_MS && !op._avvisato){
+              op._avvisato = true;
+              segnalaErrore(
+                { message:`Questa modifica è in attesa di sincronizzarsi da più di ${Math.round(etaMs/60000)} minuti (rete instabile). È salvata solo su questo dispositivo finché la connessione non torna stabile.` },
+                `Sincronizzazione in sospeso — ${op.contesto}`
+              );
+            }
           } else {
             // Errore vero (validazione, permessi...): non ha senso
             // ritentarlo all'infinito, si segnala e si scarta.
@@ -1298,9 +1330,16 @@ export function useAppCore(session){
         }
       } catch(e){
         // Eccezione di rete (offline di nuovo, timeout...): resta in coda,
-        // si ritenterà al prossimo giro. Nessun popup — è lo stato normale
-        // "sto ancora aspettando la connessione", per quanto duri.
+        // si ritenterà al prossimo giro. Stesso avviso-se-troppo-lunga di
+        // sopra, per non lasciare l'utente all'oscuro a tempo indeterminato.
         rimasti.push(op);
+        if(etaMs>SOGLIA_AVVISO_MS && !op._avvisato){
+          op._avvisato = true;
+          segnalaErrore(
+            { message:`Questa modifica è in attesa di sincronizzarsi da più di ${Math.round(etaMs/60000)} minuti (rete instabile). È salvata solo su questo dispositivo finché la connessione non torna stabile.` },
+            `Sincronizzazione in sospeso — ${op.contesto}`
+          );
+        }
       }
     }
     scriviCodaSync(rimasti.filter(Boolean));
