@@ -1791,6 +1791,22 @@ export function useAppCore(session){
     // evento doppione invece di aggiornare quello esistente.
     const evtiGiorno = storeRef.current.events?.[dayKey]?.[calId]||[];
 
+    // MIGRAZIONE: rimuove l'eventuale evento "-PR RECUPERO" creato dalla
+    // vecchia logica (marker singolo "protrazione_di_<id>_meno_recupero",
+    // senza suffisso _entrata/_uscita). Quella versione posizionava
+    // l'evento SEMPRE subito dopo la fine turno (tOutBase -> tOutBase+durata),
+    // anche per un anticipo in uscita, invece di sovrapporlo alla porzione
+    // reale del turno. Il codice attuale non lo trova più (cerca solo i
+    // marker con suffisso) e quindi non lo aggiorna né lo sostituisce mai:
+    // resta in giro per sempre con l'orario vecchio e sbagliato. Lo
+    // eliminiamo qui esplicitamente a ogni sincronizzazione del turno base,
+    // così i due eventi corretti (creati subito sotto) prendono il suo posto.
+    const markerLegacy = idProtrazioneFiglio(idEventoBase, "meno_recupero");
+    const legacyEsistenti = evtiGiorno.filter(e=>e.importId===markerLegacy);
+    for(const legacy of legacyEsistenti){
+      await delEvt(dayKey, calId, legacy.id);
+    }
+
     for(const { tipo, oraInizio, oraFine, durataOverride } of richieste){
       const marker = idProtrazioneFiglio(idEventoBase, tipo);
       // Auto-riparazione: se per lo stesso marker esistono già più eventi

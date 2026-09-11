@@ -1687,7 +1687,6 @@ export default function VistaModelli({ C }){
               const cardShadow=cardTextColor==="#ffffff"?"0 1px 3px rgba(0,0,0,0.3)":"none";
               const tInMostrato = e.tInNote||e.tIn;
               const tOutMostrato = e.tOutNote||e.tOut;
-              const durataEvt=(!e.allDay&&tInMostrato&&tOutMostrato)?calcDurata(tInMostrato,tOutMostrato):"";
               // Le protrazioni sono eventi generati automaticamente dal
               // sistema: il loro titolo visualizzato deve sempre riflettere
               // il nome ATTUALE del modello collegato, non quello salvato
@@ -1695,6 +1694,15 @@ export default function VistaModelli({ C }){
               // resta "congelato" alla vecchia label se l'utente rinomina
               // il modello PROTRAZIONE in un secondo momento).
               const tipoProtQuestoEvento = tipoModelloProtrazione(e.modelloId);
+              // "-PR RECUPERO" (meno_recupero) è un CONSUMO di credito, non
+              // un accumulo: la durata mostrata sulla card deve avere il
+              // segno meno davanti (es. "-0h 15m"), coerente con quanto già
+              // mostrato nel form di modifica (calcDurMenoRec) e con il
+              // significato reale dell'evento. calcDurata resta invariata
+              // (usata anche altrove per durate sempre positive) — il segno
+              // si aggiunge solo qui, al momento della visualizzazione.
+              const durataBase=(!e.allDay&&tInMostrato&&tOutMostrato)?calcDurata(tInMostrato,tOutMostrato):"";
+              const durataEvt=(durataBase&&tipoProtQuestoEvento==="meno_recupero")?("-"+durataBase):durataBase;
               const modelloCollegato = tipoProtQuestoEvento ? modelli.find(m=>m.id===e.modelloId) : null;
               const labelDaMostrare = (modelloCollegato ? (modelloCollegato.label||modelloCollegato.titolo||e.label) : e.label);
               const modelloDiQuestoEvento = e.modelloId ? modelli.find(m=>m.id===e.modelloId) : null;
