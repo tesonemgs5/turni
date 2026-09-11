@@ -66,7 +66,14 @@ export const FASCE_AUTOMATICHE_DEFAULT = [
   { key:"riposo",    label:"Riposo",    colore:"#94a3b8", da:"00:00", a:"00:00" },
 ];
 
-export const FESTIVITA_DEFAULT_ATTIVE = true;
+// Array di chiavi delle festività attive di default (usato come fallback
+// di store.nationalHolsEnabled finché l'utente non personalizza le sue
+// preferenze in Impostazioni -> Festivi). Le chiavi devono corrispondere
+// a quelle restituite da resolveFestivitaCatalogo().
+export const FESTIVITA_DEFAULT_ATTIVE = [
+  "capodanno", "epifania", "liberazione", "lavoro", "repubblica",
+  "ferragosto", "ognissanti", "immacolata", "natale", "santostefano",
+];
 
 export const NB = {
   padding:"10px 14px", borderRadius:10, fontWeight:700, fontSize:13,
@@ -249,16 +256,32 @@ export function getShiftBand(tIn, fasceAutomatiche) {
 }
 
 // Festività italiane fisse (non include la Pasqua/Pasquetta, che sono
-// mobili — se ti servono aggiungile qui calcolandole per anno).
+// mobili — se ti servono aggiungile qui calcolandole per anno). Chiave
+// stabile condivisa con FESTIVITA_DEFAULT_ATTIVE e resolveFestivitaCatalogo,
+// così le tre restano sempre coerenti tra loro.
 const FESTIVITA_FISSE = [
-  { m: 1, d: 1 }, { m: 1, d: 6 }, { m: 4, d: 25 }, { m: 5, d: 1 },
-  { m: 6, d: 2 }, { m: 8, d: 15 }, { m: 11, d: 1 }, { m: 12, d: 8 },
-  { m: 12, d: 25 }, { m: 12, d: 26 },
+  { key: "capodanno",    name: "Capodanno",              m: 1,  d: 1 },
+  { key: "epifania",     name: "Epifania",                m: 1,  d: 6 },
+  { key: "liberazione",  name: "Festa della Liberazione", m: 4,  d: 25 },
+  { key: "lavoro",       name: "Festa dei Lavoratori",    m: 5,  d: 1 },
+  { key: "repubblica",   name: "Festa della Repubblica",  m: 6,  d: 2 },
+  { key: "ferragosto",   name: "Ferragosto",              m: 8,  d: 15 },
+  { key: "ognissanti",   name: "Ognissanti",              m: 11, d: 1 },
+  { key: "immacolata",   name: "Immacolata Concezione",   m: 12, d: 8 },
+  { key: "natale",       name: "Natale",                  m: 12, d: 25 },
+  { key: "santostefano", name: "Santo Stefano",           m: 12, d: 26 },
 ];
 
+// Restituisce le festività EFFETTIVAMENTE attive per un anno, filtrate in
+// base a nationalHolsEnabled: un array di chiavi (es. quelle salvate in
+// store.nationalHolsEnabled) oppure `true`/`undefined` per "tutte attive"
+// (comodo per chiamate senza preferenze salvate) o `false` per "nessuna".
 export function italianHols(year, nationalHolsEnabled = true) {
-  if (!nationalHolsEnabled) return [];
-  return FESTIVITA_FISSE.map(h => ({ ...h, y: year }));
+  if (nationalHolsEnabled === false) return [];
+  const attive = Array.isArray(nationalHolsEnabled)
+    ? FESTIVITA_FISSE.filter(h => nationalHolsEnabled.includes(h.key))
+    : FESTIVITA_FISSE; // true / undefined / altro: tutte attive
+  return attive.map(h => ({ ...h, y: year }));
 }
 
 // Catalogo delle festività nazionali disponibili, con chiave stabile e
@@ -266,19 +289,7 @@ export function italianHols(year, nationalHolsEnabled = true) {
 // A differenza di italianHols() (che restituisce solo le date attive per
 // un anno) questo elenca SEMPRE tutte le festività note, attive o meno.
 export function resolveFestivitaCatalogo(year) {
-  const CATALOGO = [
-    { key: "capodanno",     name: "Capodanno",              m: 1,  d: 1 },
-    { key: "epifania",      name: "Epifania",                m: 1,  d: 6 },
-    { key: "liberazione",   name: "Festa della Liberazione", m: 4,  d: 25 },
-    { key: "lavoro",        name: "Festa dei Lavoratori",    m: 5,  d: 1 },
-    { key: "repubblica",    name: "Festa della Repubblica",  m: 6,  d: 2 },
-    { key: "ferragosto",    name: "Ferragosto",              m: 8,  d: 15 },
-    { key: "ognissanti",    name: "Ognissanti",              m: 11, d: 1 },
-    { key: "immacolata",    name: "Immacolata Concezione",   m: 12, d: 8 },
-    { key: "natale",        name: "Natale",                  m: 12, d: 25 },
-    { key: "santostefano",  name: "Santo Stefano",           m: 12, d: 26 },
-  ];
-  return CATALOGO.map(f => ({ ...f, y: year }));
+  return FESTIVITA_FISSE.map(f => ({ ...f, y: year }));
 }
 
 export function isFestivo(dateKey) {
