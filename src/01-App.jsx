@@ -6,7 +6,7 @@ import { ModaleErroriMultipli } from "./05-Comuni";
 import {
   getContrastTextColor, NOMI_MESI_IT, calcFine6h15, calcFine6h30, calcDurata,
   fmtDataIT, impostaSilenziamentoErrore, segnalaErrore,
-  ModelForm, GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView,
+  ModelForm, GrigliaRotazione, NLRSScalanteView, DomenicheView, ReperibilitaView,
 } from "./04-Rotazione";
 import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
 
@@ -359,7 +359,7 @@ function AppInterno({ session }){
                 )}
                 <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
                   {rotazioni.map((r,i,arr)=>{
-                    const tipoLabel=r.tipo==="domeniche"?"🗓 Domeniche 1/4":r.tipo==="nlrs"?"🔄 NL/RS":r.tipo==="nlrs_scalante"?"📅 RS/NL Scalante":"✏️ Personalizzata";
+                    const tipoLabel=r.tipo==="domeniche"?"🗓 Domeniche 1/4":r.tipo==="reperibilita"?"📞 Reperibilità":r.tipo==="nlrs_scalante"?"📅 RS/NL Scalante":"🗓️ Personalizzata";
                     return (
                       <div key={r.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                         <div onClick={()=>{
@@ -407,7 +407,7 @@ function AppInterno({ session }){
                       const isLav=(diffSett%4)===0;
                       modelloScelto=modelli.find(m=>m.id===(isLav?r.modellaLavoroId:r.modelloNLId))||null;
                     }
-                  } else if(r.tipo==="nlrs"||r.tipo==="nlrs_scalante"){
+                  } else if(r.tipo==="nlrs_scalante"||r.tipo==="reperibilita"){
                     modelloScelto=modelli.find(m=>m.id===(r.modelloNLId||r.modelloRSId))||null;
                   }
                   if(!modelloScelto){
@@ -441,8 +441,8 @@ function AppInterno({ session }){
                 {showRotDetail.tipo==="domeniche"&&(
                   <DomenicheView rot={showRotDetail} T={T} accent={accent} modelli={modelliDelCalRot2} fasceAutomatiche={fasceAutomatiche} onUpdate={()=>{}}/>
                 )}
-                {showRotDetail.tipo==="nlrs"&&(
-                  <NLRSView rot={showRotDetail} T={T} accent={accent} modelli={modelliDelCalRot2}/>
+                {showRotDetail.tipo==="reperibilita"&&(
+                  <ReperibilitaView rot={showRotDetail} T={T} accent={accent} modelli={modelliDelCalRot2}/>
                 )}
                 {showRotDetail.tipo==="nlrs_scalante"&&(
                   <NLRSScalanteView rot={showRotDetail} T={T} accent={accent} modelli={modelliDelCalRot2}/>

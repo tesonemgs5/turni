@@ -4314,20 +4314,25 @@ const importsRecenti = useMemo(()=>{
           idx = (idx + 1) % SEQ_GIORNI_RS.length;
         }
       }
-    } else if(rot.tipo === "nlrs") {
-      const modNL = modelli.find(m=>m.id===rot.modelloNLId);
-      const modRS = modelli.find(m=>m.id===rot.modelloRSId);
+    } else if(rot.tipo === "reperibilita") {
+      // modelloRSId = turno 14:00-24:00, modelloNLId = turno 00:00-14:00
+      // (stessi due slot già usati da RS/NL scalante, riutilizzati qui).
+      const modA = modelli.find(m=>m.id===rot.modelloRSId); // 14-24
+      const modB = modelli.find(m=>m.id===rot.modelloNLId); // 00-14
+      const turnoPartenzaA = rot.reperibilitaTurnoPartenza !== "00-14"; // true = A parte con 14-24
+      const primoModello = turnoPartenzaA ? modA : modB;
+      const secondoModello = turnoPartenzaA ? modB : modA;
+
       const [y0, m0, d0] = startDayKey.split("-").map(Number);
       const start = new Date(y0, m0-1, d0);
-      const totalWeeks = numRipetizioni * 2;
-
-      for(let s=0; s<totalWeeks; s++) {
-        const isNL = (s % 2) === 0;
-        const mod = isNL ? modNL : modRS;
-        if(!mod) continue;
-        const d = new Date(start);
-        d.setDate(d.getDate() + s * 7);
-        await inserisciEvento(mod, d);
+      // numRipetizioni qui indica il numero di BLOCCHI da 8 giorni da generare.
+      for(let i=0; i<numRipetizioni; i++) {
+        const giorno1 = new Date(start);
+        giorno1.setDate(giorno1.getDate() + i*8);
+        const giorno2 = new Date(giorno1);
+        giorno2.setDate(giorno2.getDate() + 1);
+        if(primoModello) await inserisciEvento(primoModello, giorno1);
+        if(secondoModello) await inserisciEvento(secondoModello, giorno2);
       }
     } else if(rot.tipo === "domeniche") {
       const modLav = modelli.find(m=>m.id===rot.modellaLavoroId);

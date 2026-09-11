@@ -1,145 +1,809 @@
+import { useState, useMemo } from "react";
+
 // ═══════════════════════════════════════════════════════════════════════
-// PATCH per 04-Rotazione.jsx
+// 04-Rotazione.jsx — RICOSTRUITO
 // ═══════════════════════════════════════════════════════════════════════
 //
-// NON è un file da caricare così com'è al posto del tuo 04-Rotazione.jsx
-// reale: quel file contiene molte altre funzioni (MONTHS, DAYS, PALETTE,
-// uid, firstDay, getShiftBand, minsOf, sameData, withEventoAggiornato,
-// ecc.) che io non ho mai visto per intero, quindi non posso riscriverle
-// senza rischiare di romperle.
+// Il file originale con questo nome non è mai stato recuperato (in due
+// tentativi separati). Questo file è stato ricostruito da zero deducendo
+// ogni funzione dal modo in cui viene usata in 01-App.jsx e 06-Logica.jsx.
 //
-// Questo file contiene SOLO i pezzi da sostituire/aggiungere dentro il
-// tuo 04-Rotazione.jsx vero, più le istruzioni esatte di dove.
+// ⚠️ SEZIONI DA VERIFICARE A MANO (comportamento dedotto, non certo):
+//   - FASCE_AUTOMATICHE_DEFAULT / getColorByTime / getColorLabel
+//     (bande orarie automatiche per colorare i modelli — le fasce esatte
+//     che usavi prima non sono note, ho messo 4 fasce standard)
+//   - categoriaTurnoAutomatica / categoriaAppAutoAutomatica
+//     (classificazione automatica 1°/2° turno e app/auto per i report)
+//   - isModelloTurnazioneDefault (quali modelli contano come "turnazione
+//     standard 6h15" nei report)
+//   - getShiftBand (mai effettivamente chiamata da nessuna parte nel
+//     codice che ho — presente solo per compatibilità di import)
+//   - ModelForm — la parte "conteggio per report" (getConteggioConfig/
+//     updateConteggioConfig) NON è inclusa: non avevo abbastanza contesto
+//     sulla struttura dei report per ricostruirla senza rischiare di
+//     rompere quella funzionalità. Il resto del form (titolo, nome
+//     visualizzato, durata, orari, colore, categoria) è completo.
+//   - ModelloCard / RotazioneCard — presenti per sicurezza (import
+//     probabili da 02-Modelli.jsx, che non ho in questa sessione), sono
+//     card di visualizzazione a basso rischio.
 //
-// Le 3 modifiche richieste:
-//   1) Tolto il tipo "nlrs" (NL/RS classico) dalle opzioni selezionabili
-//   2) Aggiunto il tipo "reperibilita" con la logica a scalare (8 giorni)
-//   3) La rotazione "Personalizzata" ora è una griglia 7 righe (Lun..Dom)
-//      x 52 colonne (settimane), con un modello scelto da una LISTA DI
-//      MODELLI (con colore e dipendenze) invece che libera giorno-per-
-//      giorno singolo.
-//
+// Le 3 funzioni withEvento* (che toccano i dati reali dei turni) sono
+// scritte nel modo più conservativo possibile: sempre immutabili (mai
+// mutano lo store originale), sempre con deep-enough clone della sola
+// porzione .events toccata.
 // ═══════════════════════════════════════════════════════════════════════
 
 
 // ─────────────────────────────────────────────────────────────────────
-// PARTE 1 — MODIFICA a 02-Modelli.jsx (e 01-App.jsx, se ha lo stesso
-// elenco): togliere la riga "NL/RS classico" dalla lista dei tipi
-// disponibili mostrata quando non ci sono ancora rotazioni.
+// COSTANTI DI BASE
 // ─────────────────────────────────────────────────────────────────────
-//
-// In 02-Modelli.jsx, cerca questo blocco (intorno alla riga 500):
-//
-//   {[
-//     ["🗓 Domeniche 1/4","1 domenica lavoro (festivo) + 3 riposo ogni 4 settimane"],
-//     ["📅 RS/NL Scalante","RS venerdì→NL+7gg, poi giovedì, poi mercoledì... (salta domenica)"],
-//     ["🔄 NL/RS classico","NL e RS a rotazione settimanale scalante"],
-//     ["📋 Personalizzata","Griglia libera giorno per giorno"],
-//   ].map(([t,d])=>(
-//
-// e sostituiscilo con:
 
-const ELENCO_TIPI_ROTAZIONE_DISPONIBILI = [
-  ["🗓 Domeniche 1/4","1 domenica lavoro (festivo) + 3 riposo ogni 4 settimane"],
-  ["📅 RS/NL Scalante","RS venerdì→NL+7gg, poi giovedì, poi mercoledì... (salta domenica)"],
-  ["📞 Reperibilità","Turno 14-24 e turno 00-14 a scalare ogni 8 giorni"],
-  ["🗓️ Personalizzata","Griglia annuale 7 giorni x 52 settimane, a modelli"],
+export const MONTHS = [
+  "Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno",
+  "Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre",
 ];
-// (nel file reale questo va inserito al posto dell'array [ ... ].map(...) esistente)
+export const NOMI_MESI_IT = MONTHS;
+
+// Indicizzato come Date.getDay(): 0=Domenica..6=Sabato
+export const NOMI_GIORNI_IT = ["Domenica","Lunedì","Martedì","Mercoledì","Giovedì","Venerdì","Sabato"];
+export const DAYS = ["Lun","Mar","Mer","Gio","Ven","Sab","Dom"];
+
+export const PALETTE = [
+  "#ef4444","#f97316","#f59e0b","#eab308","#84cc16","#22c55e",
+  "#10b981","#14b8a6","#06b6d4","#0ea5e9","#3b82f6","#6366f1",
+  "#8b5cf6","#a855f7","#d946ef","#ec4899","#64748b","#78716c",
+];
+
+export const COLORE_H24 = "#64748b";
+
+// Bande orarie automatiche di default, usate per colorare/etichettare i
+// modelli in base all'orario di inizio (colByTime/colLabel). Da
+// verificare/aggiustare rispetto a quelle realmente in uso prima.
+export const FASCE_AUTOMATICHE_DEFAULT = [
+  { key:"mattina",   label:"Mattina",   colore:"#f59e0b", da:"06:00", a:"14:00" },
+  { key:"pomeriggio",label:"Pomeriggio",colore:"#0ea5e9", da:"14:00", a:"22:00" },
+  { key:"notte",     label:"Notte",     colore:"#6366f1", da:"22:00", a:"06:00" },
+  { key:"riposo",    label:"Riposo",    colore:"#94a3b8", da:"00:00", a:"00:00" },
+];
+
+export const FESTIVITA_DEFAULT_ATTIVE = true;
+
+const NB = {
+  padding:"10px 14px", borderRadius:10, fontWeight:700, fontSize:13,
+  cursor:"pointer", border:"none",
+};
 
 
 // ─────────────────────────────────────────────────────────────────────
-// PARTE 2 — RotazioneForm: i 4 bottoni "TIPO DI ROTAZIONE" nel modale
-// "Nuova rotazione" (quello dello screenshot). Qui sotto la versione
-// completa del form, con "NL/RS classico" tolto e "Reperibilità" al
-// suo posto. Sostituisce la funzione RotazioneForm nel tuo
-// 04-Rotazione.jsx.
+// UTILITY DI DATA / ORARIO
 // ─────────────────────────────────────────────────────────────────────
 
-export function RotazioneForm({ T, form, setForm, accent, modelli, sortedModelli, onSave }) {
-  const accentText = getContrastTextColor(accent);
-  const listaModelli = sortedModelli || modelli || [];
+export function dkey(year, monthIndex0, day) {
+  return `${year}-${String(monthIndex0 + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
 
-  const TIPI = [
-    { key: "personalizzata", label: "🗓️ Personalizzata" },
-    { key: "domeniche",      label: "📅 Domeniche 1/4" },
-    { key: "reperibilita",   label: "📞 Reperibilità" },
-    { key: "nlrs_scalante",  label: "📆 RS/NL scalante" },
-  ];
+export function daysInMonth(year, monthIndex0) {
+  return new Date(year, monthIndex0 + 1, 0).getDate();
+}
 
-  function setTipo(tipo) {
-    setForm(prev => ({ ...prev, tipo }));
+export function firstDay(year, monthIndex0) {
+  // Giorno della settimana (0=Dom..6=Sab) dell'1 del mese.
+  return new Date(year, monthIndex0, 1).getDay();
+}
+
+export function uid() {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+export function generaIdLocale() {
+  return "local_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+}
+
+export function oraInMinuti(hhmm) {
+  if (!hhmm || typeof hhmm !== "string" || !hhmm.includes(":")) return null;
+  const [h, m] = hhmm.split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  return h * 60 + m;
+}
+
+export function normalizzaOraHHMM(v) {
+  if (!v) return "";
+  const s = String(v).trim();
+  const m = s.match(/^(\d{1,2}):?(\d{2})$/);
+  if (!m) return s;
+  return `${String(m[1]).padStart(2, "0")}:${m[2]}`;
+}
+
+export function minsOf(hhmm) {
+  return oraInMinuti(normalizzaOraHHMM(hhmm));
+}
+
+function addMinutiAOra(hhmm, minutiDaAggiungere) {
+  const base = oraInMinuti(normalizzaOraHHMM(hhmm));
+  if (base == null) return "";
+  const tot = (base + minutiDaAggiungere) % (24 * 60);
+  const h = Math.floor(tot / 60), m = tot % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+export function calcFine6h15(inizio) {
+  return addMinutiAOra(inizio, 6 * 60 + 15);
+}
+export function calcFine6h30(inizio) {
+  return addMinutiAOra(inizio, 6 * 60 + 30);
+}
+
+export function calcFineModello(mod) {
+  if (!mod) return "";
+  if (mod.tempo === "h24") return "";
+  if ((mod.tempo === "6h15" || mod.tempo === "6h 15m") && mod.inizio) return calcFine6h15(mod.inizio);
+  if ((mod.tempo === "6h30" || mod.tempo === "6h 30m") && mod.inizio) return calcFine6h30(mod.inizio);
+  return mod.fine || "";
+}
+
+export function minutiTurnoModello(mod) {
+  if (!mod) return 0;
+  if (mod.tempo === "6h15") return 375;
+  if (mod.tempo === "6h30") return 390;
+  const a = oraInMinuti(mod.inizio), b = oraInMinuti(calcFineModello(mod));
+  if (a == null || b == null) return 0;
+  return b >= a ? b - a : (24 * 60 - a) + b;
+}
+
+export function calcDurata(inizio, fine) {
+  const a = oraInMinuti(inizio), b = oraInMinuti(fine);
+  if (a == null || b == null) return 0;
+  return b >= a ? b - a : (24 * 60 - a) + b;
+}
+
+export function sameData(a, b) {
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch {
+    return a === b;
   }
+}
 
+export function fmtDataIT(dateKey) {
+  if (!dateKey) return "";
+  const [y, m, d] = dateKey.split("-").map(Number);
+  if (!y || !m || !d) return dateKey;
+  const dt = new Date(y, m - 1, d);
+  return `${NOMI_GIORNI_IT[dt.getDay()]} ${d}/${m}/${y}`;
+}
+
+export function getContrastTextColor(hex) {
+  if (!hex) return "#fff";
+  const h = hex.replace("#", "");
+  const full = h.length === 3 ? h.split("").map(c => c + c).join("") : h;
+  if (full.length !== 6) return "#fff";
+  const r = parseInt(full.slice(0, 2), 16), g = parseInt(full.slice(2, 4), 16), b = parseInt(full.slice(4, 6), 16);
+  const luma = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luma > 0.6 ? "#111827" : "#ffffff";
+}
+
+// Bande orarie: dato un orario di inizio, trova la fascia automatica di
+// appartenenza (per colore/etichetta di default dei modelli).
+function trovaFascia(tIn, fasce) {
+  const lista = fasce && fasce.length ? fasce : FASCE_AUTOMATICHE_DEFAULT;
+  const m = oraInMinuti(tIn);
+  if (m == null) return lista[0];
+  for (const f of lista) {
+    const da = oraInMinuti(f.da), a = oraInMinuti(f.a);
+    if (da == null || a == null) continue;
+    if (da === a) continue; // fascia "riposo" senza intervallo, salta
+    if (da < a) { if (m >= da && m < a) return f; }
+    else { if (m >= da || m < a) return f; } // fascia che attraversa la mezzanotte
+  }
+  return lista[0];
+}
+
+export function getColorByTime(tIn, fasceAutomatiche) {
+  const f = trovaFascia(tIn, fasceAutomatiche);
+  return f?.colore || PALETTE[0];
+}
+export function getColorLabel(tIn, fasceAutomatiche) {
+  const f = trovaFascia(tIn, fasceAutomatiche);
+  return f?.label || "";
+}
+
+// Usata per l'asse "1°/2° turno" nei report: mattina/pomeriggio ->
+// "primo", notte -> "secondo". Da verificare rispetto al criterio reale.
+export function categoriaTurnoAutomatica(mod) {
+  if (!mod) return null;
+  const m = oraInMinuti(mod.inizio);
+  if (m == null) return null;
+  return (m >= oraInMinuti("06:00") && m < oraInMinuti("18:00")) ? "primo" : "secondo";
+}
+
+// Usata per l'asse "app/auto" nei report: se il titolo/etichetta del
+// modello contiene la parola "APP" viene classificato come "app",
+// altrimenti "auto". Da verificare rispetto al criterio reale.
+export function categoriaAppAutoAutomatica(mod) {
+  if (!mod) return null;
+  const t = `${mod.titolo || ""} ${mod.label || ""}`.toUpperCase();
+  return t.includes("APP") ? "app" : "auto";
+}
+
+// Un modello conta come "turnazione standard 6h15" se la sua durata è
+// esattamente 6h15 (375 minuti tra inizio e fine).
+export function isModelloTurnazioneDefault(mod) {
+  if (!mod || mod.tempo === "h24") return false;
+  if (mod.tempo === "6h15") return true;
+  return minutiTurnoModello(mod) === 375;
+}
+
+// Non risulta chiamata da nessuna parte nel codice disponibile: presente
+// solo per soddisfare l'import. Ritorna la stessa cosa di getColorLabel.
+export function getShiftBand(tIn, fasceAutomatiche) {
+  return getColorLabel(tIn, fasceAutomatiche);
+}
+
+// Festività italiane fisse (non include la Pasqua/Pasquetta, che sono
+// mobili — se ti servono aggiungile qui calcolandole per anno).
+const FESTIVITA_FISSE = [
+  { m: 1, d: 1 }, { m: 1, d: 6 }, { m: 4, d: 25 }, { m: 5, d: 1 },
+  { m: 6, d: 2 }, { m: 8, d: 15 }, { m: 11, d: 1 }, { m: 12, d: 8 },
+  { m: 12, d: 25 }, { m: 12, d: 26 },
+];
+
+export function italianHols(year, nationalHolsEnabled = true) {
+  if (!nationalHolsEnabled) return [];
+  return FESTIVITA_FISSE.map(h => ({ ...h, y: year }));
+}
+
+export function isFestivo(dateKey) {
+  if (!dateKey) return false;
+  const [y, m, d] = dateKey.split("-").map(Number);
+  if (!y || !m || !d) return false;
+  const dow = new Date(y, m - 1, d).getDay();
+  if (dow === 0) return true; // domenica
+  return FESTIVITA_FISSE.some(h => h.m === m && h.d === d);
+}
+
+
+// ─────────────────────────────────────────────────────────────────────
+// LOCALSTORAGE — cache locale (calendari/eventi/modelli/impostazioni)
+// ─────────────────────────────────────────────────────────────────────
+
+const LS_CACHE_KEY = "turnipm_cache_v1";
+
+export function saveToLocalStorage(events, calendars, modelli, calId, extra = {}) {
+  try {
+    const payload = { events, calendars, modelli, calId, ...extra, _savedAt: Date.now() };
+    localStorage.setItem(LS_CACHE_KEY, JSON.stringify(payload));
+  } catch (e) {
+    // Storage pieno o non disponibile: non blocchiamo l'app per questo.
+    console.warn("saveToLocalStorage fallito:", e);
+  }
+}
+
+export function loadFromLocalStorage() {
+  try {
+    const raw = localStorage.getItem(LS_CACHE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+
+// ─────────────────────────────────────────────────────────────────────
+// ERRORI — coda per il modale, log persistente, silenziamento per
+// contesto, listener registrabile dal componente principale.
+// ─────────────────────────────────────────────────────────────────────
+
+const LS_LOG_ERRORI_KEY = "turnipm_log_errori_v1";
+const LS_ERRORI_SILENZIATI_KEY = "turnipm_errori_silenziati_v1";
+const LS_CODA_SYNC_KEY = "turnipm_coda_sync_v1";
+
+let _listenerCodaErrori = null;
+
+export function registraListenerCodaErrori(cb) {
+  _listenerCodaErrori = cb || null;
+}
+
+function scriviLogErrori(voce) {
+  try {
+    const log = leggiLogErrori();
+    log.push(voce);
+    // Tiene solo le ultime 200 voci per non far crescere localStorage indefinitamente.
+    const tagliato = log.slice(-200);
+    localStorage.setItem(LS_LOG_ERRORI_KEY, JSON.stringify(tagliato));
+  } catch (e) {
+    console.warn("scriviLogErrori fallito:", e);
+  }
+}
+
+export function leggiLogErrori() {
+  try {
+    const raw = localStorage.getItem(LS_LOG_ERRORI_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function leggiErroriSilenziati() {
+  try {
+    const raw = localStorage.getItem(LS_ERRORI_SILENZIATI_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function impostaSilenziamentoErrore(contesto, silenziato) {
+  try {
+    const attuali = leggiErroriSilenziati();
+    const senza = attuali.filter(c => c !== contesto);
+    const nuovi = silenziato ? [...senza, contesto] : senza;
+    localStorage.setItem(LS_ERRORI_SILENZIATI_KEY, JSON.stringify(nuovi));
+  } catch (e) {
+    console.warn("impostaSilenziamentoErrore fallito:", e);
+  }
+}
+
+// segnala un errore: lo scrive sempre nel Log persistente, e — se il
+// contesto non è stato silenziato dall'utente — lo accoda anche per il
+// modale a schermo tramite il listener registrato dal componente App.
+export function segnalaErrore(error, contesto) {
+  const voce = {
+    id: generaIdLocale(),
+    ts: new Date().toISOString(),
+    contesto,
+    message: error?.message || String(error || "Errore sconosciuto"),
+  };
+  scriviLogErrori(voce);
+  const silenziati = leggiErroriSilenziati();
+  if (!silenziati.includes(contesto) && _listenerCodaErrori) {
+    _listenerCodaErrori(voce);
+  }
+  console.error(`[${contesto}]`, error);
+}
+
+// Come segnalaErrore, ma non apre mai il modale — solo Log. Usata nei
+// cicli dove serve un riepilogo unico invece di N popup.
+export function segnalaErroreSoloLog(error, contesto) {
+  const voce = {
+    id: generaIdLocale(),
+    ts: new Date().toISOString(),
+    contesto,
+    message: error?.message || String(error || "Errore sconosciuto"),
+  };
+  scriviLogErrori(voce);
+  console.error(`[${contesto}] (solo log)`, error);
+}
+
+// Problemi rilevati durante un import (righe mancanti/sospette): salvati
+// nel Log come voci dedicate, consultabili in Impostazioni -> Log.
+export function registraProblemiImport(mancanti = [], sospetti = []) {
+  if ((mancanti?.length || 0) === 0 && (sospetti?.length || 0) === 0) return;
+  scriviLogErrori({
+    id: generaIdLocale(),
+    ts: new Date().toISOString(),
+    contesto: "Import",
+    message: `Import completato con avvisi: ${mancanti.length} mancanti, ${sospetti.length} sospetti.`,
+    mancanti, sospetti,
+  });
+}
+
+// Coda di sincronizzazione offline: operazioni (insert/update/delete) da
+// riprovare quando torna la connessione.
+export function leggiCodaSync() {
+  try {
+    const raw = localStorage.getItem(LS_CODA_SYNC_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function scriviCodaSync(coda) {
+  try {
+    localStorage.setItem(LS_CODA_SYNC_KEY, JSON.stringify(coda || []));
+  } catch (e) {
+    console.warn("scriviCodaSync fallito:", e);
+  }
+}
+
+
+// ─────────────────────────────────────────────────────────────────────
+// MUTAZIONI IMMUTABILI DELLO STORE EVENTI — store.events[dateKey][calId]
+// = [array di eventi, ognuno con .id]. Scritte nel modo più conservativo
+// possibile: nuovi oggetti/array ad ogni livello toccato, il resto dello
+// store (calendars, theme, fasceAutomatiche, ecc.) resta lo stesso
+// riferimento, non viene mai clonato o alterato.
+// ─────────────────────────────────────────────────────────────────────
+
+export function withEventoAggiunto(store, dateKey, calId, evento) {
+  const eventiEsistentiGiorno = store.events?.[dateKey] || {};
+  const eventiEsistentiCal = eventiEsistentiGiorno[calId] || [];
+  return {
+    ...store,
+    events: {
+      ...store.events,
+      [dateKey]: {
+        ...eventiEsistentiGiorno,
+        [calId]: [...eventiEsistentiCal, evento],
+      },
+    },
+  };
+}
+
+export function withEventoAggiornato(store, dateKey, calId, eventId, patch) {
+  const eventiEsistentiGiorno = store.events?.[dateKey] || {};
+  const eventiEsistentiCal = eventiEsistentiGiorno[calId] || [];
+  const nuoviEventi = eventiEsistentiCal.map(ev => (ev.id === eventId ? { ...ev, ...patch } : ev));
+  return {
+    ...store,
+    events: {
+      ...store.events,
+      [dateKey]: {
+        ...eventiEsistentiGiorno,
+        [calId]: nuoviEventi,
+      },
+    },
+  };
+}
+
+export function withEventoRimosso(store, dateKey, calId, eventId) {
+  const eventiEsistentiGiorno = store.events?.[dateKey] || {};
+  const eventiEsistentiCal = eventiEsistentiGiorno[calId] || [];
+  const nuoviEventi = eventiEsistentiCal.filter(ev => ev.id !== eventId);
+  return {
+    ...store,
+    events: {
+      ...store.events,
+      [dateKey]: {
+        ...eventiEsistentiGiorno,
+        [calId]: nuoviEventi,
+      },
+    },
+  };
+}
+
+
+// ─────────────────────────────────────────────────────────────────────
+// ModelloSelector — dropdown/lista compatta per scegliere un modello
+// esistente (usato da RotazioneForm, ReperibilitaFormFields, GrigliaRotazione).
+// ─────────────────────────────────────────────────────────────────────
+
+export function ModelloSelector({ T, modelli = [], value, onChange }) {
   return (
-    <div style={{ padding: 16 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, marginBottom: 8 }}>
-        TIPO DI ROTAZIONE
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
-        {TIPI.map(t => (
-          <button key={t.key} type="button" onClick={() => setTipo(t.key)}
-            style={{
-              background: form.tipo === t.key ? accent : T.s2,
-              color: form.tipo === t.key ? accentText : T.text,
-              border: `1px solid ${form.tipo === t.key ? accent : T.border}`,
-              borderRadius: 10, padding: "12px 10px", fontWeight: 700, fontSize: 13,
-              cursor: "pointer", textAlign: "left"
-            }}>
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, marginBottom: 6 }}>
-        TITOLO ROTAZIONE
-      </div>
-      <input value={form.titolo || ""} onChange={e => setForm(prev => ({ ...prev, titolo: e.target.value }))}
-        placeholder="es. Reperibilità Team A"
-        style={{ width: "100%", boxSizing: "border-box", background: T.s2, border: `1px solid ${T.border}`,
-          borderRadius: 8, padding: "10px 12px", color: T.text, fontSize: 14, marginBottom: 16 }} />
-
-      {/* ── Campi specifici per REPERIBILITÀ ─────────────────────── */}
-      {form.tipo === "reperibilita" && (
-        <ReperibilitaFormFields T={T} form={form} setForm={setForm} accent={accent}
-          accentText={accentText} modelli={listaModelli} />
-      )}
-
-      {/* ── Campi specifici per DOMENICHE 1/4 (esistenti, invariati) ── */}
-      {form.tipo === "domeniche" && (
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, marginBottom: 6 }}>MODELLO GIORNO LAVORO</div>
-          <ModelloSelector T={T} modelli={listaModelli} value={form.modellaLavoroId}
-            onChange={id => setForm(prev => ({ ...prev, modellaLavoroId: id }))} />
-        </div>
-      )}
-
-      {/* ── Campi specifici per RS/NL scalante (esistenti, invariati) ── */}
-      {form.tipo === "nlrs_scalante" && (
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, marginBottom: 6 }}>MODELLO RS</div>
-          <ModelloSelector T={T} modelli={listaModelli} value={form.modelloRSId}
-            onChange={id => setForm(prev => ({ ...prev, modelloRSId: id }))} />
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, margin: "10px 0 6px" }}>MODELLO NL</div>
-          <ModelloSelector T={T} modelli={listaModelli} value={form.modelloNLId}
-            onChange={id => setForm(prev => ({ ...prev, modelloNLId: id }))} />
-        </div>
-      )}
-
-      <button onClick={onSave}
-        style={{ width: "100%", background: accent, color: accentText, border: "none", borderRadius: 10,
-          padding: "13px 0", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>
-        💾 Salva rotazione
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+      <button type="button" onClick={() => onChange(null)}
+        style={{
+          padding: "6px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: "pointer",
+          border: `1.5px solid ${!value ? "#ef4444" : T.border}`,
+          background: !value ? "#ef4444" : T.s2, color: !value ? "#fff" : T.text,
+        }}>
+        ✕ Nessuno
       </button>
+      {modelli.map(m => {
+        const attivo = value === m.id;
+        return (
+          <button key={m.id} type="button" onClick={() => onChange(m.id)}
+            style={{
+              display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", borderRadius: 20,
+              border: `1.5px solid ${attivo ? (m.coloreCustom || "#2563eb") : T.border}`,
+              background: attivo ? (m.coloreCustom || "#2563eb") : T.s2,
+              color: attivo ? getContrastTextColor(m.coloreCustom || "#2563eb") : T.text,
+              fontSize: 12, fontWeight: 700, cursor: "pointer",
+            }}>
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: m.coloreCustom || "#2563eb" }} />
+            {m.titolo}
+          </button>
+        );
+      })}
     </div>
   );
 }
 
 
 // ─────────────────────────────────────────────────────────────────────
-// PARTE 3 — Campi di configurazione della REPERIBILITÀ dentro il form:
-// giorno della settimana di partenza + turno di partenza (14-24 oppure
-// 00-14) + i due modelli-turno da usare.
+// ModelForm — form di creazione/modifica di un "modello turno".
+// NOTA: non include la sezione "conteggio per report" (getConteggioConfig
+// / updateConteggioConfig) — vedi avviso in cima al file.
+// ─────────────────────────────────────────────────────────────────────
+
+const TEMPI_MODELLO = [
+  { key: "6h15", label: "6h 15m" },
+  { key: "6h30", label: "6h 30m" },
+  { key: "h24", label: "Tutto il giorno (H24)" },
+  { key: "personalizzato", label: "Orario personalizzato" },
+];
+
+export function ModelForm({
+  T, form, setForm, accent, dark, fasceAutomatiche, modelli,
+  suggerimentiTitolo = [], suggerimentiNomeVis = [], onRimuoviSuggerimento,
+  onSave,
+}) {
+  const [mostraSuggTitolo, setMostraSuggTitolo] = useState(false);
+  const accentText = getContrastTextColor(accent);
+  const coloreAnteprima = form.coloreCustom || (form.tempo === "h24" ? COLORE_H24 : getColorByTime(form.inizio, fasceAutomatiche));
+
+  function campo(label, node) {
+    return (
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, marginBottom: 6 }}>{label}</div>
+        {node}
+      </div>
+    );
+  }
+
+  const inputStyle = {
+    width: "100%", boxSizing: "border-box", background: T.s2, border: `1px solid ${T.border}`,
+    borderRadius: 8, padding: "10px 12px", color: T.text, fontSize: 14,
+  };
+
+  return (
+    <div style={{ padding: 16 }}>
+      {campo("TITOLO", (
+        <div style={{ position: "relative" }}>
+          <input value={form.titolo || ""} placeholder="es. MATTINA"
+            onFocus={() => setMostraSuggTitolo(true)}
+            onBlur={() => setTimeout(() => setMostraSuggTitolo(false), 150)}
+            onChange={e => setForm(prev => ({ ...prev, titolo: e.target.value }))}
+            style={inputStyle} />
+          {mostraSuggTitolo && suggerimentiTitolo.length > 0 && (
+            <div style={{
+              position: "absolute", top: "100%", left: 0, right: 0, zIndex: 20,
+              background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8,
+              marginTop: 4, maxHeight: 160, overflowY: "auto",
+            }}>
+              {suggerimentiTitolo.filter(s => !form.titolo || s.toUpperCase().includes(form.titolo.toUpperCase())).map(s => (
+                <div key={s} style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  padding: "8px 12px", cursor: "pointer", fontSize: 13, color: T.text,
+                }}
+                  onMouseDown={() => setForm(prev => ({ ...prev, titolo: s }))}>
+                  <span>{s}</span>
+                  {onRimuoviSuggerimento && (
+                    <span onMouseDown={e => { e.stopPropagation(); onRimuoviSuggerimento("titolo", s); }}
+                      style={{ color: T.sub, padding: "0 4px" }}>✕</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+
+      {campo("NOME VISUALIZZATO (opzionale)", (
+        <input value={form.label || ""} placeholder="es. M"
+          list="suggerimenti-nome-vis"
+          onChange={e => setForm(prev => ({ ...prev, label: e.target.value }))}
+          style={inputStyle} />
+      ))}
+      {suggerimentiNomeVis.length > 0 && (
+        <datalist id="suggerimenti-nome-vis">
+          {suggerimentiNomeVis.map(s => <option key={s} value={s} />)}
+        </datalist>
+      )}
+
+      {campo("DURATA", (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {TEMPI_MODELLO.map(t => (
+            <button key={t.key} type="button" onClick={() => setForm(prev => ({ ...prev, tempo: t.key }))}
+              style={{
+                ...NB, background: form.tempo === t.key ? accent : T.s2,
+                color: form.tempo === t.key ? accentText : T.text,
+                border: `1px solid ${form.tempo === t.key ? accent : T.border}`,
+              }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+      ))}
+
+      {form.tempo !== "h24" && campo("ORARIO DI INIZIO", (
+        <input type="time" value={form.inizio || ""} onChange={e => setForm(prev => ({ ...prev, inizio: e.target.value }))}
+          style={inputStyle} />
+      ))}
+
+      {form.tempo === "personalizzato" && campo("ORARIO DI FINE", (
+        <input type="time" value={form.fine || ""} onChange={e => setForm(prev => ({ ...prev, fine: e.target.value }))}
+          style={inputStyle} />
+      ))}
+
+      {(form.tempo === "6h15" || form.tempo === "6h30") && form.inizio && (
+        <div style={{ fontSize: 12, color: T.sub, marginTop: -8, marginBottom: 14 }}>
+          Fine calcolata automaticamente: {calcFineModello(form)}
+        </div>
+      )}
+
+      {campo("COLORE", (
+        <div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+            {PALETTE.map(c => (
+              <div key={c} onClick={() => setForm(prev => ({ ...prev, coloreCustom: c }))}
+                style={{
+                  width: 26, height: 26, borderRadius: "50%", background: c, cursor: "pointer",
+                  border: form.coloreCustom === c ? `2px solid ${T.text}` : "2px solid transparent",
+                }} />
+            ))}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ width: 22, height: 22, borderRadius: "50%", background: coloreAnteprima, border: `1px solid ${T.border}` }} />
+            <button type="button" onClick={() => setForm(prev => ({ ...prev, coloreCustom: null }))}
+              style={{ ...NB, background: T.s2, color: T.text, border: `1px solid ${T.border}`, fontSize: 12, padding: "6px 10px" }}>
+              Usa colore automatico (fascia oraria)
+            </button>
+          </div>
+        </div>
+      ))}
+
+      {campo("CATEGORIA TURNO (per i report — opzionale)", (
+        <div style={{ display: "flex", gap: 6 }}>
+          {[["primo", "1° turno"], ["secondo", "2° turno"], [null, "Automatico"]].map(([val, lab]) => (
+            <button key={lab} type="button" onClick={() => setForm(prev => ({ ...prev, categoria: val }))}
+              style={{
+                ...NB, flex: 1, fontSize: 12, background: (form.categoria || null) === val ? accent : T.s2,
+                color: (form.categoria || null) === val ? accentText : T.text,
+                border: `1px solid ${(form.categoria || null) === val ? accent : T.border}`,
+              }}>
+              {lab}
+            </button>
+          ))}
+        </div>
+      ))}
+
+      <button onClick={onSave}
+        style={{ width: "100%", background: accent, color: accentText, border: "none", borderRadius: 10,
+          padding: "13px 0", fontWeight: 800, fontSize: 14, cursor: "pointer", marginTop: 6 }}>
+        💾 Salva modello
+      </button>
+    </div>
+  );
+}
+
+// Card di riepilogo di un modello, per le liste (02-Modelli.jsx).
+export function ModelloCard({ T, modello, accent, onEdit, onDelete }) {
+  const colore = modello.coloreCustom || COLORE_H24;
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "10px 12px", marginBottom: 8,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+        <div style={{ width: 12, height: 12, borderRadius: "50%", background: colore, flexShrink: 0 }} />
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: T.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {modello.titolo}
+          </div>
+          <div style={{ fontSize: 11, color: T.sub }}>
+            {modello.tempo === "h24" ? "Tutto il giorno" : `${modello.inizio || "—"} – ${calcFineModello(modello) || modello.fine || "—"}`}
+          </div>
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+        {onEdit && <button onClick={() => onEdit(modello)} style={{ ...NB, background: "none", color: accent, padding: 4 }}>✎</button>}
+        {onDelete && <button onClick={() => onDelete(modello)} style={{ ...NB, background: "none", color: "#ef4444", padding: 4 }}>🗑</button>}
+      </div>
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────
+// RotazioneCard — riepilogo di una rotazione nell'elenco.
+// ─────────────────────────────────────────────────────────────────────
+
+export function RotazioneCard({ T, rot, accent, onOpen, onDelete }) {
+  const tipoLabel = rot.tipo === "domeniche" ? "🗓 Domeniche 1/4"
+    : rot.tipo === "reperibilita" ? "📞 Reperibilità"
+    : rot.tipo === "nlrs_scalante" ? "📅 RS/NL Scalante"
+    : "🗓️ Personalizzata";
+  return (
+    <div onClick={() => onOpen && onOpen(rot)} style={{
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "12px 14px",
+      marginBottom: 8, cursor: onOpen ? "pointer" : "default",
+    }}>
+      <div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{rot.titolo || "Senza nome"}</div>
+        <div style={{ fontSize: 11, color: T.sub, marginTop: 2 }}>{tipoLabel}</div>
+      </div>
+      {onDelete && (
+        <button onClick={e => { e.stopPropagation(); onDelete(rot); }}
+          style={{ ...NB, background: "none", color: "#ef4444", padding: 4 }}>🗑</button>
+      )}
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────
+// NLRSScalanteView — vista dettaglio per il tipo "nlrs_scalante"
+// (RS venerdì -> NL+7gg, poi giovedì, mercoledì... salta domenica).
+// La logica di calcolo/inserimento resta in applyRotazione (06-Logica.jsx,
+// invariata); qui si mostra solo un riepilogo dei modelli assegnati.
+// ─────────────────────────────────────────────────────────────────────
+
+export function NLRSScalanteView({ rot, T, accent, modelli }) {
+  const modRS = modelli.find(m => m.id === rot.modelloRSId);
+  const modNL = modelli.find(m => m.id === rot.modelloNLId);
+  const SEQ_LABEL = ["Ven", "Gio", "Mer", "Mar", "Lun", "Sab"];
+
+  return (
+    <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
+      <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+        <div style={{ flex: 1, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: 10 }}>
+          <div style={{ fontSize: 10, color: T.sub, fontWeight: 700, marginBottom: 4 }}>MODELLO RS</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ width: 10, height: 10, borderRadius: "50%", background: modRS?.coloreCustom || accent }} />
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{modRS?.titolo || "— nessun modello —"}</div>
+          </div>
+        </div>
+        <div style={{ flex: 1, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: 10 }}>
+          <div style={{ fontSize: 10, color: T.sub, fontWeight: 700, marginBottom: 4 }}>MODELLO NL</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ width: 10, height: 10, borderRadius: "50%", background: modNL?.coloreCustom || accent }} />
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{modNL?.titolo || "— nessun modello —"}</div>
+          </div>
+        </div>
+      </div>
+      <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, marginBottom: 8 }}>
+        SEQUENZA DI SCALO (un giorno diverso ogni quartina)
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        {SEQ_LABEL.map((g, i) => (
+          <div key={g} style={{
+            padding: "6px 10px", borderRadius: 8, background: T.s2, border: `1px solid ${T.border}`,
+            fontSize: 12, fontWeight: 700, color: T.text,
+          }}>
+            {i + 1}. {g}
+          </div>
+        ))}
+      </div>
+      <div style={{ fontSize: 11, color: T.sub, marginTop: 10 }}>
+        La data effettiva di partenza è agganciata alle quartine (Domeniche 1/4) già presenti a calendario.
+      </div>
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────
+// DomenicheView — vista dettaglio per il tipo "domeniche" (1 domenica
+// lavoro ogni 4 settimane).
+// ─────────────────────────────────────────────────────────────────────
+
+export function DomenicheView({ rot, T, accent, modelli, fasceAutomatiche, sundayColor, onUpdate }) {
+  const modLav = modelli.find(m => m.id === rot.modellaLavoroId);
+  const modRip = modelli.find(m => m.id === rot.modelloNLId);
+
+  return (
+    <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
+      <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+        <div style={{ flex: 1, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: 10 }}>
+          <div style={{ fontSize: 10, color: T.sub, fontWeight: 700, marginBottom: 4 }}>DOMENICA LAVORO</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ width: 10, height: 10, borderRadius: "50%", background: modLav?.coloreCustom || accent }} />
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{modLav?.titolo || "— nessun modello —"}</div>
+          </div>
+        </div>
+        <div style={{ flex: 1, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: 10 }}>
+          <div style={{ fontSize: 10, color: T.sub, fontWeight: 700, marginBottom: 4 }}>DOMENICHE RIPOSO</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ width: 10, height: 10, borderRadius: "50%", background: modRip?.coloreCustom || accent }} />
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{modRip?.titolo || "— nessun modello —"}</div>
+          </div>
+        </div>
+      </div>
+      <div style={{ fontSize: 11, color: T.sub }}>
+        1 domenica di lavoro ogni 4 settimane, a partire dalla data di applicazione della rotazione.
+      </div>
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────
+// PARTE REPERIBILITÀ — turno 14:00-24:00 e turno 00:00-14:00 a scalare
+// ogni 8 giorni. (invariato rispetto alla patch già validata)
 // ─────────────────────────────────────────────────────────────────────
 
 const GIORNI_SETTIMANA_FORM = [
@@ -149,8 +813,8 @@ const GIORNI_SETTIMANA_FORM = [
 ];
 
 export function ReperibilitaFormFields({ T, form, setForm, accent, accentText, modelli }) {
-  const giornoPartenza = form.reperibilitaGiornoPartenza ?? 1; // default lunedì
-  const turnoPartenza = form.reperibilitaTurnoPartenza || "14-24"; // "14-24" | "00-14"
+  const giornoPartenza = form.reperibilitaGiornoPartenza ?? 1;
+  const turnoPartenza = form.reperibilitaTurnoPartenza || "14-24";
 
   return (
     <div style={{ marginBottom: 16 }}>
@@ -216,27 +880,6 @@ export function ReperibilitaFormFields({ T, form, setForm, accent, accentText, m
   );
 }
 
-
-// ─────────────────────────────────────────────────────────────────────
-// PARTE 4 — Vista dettaglio REPERIBILITÀ (quando apri la rotazione
-// dallo schermo elenco). Sostituisce/affianca NLRSView per il nuovo
-// tipo "reperibilita". Da aggiungere in 04-Rotazione.jsx e da
-// richiamare in 02-Modelli.jsx / 03-Calendario.jsx al posto del blocco:
-//
-//   {rot.tipo==="nlrs"&&(
-//     <NLRSView rot={rot} T={T} accent={accent} modelli={modelliDelCalRot}/>
-//   )}
-//
-// con:
-//
-//   {rot.tipo==="reperibilita"&&(
-//     <ReperibilitaView rot={rot} T={T} accent={accent} modelli={modelliDelCalRot}/>
-//   )}
-// ─────────────────────────────────────────────────────────────────────
-
-// Calcola le prime N date (come stringhe YYYY-MM-DD) generate dal
-// pattern di reperibilità, solo per l'anteprima a schermo (l'inserimento
-// reale nel calendario resta gestito da applyRotazione, vedi Parte 6).
 export function calcolaAnteprimaReperibilita(rot, nBlocchi = 12) {
   if (!rot?.dataInizio) return [];
   const [y0, m0, d0] = rot.dataInizio.split("-").map(Number);
@@ -259,8 +902,8 @@ export function calcolaAnteprimaReperibilita(rot, nBlocchi = 12) {
 }
 
 export function ReperibilitaView({ rot, T, accent, modelli }) {
-  const modA = modelli.find(m => m.id === rot.modelloRSId); // 14-24
-  const modB = modelli.find(m => m.id === rot.modelloNLId); // 00-14
+  const modA = modelli.find(m => m.id === rot.modelloRSId);
+  const modB = modelli.find(m => m.id === rot.modelloNLId);
   const anteprima = calcolaAnteprimaReperibilita(rot, 12);
 
   const NOMI_GIORNI = ["Dom", "Lun", "Mar", "Mer", "Gio", "Ven", "Sab"];
@@ -314,27 +957,16 @@ export function ReperibilitaView({ rot, T, accent, modelli }) {
 
 
 // ─────────────────────────────────────────────────────────────────────
-// PARTE 5 — Griglia personalizzata 7 (giorni) x 52 (settimane), a
-// scelta di MODELLO da lista (con colore e dipendenze già definite nei
-// modelli-turno esistenti dell'app). Sostituisce GrigliaRotazione nel
-// tuo 04-Rotazione.jsx.
-//
-// Logica: ogni pallino della griglia corrisponde a un giorno reale
-// dell'anno di riferimento (rot.dataInizio = lunedì della settimana 1).
-// Click su un pallino → apre la selezione modello (ModelloSelector) →
-// il pallino prende il colore del modello scelto. Il dato salvato in
-// rot.griglia resta {dateKey: modelloId}, compatibile con
-// applyRotazione già esistente per "personalizzata" (Sezione 06-Logica,
-// riga ~4347), quindi NON serve toccare 06-Logica.jsx per questa parte.
+// GRIGLIA PERSONALIZZATA — 7 (giorni) x 52 (settimane), a scelta di
+// modello da lista. (invariato rispetto alla patch già validata)
 // ─────────────────────────────────────────────────────────────────────
 
 const NOMI_GIORNI_GRIGLIA = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
 
-// Trova il lunedì della settimana che contiene dataStr (YYYY-MM-DD).
 function lunediDellaSettimana(dataStr) {
   const [y, m, d] = dataStr.split("-").map(Number);
   const dt = new Date(y, m - 1, d);
-  const giorno = dt.getDay(); // 0=Dom..6=Sab
+  const giorno = dt.getDay();
   const offset = giorno === 0 ? -6 : 1 - giorno;
   dt.setDate(dt.getDate() + offset);
   return dt;
@@ -344,8 +976,6 @@ function fmtDateKey(dt) {
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
 }
 
-// Costruisce le 52 colonne x 7 righe come matrice di dateKey, a partire
-// dal lunedì di riferimento (rot.dataInizio, o oggi se non impostata).
 export function costruisciMatriceGriglia(rot) {
   const baseStr = rot?.dataInizio || fmtDateKey(new Date());
   const lunedi0 = lunediDellaSettimana(baseStr);
@@ -359,17 +989,12 @@ export function costruisciMatriceGriglia(rot) {
     }
     colonne.push(riga);
   }
-  return colonne; // colonne[settimana][giorno] = dateKey
+  return colonne;
 }
 
-// NB: usa useState/useMemo "nominati" (import { useState, useMemo } from
-// "react"), la stessa convenzione già usata in 02-Modelli.jsx e negli
-// altri file del progetto — assicurati che 04-Rotazione.jsx li importi
-// in cima al file, es:
-//   import { useState, useMemo } from "react";
 export function GrigliaRotazione({ rot, T, accent, modelli, fasceAutomatiche, sundayColor, onUpdate }) {
-  const [pallinoAttivo, setPallinoAttivo] = useState(null); // dateKey in modifica
-  const [modelloSelezionato, setModelloSelezionato] = useState(null); // per applicazione multipla
+  const [pallinoAttivo, setPallinoAttivo] = useState(null);
+  const [modelloSelezionato, setModelloSelezionato] = useState(null);
 
   const matrice = useMemo(() => costruisciMatriceGriglia(rot), [rot?.dataInizio]);
   const griglia = rot.griglia || {};
@@ -383,7 +1008,6 @@ export function GrigliaRotazione({ rot, T, accent, modelli, fasceAutomatiche, su
 
   function clickPallino(dateKey) {
     if (modelloSelezionato !== null) {
-      // Modalità "pennello": applica subito il modello scelto nella barra sopra.
       const nuova = { ...griglia };
       if (modelloSelezionato === "__clear__") delete nuova[dateKey];
       else nuova[dateKey] = modelloSelezionato;
@@ -395,7 +1019,6 @@ export function GrigliaRotazione({ rot, T, accent, modelli, fasceAutomatiche, su
 
   return (
     <div style={{ flex: 1, overflow: "auto", padding: 14 }}>
-      {/* Barra di selezione modello: sceglie il "pennello" da applicare ai pallini */}
       <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, marginBottom: 6 }}>
         SELEZIONA UN MODELLO, POI TOCCA I PALLINI DELLA GRIGLIA
       </div>
@@ -428,7 +1051,6 @@ export function GrigliaRotazione({ rot, T, accent, modelli, fasceAutomatiche, su
         })}
       </div>
 
-      {/* Griglia 7 righe x 52 colonne, scroll orizzontale */}
       <div style={{ overflowX: "auto", border: `1px solid ${T.border}`, borderRadius: 10 }}>
         <div style={{ display: "inline-block", minWidth: "100%" }}>
           {NOMI_GIORNI_GRIGLIA.map((nomeGiorno, riga) => (
@@ -454,7 +1076,6 @@ export function GrigliaRotazione({ rot, T, accent, modelli, fasceAutomatiche, su
               })}
             </div>
           ))}
-          {/* Numeri settimana sotto, ogni 4 colonne per non affollare */}
           <div style={{ display: "flex", marginTop: 4 }}>
             <div style={{ width: 34, flexShrink: 0 }} />
             {matrice.map((_, w) => (
@@ -468,7 +1089,6 @@ export function GrigliaRotazione({ rot, T, accent, modelli, fasceAutomatiche, su
         </div>
       </div>
 
-      {/* Selettore modello puntuale per il singolo pallino (tap senza pennello attivo) */}
       {pallinoAttivo && (
         <div style={{
           position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 700,
@@ -496,89 +1116,82 @@ export function GrigliaRotazione({ rot, T, accent, modelli, fasceAutomatiche, su
 
 
 // ─────────────────────────────────────────────────────────────────────
-// PARTE 6 — MODIFICA a 06-Logica.jsx, funzione applyRotazione: togliere
-// il ramo "nlrs" e aggiungere il ramo "reperibilita".
+// RotazioneForm — form "Nuova rotazione" (i 4 bottoni tipo). NL/RS
+// classico rimosso, Reperibilità aggiunta al suo posto.
 // ─────────────────────────────────────────────────────────────────────
-//
-// Nel tuo 06-Logica.jsx, TROVA questo blocco (righe ~4317-4331 nel file
-// che mi hai passato) e CANCELLALO:
-//
-//   } else if(rot.tipo === "nlrs") {
-//     const modNL = modelli.find(m=>m.id===rot.modelloNLId);
-//     const modRS = modelli.find(m=>m.id===rot.modelloRSId);
-//     const [y0, m0, d0] = startDayKey.split("-").map(Number);
-//     const start = new Date(y0, m0-1, d0);
-//     const totalWeeks = numRipetizioni * 2;
-//
-//     for(let s=0; s<totalWeeks; s++) {
-//       const isNL = (s % 2) === 0;
-//       const mod = isNL ? modNL : modRS;
-//       if(!mod) continue;
-//       const d = new Date(start);
-//       d.setDate(d.getDate() + s * 7);
-//       await inserisciEvento(mod, d);
-//     }
-//   } else if(rot.tipo === "domeniche") {
-//
-// e SOSTITUISCILO con (nota: il "} else if(rot.tipo === "domeniche") {"
-// finale resta, cambia solo il pezzo "nlrs"):
-//
-//   } else if(rot.tipo === "reperibilita") {
-//     // modelloRSId = turno 14:00-24:00, modelloNLId = turno 00:00-14:00
-//     // (stessi due slot già usati da RS/NL scalante, riutilizzati qui).
-//     const modA = modelli.find(m=>m.id===rot.modelloRSId); // 14-24
-//     const modB = modelli.find(m=>m.id===rot.modelloNLId); // 00-14
-//     const turnoPartenzaA = rot.reperibilitaTurnoPartenza !== "00-14"; // true = A parte con 14-24
-//     const primoModello = turnoPartenzaA ? modA : modB;
-//     const secondoModello = turnoPartenzaA ? modB : modA;
-//
-//     const [y0, m0, d0] = startDayKey.split("-").map(Number);
-//     const start = new Date(y0, m0-1, d0);
-//     // numRipetizioni qui indica il numero di BLOCCHI da 8 giorni da generare.
-//     for(let i=0; i<numRipetizioni; i++) {
-//       const giorno1 = new Date(start);
-//       giorno1.setDate(giorno1.getDate() + i*8);
-//       const giorno2 = new Date(giorno1);
-//       giorno2.setDate(giorno2.getDate() + 1);
-//       if(primoModello) await inserisciEvento(primoModello, giorno1);
-//       if(secondoModello) await inserisciEvento(secondoModello, giorno2);
-//     }
-//   } else if(rot.tipo === "domeniche") {
-//
-// ─────────────────────────────────────────────────────────────────────
-// PARTE 7 — MODIFICA a 02-Modelli.jsx / 03-Calendario.jsx: import e
-// punto di rendering della vista dettaglio.
-// ─────────────────────────────────────────────────────────────────────
-//
-// 1) Nell'import da "./04-Rotazione" in cima al file, sostituisci
-//    "NLRSView" con "ReperibilitaView" (NLRSScalanteView e
-//    DomenicheView restano invariati):
-//
-//    import { ModelloCard, ModelForm, RotazioneCard, RotazioneForm, ModelloSelector,
-//      GrigliaRotazione, NLRSScalanteView, DomenicheView, ReperibilitaView } from "./04-Rotazione";
-//
-// 2) Nel blocco che sceglie quale vista mostrare (intorno alla riga
-//    826-831 di 02-Modelli.jsx), sostituisci:
-//
-//    {rot.tipo==="nlrs"&&(
-//      <NLRSView rot={rot} T={T} accent={accent} modelli={modelliDelCalRot}/>
-//    )}
-//
-//    con:
-//
-//    {rot.tipo==="reperibilita"&&(
-//      <ReperibilitaView rot={rot} T={T} accent={accent} modelli={modelliDelCalRot}/>
-//    )}
-//
-// 3) Nell'etichetta della card elenco rotazioni (01-App.jsx riga 362),
-//    sostituisci:
-//
-//    const tipoLabel=r.tipo==="domeniche"?"🗓 Domeniche 1/4":r.tipo==="nlrs"?"🔄 NL/RS":r.tipo==="nlrs_scalante"?"📅 RS/NL Scalante":"✏️ Personalizzata";
-//
-//    con:
-//
-//    const tipoLabel=r.tipo==="domeniche"?"🗓 Domeniche 1/4":r.tipo==="reperibilita"?"📞 Reperibilità":r.tipo==="nlrs_scalante"?"📅 RS/NL Scalante":"🗓️ Personalizzata";
-//
-// ═══════════════════════════════════════════════════════════════════════
-// FINE PATCH
-// ═══════════════════════════════════════════════════════════════════════
+
+export function RotazioneForm({ T, form, setForm, accent, modelli, sortedModelli, onSave }) {
+  const accentText = getContrastTextColor(accent);
+  const listaModelli = sortedModelli || modelli || [];
+
+  const TIPI = [
+    { key: "personalizzata", label: "🗓️ Personalizzata" },
+    { key: "domeniche",      label: "📅 Domeniche 1/4" },
+    { key: "reperibilita",   label: "📞 Reperibilità" },
+    { key: "nlrs_scalante",  label: "📆 RS/NL scalante" },
+  ];
+
+  function setTipo(tipo) {
+    setForm(prev => ({ ...prev, tipo }));
+  }
+
+  return (
+    <div style={{ padding: 16 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, marginBottom: 8 }}>
+        TIPO DI ROTAZIONE
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
+        {TIPI.map(t => (
+          <button key={t.key} type="button" onClick={() => setTipo(t.key)}
+            style={{
+              background: form.tipo === t.key ? accent : T.s2,
+              color: form.tipo === t.key ? accentText : T.text,
+              border: `1px solid ${form.tipo === t.key ? accent : T.border}`,
+              borderRadius: 10, padding: "12px 10px", fontWeight: 700, fontSize: 13,
+              cursor: "pointer", textAlign: "left"
+            }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, marginBottom: 6 }}>
+        TITOLO ROTAZIONE
+      </div>
+      <input value={form.titolo || ""} onChange={e => setForm(prev => ({ ...prev, titolo: e.target.value }))}
+        placeholder="es. Reperibilità Team A"
+        style={{ width: "100%", boxSizing: "border-box", background: T.s2, border: `1px solid ${T.border}`,
+          borderRadius: 8, padding: "10px 12px", color: T.text, fontSize: 14, marginBottom: 16 }} />
+
+      {form.tipo === "reperibilita" && (
+        <ReperibilitaFormFields T={T} form={form} setForm={setForm} accent={accent}
+          accentText={accentText} modelli={listaModelli} />
+      )}
+
+      {form.tipo === "domeniche" && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, marginBottom: 6 }}>MODELLO GIORNO LAVORO</div>
+          <ModelloSelector T={T} modelli={listaModelli} value={form.modellaLavoroId}
+            onChange={id => setForm(prev => ({ ...prev, modellaLavoroId: id }))} />
+        </div>
+      )}
+
+      {form.tipo === "nlrs_scalante" && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, marginBottom: 6 }}>MODELLO RS</div>
+          <ModelloSelector T={T} modelli={listaModelli} value={form.modelloRSId}
+            onChange={id => setForm(prev => ({ ...prev, modelloRSId: id }))} />
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, margin: "10px 0 6px" }}>MODELLO NL</div>
+          <ModelloSelector T={T} modelli={listaModelli} value={form.modelloNLId}
+            onChange={id => setForm(prev => ({ ...prev, modelloNLId: id }))} />
+        </div>
+      )}
+
+      <button onClick={onSave}
+        style={{ width: "100%", background: accent, color: accentText, border: "none", borderRadius: 10,
+          padding: "13px 0", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>
+        💾 Salva rotazione
+      </button>
+    </div>
+  );
+}
