@@ -389,6 +389,197 @@ export function registraProblemiImport(mancanti = [], sospetti = []) {
   });
 }
 
+// Registro import problematici: elenco delle sessioni di import che hanno
+// generato avvisi (righe mancanti/sospette), consultabile e cancellabile
+// dall'utente in Impostazioni -> Log import.
+const LS_REGISTRO_IMPORT_KEY = "turnipm_registro_import_v1";
+
+export function leggiRegistroImportProblemi() {
+  try {
+    const raw = localStorage.getItem(LS_REGISTRO_IMPORT_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function cancellaRegistroImportProblemi() {
+  try {
+    localStorage.removeItem(LS_REGISTRO_IMPORT_KEY);
+  } catch (e) {
+    console.warn("cancellaRegistroImportProblemi fallito:", e);
+  }
+}
+
+function scriviRegistroImportProblemi(voce) {
+  try {
+    const registro = leggiRegistroImportProblemi();
+    registro.unshift(voce);
+    localStorage.setItem(LS_REGISTRO_IMPORT_KEY, JSON.stringify(registro.slice(0, 50)));
+  } catch (e) {
+    console.warn("scriviRegistroImportProblemi fallito:", e);
+  }
+}
+
+// Ripulisce testo grezzo (spesso output di OCR/AI esterno, es. screenshot
+// di un turnario incollato) prima di passarlo a JSON.parse: rimuove i fence
+// markdown ```json ... ``` (o ``` ... ```) se presenti, e taglia via
+// eventuale testo prima della prima { o [ e dopo l'ultima } o ] --
+// artefatti tipici di OCR/AI che aggiungono frasi introduttive o note
+// finali attorno al JSON vero e proprio.
+export function estraiJsonDaTesto(testo) {
+  let t = String(testo || "").trim();
+
+  // Rimuove fence markdown tipo ```json ... ``` o ``` ... ```
+  const fenceMatch = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenceMatch) {
+    t = fenceMatch[1].trim();
+  }
+
+  // Trova il primo carattere di apertura ({ o [) e l'ultimo di chiusura
+  // corrispondente, per scartare testo estraneo prima/dopo.
+  const primaGraffa = t.indexOf("{");
+  const primaQuadra = t.indexOf("[");
+  let inizio = -1;
+  if (primaGraffa === -1) inizio = primaQuadra;
+  else if (primaQuadra === -1) inizio = primaGraffa;
+  else inizio = Math.min(primaGraffa, primaQuadra);
+
+  if (inizio > 0) {
+    const ultimaGraffa = t.lastIndexOf("}");
+    const ultimaQuadra = t.lastIndexOf("]");
+    const fine = Math.max(ultimaGraffa, ultimaQuadra);
+    if (fine > inizio) {
+      t = t.slice(inizio, fine + 1);
+    }
+  }
+
+  return t.trim();
+}
+
+// Prova a interpretare testo "a blocchi" (non JSON) tipo export turnario
+// incollato a mano: righe del tipo "NomeGiorno GG/MM/AAAA" seguite da righe
+// "Campo: valore" (es. "Turno: 06:00-14:00"), fino alla riga vuota o al
+// prossimo blocco data. Restituisce un array di righe nello stesso formato
+// "canonico" prodotto da normalizzaRigheImportGrezzo (data, titolo,
+// oraInizio, oraFine, auto, collega, note), oppure [] se non riconosce
+// nessun blocco.
+export function normalizzaTestoGrezzoTurni(testo) {
+  const righe = String(testo || "").split(/\r?\n/);
+  const risultato = [];
+  const regexData = /(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/;
+
+  let corrente = null;
+
+  for (const rigaGrezza of righe) {
+    const riga = rigaGrezza.trim();
+    if (!riga) continue;
+
+    const matchData = riga.match(regexData);
+    if (matchData) {
+      if (corrente && (corrente.titolo || corrente.oraInizio)) {
+        risultato.push(corrente);
+      }
+      let [, gg, mm, aaaa] = matchData;
+      if (aaaa.length === 2) aaaa = "20" + aaaa;
+      const data = `${aaaa}-${mm.padStart(2, "0")}-${gg.padStart(2, "0")}`;
+      corrente = { data, titolo: "", oraInizio: "", oraFine: "", auto: "", collega: "", note: "" };
+      continue;
+    }
+
+    if (!corrente) continue;
+
+    const matchCampo = riga.match(/^([A-Za-zÀ-ú]+)\s*[:\-]\s*(.+)$/);
+    if (matchCampo) {
+      const chiave = matchCampo[1].toLowerCase();
+      const valore = matchCampo[2].trim();
+      if (chiave.includes("turno") || chiave.includes("titolo")) corrente.titolo = valore;
+      else if (chiave.includes("inizio")) corrente.oraInizio = valore;
+      else if (chiave.includes("fine")) corrente.oraFine = valore;
+      else if (chiave.includes("auto")) corrente.auto = valore;
+      else if (chiave.includes("collega")) corrente.collega = valore;
+      else if (chiave.includes("nota")) corrente.note = valore;
+      else corrente.note = corrente.note ? `${corrente.note} ${valore}` : valore;
+    } else if (!corrente.titolo) {
+      corrente.titolo = riga;
+    } else {
+      corrente.note = corrente.note ? `${corrente.note} ${riga}` : riga;
+    }
+  }
+  if (corrente && (corrente.titolo || corrente.oraInizio)) {
+    risultato.push(corrente);
+  }
+
+  return risultato;
+}
+
+// Normalizza un JSON "grezzo" (parsato ma di forma libera, spesso output
+// di un OCR/AI esterno) nel formato canonico [{data, titolo, oraInizio,
+// oraFine, auto, collega, note}]. Gestisce le varianti più comuni:
+// - array piatto già nel formato giusto (o quasi)
+// - oggetto singolo invece di array (un solo giorno)
+// - annidato sotto una chiave contenitore (es. { turni: [...] }, { giorni: [...] })
+// - "giorno" numerico invece di "data" completa (richiede year/month)
+// - "orario" come intervallo unico "HH:MM-HH:MM" invece di oraInizio/oraFine separati
+export function normalizzaRigheImportGrezzo(parsed, year, month) {
+  if (parsed == null) return [];
+
+  // Se è annidato sotto una chiave contenitore comune, scendi di un livello.
+  if (!Array.isArray(parsed) && typeof parsed === "object") {
+    const chiaviContenitore = ["turni", "giorni", "data", "items", "results", "eventi"];
+    const chiaveTrovata = chiaviContenitore.find(
+      (k) => Array.isArray(parsed[k])
+    );
+    if (chiaveTrovata) {
+      parsed = parsed[chiaveTrovata];
+    } else {
+      // Oggetto singolo: trattalo come array di un elemento.
+      parsed = [parsed];
+    }
+  }
+
+  if (!Array.isArray(parsed)) return [];
+
+  const risultato = [];
+  for (const voceGrezza of parsed) {
+    if (!voceGrezza || typeof voceGrezza !== "object") continue;
+
+    let data = voceGrezza.data || voceGrezza.date || "";
+    // "giorno" numerico invece di data completa: ricostruiscila da year/month.
+    if (!data && (voceGrezza.giorno != null || voceGrezza.day != null)) {
+      const gg = Number(voceGrezza.giorno ?? voceGrezza.day);
+      if (Number.isFinite(gg) && gg > 0 && year && month) {
+        data = `${year}-${String(month).padStart(2, "0")}-${String(gg).padStart(2, "0")}`;
+      }
+    }
+    if (!data) continue;
+
+    let oraInizio = voceGrezza.oraInizio || voceGrezza.inizio || voceGrezza.start || "";
+    let oraFine = voceGrezza.oraFine || voceGrezza.fine || voceGrezza.end || "";
+    // "orario" come intervallo unico "HH:MM-HH:MM" da spezzare.
+    if (!oraInizio && !oraFine && voceGrezza.orario) {
+      const matchOrario = String(voceGrezza.orario).match(/(\d{1,2}[:.]\d{2})\s*-\s*(\d{1,2}[:.]\d{2})/);
+      if (matchOrario) {
+        oraInizio = matchOrario[1].replace(".", ":");
+        oraFine = matchOrario[2].replace(".", ":");
+      }
+    }
+
+    risultato.push({
+      data,
+      titolo: voceGrezza.titolo || voceGrezza.title || voceGrezza.turno || "",
+      oraInizio,
+      oraFine,
+      auto: voceGrezza.auto || "",
+      collega: voceGrezza.collega || voceGrezza.collegaCon || "",
+      note: voceGrezza.note || voceGrezza.notes || "",
+    });
+  }
+
+  return risultato;
+}
+
+
 // Coda di sincronizzazione offline: operazioni (insert/update/delete) da
 // riprovare quando torna la connessione.
 export function leggiCodaSync() {
