@@ -922,6 +922,39 @@ export function RotazioneCard({ T, rot, accent, onOpen, onDelete }) {
 // invariata); qui si mostra solo un riepilogo dei modelli assegnati.
 // ─────────────────────────────────────────────────────────────────────
 
+// NLRSView — vista dettaglio per il tipo "nlrs" (RS/NL fisso, senza scalo
+// di giorno ad ogni quartina). Mostra solo i due modelli associati; a
+// differenza di NLRSScalanteView non c'è una sequenza di giorni da
+// visualizzare perché il giorno di RS/NL resta lo stesso ogni settimana.
+export function NLRSView({ rot, T, accent, modelli }) {
+  const modRS = modelli.find(m => m.id === rot.modelloRSId);
+  const modNL = modelli.find(m => m.id === rot.modelloNLId);
+
+  return (
+    <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
+      <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+        <div style={{ flex: 1, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: 10 }}>
+          <div style={{ fontSize: 10, color: T.sub, fontWeight: 700, marginBottom: 4 }}>MODELLO RS</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ width: 10, height: 10, borderRadius: "50%", background: modRS?.coloreCustom || accent }} />
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{modRS?.titolo || "— nessun modello —"}</div>
+          </div>
+        </div>
+        <div style={{ flex: 1, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: 10 }}>
+          <div style={{ fontSize: 10, color: T.sub, fontWeight: 700, marginBottom: 4 }}>MODELLO NL</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ width: 10, height: 10, borderRadius: "50%", background: modNL?.coloreCustom || accent }} />
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{modNL?.titolo || "— nessun modello —"}</div>
+          </div>
+        </div>
+      </div>
+      <div style={{ fontSize: 11, color: T.sub, marginTop: 10 }}>
+        RS e NL sono fissi: stesso giorno della settimana ad ogni ciclo, senza scalo.
+      </div>
+    </div>
+  );
+}
+
 export function NLRSScalanteView({ rot, T, accent, modelli }) {
   const modRS = modelli.find(m => m.id === rot.modelloRSId);
   const modNL = modelli.find(m => m.id === rot.modelloNLId);
