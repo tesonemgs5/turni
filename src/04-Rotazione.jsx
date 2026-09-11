@@ -68,9 +68,18 @@ export const FASCE_AUTOMATICHE_DEFAULT = [
 
 export const FESTIVITA_DEFAULT_ATTIVE = true;
 
-const NB = {
+export const NB = {
   padding:"10px 14px", borderRadius:10, fontWeight:700, fontSize:13,
   cursor:"pointer", border:"none",
+};
+
+// Scala di dimensioni font usata (in origine) per gli stili condivisi tra
+// 02-Modelli.jsx e 03-Calendario.jsx. Importata ma non referenziata
+// direttamente nei file recuperati: valori standard forniti per
+// compatibilità, da aggiustare se in qualche punto dell'interfaccia i
+// testi risultano di dimensione diversa da quella attesa.
+export const FONT_SIZE = {
+  xs: 11, sm: 12, base: 13, md: 14, lg: 16, xl: 18, xxl: 22,
 };
 
 
