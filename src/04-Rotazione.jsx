@@ -90,7 +90,38 @@ export function uid(){ return Math.random().toString(36).slice(2)+Date.now().toS
 
 // #region SEZIONE 2: LOCALSTORAGE CACHE
 // ═══════════════════════════════════════════════════════════════
+// Restituisce { ok, dettaglio } invece di non restituire nulla: prima, se
+// una qualsiasi delle setItem sottostanti falliva (localStorage pieno,
+// modalità privata/incognito su Safari che blocca la scrittura, dati
+// troppo grandi...), l'errore finiva in un console.warn che quasi nessuno
+// legge mai, e il chiamante non aveva modo di saperlo (non controllava
+// alcun valore di ritorno perché non ne esisteva uno). L'utente vedeva
+// l'evento apparire subito in UI (perché lo stato React in memoria si
+// aggiorna comunque) ma sparire al refresh successivo, perché non era mai
+// stato scritto davvero nella cache locale da cui l'app ricarica i dati.
 export function saveToLocalStorage(events, calendars, modelli, calId, impostazioni){
+  // Costruiamo SEMPRE un dettaglio tecnico leggibile, senza dipendere dal
+  // fatto che e.message sia valorizzato: alcuni ambienti (Safari in privata,
+  // alcuni WebView) lanciano errori con message vuoto o non standard, il che
+  // è esattamente il caso "in F12 non si vede nulla" — qui costruiamo noi il
+  // messaggio a partire da name/code/message, qualunque essi siano.
+  function descriviErrore(e, step){
+    const nome = e?.name || "Errore";
+    const msg = e?.message || "(nessun messaggio fornito dal browser)";
+    const code = (typeof e?.code !== "undefined") ? ` [code:${e.code}]` : "";
+    let stimaSpazio = "";
+    try {
+      let totale = 0;
+      for(const k in localStorage){
+        if(Object.prototype.hasOwnProperty.call(localStorage,k)){
+          totale += (localStorage.getItem(k)||"").length + k.length;
+        }
+      }
+      stimaSpazio = ` — occupazione stimata localStorage: ~${(totale/1024/1024).toFixed(2)}MB`;
+    } catch(e2){ /* se anche questo fallisce, ignoriamo e mostriamo solo il resto */ }
+    return `Salvataggio locale fallito allo step "${step}": ${nome}: ${msg}${code}${stimaSpazio}`;
+  }
+
   try {
     localStorage.setItem('cache_events', JSON.stringify(events));
     localStorage.setItem('cache_calendars', JSON.stringify(calendars));
@@ -119,7 +150,18 @@ export function saveToLocalStorage(events, calendars, modelli, calId, impostazio
     // sezione Report restava sempre vuota quando l'app partiva offline
     // (leggeva solo dalla cache, che non li conteneva mai).
     if(impostazioni) localStorage.setItem('cache_impostazioni', JSON.stringify(impostazioni));
-  } catch(e){ console.warn('localStorage error:', e); }
+    return { ok:true };
+  } catch(e){
+    const dettaglio = descriviErrore(e, 'scrittura cache locale');
+    // segnalaErrore (definita più sotto in questo stesso file — le function
+    // declarations sono "hoisted", quindi è già disponibile qui) mette
+    // l'errore sia nel log persistente sia in coda per il modale visibile:
+    // è il fallimento più critico dell'app (i dati rischiano di non
+    // sopravvivere a un refresh), quindi merita sempre un avviso a schermo,
+    // non solo una riga di log.
+    segnalaErrore(dettaglio, 'saveToLocalStorage');
+    return { ok:false, dettaglio };
+  }
 }
 export function loadFromLocalStorage(){
   try {
