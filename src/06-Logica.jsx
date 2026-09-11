@@ -1,5 +1,5 @@
     import { useState, useEffect, useRef, useMemo } from "react";
-import { supabase } from "./11-supabase";
+import { supabase } from "./11.supabase";
 import {
   FASCE_AUTOMATICHE_DEFAULT, FESTIVITA_DEFAULT_ATTIVE, MONTHS, NOMI_GIORNI_IT, PALETTE,
   calcFine6h15, calcFine6h30, calcFineModello, categoriaAppAutoAutomatica, categoriaTurnoAutomatica,
@@ -9,7 +9,7 @@ import {
   minutiTurnoModello, normalizzaOraHHMM, oraInMinuti, registraListenerCodaErrori, registraProblemiImport,
   sameData, saveToLocalStorage, scriviCodaSync, segnalaErrore, segnalaErroreSoloLog,
   uid, withEventoAggiornato, withEventoAggiunto, withEventoRimosso,
-} from "./04-Rotazione";
+} from "./4.Rotazione";
 
 // ════════════════════════════════════════════════════════════
 // useAppCore.js — Custom hook che concentra tutto lo stato e la
@@ -1719,7 +1719,14 @@ export function useAppCore(session){
     // startsWith sul prefisso, non questa regex). Il gruppo (.+?) reso
     // non-greedy risolve, catturando il minimo necessario e lasciando il
     // resto al gruppo tipo, che prova "meno_recupero" correttamente.
-    const m = /^protrazione_di_(.+?)_(pagamento|meno_recupero|recupero)$/.exec(importId);
+    // "meno_recupero" (tipo singolo, storico) è stato sostituito da due
+    // marker distinti — "meno_recupero_entrata" e "meno_recupero_uscita" —
+    // per rappresentare separatamente il ritardo in entrata e l'anticipo
+    // in uscita come due eventi indipendenti quando compresenti. La regex
+    // riconosce entrambi i nuovi marker E il vecchio "meno_recupero" (per
+    // compatibilità con eventi già esistenti creati prima di questo fix,
+    // che restano validi finché non vengono risincronizzati).
+    const m = /^protrazione_di_(.+?)_(pagamento|meno_recupero_entrata|meno_recupero_uscita|meno_recupero|recupero)$/.exec(importId);
     if(!m) return null;
     return { idEventoBase: m[1], tipo: m[2] };
   }
@@ -1733,14 +1740,22 @@ export function useAppCore(session){
   // come già avviene per le protrazioni importate da PDF.
   async function sincronizzaEventiProtrazione({ idEventoBase, dayKey, calId, tInBase, tOutBase, protPagFine, protRecFine, menoRecIn, menoRecOut }){
     if(!idEventoBase||!dayKey||!calId||!userId) return;
-    // Il terzo tipo (-PROTRAZIONE A RECUPERO, consumo del credito) non ha un
-    // singolo range "da->a" come gli altri due: si sommano due scostamenti
-    // indipendenti rispetto al turno base — ritardo in entrata (menoRecIn
-    // dopo tInBase) e anticipo in uscita (menoRecOut prima di tOutBase).
-    // L'evento risultante viene comunque rappresentato con un orario
-    // inizio/fine coerente con la durata totale calcolata (a partire da
-    // tOutBase, solo per farlo comparire/durare visivamente in modo
-    // corretto sul calendario), ma il dato che conta è la durata in minuti.
+    // Il terzo tipo (-PROTRAZIONE A RECUPERO, consumo del credito) NON è un
+    // singolo range "da->a" come gli altri due, ed EVENT non deve essere
+    // rappresentato con un orario virtuale spostato dopo la fine del turno:
+    // deve invece mostrare l'INTERVALLO REALE in cui il ritardo/anticipo si
+    // accavalla al turno stesso. Ci sono due scostamenti indipendenti,
+    // ciascuno con il proprio intervallo reale:
+    //  - ritardo in entrata: da tInBase (inizio previsto) a menoRecIn
+    //    (arrivo effettivo) — es. turno 07:30-13:45, arrivo alle 08:00:
+    //    intervallo 07:30-08:00.
+    //  - anticipo in uscita: da menoRecOut (uscita effettiva) a tOutBase
+    //    (fine prevista) — es. turno 07:30-13:45, esco alle 13:15:
+    //    intervallo 13:15-13:45.
+    // Se sono presenti ENTRAMBI insieme, non è rappresentabile con un solo
+    // evento (i due intervalli non sono contigui, si accavallano a parti
+    // diverse e lontane del turno): servono due eventi figli separati,
+    // ciascuno con il proprio marker, indipendenti l'uno dall'altro.
     function minutiRitardoEntrata(){
       const previsto = oraInMinuti(tInBase||""), effettivo = oraInMinuti(menoRecIn||"");
       if(previsto===null||effettivo===null) return 0;
@@ -1755,24 +1770,16 @@ export function useAppCore(session){
       if(d<0) d+=24*60;
       return Math.max(0,d);
     }
-    const minutiMenoRec = minutiRitardoEntrata() + minutiAnticipoUscita();
-    // Uso un orario fine "virtuale" = tOutBase + minutiMenoRec, solo per dare
-    // all'evento una durata coerente sul calendario (tIn=tOutBase,
-    // tOut=quell'orario virtuale): la lettura corretta per i report resta
-    // sempre la DURATA (differenza tIn/tOut), non l'orario in sé.
-    let oraFineVirtualeMenoRec = "";
-    if(minutiMenoRec>0 && tOutBase){
-      const m1 = oraInMinuti(tOutBase);
-      if(m1!==null){
-        const m2 = (m1 + minutiMenoRec) % (24*60);
-        oraFineVirtualeMenoRec = String(Math.floor(m2/60)).padStart(2,"0")+":"+String(m2%60).padStart(2,"0");
-      }
-    }
+    const minRitardo = minutiRitardoEntrata();
+    const minAnticipo = minutiAnticipoUscita();
 
     const richieste = [
       { tipo:"pagamento", oraFine: protPagFine },
       { tipo:"recupero",  oraFine: protRecFine },
-      { tipo:"meno_recupero", oraFine: minutiMenoRec>0 ? oraFineVirtualeMenoRec : "", durataOverride: minutiMenoRec },
+      // Ritardo in entrata: intervallo reale tInBase -> menoRecIn.
+      { tipo:"meno_recupero_entrata", oraInizio: minRitardo>0 ? tInBase : "", oraFine: minRitardo>0 ? menoRecIn : "", durataOverride: minRitardo },
+      // Anticipo in uscita: intervallo reale menoRecOut -> tOutBase.
+      { tipo:"meno_recupero_uscita", oraInizio: minAnticipo>0 ? menoRecOut : "", oraFine: minAnticipo>0 ? tOutBase : "", durataOverride: minAnticipo },
     ];
     // Leggo SEMPRE da storeRef.current, non dalla "store" chiusa nella
     // closure di questa funzione: quest'ultima può essere ancora la
@@ -1784,7 +1791,7 @@ export function useAppCore(session){
     // evento doppione invece di aggiornare quello esistente.
     const evtiGiorno = storeRef.current.events?.[dayKey]?.[calId]||[];
 
-    for(const { tipo, oraFine, durataOverride } of richieste){
+    for(const { tipo, oraInizio, oraFine, durataOverride } of richieste){
       const marker = idProtrazioneFiglio(idEventoBase, tipo);
       // Auto-riparazione: se per lo stesso marker esistono già più eventi
       // figli (retaggio del bug di race condition risolto sopra, quando la
@@ -1802,17 +1809,21 @@ export function useAppCore(session){
 
       // Campo vuoto o orario non valido/non successivo alla base: se
       // esisteva un figlio da una modifica precedente, lo rimuovo.
-      // Per "meno_recupero" la durata è già quella calcolata sopra
-      // (durataOverride), non va ricalcolata da tOutBase->oraFine.
+      // Per i due tipi meno_recupero_* la durata è già quella calcolata
+      // sopra (durataOverride), non va ricalcolata da tOutBase->oraFine —
+      // e per questi due tipi anche oraInizio deve essere valorizzato,
+      // altrimenti l'intervallo reale non è determinabile.
+      const eMenoRecupero = tipo==="meno_recupero_entrata" || tipo==="meno_recupero_uscita";
       const durataMin = durataOverride!==undefined ? durataOverride : calcMinuti(tOutBase, oraFine);
-      if(!oraFine || durataMin<=0){
+      if(!oraFine || (eMenoRecupero && !oraInizio) || durataMin<=0){
         if(esistente) await delEvt(dayKey, calId, esistente.id);
         continue;
       }
 
-      const mod = await trovaOCreaModelloProtrazione(tipo, calId);
+      const tipoModello = eMenoRecupero ? "meno_recupero" : tipo;
+      const mod = await trovaOCreaModelloProtrazione(tipoModello, calId);
       if(!mod) continue;
-      const color = mod.coloreCustom || (tipo==="recupero" ? "#f9a8d4" : tipo==="meno_recupero" ? "#dc2626" : "#ec4899");
+      const color = mod.coloreCustom || (tipoModello==="recupero" ? "#f9a8d4" : tipoModello==="meno_recupero" ? "#dc2626" : "#ec4899");
       // Il "nome da mostrare nel calendario" (mod.label) ha PRIORITÀ sul
       // titolo/codice (mod.titolo): stessa convenzione già usata altrove
       // (vedi computeEventFields più sopra). Con la vecchia priorità
@@ -1820,16 +1831,23 @@ export function useAppCore(session){
       // mostrare "PR RECUPERO" finiva comunque per etichettare l'evento
       // col titolo lungo, ignorando il nome scelto dall'utente.
       const label = (mod.label||mod.titolo||"").toUpperCase();
+      // Intervallo reale dell'evento figlio: per pagamento/recupero resta
+      // tOutBase->oraFine come sempre; per i due tipi meno_recupero_* è
+      // invece l'intervallo reale calcolato sopra (oraInizio->oraFine),
+      // che si accavalla a una porzione del turno base invece di stare
+      // dopo la sua fine.
+      const tInEvento = eMenoRecupero ? oraInizio : (tOutBase||"");
+      const tOutEvento = oraFine;
 
       if(esistente){
         // Aggiorno l'evento figlio esistente (stesso pattern di updateEvt).
         const payload = {
           label, color, all_day:false,
-          time_in: tOutBase||"", time_out: oraFine,
+          time_in: tInEvento, time_out: tOutEvento,
           modello_id: mod.id||null,
         };
         setStore(prev=>{
-          const patch = { label, color, allDay:false, tIn: tOutBase||"", tOut: oraFine, modelloId: mod.id||null };
+          const patch = { label, color, allDay:false, tIn: tInEvento, tOut: tOutEvento, modelloId: mod.id||null };
           const ns = withEventoAggiornato(prev, dayKey, calId, esistente.id, patch);
           saveToLocalStorage(ns.events, ns.calendars, modelli);
           storeRef.current = ns;
@@ -1853,7 +1871,7 @@ export function useAppCore(session){
           id: idLocale,
           user_id: userId, calendar_id: calId, date_key: dayKey,
           label, color, all_day:false,
-          time_in: tOutBase||"", time_out: oraFine,
+          time_in: tInEvento, time_out: tOutEvento,
           place:"", map_url:"", note:"",
           modello_id: mod.id||null, rotazione_id:null,
           collega:"", auto:"",
@@ -1862,7 +1880,7 @@ export function useAppCore(session){
         };
         const evt = {
           id: idLocale, color, label, allDay:false,
-          tIn: tOutBase||"", tOut: oraFine,
+          tIn: tInEvento, tOut: tOutEvento,
           place:"", map:"", note:"", modelloId: mod.id||null, rotazioneId:null,
           collega:"", auto:"", importId: marker,
         };
@@ -2052,7 +2070,8 @@ export function useAppCore(session){
     const evtiGiornoCorrente = store.events?.[dayKey]?.[editCalId]||[];
     const evtCorrente = evtiGiornoCorrente.find(e=>e.id===formEffettivo.editId);
     const decodificaMod = decodificaProtrazioneFiglio(evtCorrente?.importId);
-    if(decodificaMod && decodificaMod.tipo!=="meno_recupero"){
+    const eTipoMenoRecuperoQualsiasi = decodificaMod && (decodificaMod.tipo==="meno_recupero" || decodificaMod.tipo==="meno_recupero_entrata" || decodificaMod.tipo==="meno_recupero_uscita");
+    if(decodificaMod && !eTipoMenoRecuperoQualsiasi){
       const { idEventoBase, tipo } = decodificaMod;
       const campoDaAggiornare = tipo==="pagamento" ? "protPagFine" : "protRecFine";
       const campoDbDaAggiornare = tipo==="pagamento" ? "prot_pag_fine" : "prot_rec_fine";
@@ -2169,8 +2188,9 @@ export function useAppCore(session){
     // di protrazione che in calendario non esiste più.
     const evtCorrente = evtiGiorno.find(e=>e.id===evtId);
     const decodifica = decodificaProtrazioneFiglio(evtCorrente?.importId);
+    const eTipoMenoRecuperoQualsiasiDel = decodifica && (decodifica.tipo==="meno_recupero" || decodifica.tipo==="meno_recupero_entrata" || decodifica.tipo==="meno_recupero_uscita");
     let idEventoBasePulito = null, campoDbDaPulire = null;
-    if(decodifica && decodifica.tipo!=="meno_recupero"){
+    if(decodifica && !eTipoMenoRecuperoQualsiasiDel){
       const { idEventoBase, tipo } = decodifica;
       const campoDaPulire = tipo==="pagamento" ? "protPagFine" : "protRecFine";
       campoDbDaPulire = tipo==="pagamento" ? "prot_pag_fine" : "prot_rec_fine";
@@ -3341,14 +3361,12 @@ const importsRecenti = useMemo(()=>{
         });
         // Rinumerazioni: stesso timestamp, così restano in ordine in coda
         // rispetto all'insert del nuovo modello se si finisce offline.
-        // FIX: "rinumerazioniApplicate" non era mai definita (bug preesistente,
-        // promise andava in errore silenzioso e le rinumerazioni non venivano
-        // mai salvate su Supabase). Fonte dati corretta: il diff di sortOrder
-        // tra lo stato prima dell'insert ("modelli") e dopo ricalcolaPosizioniGlobali
-        // ("modelliAggiornati") — stesso principio già usato in
-        // salvaModifichePosizioni per drag&drop e frecce. Si esclude il modello
-        // appena creato (idLocale), che ha già il proprio insert sopra: qui
-        // vanno solo le rinumerazioni degli ALTRI modelli del blocco.
+        // Fonte dati: il diff di sortOrder tra lo stato prima dell'insert
+        // ("modelli") e dopo ricalcolaPosizioniGlobali ("modelliAggiornati")
+        // — stesso principio già usato in salvaModifichePosizioni per
+        // drag&drop e frecce. Si esclude il modello appena creato
+        // (idLocale), che ha già il proprio insert sopra: qui vanno solo le
+        // rinumerazioni degli ALTRI modelli del blocco.
         const prevById = new Map(modelli.map(m=>[m.id,m]));
         const rinumerazioniApplicate = modelliAggiornati
           .filter(m=>m.id!==idLocale)
