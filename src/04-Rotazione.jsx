@@ -103,8 +103,13 @@ export function daysInMonth(year, monthIndex0) {
 }
 
 export function firstDay(year, monthIndex0) {
-  // Giorno della settimana (0=Dom..6=Sab) dell'1 del mese.
-  return new Date(year, monthIndex0, 1).getDay();
+  // Colonna (0=Lunedì..6=Domenica) su cui cade il giorno 1 del mese, nella
+  // griglia del calendario che parte da Lunedì. Date.getDay() usa invece
+  // 0=Domenica..6=Sabato: va convertito, altrimenti ogni mese che inizia
+  // di Domenica (getDay()===0) risulterebbe con "zero celle vuote" prima
+  // del giorno 1 invece di 6, sfalsando tutta la griglia di conseguenza.
+  const dow = new Date(year, monthIndex0, 1).getDay();
+  return (dow + 6) % 7;
 }
 
 export function uid() {
