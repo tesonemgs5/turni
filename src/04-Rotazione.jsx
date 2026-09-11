@@ -261,6 +261,26 @@ export function italianHols(year, nationalHolsEnabled = true) {
   return FESTIVITA_FISSE.map(h => ({ ...h, y: year }));
 }
 
+// Catalogo delle festività nazionali disponibili, con chiave stabile e
+// nome leggibile, per popolare l'elenco toggle in Impostazioni -> Festivi.
+// A differenza di italianHols() (che restituisce solo le date attive per
+// un anno) questo elenca SEMPRE tutte le festività note, attive o meno.
+export function resolveFestivitaCatalogo(year) {
+  const CATALOGO = [
+    { key: "capodanno",     name: "Capodanno",              m: 1,  d: 1 },
+    { key: "epifania",      name: "Epifania",                m: 1,  d: 6 },
+    { key: "liberazione",   name: "Festa della Liberazione", m: 4,  d: 25 },
+    { key: "lavoro",        name: "Festa dei Lavoratori",    m: 5,  d: 1 },
+    { key: "repubblica",    name: "Festa della Repubblica",  m: 6,  d: 2 },
+    { key: "ferragosto",    name: "Ferragosto",              m: 8,  d: 15 },
+    { key: "ognissanti",    name: "Ognissanti",              m: 11, d: 1 },
+    { key: "immacolata",    name: "Immacolata Concezione",   m: 12, d: 8 },
+    { key: "natale",        name: "Natale",                  m: 12, d: 25 },
+    { key: "santostefano",  name: "Santo Stefano",           m: 12, d: 26 },
+  ];
+  return CATALOGO.map(f => ({ ...f, y: year }));
+}
+
 export function isFestivo(dateKey) {
   if (!dateKey) return false;
   const [y, m, d] = dateKey.split("-").map(Number);
@@ -294,6 +314,18 @@ export function loadFromLocalStorage() {
     return JSON.parse(raw);
   } catch {
     return null;
+  }
+}
+
+// Svuota solo la cache locale dei dati app (eventi/calendari/modelli),
+// usata prima di forzare un ricaricamento completo dal server. Non tocca
+// log errori, coda sync o altre chiavi: quelle restano gestite dalle loro
+// funzioni dedicate.
+export function clearLocalStorageCache() {
+  try {
+    localStorage.removeItem(LS_CACHE_KEY);
+  } catch (e) {
+    console.warn("clearLocalStorageCache fallito:", e);
   }
 }
 
@@ -331,6 +363,14 @@ export function leggiLogErrori() {
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
+  }
+}
+
+export function cancellaLogErrori() {
+  try {
+    localStorage.removeItem(LS_LOG_ERRORI_KEY);
+  } catch (e) {
+    console.warn("cancellaLogErrori fallito:", e);
   }
 }
 
