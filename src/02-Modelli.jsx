@@ -2069,7 +2069,7 @@ export default function VistaModelli({ C }){
         if(mIn1!==null&&mIn2!==null){ let d=mIn2-mIn1; if(d<0) d+=24*60; ritardoEntrata=Math.max(0,d); }
         if(mOut1!==null&&mOut2!==null){ let d=mOut1-mOut2; if(d<0) d+=24*60; anticipoUscita=Math.max(0,d); }
         const tot = ritardoEntrata+anticipoUscita;
-        return tot>0 ? Math.floor(tot/60)+"h"+(tot%60>0?" "+tot%60+"m":"") : "";
+        return tot>0 ? Math.floor(tot/60)+"h"+(tot%60>0?tot%60+"m":"") : "";
       }
       const durMenoRec = calcDurMenoRec();
       return (
