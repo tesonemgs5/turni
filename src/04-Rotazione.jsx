@@ -1,11 +1,22 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 
 // ==========================================
-// SEZIONE 0: PALETTE E COSTANTI GLOBALI
+// SEZIONE 0: PALETTE E COSTANTI GLOBALI EXPORTATE
 // ==========================================
 export const PALETTE = [
   '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6',
   '#EC4899', '#06B6D4', '#84CC16', '#6366F1', '#64748B'
+];
+
+export const MONTHS = [
+  'Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
+  'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'
+];
+
+export const NOMI_GIORNI_IT = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
+
+export const FESTIVITA_DEFAULT_ATTIVE = [
+  '01-01', '01-06', '04-25', '05-01', '06-02', '08-15', '11-01', '12-08', '12-25', '12-26'
 ];
 
 export const FASCE_AUTOMATICHE_DEFAULT = [
@@ -14,6 +25,28 @@ export const FASCE_AUTOMATICHE_DEFAULT = [
   { nome: 'Terzo Turno', orarioInizio: '23:00', colore: '#8B5CF6' },
   { nome: 'Notte', orarioInizio: '22:00', colore: '#10B981' }
 ];
+
+export function dkey(year, monthIndex, day) {
+  const m = (monthIndex + 1).toString().padStart(2, '0');
+  const d = day.toString().padStart(2, '0');
+  return `${year}-${m}-${d}`;
+}
+
+export function daysInMonth(year, monthIndex) {
+  return new Date(year, monthIndex + 1, 0).getDate();
+}
+
+export function categoriaTurnoAutomatica(orarioInizio) {
+  if (!orarioInizio) return 'Altro';
+  const h = parseInt(orarioInizio.split(':')[0], 10);
+  if (h >= 6 && h < 14) return 'Mattina';
+  if (h >= 14 && h < 22) return 'Pomeriggio';
+  return 'Notte';
+}
+
+export function categoriaAppAutoAutomatica(orarioInizio) {
+  return categoriaTurnoAutomatica(orarioInizio);
+}
 
 // ==========================================
 // SEZIONE 1: UTILITY COLORI E YIQ CONTRAST
@@ -257,7 +290,6 @@ export function classificaNoteVecchiaApp(notaTesto = '') {
   let protrazioneRecupero = false;
   let oreProtrazione = '';
 
-  // Riconoscimento della protrazione a recupero nelle note storiche
   const matchProt = notePulite.match(/(?:protrazione|recupero|prot\.?\s*rec\.?)(?:\s*:?\s*(\d+(?:\.\d+)?\s*h?))?/i);
   if (matchProt) {
     protrazioneRecupero = true;
@@ -301,7 +333,6 @@ export function normalizzaRigheImportGrezzo(righe) {
   return righe.map(r => {
     const noteElaborate = classificaNoteVecchiaApp(r.note || r.Note || '');
     
-    // PRESERVAZIONE TOTALE DELLA PROTRAZIONE A RECUPERO
     const protrazioneRecupero = r.protrazioneRecupero !== undefined 
       ? Boolean(r.protrazioneRecupero) 
       : noteElaborate.protrazioneRecupero;
@@ -319,7 +350,6 @@ export function normalizzaRigheImportGrezzo(righe) {
       targaMezzo: r.targaMezzo || noteElaborate.targaMezzo,
       colleghi: r.colleghi || noteElaborate.colleghi,
       
-      // CAMPI PROTRAZIONE E RECUPERO GARANTITI
       protrazioneRecupero: protrazioneRecupero,
       oreProtrazione: oreProtrazione,
 
@@ -398,7 +428,6 @@ export function ModelForm({ modelloIniziale, onSalva, onAnnulla }) {
     orarioFine: modelloIniziale?.orarioFine || '13:15',
     colore: modelloIniziale?.colore || '#3B82F6',
     
-    // PRESERVAZIONE PROTRAZIONE / RECUPERO NEI MODELLI
     protrazioneRecupero: modelloIniziale?.protrazioneRecupero || false,
     oreProtrazione: modelloIniziale?.oreProtrazione || '',
 
@@ -428,7 +457,6 @@ export function ModelForm({ modelloIniziale, onSalva, onAnnulla }) {
       return;
     }
     
-    // IL SALVATAGGIO GARANTISCE L'INTEGRITÀ SENZA CANCELLAZIONI SILENZIOSE
     onSalva(formData);
   };
 
@@ -496,7 +524,6 @@ export function ModelForm({ modelloIniziale, onSalva, onAnnulla }) {
         </div>
       </div>
 
-      {/* BLOCCO PROTRAZIONE A RECUPERO GARANTITO */}
       <div style={{ background: '#FEF3C7', border: '1px solid #F59E0B', padding: '10px', borderRadius: '6px', marginBottom: '12px' }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '13px', color: '#92400E', cursor: 'pointer' }}>
           <input
@@ -611,7 +638,6 @@ export default function GestioneRotazione() {
   const [inModifica, setInModifica] = useState(null);
   const [nuovoAperto, setNuovoAperto] = useState(false);
 
-  // Sincronizzazione sicura su localStorage
   useEffect(() => {
     const res = saveToLocalStorage('cache_modelli', modelli);
     if (!res.ok) {
@@ -624,7 +650,6 @@ export default function GestioneRotazione() {
       const indice = prev.findIndex(m => m.id === modelloDaSalvare.id);
       if (indice !== -1) {
         const aggiornati = [...prev];
-        // Merge che garantisce di mantenere tutti i campi non modificati
         aggiornati[indice] = { ...aggiornati[indice], ...modelloDaSalvare };
         return aggiornati;
       }
