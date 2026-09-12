@@ -3278,6 +3278,43 @@ const importsRecenti = useMemo(()=>{
     if(prevSnapshot && nuovoElenco) await salvaModifichePosizioniColori(prevSnapshot, nuovoElenco);
   }
 
+  // ── Operazione UNA TANTUM: ricalcola il colore di ogni modello CON
+  // ORARIO (tempo !== "h24") in base alla fascia oraria corrente
+  // (fasceAutomatiche), forzando anche i modelli che avevano un colore
+  // scelto a mano (coloreCustom) a diventare "automatico per fascia".
+  // I modelli H24 non vengono toccati: restano col colore che avevano
+  // (custom o automatico H24), su richiesta esplicita.
+  //
+  // Non usa saveModello/saveModelloInterno (che ricalcolano anche ordine
+  // ed eventi collegati, effetti collaterali non voluti qui): aggiorna
+  // solo colore/colore_custom, subito in locale, poi in coda offline-friendly
+  // via scriviConBackup — stesso meccanismo di salvaModifichePosizioni.
+  async function ricoloraModelliPerFasciaOraria(){
+    let prevSnapshot = null, modelliDaSalvare = [];
+    setModelli(prev=>{
+      prevSnapshot = prev;
+      const aggiornati = prev.map(m=>{
+        if(m.tempo==="h24") return m; // esplicitamente esclusi
+        const nuovoColore = colByTime(m.inizio);
+        if(m.coloreCustom===null && m.colore===nuovoColore) return m; // già a posto
+        modelliDaSalvare.push({ ...m, colore:nuovoColore, coloreCustom:null });
+        return { ...m, colore:nuovoColore, coloreCustom:null };
+      });
+      return aggiornati;
+    });
+    const ts = new Date().toISOString();
+    await Promise.all(modelliDaSalvare.map(m =>
+      scriviConBackup({
+        tipo: "update", table: "modelli",
+        payload: { colore: m.colore, colore_custom: null },
+        matchObj: { id: m.id, user_id: userId },
+        contesto: "Ricolorazione modelli per fascia oraria (una tantum)", ts,
+        opzioni: { soloLog: true },
+      })
+    ));
+    return { totale: modelliDaSalvare.length };
+  }
+
 
   // ── FIX: quando un modello riceve un coloreCustom, quel colore viene
   // salvato subito nella tabella "colori" (se non già presente), così
@@ -5509,7 +5546,7 @@ const importsRecenti = useMemo(()=>{
     importsRecenti,
     modelliDelCalendario,
     spostaModelloPuro,
-    moveRotazione, moveColoreExtra,
+    moveRotazione, moveColoreExtra, ricoloraModelliPerFasciaOraria,
     trascinaModelloPuro,
     salvaModifichePosizioni,
     moveH24,
