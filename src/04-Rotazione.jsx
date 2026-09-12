@@ -1338,32 +1338,33 @@ export function GrigliaRotazione({ rot, T, accent, modelli, fasceAutomatiche, su
         </button>
         {modelli.map(m => {
           const attivo = modelloSelezionato === m.id;
+          const colM = m.coloreCustom || (m.tempo === "h24" ? COLORE_H24 : getColorByTime(m.inizio, fasceAutomatiche));
           return (
             <button key={m.id} onClick={() => setModelloSelezionato(cur => cur === m.id ? null : m.id)}
               style={{
                 display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", borderRadius: 20,
-                border: `1.5px solid ${attivo ? (m.coloreCustom || accent) : T.border}`,
-                background: attivo ? (m.coloreCustom || accent) : T.s2,
-                color: attivo ? getContrastTextColor(m.coloreCustom || accent) : T.text,
+                border: `1.5px solid ${attivo ? colM : T.border}`,
+                background: attivo ? colM : T.s2,
+                color: attivo ? getContrastTextColor(colM) : T.text,
                 fontSize: 12, fontWeight: 700, cursor: "pointer"
               }}>
-              <div style={{ width: 8, height: 8, borderRadius: "50%", background: m.coloreCustom || accent }} />
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: colM }} />
               {m.titolo}
             </button>
           );
         })}
       </div>
 
-      <div style={{ overflowX: "auto", border: `1px solid ${T.border}`, borderRadius: 10 }}>
-        <div style={{ display: "inline-block", minWidth: "100%" }}>
+      <div style={{ overflowX: "auto", border: `1px solid ${T.border}`, borderRadius: 10, background: "#ffffff" }}>
+        <div style={{ display: "block", width: "100%" }}>
           <div style={{ display: "flex", alignItems: "center" }}>
             <div style={{
-              width: 30, flexShrink: 0, fontSize: 10, fontWeight: 700, color: T.sub,
-              textAlign: "right", paddingRight: 6, position: "sticky", left: 0, background: T.surface
+              width: 30, flexShrink: 0, fontSize: 10, fontWeight: 700, color: "#0f172a",
+              textAlign: "right", paddingRight: 6, position: "sticky", left: 0, background: "#ffffff"
             }} />
             {NOMI_GIORNI_GRIGLIA.map(nomeGiorno => (
               <div key={nomeGiorno} style={{
-                width: 26, flexShrink: 0, fontSize: 10, fontWeight: 700, color: T.sub, textAlign: "center"
+                flex: 1, minWidth: 0, fontSize: 10, fontWeight: 700, color: "#0f172a", textAlign: "center"
               }}>
                 {nomeGiorno}
               </div>
@@ -1372,8 +1373,8 @@ export function GrigliaRotazione({ rot, T, accent, modelli, fasceAutomatiche, su
           {matrice.map((settimana, w) => (
             <div key={w} style={{ display: "flex", alignItems: "center" }}>
               <div style={{
-                width: 30, flexShrink: 0, fontSize: 9, fontWeight: 700, color: T.sub,
-                textAlign: "right", paddingRight: 6, position: "sticky", left: 0, background: T.surface
+                width: 30, flexShrink: 0, fontSize: 9, fontWeight: 700, color: "#0f172a",
+                textAlign: "right", paddingRight: 6, position: "sticky", left: 0, background: "#ffffff"
               }}>
                 {w + 1}
               </div>
@@ -1382,10 +1383,10 @@ export function GrigliaRotazione({ rot, T, accent, modelli, fasceAutomatiche, su
                 return (
                   <div key={dateKey} title={dateKey} onClick={() => clickPallino(dateKey)}
                     style={{
-                      width: 22, height: 22, margin: 2, borderRadius: "50%", flexShrink: 0,
-                      background: colore || T.s2,
-                      border: `1.5px solid ${colore || T.border}`,
-                      cursor: "pointer"
+                      flex: 1, minWidth: 0, height: 22, margin: 2, borderRadius: 11, flexShrink: 0,
+                      background: colore || "#ffffff",
+                      border: "1.5px solid #000000",
+                      cursor: "pointer", boxSizing: "border-box"
                     }} />
                 );
               })}
