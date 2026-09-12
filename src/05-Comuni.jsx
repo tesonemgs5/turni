@@ -371,7 +371,7 @@ export function FasceExpand({data, pct1, pct2, T, modelli, accent, cfg}){
               ):turniDiFascia(f.key).map(([mid,cnt])=>{
                 const m=modelli.find(x=>x.id===mid);
                 if(!m) return null;
-                const c=m.coloreCustom||f.color;
+                const c=m?.coloreCustom||f.color;
                 return (
                   <div key={mid} style={{display:"flex",alignItems:"center",gap:8,
                     padding:"5px 6px",borderRadius:6,marginBottom:3,background:T.surface}}>
@@ -541,7 +541,7 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, acce
                     }).map(([mid,info])=>{
                       const m=modelli.find(x=>x.id===mid);
                       if(!m) return null;
-                      const c=m.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
+                      const c=m?.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
                       const gk = sm.id+":"+mid;
                       const isOpenG = openGruppoDentro===gk;
                       return (
@@ -625,7 +625,7 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, acce
                                     <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"6px 0"}}>Nessun modello incluso nel filtro del report</div>
                                   ):(cfg.modelliInclusi?.length>0 ? modelli.filter(m=>cfg.modelliInclusi.includes(m.id)) : modelli).map(m=>{
                                     const attivo = assegnazioni[m.id]===g.key;
-                                    const c=m.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
+                                    const c=m?.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
                                     const info = perGruppoSm[g.key]?.[m.id];
                                     return (
                                       <div key={m.id} style={{display:"flex",flexDirection:"column",marginBottom:3}}>
@@ -856,7 +856,7 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
                     }).map(([mid,info])=>{
                       const m=modelli.find(x=>x.id===mid);
                       if(!m) return null;
-                      const c=m.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
+                      const c=m?.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
                       const gk = sm.id+":"+mid;
                       const isOpenG = openGruppoDentro===gk;
                       return (
@@ -936,7 +936,7 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
                                     <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"6px 0"}}>Nessun modello incluso nel filtro del report</div>
                                   ):(cfg.modelliInclusi?.length>0 ? modelli.filter(m=>cfg.modelliInclusi.includes(m.id)) : modelli).map(m=>{
                                     const attivo = assegnazioni[m.id]===g.key;
-                                    const c=m.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
+                                    const c=m?.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
                                     const info = perGruppoSm[g.key]?.[m.id];
                                     return (
                                       <div key={m.id} style={{display:"flex",flexDirection:"column",marginBottom:3}}>
@@ -1098,7 +1098,7 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
                     ? gruppiManuali[m.id]===f.key
                     : (data.perGruppo?.[f.key]?.[m.id]!==undefined);
                   const info = data.perGruppo?.[f.key]?.[m.id];
-                  const c = m.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
+                  const c = m?.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
                   return (
                     <div key={m.id} style={{display:"flex",alignItems:"center",gap:10,
                       padding:"7px 8px",borderRadius:8,marginBottom:4,background:T.surface}}>
@@ -1144,7 +1144,7 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
                     }).map(([mid,info])=>{
             const m=modelli.find(x=>x.id===mid);
             if(!m) return null;
-            const c=m.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
+            const c=m?.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
             const isOpen = openModello===mid;
             return (
               <div key={mid} style={{marginBottom:4}}>

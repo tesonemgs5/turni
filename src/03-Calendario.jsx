@@ -87,7 +87,7 @@ export default function VistaCalendario({ C }){
     if(!quickModeModello||!calId||!userId) return;
     const mod = modelli.find(m=>m.id===quickModeModello);
     if(!mod) return;
-    const color = mod.coloreCustom||(mod.tempo==="h24"?"#64748b":colByTime(mod.inizio));
+    const color = mod?.coloreCustom||(mod.tempo==="h24"?"#64748b":colByTime(mod.inizio));
     const label = (mod.label||mod.titolo||"").toUpperCase();
     const allDay = mod.tempo==="h24";
     const tIn = allDay?"":(mod.inizio||"");
@@ -912,7 +912,7 @@ export default function VistaCalendario({ C }){
                       <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
                         {modelliCal.map((m,i,arr)=>{
                           const selezionato = inclusi.includes(m.id);
-                          const colore = m.coloreCustom||colByTime(m.inizio);
+                          const colore = m?.coloreCustom||colByTime(m.inizio);
                           return (
                             <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                               <div onClick={()=>toggleModello(m)}

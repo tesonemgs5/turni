@@ -756,12 +756,12 @@ export function ModelloSelector({ T, modelli = [], value, onChange }) {
           <button key={m.id} type="button" onClick={() => onChange(m.id)}
             style={{
               display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", borderRadius: 20,
-              border: `1.5px solid ${attivo ? (m.coloreCustom || "#2563eb") : T.border}`,
-              background: attivo ? (m.coloreCustom || "#2563eb") : T.s2,
-              color: attivo ? getContrastTextColor(m.coloreCustom || "#2563eb") : T.text,
+              border: `1.5px solid ${attivo ? (m?.coloreCustom || "#2563eb") : T.border}`,
+              background: attivo ? (m?.coloreCustom || "#2563eb") : T.s2,
+              color: attivo ? getContrastTextColor(m?.coloreCustom || "#2563eb") : T.text,
               fontSize: 12, fontWeight: 700, cursor: "pointer",
             }}>
-            <div style={{ width: 8, height: 8, borderRadius: "50%", background: m.coloreCustom || "#2563eb" }} />
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: m?.coloreCustom || "#2563eb" }} />
             {m.titolo}
           </button>
         );
@@ -930,7 +930,7 @@ export function ModelForm({
 
 // Card di riepilogo di un modello, per le liste (02-Modelli.jsx).
 export function ModelloCard({ T, modello, accent, onEdit, onDelete }) {
-  const colore = modello.coloreCustom || COLORE_H24;
+  const colore = modello?.coloreCustom || COLORE_H24;
   return (
     <div style={{
       display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -1341,12 +1341,12 @@ export function GrigliaRotazione({ rot, T, accent, modelli, fasceAutomatiche, su
             <button key={m.id} onClick={() => setModelloSelezionato(cur => cur === m.id ? null : m.id)}
               style={{
                 display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", borderRadius: 20,
-                border: `1.5px solid ${attivo ? (m.coloreCustom || accent) : T.border}`,
-                background: attivo ? (m.coloreCustom || accent) : T.s2,
-                color: attivo ? getContrastTextColor(m.coloreCustom || accent) : T.text,
+                border: `1.5px solid ${attivo ? (m?.coloreCustom || accent) : T.border}`,
+                background: attivo ? (m?.coloreCustom || accent) : T.s2,
+                color: attivo ? getContrastTextColor(m?.coloreCustom || accent) : T.text,
                 fontSize: 12, fontWeight: 700, cursor: "pointer"
               }}>
-              <div style={{ width: 8, height: 8, borderRadius: "50%", background: m.coloreCustom || accent }} />
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: m?.coloreCustom || accent }} />
               {m.titolo}
             </button>
           );
