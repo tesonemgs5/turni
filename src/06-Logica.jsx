@@ -1989,6 +1989,9 @@ export function useAppCore(session){
           storeRef.current = ns;
           return ns;
         });
+        // Stesso bugfix del caso "Creazione turno": il calendario dell'evento
+        // figlio (protrazione) deve restare visibile dopo il refresh.
+        setSelectedCalIds(prev => prev.length===0 || prev.includes(calId) ? prev : [...prev, calId]);
         // storeRef.current, non "store": vedi nota sull'altro scriviConBackup
         // poco sopra in questa stessa funzione.
         await scriviConBackup({
@@ -2106,6 +2109,15 @@ export function useAppCore(session){
     const nuovoStore = withEventoAggiunto(store, dayKey, calId, evt);
     saveToLocalStorage(nuovoStore.events, nuovoStore.calendars, modelli);
     setStore(nuovoStore);
+    // BUGFIX: il calendario dell'evento appena creato deve restare visibile
+    // anche dopo un refresh. selectedCalIds è persistito in localStorage e
+    // filtra allEvts() quando non è vuoto (vedi 06-Logica.jsx allEvts): se
+    // l'utente aveva già selezionato manualmente ALCUNI calendari (lista non
+    // vuota) senza includere calId, l'evento veniva salvato correttamente
+    // ma spariva dalla griglia mensile al primo reload, perché filtrato via
+    // da un selectedCalIds che non lo conteneva — pur non essendoci alcun
+    // errore di salvataggio (il dato era sempre presente su Supabase/locale).
+    setSelectedCalIds(prev => prev.length===0 || prev.includes(calId) ? prev : [...prev, calId]);
     // Aggiorno anche il ref SUBITO (sincrono): sincronizzaEventiProtrazione
     // viene chiamata poche righe sotto, prima che React possa aver
     // ri-renderizzato e propagato nuovoStore dentro storeRef via useEffect.
@@ -4226,6 +4238,10 @@ const importsRecenti = useMemo(()=>{
       return ns;
     });
 
+    // Stesso bugfix del caso "Creazione turno": il calendario su cui è stato
+    // fatto l'import deve restare visibile dopo il refresh.
+    if((nAggiunti||0)>0 || (nSostituiti||0)>0) setSelectedCalIds(prev => prev.length===0 || prev.includes(calId) ? prev : [...prev, calId]);
+
     registraProblemiImport(mancanti, sospetti);
     return { nAggiunti, nSostituiti, nInvariati, mancanti, sospetti, importId, sostituzioni };
   }
@@ -4288,6 +4304,9 @@ const importsRecenti = useMemo(()=>{
       syncSeAttivo(ns.events, ns.calendars);
       return ns;
     });
+    // Stesso bugfix del caso "Creazione turno": il calendario su cui è stato
+    // fatto l'import deve restare visibile dopo il refresh.
+    if(nScritte>0) setSelectedCalIds(prev => prev.length===0 || prev.includes(calId) ? prev : [...prev, calId]);
     return nScritte;
   }
 
@@ -4427,6 +4446,9 @@ const importsRecenti = useMemo(()=>{
       syncSeAttivo(ns.events, ns.calendars);
       return ns;
     });
+    // Stesso bugfix del caso "Creazione turno": il calendario su cui è stata
+    // applicata la rotazione deve restare visibile dopo il refresh.
+    setSelectedCalIds(prev => prev.length===0 || prev.includes(calId) ? prev : [...prev, calId]);
   }
 // #endregion
 
