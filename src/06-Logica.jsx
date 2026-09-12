@@ -2980,7 +2980,16 @@ function ricalcolaPosizioniGlobali(prev, calendarsOrdinati, ordiniPerCalendario,
 
 // Elenco completo (tutti i calendari insieme), usato dove serve una vista
 // globale — es. il ripristino da backup, o quando calId===null ("tutti").
-const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
+const modelliOrdinati = useMemo(()=>{
+  const puliti = (modelli||[]).filter(Boolean);
+  if(puliti.length !== (modelli||[]).length){
+    segnalaErrore(
+      { message: `Trovati ${(modelli||[]).length - puliti.length} elementi non validi (null/undefined) nell'array modelli. Rimossi automaticamente per evitare il crash.` },
+      "Dati modelli corrotti (auto-riparazione)"
+    );
+  }
+  return calcolaOrdineModelli(puliti);
+}, [modelli]);
 
 const importsRecenti = useMemo(()=>{
   const gruppi = {};
