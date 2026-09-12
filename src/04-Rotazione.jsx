@@ -78,6 +78,40 @@ export const FESTIVITA_DEFAULT_ATTIVE = [
   "ferragosto", "ognissanti", "immacolata", "natale", "santostefano",
 ];
 
+// Santi patroni delle città italiane più grandi/comuni, per popolare una
+// scelta rapida in Impostazioni -> Festivi Locali (l'utente clicca invece
+// di dover digitare nome e data a mano). Sono festività locali, non
+// nazionali: nel giorno del patrono la città in questione è festiva, il
+// resto d'Italia no — per questo restano fuori da FESTIVITA_FISSE/
+// FESTIVITA_DEFAULT_ATTIVE e vivono come proprio catalogo separato.
+// Date fisse e stabili (non richiedono calcolo per anno).
+export const SANTI_PATRONI_CITTA = [
+  { citta: "Roma",      nome: "San Pietro e Paolo",     d: 29, m: 6  },
+  { citta: "Milano",    nome: "Sant'Ambrogio",          d: 7,  m: 12 },
+  { citta: "Napoli",    nome: "San Gennaro",            d: 19, m: 9  },
+  { citta: "Torino",    nome: "San Giovanni Battista",  d: 24, m: 6  },
+  { citta: "Palermo",   nome: "Santa Rosalia",          d: 15, m: 7  },
+  { citta: "Genova",    nome: "San Giovanni Battista",  d: 24, m: 6  },
+  { citta: "Bologna",   nome: "San Petronio",           d: 4,  m: 10 },
+  { citta: "Firenze",   nome: "San Giovanni Battista",  d: 24, m: 6  },
+  { citta: "Bari",      nome: "San Nicola",             d: 6,  m: 12 },
+  { citta: "Catania",   nome: "Sant'Agata",             d: 5,  m: 2  },
+  { citta: "Venezia",   nome: "San Marco",              d: 25, m: 4  },
+  { citta: "Verona",    nome: "San Zeno",               d: 21, m: 5  },
+  { citta: "Messina",   nome: "Madonna della Lettera",  d: 3,  m: 6  },
+  { citta: "Padova",    nome: "Sant'Antonio",           d: 13, m: 6  },
+  { citta: "Trieste",   nome: "San Giusto",             d: 3,  m: 11 },
+  { citta: "Assisi",    nome: "San Francesco",          d: 4,  m: 10 },
+  { citta: "Perugia",   nome: "Sant'Ercolano",          d: 1,  m: 3  },
+  { citta: "Cagliari",  nome: "Sant'Efisio",            d: 1,  m: 5  },
+  { citta: "Reggio Calabria", nome: "San Giorgio",      d: 23, m: 4  },
+  { citta: "Ancona",    nome: "San Ciriaco",            d: 4,  m: 5  },
+];
+// San Francesco d'Assisi (4 ottobre) è anche patrono d'Italia, ma essendo
+// già lavorativo su tutto il territorio in origine e ormai raramente
+// festivo ovunque, resta qui come festività LOCALE di Assisi (dove è
+// effettivamente ancora osservato come tale) e non tra le nazionali.
+
 export const NB = {
   padding:"10px 14px", borderRadius:10, fontWeight:700, fontSize:13,
   cursor:"pointer", border:"none",

@@ -1,7 +1,7 @@
     import { useState, useEffect, useRef, useMemo, Fragment } from "react";
 import {
   MONTHS, DAYS, PALETTE, FONT_SIZE, NB, COLORE_H24, NOMI_MESI_IT,
-  FASCE_AUTOMATICHE_DEFAULT, FESTIVITA_DEFAULT_ATTIVE,
+  FASCE_AUTOMATICHE_DEFAULT, FESTIVITA_DEFAULT_ATTIVE, SANTI_PATRONI_CITTA,
   getContrastTextColor, daysInMonth, firstDay, fmtDataIT, dkey, uid,
   oraInMinuti, calcFine6h15, calcFine6h30, calcFineModello, calcDurata,
   isModelloTurnazioneDefault, withEventoAggiunto, saveToLocalStorage,
@@ -100,7 +100,7 @@ export default function VistaModelli({ C }){
     setSelectedModelloIds, screen, setScreen, dayKey, setDayKey, form,
     setForm, pal, setPal, ncName, setNcName, ncColor,
     setNcColor, nsName, setNsName, nsColor, setNsColor, exCal,
-    setExCal, nhName, setNhName, syncMsg, setSyncMsg, backupsList,
+    setExCal, nhName, setNhName, patronoCittaSel, setPatronoCittaSel, syncMsg, setSyncMsg, backupsList,
     setBackupsList, showBackupsModal, setShowBackupsModal, showLocalDataModal, setShowLocalDataModal, syncing,
     setSyncing, nhD, setNhD, nhM, setNhM, bgSyncing,
     setBgSyncing, dbError, setDbError, isWideScreen, setIsWideScreen, evtFontSize,
@@ -1614,6 +1614,33 @@ export default function VistaModelli({ C }){
             }} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:16}}>×</button>
           </div>
         ))}
+        <div style={{fontSize:10,color:T.sub,fontWeight:700,marginTop:10,marginBottom:6}}>
+          SANTO PATRONO (scelta rapida)
+        </div>
+        <div style={{display:"flex",gap:6,marginBottom:12}}>
+          <select value={patronoCittaSel} onChange={e=>setPatronoCittaSel(e.target.value)}
+            style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
+              padding:"7px 10px",color:T.text,fontSize:12,outline:"none"}}>
+            <option value="">Scegli una città...</option>
+            {SANTI_PATRONI_CITTA.map(p=>(
+              <option key={p.citta} value={p.citta}>{p.citta} — {p.nome} ({String(p.d).padStart(2,"0")}/{String(p.m).padStart(2,"0")})</option>
+            ))}
+          </select>
+          <button onClick={()=>{
+            const p = SANTI_PATRONI_CITTA.find(pp=>pp.citta===patronoCittaSel);
+            if(!p) return;
+            const giaPresente = (store.extraHols||[]).some(h=>+h.d===p.d && +h.m===p.m && h.name===p.nome);
+            if(giaPresente) return;
+            const newH=[...(store.extraHols||[]),{name:p.nome, d:p.d, m:p.m}];
+            setStore(s=>({...s,extraHols:newH}));
+            saveSettings({theme:store.theme,extra_hols:newH});
+            setPatronoCittaSel("");
+          }} disabled={!patronoCittaSel} style={{background:patronoCittaSel?"#ef4444":T.s2,border:"none",borderRadius:8,
+            color:patronoCittaSel?"#fff":T.sub,padding:"7px 14px",cursor:patronoCittaSel?"pointer":"default",fontWeight:800}}>+</button>
+        </div>
+        <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>
+          OPPURE INSERISCI A MANO
+        </div>
         <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
           <input value={nhName} onChange={e=>setNhName(e.target.value)} placeholder="Nome..."
             style={{flex:2,minWidth:100,background:T.s2,border:`1px solid ${T.border}`,
