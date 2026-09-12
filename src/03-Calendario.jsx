@@ -333,15 +333,18 @@ export default function VistaCalendario({ C }){
                 setSelectedCalIds(prev=> prev.includes(c.id) ? prev.filter(id=>id!==c.id) : [...prev, c.id]);
               }}
               title={editMode?`Tocca per selezionare esclusivamente "${c.name}" per la modifica`:undefined}
-              style={{display:"flex",alignItems:"center",gap:3,flexShrink:0,cursor:"pointer",
-                background:visibile?"#f1f5f9":"#ffffff",
-                border:`1.5px solid ${attivoEdit?"#0f172a":(visibile?"#94a3b8":"#e2e8f0")}`,
-                boxShadow:attivoEdit?"0 0 0 2px rgba(15,23,42,0.15)":"none",
-                borderRadius:20,padding:"2px 8px 2px 5px"}}>
-              <div style={{width:8,height:8,borderRadius:"50%",background:c.color,border:"1px solid rgba(15,23,42,0.15)"}}/>
-              <span style={{color:"#0f172a",fontSize:12,fontWeight:attivoEdit?900:700}}>{c.name}</span>
-              {attivoEdit&&<span style={{color:"#0f172a",fontSize:9}}>✏️</span>}
-              {c.isMain&&<span style={{color:"rgba(15,23,42,0.6)",fontSize:8}}>★</span>}
+              style={{display:"flex",alignItems:"center",gap:4,flexShrink:0,cursor:"pointer",
+                background:visibile ? "#0f172a" : "#ffffff",
+                color:visibile ? "#ffffff" : "#64748b",
+                border:`2px solid ${attivoEdit ? "#38bdf8" : (visibile ? "#0f172a" : "#cbd5e1")}`,
+                boxShadow:visibile ? "0 2px 6px rgba(15,23,42,0.25)" : "none",
+                opacity:visibile ? 1 : 0.6,
+                borderRadius:20,padding:"3px 10px 3px 7px",
+                transition:"all 0.15s ease"}}>
+              <div style={{width:9,height:9,borderRadius:"50%",background:c.color,border:visibile?"1.5px solid #ffffff":"1px solid rgba(0,0,0,0.2)",boxShadow:"0 1px 2px rgba(0,0,0,0.2)"}}/>
+              <span style={{fontSize:12,fontWeight:visibile?800:600,letterSpacing:visibile?0.2:0}}>{c.name}</span>
+              {attivoEdit&&<span style={{color:"#38bdf8",fontSize:10,marginLeft:1}}>✏️</span>}
+              {c.isMain&&<span style={{color:visibile?"#facc15":"rgba(15,23,42,0.4)",fontSize:9}}>★</span>}
             </button>
             );})
         }

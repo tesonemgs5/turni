@@ -1587,10 +1587,10 @@ export function useAppCore(session){
     return { perEvento };
   }
   function allEvts(key){
+    if(!selectedCalIds || selectedCalIds.length===0) return [];
     const res=[];
-    const soloCal = selectedCalIds.length>0 ? selectedCalIds : null; // visibilità eventi: sempre tutti i calendari selezionati, editMode o no
-    if(mainCal && (!soloCal||soloCal.includes(mainCal.id))) getEvts(key,mainCal.id).forEach(e=>res.push({...e,_cid:mainCal.id}));
-    store.calendars.filter(c=>!c.isMain && (!soloCal||soloCal.includes(c.id))).forEach(c=>
+    if(mainCal && selectedCalIds.includes(mainCal.id)) getEvts(key,mainCal.id).forEach(e=>res.push({...e,_cid:mainCal.id}));
+    store.calendars.filter(c=>!c.isMain && selectedCalIds.includes(c.id)).forEach(c=>
       getEvts(key,c.id).forEach(e=>res.push({...e,_cid:c.id})));
     // Ordine calendario: posizione dell'evento nell'elenco calendari configurato in Impostazioni
     const calOrderIdx = new Map(store.calendars.map((c,i)=>[c.id,i]));
