@@ -418,7 +418,26 @@ export function useAppCore(session){
   const [dbEvtsCount, setDbEvtsCount] = useState(0);
 
   const [modelliTab, setModelliTab] = useState("turni");
-  const [modelli, setModelli] = useState([]);
+  const [modelli, setModelliRaw] = useState([]);
+  // GUARDIA GLOBALE: qualunque punto dell'app chiami setModelli (array diretto
+  // o funzione prev=>...), il risultato viene SEMPRE ripulito da eventuali
+  // elementi null/undefined prima di entrare in stato. Questo impedisce che
+  // un singolo punto dimenticato (find() senza match, map() malformato, dato
+  // corrotto da cache/DB) faccia crashare l'intera app al primo render che
+  // legge m.qualcosaDiUnDefined su un elemento del genere.
+  function setModelli(valoreONuovoValore){
+    setModelliRaw(prev=>{
+      const nuovo = typeof valoreONuovoValore==="function" ? valoreONuovoValore(prev) : valoreONuovoValore;
+      const puliti = (nuovo||[]).filter(Boolean);
+      if(puliti.length !== (nuovo||[]).length){
+        segnalaErrore(
+          { message: `setModelli ha ricevuto ${(nuovo||[]).length - puliti.length} elementi null/undefined: rimossi automaticamente.` },
+          "Dati modelli corrotti (auto-riparazione in setModelli)"
+        );
+      }
+      return puliti;
+    });
+  }
   // Ref sincrono per leggere l'ultimo valore di modelli dentro callback
   // async (es. subito dopo un saveModello, prima che il re-render abbia
   // aggiornato la closure di questa funzione).
@@ -1693,7 +1712,7 @@ export function useAppCore(session){
     if(idModelloForm){
       const mod = modelli.find(m=>m.id===idModelloForm);
       if(mod){
-        color = form.colorOvr||(mod.coloreCustom||colByTime(mod.inizio));
+        color = form.colorOvr||(mod?.coloreCustom||colByTime(mod.inizio));
         label = (mod.label||mod.titolo||label).toUpperCase();
         // Orari SEMPRE quelli ufficiali del modello quando un modello è
         // selezionato: il campo Ingresso/Uscita in alto NON deve più poter
@@ -1887,7 +1906,7 @@ export function useAppCore(session){
       const tipoModello = eMenoRecupero ? "meno_recupero" : tipo;
       const mod = await trovaOCreaModelloProtrazione(tipoModello, calId);
       if(!mod) continue;
-      const color = mod.coloreCustom || (tipoModello==="recupero" ? "#f9a8d4" : tipoModello==="meno_recupero" ? "#dc2626" : "#ec4899");
+      const color = mod?.coloreCustom || (tipoModello==="recupero" ? "#f9a8d4" : tipoModello==="meno_recupero" ? "#dc2626" : "#ec4899");
       // Il "nome da mostrare nel calendario" (mod.label) ha PRIORITÀ sul
       // titolo/codice (mod.titolo): stessa convenzione già usata altrove
       // (vedi computeEventFields più sopra). Con la vecchia priorità
@@ -2779,7 +2798,7 @@ export function useAppCore(session){
           .eq("id", m.id).eq("user_id", userId);
       },
       applicaSuStatoLocale: (sistemati) => {
-        setModelli(prev=>prev.map(m=>{
+        setModelli(prev=>(prev||[]).filter(Boolean).map(m=>{
           const hit=sistemati.find(d=>d.m.id===m.id);
           return hit ? {...m, ...hit.target} : m;
         }));
@@ -2857,7 +2876,7 @@ export function useAppCore(session){
 // blocco di un altro), ma il numero assoluto risultante riflette lo shift
 // globale se necessario.
 function calcolaOrdineModelli(sottoinsieme){
-  return [...sottoinsieme].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
+  return [...(sottoinsieme||[])].filter(Boolean).sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
 }
 
 // ── Ordinamento per FASCIA ORARIA D'INIZIO, usato SOLO dal pulsante
@@ -2980,16 +2999,7 @@ function ricalcolaPosizioniGlobali(prev, calendarsOrdinati, ordiniPerCalendario,
 
 // Elenco completo (tutti i calendari insieme), usato dove serve una vista
 // globale — es. il ripristino da backup, o quando calId===null ("tutti").
-const modelliOrdinati = useMemo(()=>{
-  const puliti = (modelli||[]).filter(Boolean);
-  if(puliti.length !== (modelli||[]).length){
-    segnalaErrore(
-      { message: `Trovati ${(modelli||[]).length - puliti.length} elementi non validi (null/undefined) nell'array modelli. Rimossi automaticamente per evitare il crash.` },
-      "Dati modelli corrotti (auto-riparazione)"
-    );
-  }
-  return calcolaOrdineModelli(puliti);
-}, [modelli]);
+const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
 
 const importsRecenti = useMemo(()=>{
   const gruppi = {};
@@ -3028,8 +3038,9 @@ const importsRecenti = useMemo(()=>{
   // recente), mai da uno snapshot esterno del render, per evitare le
   // desincronizzazioni con click ravvicinati viste nell'architettura precedente.
   function modelliDelCalendario(prev, calIdFiltro){
-    if(calIdFiltro==null) return prev;
-    return prev.filter(m=>(m.calendarId||mainCalId)===calIdFiltro);
+    const puliti = (prev||[]).filter(Boolean);
+    if(calIdFiltro==null) return puliti;
+    return puliti.filter(m=>(m.calendarId||mainCalId)===calIdFiltro);
   }
 
   // -- Sposta un modello di UNA posizione (freccia ^) all'interno del suo
@@ -3679,7 +3690,7 @@ const importsRecenti = useMemo(()=>{
     if(!userId) return;
     // 1) SUBITO in locale.
     setColoriExtra(prev=>prev.filter(c=>c.hex!==hex));
-    const daResettare = modelli.filter(m=>m.coloreCustom===hex);
+    const daResettare = modelli.filter(m=>m?.coloreCustom===hex);
     for(const m of daResettare){
       await saveModello({...m, coloreCustom:null});
     }
@@ -3713,10 +3724,10 @@ const importsRecenti = useMemo(()=>{
   async function replaceColoreEverywhere(oldHex, newHex){
     if(!userId || !newHex || oldHex===newHex) return;
     // 1) SUBITO in locale: modelli + registro colori aggiornati all'istante.
-    const daAggiornare = modelli.filter(m=>m.coloreCustom===oldHex);
+    const daAggiornare = modelli.filter(m=>m?.coloreCustom===oldHex);
     let modelliAggiornati;
     setModelli(prev=>{
-      modelliAggiornati = prev.map(m=>m.coloreCustom===oldHex?{...m,coloreCustom:newHex,colore:newHex}:m);
+      modelliAggiornati = prev.map(m=>m?.coloreCustom===oldHex?{...m,coloreCustom:newHex,colore:newHex}:m);
       return modelliAggiornati;
     });
     const eraRegistrato = coloriExtra.some(c=>c.hex===oldHex);
@@ -3819,7 +3830,7 @@ const importsRecenti = useMemo(()=>{
       oraInizioOverride=null, oraFineOverride=null,
     } = extra;
     const dateKey = dkey(dataEv.getFullYear(), dataEv.getMonth(), dataEv.getDate());
-    const color = mod ? (mod.coloreCustom || (mod.tempo==="h24" ? "#64748b" : colByTime(mod.inizio))) : "#94a3b8";
+    const color = mod ? (mod?.coloreCustom || (mod.tempo==="h24" ? "#64748b" : colByTime(mod.inizio))) : "#94a3b8";
     const label = (labelOverride || mod?.label || mod?.titolo || "").toUpperCase();
     const allDay = mod ? mod.tempo==="h24" : true;
     // oraInizioOverride/oraFineOverride: usati per eventi come la

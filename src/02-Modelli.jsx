@@ -533,22 +533,22 @@ export default function VistaModelli({ C }){
         {modelliTab==="colori"&&(()=>{
           const fasceColorSet = new Set([...fasceAutomatiche.map(f=>f.color), COLORE_H24]);
           const coloriExtraFiltrati = coloriExtra.filter(c=>!fasceColorSet.has(c.hex));
-          const coloriUsatiDaModelli = [...new Set(modelli.map(m=>m.coloreCustom).filter(Boolean))]
+          const coloriUsatiDaModelli = [...new Set(modelli.map(m=>m?.coloreCustom).filter(Boolean))]
             .filter(h=>!fasceColorSet.has(h));
           const hexUsatiDaExtra = new Set(coloriExtraFiltrati.map(c=>c.hex));
           const coloriManualiOggetti = [
             ...coloriExtraFiltrati,
             ...coloriUsatiDaModelli.filter(h=>!hexUsatiDaExtra.has(h)).map(h=>({hex:h,label:null})),
           ];
-          function contaModelli(hex){ return modelli.filter(m=>m.coloreCustom===hex).length; }
+          function contaModelli(hex){ return modelli.filter(m=>m?.coloreCustom===hex).length; }
           function contaModelliFascia(fascia){
             return modelli.filter(m=>{
-              if(m.coloreCustom) return m.coloreCustom===fascia.color;
+              if(m?.coloreCustom) return m?.coloreCustom===fascia.color;
               if(fascia.key==="notte") return m.tempo==="h24"?false:(!m.inizio?false:colByTime(m.inizio)===fascia.color);
               return m.tempo!=="h24" && m.inizio && colByTime(m.inizio)===fascia.color;
             }).length;
           }
-          const contaH24 = modelli.filter(m=>m.coloreCustom ? m.coloreCustom===COLORE_H24 : m.tempo==="h24").length;
+          const contaH24 = modelli.filter(m=>m?.coloreCustom ? m?.coloreCustom===COLORE_H24 : m.tempo==="h24").length;
           // Un'unica lista con tutti i colori (fasce automatiche + H24 + personalizzati),
           // nessuna sezione separata: tocca un colore per rinominarlo/gestirlo.
           const righeTutteFasce = fasceAutomatiche.map(f=>({
@@ -692,12 +692,12 @@ export default function VistaModelli({ C }){
                         </div>
                         <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
                           {modelliCal.map((m,i,arr)=>{
-                            const matchAuto = !m.coloreCustom && (
+                            const matchAuto = !m?.coloreCustom && (
                               (m.tempo==="h24" && hex===COLORE_H24) ||
                               (m.tempo!=="h24" && m.inizio && colByTime(m.inizio)===hex)
                             );
-                            const selezionato = m.coloreCustom===hex || matchAuto;
-                            const coloreAttuale = m.coloreCustom||colByTime(m.inizio);
+                            const selezionato = m?.coloreCustom===hex || matchAuto;
+                            const coloreAttuale = m?.coloreCustom||colByTime(m.inizio);
                             return (
                               <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                                 <div onClick={()=>{
@@ -714,7 +714,7 @@ export default function VistaModelli({ C }){
                                     <div style={{fontSize:15,fontWeight:700,color:T.text}}>{m.titolo||"Senza nome"}</div>
                                     <div style={{fontSize:11,color:T.sub}}>
                                       {m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${m.fine?` - ${m.fine}`:""}`:""}
-                                      {m.coloreCustom&&!selezionato?" · colore personalizzato diverso":""}
+                                      {m?.coloreCustom&&!selezionato?" · colore personalizzato diverso":""}
                                     </div>
                                   </div>
                                 </div>
@@ -741,7 +741,7 @@ export default function VistaModelli({ C }){
 
       {showEditFasciaColor&&(
         <ColorPickerModal T={T} cur={showEditFasciaColor} title="Cambia colore"
-          coloriUsati={[...new Set(modelli.map(m=>m.coloreCustom||(m.tempo==="h24"?COLORE_H24:colByTime(m.inizio))).filter(Boolean))].filter(h=>h!==showEditFasciaColor)}
+          coloriUsati={[...new Set(modelli.map(m=>m?.coloreCustom||(m.tempo==="h24"?COLORE_H24:colByTime(m.inizio))).filter(Boolean))].filter(h=>h!==showEditFasciaColor)}
           onPick={async(p)=>{
             const old = showEditFasciaColor;
             setShowColorAssignPicker(p);
@@ -1007,7 +1007,7 @@ export default function VistaModelli({ C }){
                 <div style={{fontSize:10,color:T.sub,marginBottom:2}}>
                   {new Date(voce.ts).toLocaleString("it-IT")} — <strong>{voce.contesto}</strong>
                 </div>
-                <div style={{fontSize:12,color:T.text}}>{voce.message || voce.messaggio}</div>
+                <div style={{fontSize:12,color:T.text}}>{voce.messaggio}</div>
               </div>
             ))}
           </div>
@@ -1807,7 +1807,7 @@ export default function VistaModelli({ C }){
                 <div style={{fontSize:10,color:T.sub,marginBottom:6,fontWeight:600}}>CAMBIA MODELLO TURNO</div>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
                   {modelliDelCal.map(m=>{
-                    const c=m.coloreCustom||colByTime(m.inizio);
+                    const c=m?.coloreCustom||colByTime(m.inizio);
                     return (
                       <button key={m.id}
                         onClick={()=>setForm(f=>({...f,modelloId:m.id,shiftId:null,label:m.label||m.titolo,colorOvr:null,
@@ -1848,7 +1848,7 @@ export default function VistaModelli({ C }){
                 {!form.modelloId&&<div style={{fontSize:10,color:T.sub,marginBottom:6,fontWeight:600}}>MODELLO TURNO</div>}
                 <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
                   {(form.modelloId?modelliDelCal.filter(m=>m.id===form.modelloId):modelliDelCal).map(m=>{
-                    const c=m.coloreCustom||colByTime(m.inizio);
+                    const c=m?.coloreCustom||colByTime(m.inizio);
                     return (
                       <button key={m.id}
                         onClick={()=>setForm(f=>({...f,modelloId:m.id,shiftId:null,label:m.label||m.titolo,colorOvr:null,
@@ -1921,7 +1921,7 @@ export default function VistaModelli({ C }){
                     title="Colore evento"
                     onPick={p=>setForm(f=>({...f,colorOvr:p}))}
                     onClose={()=>setPal(null)}
-                    coloriUsati={[...new Set(modelli.map(m=>m.coloreCustom||(m.tempo==="h24"?COLORE_H24:colByTime(m.inizio))).filter(Boolean))]}/>}
+                    coloriUsati={[...new Set(modelli.map(m=>m?.coloreCustom||(m.tempo==="h24"?COLORE_H24:colByTime(m.inizio))).filter(Boolean))]}/>}
                 </div>
                 {form.colorOvr&&(
                   <button onClick={()=>setForm(f=>({...f,colorOvr:null}))}
