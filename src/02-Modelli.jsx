@@ -1007,7 +1007,7 @@ export default function VistaModelli({ C }){
                 <div style={{fontSize:10,color:T.sub,marginBottom:2}}>
                   {new Date(voce.ts).toLocaleString("it-IT")} — <strong>{voce.contesto}</strong>
                 </div>
-                <div style={{fontSize:12,color:T.text}}>{voce.messaggio}</div>
+                <div style={{fontSize:12,color:T.text}}>{voce.message || voce.messaggio}</div>
               </div>
             ))}
           </div>
