@@ -732,7 +732,14 @@ export function useAppCore(session){
         const savedFasce = settings?.fasce_automatiche || FASCE_AUTOMATICHE_DEFAULT;
         const savedSundayColor = settings?.sunday_color || "";
         const savedHolidayColor = settings?.holiday_color || "";
-        const savedNationalHolsEnabled = settings?.national_hols_enabled || FESTIVITA_DEFAULT_ATTIVE;
+        // settings?.national_hols_enabled può essere legittimamente un
+        // array vuoto (l'utente ha disattivato tutte le festività
+        // nazionali): con "||" un array vuoto è comunque truthy in JS, ma
+        // il valore va comunque sostituito solo se è davvero assente
+        // (undefined/null), altrimenti si annullerebbe la scelta utente.
+        const savedNationalHolsEnabled = (settings?.national_hols_enabled != null)
+          ? settings.national_hols_enabled
+          : FESTIVITA_DEFAULT_ATTIVE;
         const savedCalEventRows = settings?.cal_event_rows || 1;
         const savedCalRow1Field = settings?.cal_row1_field || "titolo";
         const savedCalRow2Field = settings?.cal_row2_field || "---";
@@ -1430,7 +1437,7 @@ export function useAppCore(session){
 
   function isRed(d,m){
     return hols.some(h=>h.m===m&&h.d===d) ||
-      (store.extraHols||[]).some(h=>+h.m-1===m&&+h.d===d);
+      (store.extraHols||[]).some(h=>+h.m===m&&+h.d===d);
   }
   const sundayColor = store.sundayColor || (dark?"#2d0a0a":"#fff5f5");
   const holidayColor = store.holidayColor || (dark?"#2d0a0a":"#fff5f5");
@@ -4765,7 +4772,7 @@ const importsRecenti = useMemo(()=>{
     const totaliMin = { diurno:0, notturno:0, festivo:0, notturno_festivo:0 };
     for(const [dateKey, calMap] of Object.entries(store.events)){
       if(dateKey < from || dateKey > to) continue;
-      const fest = isFestivo(dateKey);
+      const fest = isFestivo(dateKey, store.nationalHolsEnabled, store.extraHols);
       for(const [cid, evts] of Object.entries(calMap)){
         if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
         for(const e of evts){

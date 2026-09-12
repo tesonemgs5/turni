@@ -297,13 +297,26 @@ export function resolveFestivitaCatalogo(year) {
   return FESTIVITA_FISSE.map(f => ({ ...f, y: year }));
 }
 
-export function isFestivo(dateKey) {
+// nationalHolsEnabled: come in italianHols (true/undefined = tutte attive,
+// false = nessuna, array = solo le chiavi elencate). extraHols: array di
+// festivi locali definiti dall'utente in Impostazioni -> Festivi Locali,
+// nello stesso formato salvato da store.extraHols ({name, d, m}, con m
+// 1-based come inserito dall'utente, es. 9 per settembre — NON va
+// convertito a 0-based, altrimenti il confronto con il mese del dateKey
+// (anch'esso 1-based) fallisce sempre).
+export function isFestivo(dateKey, nationalHolsEnabled = true, extraHols = []) {
   if (!dateKey) return false;
   const [y, m, d] = dateKey.split("-").map(Number);
   if (!y || !m || !d) return false;
   const dow = new Date(y, m - 1, d).getDay();
   if (dow === 0) return true; // domenica
-  return FESTIVITA_FISSE.some(h => h.m === m && h.d === d);
+  const nazionaliAttive = nationalHolsEnabled === false
+    ? []
+    : Array.isArray(nationalHolsEnabled)
+      ? FESTIVITA_FISSE.filter(h => nationalHolsEnabled.includes(h.key))
+      : FESTIVITA_FISSE;
+  if (nazionaliAttive.some(h => h.m === m && h.d === d)) return true;
+  return (extraHols || []).some(h => +h.m === m && +h.d === d);
 }
 
 
