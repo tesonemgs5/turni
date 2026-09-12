@@ -648,10 +648,11 @@ export default function VistaModelli({ C }){
               padding:"16px 16px 8px",background:T.surface,borderBottom:`1px solid ${T.border}`}}>
               <button onClick={()=>{setShowColorAssignPicker(null);setColorAssignCalFiltro(null);}}
                 style={{background:"none",border:"none",color:T.sub,fontSize:22,cursor:"pointer"}}>‹</button>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <button onClick={()=>{setShowEditFasciaColor(hex);}}
+                style={{display:"flex",alignItems:"center",gap:8,background:"none",border:"none",cursor:"pointer",padding:4}}>
                 <div style={{width:18,height:18,borderRadius:"50%",background:hex,border:`1px solid ${T.border}`,flexShrink:0}}/>
                 <div style={{fontSize:11,color:T.sub}}>{hex.toUpperCase()}</div>
-              </div>
+              </button>
               <div style={{width:32}}/>
             </div>
             {isH24?(

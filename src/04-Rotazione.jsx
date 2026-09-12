@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { ColorPickerModal } from "./05-Comuni";
 
 // ═══════════════════════════════════════════════════════════════════════
 // 04-Rotazione.jsx — RICOSTRUITO
@@ -816,6 +817,7 @@ export function ModelForm({
   const isH24Form = form.tempo === "h24";
   const activeReports = (reports || []).filter(r => r.active);
   const [mostraTuttaPalette, setMostraTuttaPalette] = useState(false);
+  const [showColorPicker, setShowColorPicker] = useState(false);
   // Solo i colori già assegnati a qualche modello esistente (più quello
   // eventualmente già scelto per questo modello, anche se raro nella
   // palette): evita di mostrare 18 pallini quasi tutti inutilizzati.
@@ -926,7 +928,7 @@ export function ModelForm({
                 }} />
             ))}
             {!mostraTuttaPalette && (
-              <div onClick={() => setMostraTuttaPalette(true)} title="Scegli un altro colore"
+              <div onClick={() => setMostraTuttaPalette(true)} title="Scegli tra tutti i colori"
                 style={{
                   width: 26, height: 26, borderRadius: "50%", background: T.s2, cursor: "pointer",
                   border: `1px dashed ${T.border}`, display: "flex", alignItems: "center",
@@ -935,12 +937,24 @@ export function ModelForm({
             )}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={{ width: 22, height: 22, borderRadius: "50%", background: coloreAnteprima, border: `1px solid ${T.border}` }} />
+            <button type="button" onClick={() => setShowColorPicker(true)} title="Cambia colore"
+              style={{ width: 22, height: 22, borderRadius: "50%", background: coloreAnteprima,
+                border: `1px solid ${T.border}`, cursor: "pointer", padding: 0 }} />
+            <button type="button" onClick={() => setShowColorPicker(true)}
+              style={{ ...NB, background: T.s2, color: T.text, border: `1px solid ${T.border}`, fontSize: 12, padding: "6px 10px" }}>
+              Scegli colore…
+            </button>
             <button type="button" onClick={() => setForm(prev => ({ ...prev, coloreCustom: null }))}
               style={{ ...NB, background: T.s2, color: T.text, border: `1px solid ${T.border}`, fontSize: 12, padding: "6px 10px" }}>
               Usa colore automatico (fascia oraria)
             </button>
           </div>
+          {showColorPicker && (
+            <ColorPickerModal T={T} cur={coloreAnteprima} title="Colore modello"
+              coloriUsati={coloriUsati}
+              onPick={c => setForm(prev => ({ ...prev, coloreCustom: c }))}
+              onClose={() => setShowColorPicker(false)} />
+          )}
         </div>
       ))}
 
