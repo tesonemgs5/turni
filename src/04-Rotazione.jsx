@@ -86,6 +86,7 @@ export const FESTIVITA_DEFAULT_ATTIVE = [
 // FESTIVITA_DEFAULT_ATTIVE e vivono come proprio catalogo separato.
 // Date fisse e stabili (non richiedono calcolo per anno).
 export const SANTI_PATRONI_CITTA = [
+  { citta: "Italia",    nome: "San Francesco d'Assisi (Patrono d'Italia)", d: 4, m: 10 },
   { citta: "Roma",      nome: "San Pietro e Paolo",     d: 29, m: 6  },
   { citta: "Milano",    nome: "Sant'Ambrogio",          d: 7,  m: 12 },
   { citta: "Napoli",    nome: "San Gennaro",            d: 19, m: 9  },
@@ -107,10 +108,10 @@ export const SANTI_PATRONI_CITTA = [
   { citta: "Reggio Calabria", nome: "San Giorgio",      d: 23, m: 4  },
   { citta: "Ancona",    nome: "San Ciriaco",            d: 4,  m: 5  },
 ];
-// San Francesco d'Assisi (4 ottobre) è anche patrono d'Italia, ma essendo
-// già lavorativo su tutto il territorio in origine e ormai raramente
-// festivo ovunque, resta qui come festività LOCALE di Assisi (dove è
-// effettivamente ancora osservato come tale) e non tra le nazionali.
+// San Francesco d'Assisi (4 ottobre) è patrono d'Italia (voce "Italia" in
+// cima al catalogo sopra) ED è anche il patrono locale di Assisi stessa
+// (voce separata): stesso giorno, due voci diverse, perché l'utente
+// potrebbe cercare l'una o l'altra a seconda del motivo per cui gli serve.
 
 export const NB = {
   padding:"10px 14px", borderRadius:10, fontWeight:700, fontSize:13,
