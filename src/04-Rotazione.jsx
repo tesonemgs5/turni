@@ -954,7 +954,10 @@ export function ModelloCard({
   onTouchStart, onTouchMove, onTouchEnd,
   onDragStart, onDragOver, onDrop, onDragEnd,
 }) {
-  const colore = modello.coloreCustom || COLORE_H24;
+  // Priorità: colore scelto a mano (coloreCustom) > colore già calcolato e
+  // salvato sul modello (automatico per fascia oraria, o H24) > grigio di
+  // fallback solo se manca proprio tutto (dato mai popolato).
+  const colore = modello.coloreCustom || modello.colore || COLORE_H24;
   const inSpostamento = !!(onMoveUp || onMoveDown || onDragStart);
   return (
     <div data-modello-id={modello.id}
