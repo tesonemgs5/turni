@@ -83,6 +83,8 @@ export default function VistaCalendario({ C }){
     setPrevGrid, REPORT_TEMPLATES, calcolaOrdineModelli, updateFascia, session,
   } = C;
 
+  const calBarRef = useRef(null);
+
   async function applyQuickModello(key){
     if(!quickModeModello||!calId||!userId) return;
     const mod = modelli.find(m=>m.id===quickModeModello);
@@ -315,39 +317,62 @@ export default function VistaCalendario({ C }){
           {syncMode==='on'?(isOnline?'🟢 SYNC':'🔴 OFFLINE'):'⏸️ SYNC OFF'}
         </button>
       </div>
-      <div style={{background:"#ffffff",display:"flex",alignItems:"center",
-        gap:5,padding:"4px 8px",overflowX:"auto",scrollbarWidth:"none",flexShrink:0,
-        borderBottom:"1px solid #e2e8f0"}}>
-        {store.calendars.length===0
-          ? <span style={{color:"rgba(15,23,42,0.6)",fontSize:10,fontStyle:"italic"}}>→ Impostazioni</span>
-          : store.calendars.map(c=>{
-            const visibile = selectedCalIds.includes(c.id);
-            const attivoEdit = editMode && calId===c.id;
-            return (
-            <button key={c.id} onClick={()=>{
-                if(editMode){
-                  setCalId(c.id);
-                  setSelectedCalIds([c.id]); // in modalità modifica, seleziona esclusivamente il calendario toccato
-                  return;
-                }
-                setSelectedCalIds(prev=> prev.includes(c.id) ? prev.filter(id=>id!==c.id) : [...prev, c.id]);
-              }}
-              title={editMode?`Tocca per selezionare esclusivamente "${c.name}" per la modifica`:undefined}
-              style={{display:"flex",alignItems:"center",gap:4,flexShrink:0,cursor:"pointer",
-                background:visibile ? "#0f172a" : "#ffffff",
-                color:visibile ? "#ffffff" : "#64748b",
-                border:`2px solid ${attivoEdit ? "#38bdf8" : (visibile ? "#0f172a" : "#cbd5e1")}`,
-                boxShadow:visibile ? "0 2px 6px rgba(15,23,42,0.25)" : "none",
-                opacity:visibile ? 1 : 0.6,
-                borderRadius:20,padding:"3px 10px 3px 7px",
-                transition:"all 0.15s ease"}}>
-              <div style={{width:9,height:9,borderRadius:"50%",background:c.color,border:visibile?"1.5px solid #ffffff":"1px solid rgba(0,0,0,0.2)",boxShadow:"0 1px 2px rgba(0,0,0,0.2)"}}/>
-              <span style={{fontSize:12,fontWeight:visibile?800:600,letterSpacing:visibile?0.2:0}}>{c.name}</span>
-              {attivoEdit&&<span style={{color:"#38bdf8",fontSize:10,marginLeft:1}}>✏️</span>}
-              {c.isMain&&<span style={{color:visibile?"#facc15":"rgba(15,23,42,0.4)",fontSize:9}}>★</span>}
-            </button>
-            );})
-        }
+      <div style={{background:"#ffffff",display:"flex",alignItems:"center",padding:"4px 4px",borderBottom:"1px solid #e2e8f0",flexShrink:0}}>
+        <button onClick={()=>calBarRef.current?.scrollBy({left:-160, behavior:"smooth"})}
+          title="Scorri calendari a sinistra"
+          style={{background:"#f1f5f9",border:"1px solid #cbd5e1",borderRadius:20,
+            width:24,height:24,display:"flex",alignItems:"center",justifyContent:"center",
+            cursor:"pointer",fontSize:14,fontWeight:900,color:"#0f172a",flexShrink:0,marginRight:3}}>
+          ‹
+        </button>
+
+        <div ref={calBarRef}
+          onWheel={e=>{
+            if(calBarRef.current && e.deltaY !== 0){
+              calBarRef.current.scrollLeft += e.deltaY;
+            }
+          }}
+          style={{flex:1,display:"flex",alignItems:"center",gap:5,overflowX:"auto",
+            scrollbarWidth:"none",msOverflowStyle:"none",WebkitOverflowScrolling:"touch"}}>
+          {store.calendars.length===0
+            ? <span style={{color:"rgba(15,23,42,0.6)",fontSize:10,fontStyle:"italic"}}>→ Impostazioni</span>
+            : store.calendars.map(c=>{
+              const visibile = selectedCalIds.includes(c.id);
+              const attivoEdit = editMode && calId===c.id;
+              return (
+              <button key={c.id} onClick={()=>{
+                  if(editMode){
+                    setCalId(c.id);
+                    setSelectedCalIds([c.id]); // in modalità modifica, seleziona esclusivamente il calendario toccato
+                    return;
+                  }
+                  setSelectedCalIds(prev=> prev.includes(c.id) ? prev.filter(id=>id!==c.id) : [...prev, c.id]);
+                }}
+                title={editMode?`Tocca per selezionare esclusivamente "${c.name}" per la modifica`:undefined}
+                style={{display:"flex",alignItems:"center",gap:4,flexShrink:0,cursor:"pointer",
+                  background:visibile ? "#0f172a" : "#ffffff",
+                  color:visibile ? "#ffffff" : "#64748b",
+                  border:`2px solid ${attivoEdit ? "#38bdf8" : (visibile ? "#0f172a" : "#cbd5e1")}`,
+                  boxShadow:visibile ? "0 2px 6px rgba(15,23,42,0.25)" : "none",
+                  opacity:visibile ? 1 : 0.6,
+                  borderRadius:20,padding:"3px 10px 3px 7px",
+                  transition:"all 0.15s ease"}}>
+                <div style={{width:9,height:9,borderRadius:"50%",background:c.color,border:visibile?"1.5px solid #ffffff":"1px solid rgba(0,0,0,0.2)",boxShadow:"0 1px 2px rgba(0,0,0,0.2)"}}/>
+                <span style={{fontSize:12,fontWeight:visibile?800:600,letterSpacing:visibile?0.2:0}}>{c.name}</span>
+                {attivoEdit&&<span style={{color:"#38bdf8",fontSize:10,marginLeft:1}}>✏️</span>}
+                {c.isMain&&<span style={{color:visibile?"#facc15":"rgba(15,23,42,0.4)",fontSize:9}}>★</span>}
+              </button>
+              );})
+          }
+        </div>
+
+        <button onClick={()=>calBarRef.current?.scrollBy({left:160, behavior:"smooth"})}
+          title="Scorri calendari a destra"
+          style={{background:"#f1f5f9",border:"1px solid #cbd5e1",borderRadius:20,
+            width:24,height:24,display:"flex",alignItems:"center",justifyContent:"center",
+            cursor:"pointer",fontSize:14,fontWeight:900,color:"#0f172a",flexShrink:0,marginLeft:3}}>
+          ›
+        </button>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",
         background: !isOnline ? "#ef4444" : (editMode?T.s2:"#ffffff"),
