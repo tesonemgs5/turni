@@ -1195,7 +1195,7 @@ export function useAppCore(session){
             const perMarker = new Map();
             for(const e of (evts||[])){
               const marker = e.import_id;
-              if(!marker || !/^protrazione_di_.+_(pagamento|meno_recupero|recupero)$/.test(marker)) continue;
+              if(!marker || !/^protrazione_di_.+_(pagamento|meno_recupero_entrata|meno_recupero_uscita|meno_recupero|recupero)$/.test(marker)) continue;
               if(!perMarker.has(marker)) perMarker.set(marker, []);
               perMarker.get(marker).push(e);
             }
@@ -1264,7 +1264,7 @@ export function useAppCore(session){
               // padre (due campi indipendenti entrata/uscita, mai scritti
               // su Supabase): la pulizia automatica orfani non si applica a
               // questo tipo, altrimenti cancellerebbe eventi validi.
-              if(tipo==="meno_recupero") continue;
+              if(tipo==="meno_recupero" || tipo==="meno_recupero_entrata" || tipo==="meno_recupero_uscita") continue;
               // Trova il turno base: per marker, l'id esplicito; altrimenti
               // stesso giorno/calendario con tOut base = tIn di questa riga.
               let base = null;
