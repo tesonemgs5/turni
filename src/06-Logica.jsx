@@ -802,7 +802,15 @@ export function useAppCore(session){
           modelloNLId:r.modello_nl_id||null,
           modelloRSId:r.modello_rs_id||null,
           griglia:r.griglia||{},
-        }));
+          sortOrder:r.sort_order||0,
+        // Stesso motivo dell'ordinamento dei modelli sopra: la RPC non
+        // garantisce l'ordine delle righe, quindi ordiniamo qui in modo
+        // esplicito e deterministico (sortOrder, poi id come spareggio).
+        })).sort((a,b)=>{
+          const sa = a.sortOrder, sb = b.sortOrder;
+          if(sa!==sb) return sa-sb;
+          return String(a.id).localeCompare(String(b.id));
+        });
 
         // ─── GUARDIA ANTI-CANCELLAZIONE: prima di sovrascrivere TUTTO lo
         // store locale con quanto arrivato da Supabase, controlliamo che il
@@ -856,7 +864,12 @@ export function useAppCore(session){
         if(!modelliUguali){
           setModelli(modelliMappati);
         }
-        setColoriExtra((coloriDb||[]).map(c=>({hex:c.hex, label:c.label||null})));
+        setColoriExtra((coloriDb||[]).map(c=>({hex:c.hex, label:c.label||null, sortOrder:c.sort_order||0}))
+          .sort((a,b)=>{
+            const sa=a.sortOrder, sb=b.sortOrder;
+            if(sa!==sb) return sa-sb;
+            return String(a.hex).localeCompare(String(b.hex));
+          }));
         setRotazioni(rotazioniMappate);
         setSheetsUrl(sUrl);
         setSheetsSecret(sSec);
@@ -907,7 +920,7 @@ export function useAppCore(session){
             if(nuoviColoriSalvati.length > 0) {
               setColoriExtra(prev => {
                 const aggiornato = [...prev];
-                nuoviColoriSalvati.forEach(hex => { if(!aggiornato.some(c=>c.hex===hex)) aggiornato.push({hex, label:null}); });
+                nuoviColoriSalvati.forEach(hex => { if(!aggiornato.some(c=>c.hex===hex)) aggiornato.push({hex, label:null, sortOrder:aggiornato.length}); });
                 return aggiornato;
               });
             }
@@ -3174,6 +3187,97 @@ const importsRecenti = useMemo(()=>{
     segnalaModificaOrdineModelli();
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  // Spostamento e riordino per ROTAZIONI e COLORI — stessa logica di
+  // spostaModelloPuro/salvaModifichePosizioni sopra, ma senza il concetto
+  // di "calendario filtro" (rotazioni e colori non sono legati a un
+  // calendario specifico): qui si riordina semplicemente l'intero array.
+  // ═══════════════════════════════════════════════════════════════
+
+  function spostaRotazionePura(prev, id, dir){
+    const ordinato = [...prev].sort((a,b)=>{
+      const sa=a.sortOrder||0, sb=b.sortOrder||0;
+      if(sa!==sb) return sa-sb;
+      return String(a.id).localeCompare(String(b.id));
+    });
+    const idx = ordinato.findIndex(r=>r.id===id);
+    if(idx===-1) return prev;
+    const vicinoIdx = dir==="up" ? idx-1 : idx+1;
+    if(vicinoIdx<0 || vicinoIdx>=ordinato.length) return prev;
+    [ordinato[idx], ordinato[vicinoIdx]] = [ordinato[vicinoIdx], ordinato[idx]];
+    return ordinato.map((r,i)=>({...r, sortOrder:i}));
+  }
+
+  async function salvaModifichePosizioniRotazioni(prevElenco, nuovoElenco){
+    const prevById = new Map(prevElenco.map(r=>[r.id,r]));
+    const daSalvare = nuovoElenco.filter(r=>{
+      const prima = prevById.get(r.id);
+      return !prima || prima.sortOrder!==r.sortOrder;
+    });
+    const ts = new Date().toISOString();
+    await Promise.all(daSalvare.map(r =>
+      scriviConBackup({
+        tipo: "update", table: "rotazioni",
+        payload: { sort_order: r.sortOrder },
+        matchObj: { id: r.id, user_id: userId },
+        contesto: "Salvataggio posizione rotazione", ts,
+        opzioni: { soloLog: true },
+      })
+    ));
+  }
+
+  async function moveRotazione(id, dir){
+    let prevSnapshot = null, nuovoElenco = null;
+    setRotazioni(prev=>{
+      prevSnapshot = prev;
+      nuovoElenco = spostaRotazionePura(prev, id, dir);
+      return nuovoElenco;
+    });
+    if(prevSnapshot && nuovoElenco) await salvaModifichePosizioniRotazioni(prevSnapshot, nuovoElenco);
+  }
+
+  function spostaColoreExtraPuro(prev, hex, dir){
+    const ordinato = [...prev].sort((a,b)=>{
+      const sa=a.sortOrder||0, sb=b.sortOrder||0;
+      if(sa!==sb) return sa-sb;
+      return String(a.hex).localeCompare(String(b.hex));
+    });
+    const idx = ordinato.findIndex(c=>c.hex===hex);
+    if(idx===-1) return prev;
+    const vicinoIdx = dir==="up" ? idx-1 : idx+1;
+    if(vicinoIdx<0 || vicinoIdx>=ordinato.length) return prev;
+    [ordinato[idx], ordinato[vicinoIdx]] = [ordinato[vicinoIdx], ordinato[idx]];
+    return ordinato.map((c,i)=>({...c, sortOrder:i}));
+  }
+
+  async function salvaModifichePosizioniColori(prevElenco, nuovoElenco){
+    const prevByHex = new Map(prevElenco.map(c=>[c.hex,c]));
+    const daSalvare = nuovoElenco.filter(c=>{
+      const prima = prevByHex.get(c.hex);
+      return !prima || prima.sortOrder!==c.sortOrder;
+    });
+    const ts = new Date().toISOString();
+    await Promise.all(daSalvare.map(c =>
+      scriviConBackup({
+        tipo: "update", table: "colori",
+        payload: { sort_order: c.sortOrder },
+        matchObj: { hex: c.hex, user_id: userId },
+        contesto: "Salvataggio posizione colore", ts,
+        opzioni: { soloLog: true },
+      })
+    ));
+  }
+
+  async function moveColoreExtra(hex, dir){
+    let prevSnapshot = null, nuovoElenco = null;
+    setColoriExtra(prev=>{
+      prevSnapshot = prev;
+      nuovoElenco = spostaColoreExtraPuro(prev, hex, dir);
+      return nuovoElenco;
+    });
+    if(prevSnapshot && nuovoElenco) await salvaModifichePosizioniColori(prevSnapshot, nuovoElenco);
+  }
+
 
   // ── FIX: quando un modello riceve un coloreCustom, quel colore viene
   // salvato subito nella tabella "colori" (se non già presente), così
@@ -3183,7 +3287,7 @@ const importsRecenti = useMemo(()=>{
     if(!userId || !hex) return;
     if(coloriExtra.some(c=>c.hex===hex)) return;
     // 1) SUBITO in locale: visibile in Modelli -> Colori all'istante.
-    setColoriExtra(prev=>prev.some(c=>c.hex===hex)?prev:[...prev, {hex, label:null}]);
+    setColoriExtra(prev=>prev.some(c=>c.hex===hex)?prev:[...prev, {hex, label:null, sortOrder:prev.length}]);
     // 2) Backup su Supabase (con retry colonna) + Sheets in parallelo.
     scriviConBackup({
       tipo:"insert", table:"colori", payload:{ user_id:userId, hex }, matchObj:null,
@@ -3705,7 +3809,7 @@ const importsRecenti = useMemo(()=>{
   async function addColoreExtra(hex){
     if(!userId || coloriExtra.some(c=>c.hex===hex)) return;
     // 1) SUBITO in locale.
-    setColoriExtra(prev=>[...prev, {hex, label:null}]);
+    setColoriExtra(prev=>[...prev, {hex, label:null, sortOrder:prev.length}]);
     // 2) Backup su Supabase (con retry colonna) + Sheets in parallelo.
     scriviConBackup({
       tipo:"insert", table:"colori", payload:{ user_id: userId, hex }, matchObj:null,
@@ -3760,8 +3864,9 @@ const importsRecenti = useMemo(()=>{
     });
     const eraRegistrato = coloriExtra.some(c=>c.hex===oldHex);
     const vecchiaLabel = eraRegistrato ? (coloriExtra.find(c=>c.hex===oldHex)?.label||null) : null;
+    const vecchioSortOrder = eraRegistrato ? (coloriExtra.find(c=>c.hex===oldHex)?.sortOrder||0) : 0;
     if(eraRegistrato){
-      setColoriExtra(prev=>[...prev.filter(c=>c.hex!==oldHex), {hex:newHex, label:vecchiaLabel}]);
+      setColoriExtra(prev=>[...prev.filter(c=>c.hex!==oldHex), {hex:newHex, label:vecchiaLabel, sortOrder:vecchioSortOrder}]);
     }
     // 2) Backup su Supabase (con retry colonna) + Sheets, per ogni modello coinvolto.
     for(const m of daAggiornare){
@@ -5404,6 +5509,7 @@ const importsRecenti = useMemo(()=>{
     importsRecenti,
     modelliDelCalendario,
     spostaModelloPuro,
+    moveRotazione, moveColoreExtra,
     trascinaModelloPuro,
     salvaModifichePosizioni,
     moveH24,

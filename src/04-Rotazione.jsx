@@ -991,7 +991,7 @@ export function ModelloCard({
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
         {(onMoveUp || onMoveDown) && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 2, marginRight: 4 }}>
+          <div style={{ display: "flex", flexDirection: "row", gap: 4, marginRight: 4 }}>
             <button type="button" onClick={e => { e.stopPropagation(); onMoveUp && onMoveUp(); }}
               disabled={!onMoveUp}
               style={{ ...NB, background: T.s2, color: onMoveUp ? T.text : T.border, border: `1px solid ${T.border}`,
@@ -1016,7 +1016,7 @@ export function ModelloCard({
 // RotazioneCard — riepilogo di una rotazione nell'elenco.
 // ─────────────────────────────────────────────────────────────────────
 
-export function RotazioneCard({ T, rot, accent, onOpen, onDelete }) {
+export function RotazioneCard({ T, rot, accent, onOpen, onEdit, onDelete, onMoveUp, onMoveDown }) {
   const tipoLabel = rot.tipo === "domeniche" ? "🗓 Domeniche 1/4"
     : rot.tipo === "reperibilita" ? "📞 Reperibilità"
     : rot.tipo === "nlrs_scalante" ? "📅 RS/NL Scalante"
@@ -1027,14 +1027,32 @@ export function RotazioneCard({ T, rot, accent, onOpen, onDelete }) {
       background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "12px 14px",
       marginBottom: 8, cursor: onOpen ? "pointer" : "default",
     }}>
-      <div>
-        <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{rot.titolo || "Senza nome"}</div>
-        <div style={{ fontSize: 11, color: T.sub, marginTop: 2 }}>{tipoLabel}</div>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 18, fontWeight: 700, color: T.text }}>{rot.titolo || "Senza nome"}</div>
+        <div style={{ fontSize: 18, color: T.sub, marginTop: 2 }}>{tipoLabel}</div>
       </div>
-      {onDelete && (
-        <button onClick={e => { e.stopPropagation(); onDelete(rot); }}
-          style={{ ...NB, background: "none", color: "#ef4444", padding: 4 }}>🗑</button>
-      )}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+        {(onMoveUp || onMoveDown) && (
+          <div style={{ display: "flex", flexDirection: "row", gap: 4, marginRight: 4 }}>
+            <button type="button" onClick={e => { e.stopPropagation(); onMoveUp && onMoveUp(); }}
+              disabled={!onMoveUp}
+              style={{ ...NB, background: T.s2, color: onMoveUp ? T.text : T.border, border: `1px solid ${T.border}`,
+                padding: "4px 8px", fontSize: 14, lineHeight: 1, cursor: onMoveUp ? "pointer" : "default" }}>▲</button>
+            <button type="button" onClick={e => { e.stopPropagation(); onMoveDown && onMoveDown(); }}
+              disabled={!onMoveDown}
+              style={{ ...NB, background: T.s2, color: onMoveDown ? T.text : T.border, border: `1px solid ${T.border}`,
+                padding: "4px 8px", fontSize: 14, lineHeight: 1, cursor: onMoveDown ? "pointer" : "default" }}>▼</button>
+          </div>
+        )}
+        {onEdit && (
+          <button onClick={e => { e.stopPropagation(); onEdit(rot); }}
+            style={{ ...NB, background: "none", color: accent, padding: 8, fontSize: 20, lineHeight: 1 }}>✎</button>
+        )}
+        {onDelete && (
+          <button onClick={e => { e.stopPropagation(); onDelete(rot); }}
+            style={{ ...NB, background: "none", color: "#ef4444", padding: 8, fontSize: 20, lineHeight: 1 }}>🗑</button>
+        )}
+      </div>
     </div>
   );
 }
