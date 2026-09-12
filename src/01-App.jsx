@@ -434,7 +434,7 @@ function AppInterno({ session }){
                   Fatto
                 </button>
               </div>
-              <div style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch",background:T.bg,display:"flex",flexDirection:"column"}}>
+              <div style={{flex:1,minHeight:0,overflow:"hidden",background:T.bg,display:"flex",flexDirection:"column"}}>
                 {(()=>{
                   const modelliDelCalRot2 = modelliOrdinati.filter(m=>(m.calendarId||mainCalId)===calId);
                   return (<>

@@ -1321,7 +1321,7 @@ export function GrigliaRotazione({ rot, T, accent, modelli, fasceAutomatiche, su
   }
 
   return (
-    <div style={{ flex: 1, overflow: "auto", padding: "6px 8px 8px" }}>
+    <div style={{ flex: 1, overflow: "auto", padding: "6px 8px 60px" }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, marginBottom: 4 }}>
         SELEZIONA UN MODELLO, POI TOCCA I PALLINI DELLA GRIGLIA
       </div>
