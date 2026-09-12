@@ -116,8 +116,23 @@ export function uid() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
+// Genera un UUID v4 valido. In precedenza restituiva una stringa tipo
+// "local_xxx_yyy": funzionava per lo stato locale, ma quando lo stesso id
+// veniva scritto anche nel payload verso Supabase (colonna "id" di tipo
+// uuid) il database rifiutava l'insert con errore 22P02 "invalid input
+// syntax for type uuid". Usiamo crypto.randomUUID() quando disponibile
+// (browser moderni in contesto sicuro), con un fallback manuale altrimenti,
+// così l'id è sempre valido sia in locale sia su Supabase.
 export function generaIdLocale() {
-  return "local_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  // Fallback RFC4122 v4 senza crypto.randomUUID (es. contesto non sicuro).
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
 }
 
 export function oraInMinuti(hhmm) {
