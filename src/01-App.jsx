@@ -34,7 +34,7 @@ class ErrorBoundary extends Component {
   }
   componentDidCatch(errore, info){
     segnalaErrore(
-      { message: `${errore?.message||errore} — ${info?.componentStack?.split("\n").slice(0,4).join(" › ")||""}` },
+      { message: `${errore?.message||errore} — ${info?.componentStack?.split("\n").slice(0,15).join(" › ")||""}` },
       "Errore imprevisto dell'app (crash di rendering)"
     );
   }
@@ -523,7 +523,7 @@ function AppInterno({ session }){
               return (
               <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:12}}>
                 {modelliPicker.map((m,i,arr)=>{
-                  const c=m?.coloreCustom||colByTime(m.inizio);
+                  const c=m.coloreCustom||colByTime(m.inizio);
                   const durata=m.tempo==="h24"?"H24"
                     :m.tempo==="6h15"&&m.inizio?`${m.inizio} - ${calcFine6h15(m.inizio)} • 6h 15m`:m.tempo==="6h30"&&m.inizio?`${m.inizio} - ${calcFine6h30(m.inizio)} • 6h 30m`
                     :m.inizio&&m.fine?`${m.inizio} - ${m.fine} • ${calcDurata(m.inizio,m.fine)}`
