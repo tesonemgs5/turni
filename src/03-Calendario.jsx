@@ -274,17 +274,18 @@ export default function VistaCalendario({ C }){
         <button onClick={()=>{
             setEditMode(em=>{
               const next=!em;
-              if(next){ // entro in modifica: tutti i calendari selezionati restano visibili,
-                        // scelgo come "attivo per l'editing" quello già attivo se è tra i selezionati, altrimenti il primo
+              if(next){ // entro in modalità modifica: seleziona SOLO il calendario attivo corrente (singolo)
                 const attivoValido = calId && selectedCalIds.includes(calId);
-                const scelto = attivoValido ? calId : (selectedCalIds[0]||calId||null);
-                setCalId(scelto);
-                if(scelto && !selectedCalIds.includes(scelto)) setSelectedCalIds(prev=>[...prev, scelto]);
+                const scelto = attivoValido ? calId : (selectedCalIds[0]||calId||store.calendars[0]?.id||null);
+                if(scelto){
+                  setCalId(scelto);
+                  setSelectedCalIds([scelto]);
+                }
               }
               return next;
             });
           }}
-          title={editMode?"Modifica attiva — tocca per tornare alla sola consultazione":"Consultazione multipla — tocca per modificare (gli altri calendari restano visibili)"}
+          title={editMode?"Modifica attiva — tocca per tornare alla consultazione multipla":"Modifica singola — tocca per attivare la modifica su un singolo calendario"}
           style={{background:editMode?"#0f172a":"#f1f5f9",
             border:`1.5px solid ${editMode?"#0f172a":"#e2e8f0"}`,
             borderRadius:20,padding:"2px 10px",cursor:"pointer",flexShrink:0}}>
@@ -326,12 +327,12 @@ export default function VistaCalendario({ C }){
             <button key={c.id} onClick={()=>{
                 if(editMode){
                   setCalId(c.id);
-                  setSelectedCalIds(prev=> prev.includes(c.id) ? prev : [...prev, c.id]); // resta visibile, non toglie gli altri
+                  setSelectedCalIds([c.id]); // in modalità modifica, seleziona esclusivamente il calendario toccato
                   return;
                 }
                 setSelectedCalIds(prev=> prev.includes(c.id) ? prev.filter(id=>id!==c.id) : [...prev, c.id]);
               }}
-              title={editMode?`Tocca per rendere "${c.name}" il calendario attivo per la modifica`:undefined}
+              title={editMode?`Tocca per selezionare esclusivamente "${c.name}" per la modifica`:undefined}
               style={{display:"flex",alignItems:"center",gap:3,flexShrink:0,cursor:"pointer",
                 background:visibile?"#f1f5f9":"#ffffff",
                 border:`1.5px solid ${attivoEdit?"#0f172a":(visibile?"#94a3b8":"#e2e8f0")}`,
