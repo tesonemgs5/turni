@@ -11,7 +11,8 @@ import {
 } from "./04-Rotazione";
 import { CalBadge, SmartTimeInput, AutocompleteInput, ColorPickerModal,
   ModaleErroriMultipli, FasceExpand, ConteggioConfigCard, TurnazioneConfigCard,
-  IndennitaConfig, OrePerTurnoView, StraordinariView, GuadagniView, Sec, SecCollapsible } from "./05-Comuni";
+  IndennitaConfig, OrePerTurnoView, StraordinariView, GuadagniView, Sec, SecCollapsible,
+  NAV_HEIGHT_CSS } from "./05-Comuni";
 import { ModelloCard, ModelForm, RotazioneCard, RotazioneForm, ModelloSelector,
   GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView } from "./04-Rotazione";
 import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
@@ -641,7 +642,7 @@ export default function VistaModelli({ C }){
         const coloreExtraCorrente = coloriExtra.find(c=>c.hex===hex);
         const nomeAttuale = fasciaCorrente ? fasciaCorrente.label : isH24 ? "H24" : (coloreExtraCorrente?.label || "");
         return (
-          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:600,
+          <div style={{position:"fixed",top:0,left:0,right:0,bottom:NAV_HEIGHT_CSS,background:"rgba(0,0,0,0.85)",zIndex:600,
             display:"flex",flexDirection:"column"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
               padding:"16px 16px 8px",background:T.surface,borderBottom:`1px solid ${T.border}`}}>
@@ -791,7 +792,7 @@ export default function VistaModelli({ C }){
       )}
 
       {showRotForm&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:300,
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:NAV_HEIGHT_CSS,background:"rgba(0,0,0,0.75)",zIndex:300,
           display:"flex",alignItems:"flex-end"}}
           onClick={e=>{if(e.target===e.currentTarget)setShowRotForm(false);}}>
           <div style={{background:T.surface,borderRadius:"18px 18px 0 0",width:"100%",
@@ -820,7 +821,7 @@ export default function VistaModelli({ C }){
         const rot=rotazioni.find(r=>r.id===showRotDetail);
         if(!rot) return null;
         return (
-          <div style={{position:"fixed",inset:0,background:T.bg,zIndex:400,display:"flex",flexDirection:"column"}}>
+          <div style={{position:"fixed",top:0,left:0,right:0,bottom:NAV_HEIGHT_CSS,background:T.bg,zIndex:400,display:"flex",flexDirection:"column"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
               padding:"16px 16px 8px",borderBottom:`1px solid ${T.border}`,background:T.surface}}>
               <button onClick={()=>setShowRotDetail(null)}
@@ -1472,7 +1473,7 @@ export default function VistaModelli({ C }){
         const nModelli = cached?.modelli?.length || 0;
         const ts = cached?.timestamp ? new Date(cached.timestamp).toLocaleString("it-IT") : "Mai";
         return (
-          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:500,
+          <div style={{position:"fixed",top:0,left:0,right:0,bottom:NAV_HEIGHT_CSS,background:"rgba(0,0,0,0.75)",zIndex:500,
             display:"flex",alignItems:"flex-end"}}
             onClick={e=>{if(e.target===e.currentTarget)setShowLocalDataModal(false);}}>
             <div style={{background:T.surface,borderRadius:"18px 18px 0 0",width:"100%",
@@ -1510,7 +1511,7 @@ export default function VistaModelli({ C }){
       })()}
 
       {showBackupsModal&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:500,
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:NAV_HEIGHT_CSS,background:"rgba(0,0,0,0.75)",zIndex:500,
           display:"flex",alignItems:"flex-end"}}
           onClick={e=>{if(e.target===e.currentTarget)setShowBackupsModal(false);}}>
           <div style={{background:T.surface,borderRadius:"18px 18px 0 0",width:"100%",
@@ -1647,7 +1648,7 @@ export default function VistaModelli({ C }){
   const soloConsultazione = false;
   const curEvts = dayKey ? (selectedCalIds.length>1 ? allEvts(dayKey).filter(e=>selectedCalIds.includes(e._cid)) : getEvts(dayKey,calId)) : [];
   const dayModal = dayKey&&(
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:200,
+    <div style={{position:"fixed",top:0,left:0,right:0,bottom:NAV_HEIGHT_CSS,background:"rgba(0,0,0,0.75)",zIndex:200,
       display:"flex",alignItems:"center"}}
       onClick={e=>{if(e.target===e.currentTarget){setDayKey(null);setForm(null);setPal(null);}}}>
       <div style={{background:T.surface,borderRadius:18,width:"100%",
@@ -2622,7 +2623,7 @@ export default function VistaModelli({ C }){
   );
 
   const dbModal = showDbModal && (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:300,
+    <div style={{position:"fixed",top:0,left:0,right:0,bottom:NAV_HEIGHT_CSS,background:"rgba(0,0,0,0.8)",zIndex:300,
       display:"flex",alignItems:"center",justifyContent:"center",padding:12}}
       onClick={()=>setShowDbModal(false)}>
       <div style={{background:T.surface,borderRadius:16,width:"100%",maxWidth:440,
@@ -2709,7 +2710,7 @@ export default function VistaModelli({ C }){
   // snapshot; No annulla solo il timer corrente, in attesa della prossima
   // modifica — in nessun caso il salvataggio avviene da solo.
   const salvaDisposizionePopup = showSalvaDisposizionePopup && (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:700,
+    <div style={{position:"fixed",top:0,left:0,right:0,bottom:NAV_HEIGHT_CSS,background:"rgba(0,0,0,0.75)",zIndex:700,
       display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
       <div style={{background:T.surface,borderRadius:16,width:"100%",maxWidth:380,padding:20}}>
         <div style={{fontSize:15,fontWeight:900,color:T.text,marginBottom:8}}>💾 Salvare questa disposizione?</div>
