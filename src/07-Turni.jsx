@@ -452,17 +452,27 @@ export function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClos
   const RIGA_REGEX_GLOBALE = new RegExp(`(${GIORNI_ABBR})\\.?\\s*(\\d{1,2})[^\\wàèéìòù]*([a-zA-Zàèéìòù°'\\s]+)`, "gi");
 
   function trovaModelloPerTesto(testoLetto){
-    const t = (testoLetto||"").toLowerCase();
+    const t = (testoLetto||"").toLowerCase().trim();
+    if(!t) return null;
+
+    // 1) Confronto diretto/parziale su titolo o label dei modelli del calendario (es. "FU PRIMO", "FU SECONDO", "P", "S")
+    const modDiretto = modelli.find(m => {
+      const tm = (m.titolo||"").toLowerCase().trim();
+      const lm = (m.label||"").toLowerCase().trim();
+      if(!tm && !lm) return false;
+      return tm === t || lm === t || (tm && (t.includes(tm) || tm.includes(t))) || (lm && (t.includes(lm) || lm.includes(t)));
+    });
+    if(modDiretto) return modDiretto;
+
+    // 2) Radici classiche (prim, second, terz, nott)
     const match = MAPPING_TURNI.find(m=>t.includes(m.radice));
     if(match){
       const titoloMod = (m)=>(m.titolo||"").toUpperCase();
       const mod = modelli.find(m=>match.titoli.some(tit=>titoloMod(m).includes(tit)));
       if(mod) return mod;
     }
-    // Nessuna radice testuale (Primo/Secondo/3°/Notte) riconosciuta: prova a
-    // leggere il testo come orario di inizio (es. "17.45-24.00", "06:00-12:15")
-    // e a trovare il modello per vicinanza di orario, riusando la stessa
-    // logica già usata per le fasce raggruppate.
+
+    // 3) Orario di inizio (es. "06:00-14:00")
     const minutiInizio = estraiMinutiInizioFascia(t);
     if(minutiInizio!=null) return trovaModelloPerOrarioInizio(minutiInizio);
     return null;
@@ -831,7 +841,7 @@ export function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClos
     setRisultatoImportOcr(null);
     let parsed;
     try{
-      parsed = JSON.parse(testoJsonIncollato.trim());
+      parsed = JSON.parse(estraiJsonDaTesto((testoJsonIncollato||"").trim()));
     }catch(err){
       setErrore("Il testo incollato non è un JSON valido. Controlla di aver copiato tutto, comprese le parentesi { } o [ ].");
       setImportando(false);
@@ -847,22 +857,30 @@ export function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClos
     const sospetti = [];
 
     if(Array.isArray(parsed)){
-      // Formato "piatto": [{"data":"2026-07-01","turno":"Primo"}, ...]
+      // Formato "piatto": [{"data":"2026-07-01","turno":"Primo"}, ...] o con "titolo", "nome", "modello", ecc.
       for(const t of parsed){
-        if(!t || typeof t.data!=="string" || typeof t.titolo!=="string"){
-          sospetti.push({ data:t?.data||"", titolo:t?.titolo||"(riga malformata)", oraInizio:"", oraFine:"", motivo:"formato_riga_non_valido" });
+        if(!t) continue;
+        const titoloStr = typeof t.titolo==="string" ? t.titolo : (typeof t.turno==="string" ? t.turno : (typeof t.nome==="string" ? t.nome : (typeof t.modello==="string" ? t.modello : (typeof t.title==="string" ? t.title : ""))));
+        const dataStrRaw = typeof t.data==="string" ? t.data : (typeof t.date==="string" ? t.date : "");
+        let dataIso = dataItalianaToISO(dataStrRaw) || dataStrRaw;
+        const mSlash = /^(\d{1,2})[\/.](\d{1,2})[\/.](\d{4})$/.exec(dataStrRaw);
+        if(mSlash){
+          dataIso = `${mSlash[3]}-${mSlash[2].padStart(2,"0")}-${mSlash[1].padStart(2,"0")}`;
+        }
+        if(!dataIso || !titoloStr){
+          sospetti.push({ data:dataStrRaw||"", titolo:titoloStr||"(riga malformata)", oraInizio:"", oraFine:"", motivo:"formato_riga_non_valido" });
           continue;
         }
-        if(!/^\d{4}-\d{2}-\d{2}$/.test(t.data)){
-          sospetti.push({ data:t.data, titolo:t.titolo, oraInizio:"", oraFine:"", motivo:"data_non_valida" });
+        if(!/^\d{4}-\d{2}-\d{2}$/.test(dataIso)){
+          sospetti.push({ data:dataIso, titolo:titoloStr, oraInizio:"", oraFine:"", motivo:"data_non_valida" });
           continue;
         }
-        const mod = trovaModelloPerTesto(t.titolo);
+        const mod = trovaModelloPerTesto(titoloStr);
         if(!mod){
-          mancanti.push({ data:t.data, titolo:t.titolo, oraInizio:"", oraFine:"" });
+          mancanti.push({ data:dataIso, titolo:titoloStr, oraInizio:"", oraFine:"" });
           continue;
         }
-        righeElaborate.push({ dateKey: t.data, modelloId: mod.id });
+        righeElaborate.push({ dateKey: dataIso, modelloId: mod.id });
       }
     }else if(parsed && typeof parsed==="object"){
       // Formato "raggruppato per fascia oraria": un oggetto con un livello di
@@ -969,7 +987,7 @@ export function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClos
     }
     let parsed;
     try{
-      parsed = JSON.parse(testoJsonIncollato.trim());
+      parsed = JSON.parse(estraiJsonDaTesto((testoJsonIncollato||"").trim()));
     }catch(err){
       setErroreVerifica("Il JSON incollato sopra non è valido: correggilo prima di verificare con la foto.");
       return;
