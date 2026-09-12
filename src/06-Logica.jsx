@@ -87,6 +87,7 @@ export function useAppCore(session){
   const [nsColor, setNsColor] = useState(PALETTE[0]);
   const [exCal,   setExCal]   = useState(null);
   const [nhName,  setNhName]  = useState("");
+  const [patronoCittaSel, setPatronoCittaSel] = useState("");
   const [syncMsg,  setSyncMsg]  = useState("");
   const [backupsList, setBackupsList] = useState([]);
   const [showBackupsModal, setShowBackupsModal] = useState(false);
@@ -5331,6 +5332,8 @@ const importsRecenti = useMemo(()=>{
     setExCal,
     nhName,
     setNhName,
+    patronoCittaSel,
+    setPatronoCittaSel,
     syncMsg,
     setSyncMsg,
     backupsList,
