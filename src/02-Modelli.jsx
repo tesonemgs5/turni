@@ -134,7 +134,7 @@ export default function VistaModelli({ C }){
     syncFromSheets, handleSave, handleLoad, handleSaveSheetsConfig, handleViewDbData, buildBackupPayload,
     handleExportSupabase, handleOpenImportSupabase, handleRestoreBackup, handleLogout, eseguiNormalizzazione, normalizzaModelliTempo,
     normalizzaEventiTempo, modelliOrdinati, importsRecenti, modelliDelCalendario, rinumeraSottoinsieme, spostaModelloPuro,
-    trascinaModelloPuro, salvaModifichePosizioni, moveH24, reorderModelli, moveRotazione, moveColoreExtra, ensureColoreRegistrato, registraValoreAutocomplete,
+    trascinaModelloPuro, salvaModifichePosizioni, moveH24, reorderModelli, moveRotazione, moveColoreExtra, ricoloraModelliPerFasciaOraria, ensureColoreRegistrato, registraValoreAutocomplete,
     registraValoriAutocomplete, rimuoviValoreAutocomplete, supabaseUpsertConRetry, saveModello, deleteModello, addColoreExtra,
     ripulisciTutteLePosizioniModelli,
     salvaDisposizioneModelli, ripristinaDisposizioneModelli,
@@ -1126,8 +1126,23 @@ export default function VistaModelli({ C }){
           setStore(s=>({...s, fasceAutomatiche:FASCE_AUTOMATICHE_DEFAULT}));
           saveSettings({fasce_automatiche:FASCE_AUTOMATICHE_DEFAULT});
         }} style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,
-          color:T.sub,padding:"9px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
+          color:T.sub,padding:"9px 0",cursor:"pointer",fontWeight:700,fontSize:12,marginBottom:8}}>
           ↩ Ripristina fasce predefinite
+        </button>
+        <button onClick={async()=>{
+            if(!window.confirm("Ricolorare TUTTI i modelli (esclusi gli H24) in base alle fasce orarie attuali?\n\nQuesta operazione sovrascrive anche i colori scelti a mano sui singoli modelli, rendendoli di nuovo \"automatici per orario\". Non è reversibile con un click.")) return;
+            setBanner("⏳ Ricolorazione modelli in corso...");
+            try {
+              const esito = await ricoloraModelliPerFasciaOraria();
+              setBanner(esito.totale>0 ? `✅ ${esito.totale} modelli ricolorati secondo le fasce orarie.` : "✅ Tutti i modelli erano già coerenti con le fasce orarie attuali.");
+            } catch(e){
+              segnalaErrore(e, "Ricolorazione modelli per fascia oraria");
+              setBanner("❌ Errore durante la ricolorazione. Controlla il Log.");
+            }
+            setTimeout(()=>setBanner(null), 5000);
+          }} style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,
+          color:T.sub,padding:"9px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
+          🎨 Ricolora modelli secondo queste fasce (esclusi H24)
         </button>
       </SecCollapsible>
 
