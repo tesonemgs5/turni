@@ -3,6 +3,14 @@
 // (invece di importate da 4.Rotazione) per evitare un import circolare
 // 4.Rotazione <-> 5.Comuni. Se cambi la formula del contrasto o le fasce
 // orarie in 4.Rotazione, aggiorna anche qui.
+// Altezza fissa e certa della barra di navigazione in basso (bordo
+// incluso). Ogni overlay/modale a schermo intero DEVE riservare questo
+// spazio in basso (bottom: NAV_HEIGHT_CSS invece di inset:0), così il suo
+// contenuto non passa mai sotto la nav: quello spazio non esiste per
+// nessun menu/modale dell'app.
+export const NAV_HEIGHT = 56;
+export const NAV_HEIGHT_CSS = `${NAV_HEIGHT}px`;
+
 const COLORE_H24 = "#64748b";
 const FASCE_AUTOMATICHE_DEFAULT_LOCALE = [
   { key:"mattina",     label:"PRIMO",       color:"#f59e0b", from:360,  to:705  },

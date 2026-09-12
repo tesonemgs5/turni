@@ -2,7 +2,7 @@ import { useState, useRef, useMemo, Fragment, Component } from "react";
 import { useAppCore } from "./06-Logica";
 import VistaCalendario from "./03-Calendario";
 import VistaModelli from "./02-Modelli";
-import { ModaleErroriMultipli } from "./05-Comuni";
+import { ModaleErroriMultipli, NAV_HEIGHT, NAV_HEIGHT_CSS } from "./05-Comuni";
 import {
   getContrastTextColor, NOMI_MESI_IT, calcFine6h15, calcFine6h30, calcDurata,
   fmtDataIT, impostaSilenziamentoErrore, segnalaErrore,
@@ -78,7 +78,7 @@ function BottomNav({ screen, setScreen, T, accent, onBeforeNavigate }) {
     <nav aria-label="Navigazione principale" style={{
       position: "fixed", left: 0, right: 0, bottom: 0, maxWidth: 480,
       margin: "0 auto", display: "flex", borderTop: `1px solid ${T.border}`,
-      background: T.surface, zIndex: 100000,
+      background: T.surface, zIndex: 100000, height: NAV_HEIGHT_CSS, boxSizing: "border-box",
     }}>
       {NAV_ITEMS.map(item => {
         const isActive = screen === item.id;
@@ -287,7 +287,7 @@ function AppInterno({ session }){
       {dbModal}
       {salvaDisposizionePopup}
       {showModelForm&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:600,
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:NAV_HEIGHT_CSS,background:"rgba(0,0,0,0.75)",zIndex:600,
           display:"flex",alignItems:"flex-end"}}
           onClick={e=>{if(e.target===e.currentTarget)setShowModelForm(false);}}>
           <div style={{background:T.surface,borderRadius:"18px 18px 0 0",width:"100%",
@@ -339,7 +339,7 @@ function AppInterno({ session }){
         </div>
       )}
       {showRotazionePicker&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:500,
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:NAV_HEIGHT_CSS,background:"rgba(0,0,0,0.85)",zIndex:500,
           display:"flex",flexDirection:"column"}}>
           {!showRotDetail?(
             <>
@@ -460,7 +460,7 @@ function AppInterno({ session }){
         </div>
       )}
       {showModelloPicker&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:500,
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:NAV_HEIGHT_CSS,background:"rgba(0,0,0,0.85)",zIndex:500,
           display:"flex",flexDirection:"column"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
             padding:"16px 16px 8px",background:T.surface,borderBottom:`1px solid ${T.border}`}}>
@@ -614,7 +614,7 @@ function AppInterno({ session }){
         </div>
       )}
       {showDeleteRotEvtDialog && (
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:600,
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:NAV_HEIGHT_CSS,background:"rgba(0,0,0,0.8)",zIndex:600,
           display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
           onClick={()=>setShowDeleteRotEvtDialog(null)}>
           <div style={{background:T.surface,borderRadius:16,width:"100%",maxWidth:360,
@@ -688,7 +688,7 @@ function AppInterno({ session }){
           }}/>
       )}
       {showApplyRotDialog && (
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:600,
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:NAV_HEIGHT_CSS,background:"rgba(0,0,0,0.8)",zIndex:600,
           display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
           onClick={()=>setShowApplyRotDialog(null)}>
           <div style={{background:T.surface,borderRadius:16,width:"100%",maxWidth:360,

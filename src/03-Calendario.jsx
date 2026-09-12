@@ -12,7 +12,7 @@ import {
 import { CalBadge, SmartTimeInput, AutocompleteInput, ColorPickerModal,
   ModaleErroriMultipli, FasceExpand, ConteggioConfigCard, TurnazioneConfigCard, OreTurnoConfigCard, fmtOreMin,
   IndennitaConfig, OrePerTurnoView, StraordinariView, GuadagniView,
-  ViabilitaView, TicketConfig } from "./05-Comuni";
+  ViabilitaView, TicketConfig, NAV_HEIGHT_CSS } from "./05-Comuni";
 import { ModelloCard, ModelForm, RotazioneCard, RotazioneForm, ModelloSelector,
   GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView } from "./04-Rotazione";
 import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
@@ -645,7 +645,7 @@ export default function VistaCalendario({ C }){
         // cambia con ‹ › sopra la griglia dei 12 mesi.
         const annoTmp = reportMeseSel.anno;
         return (
-          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:410,
+          <div style={{position:"fixed",top:0,left:0,right:0,bottom:NAV_HEIGHT_CSS,background:"rgba(0,0,0,0.6)",zIndex:410,
             display:"flex",alignItems:"flex-end"}} onClick={()=>setShowMeseReportPicker(false)}>
             <div style={{background:T.surface,borderRadius:"18px 18px 0 0",width:"100%",
               maxWidth:480,margin:"0 auto",padding:"16px 14px 30px"}}
@@ -681,7 +681,7 @@ export default function VistaCalendario({ C }){
       })()}
 
       {showIntervalPicker && (
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:400,
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:NAV_HEIGHT_CSS,background:"rgba(0,0,0,0.6)",zIndex:400,
           display:"flex",alignItems:"flex-end"}} onClick={()=>setShowIntervalPicker(false)}>
           <div style={{background:T.surface,borderRadius:"18px 18px 0 0",width:"100%",
             maxWidth:480,margin:"0 auto",padding:"16px 14px 40px"}}
@@ -847,7 +847,7 @@ export default function VistaCalendario({ C }){
           }
         }
         return (
-          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:600,
+          <div style={{position:"fixed",top:0,left:0,right:0,bottom:NAV_HEIGHT_CSS,background:"rgba(0,0,0,0.85)",zIndex:600,
             display:"flex",flexDirection:"column"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
               padding:"16px 16px 8px",background:T.surface,borderBottom:`1px solid ${T.border}`}}>
