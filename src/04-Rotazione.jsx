@@ -803,12 +803,27 @@ const TEMPI_MODELLO = [
 
 export function ModelForm({
   T, form, setForm, accent, dark, fasceAutomatiche, modelli,
+  reports = [], getConteggioConfig, updateConteggioConfig,
   suggerimentiTitolo = [], suggerimentiNomeVis = [], onRimuoviSuggerimento,
   onSave,
 }) {
   const [mostraSuggTitolo, setMostraSuggTitolo] = useState(false);
+  const [reportListaAperta, setReportListaAperta] = useState(false);
+  const [reportEspanso, setReportEspanso] = useState(null);
+  const [sottomenuEspanso, setSottomenuEspanso] = useState({});
   const accentText = getContrastTextColor(accent);
   const coloreAnteprima = form.coloreCustom || (form.tempo === "h24" ? COLORE_H24 : getColorByTime(form.inizio, fasceAutomatiche));
+  const isH24Form = form.tempo === "h24";
+  const activeReports = (reports || []).filter(r => r.active);
+  const [mostraTuttaPalette, setMostraTuttaPalette] = useState(false);
+  // Solo i colori già assegnati a qualche modello esistente (più quello
+  // eventualmente già scelto per questo modello, anche se raro nella
+  // palette): evita di mostrare 18 pallini quasi tutti inutilizzati.
+  const coloriUsati = Array.from(new Set(
+    (modelli || []).map(m => m.coloreCustom).filter(Boolean)
+  ));
+  if (form.coloreCustom && !coloriUsati.includes(form.coloreCustom)) coloriUsati.push(form.coloreCustom);
+  const paletteDaMostrare = mostraTuttaPalette ? PALETTE : (coloriUsati.length > 0 ? coloriUsati : PALETTE);
 
   function campo(label, node) {
     return (
@@ -903,13 +918,21 @@ export function ModelForm({
       {campo("COLORE", (
         <div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
-            {PALETTE.map(c => (
+            {paletteDaMostrare.map(c => (
               <div key={c} onClick={() => setForm(prev => ({ ...prev, coloreCustom: c }))}
                 style={{
                   width: 26, height: 26, borderRadius: "50%", background: c, cursor: "pointer",
                   border: form.coloreCustom === c ? `2px solid ${T.text}` : "2px solid transparent",
                 }} />
             ))}
+            {!mostraTuttaPalette && (
+              <div onClick={() => setMostraTuttaPalette(true)} title="Scegli un altro colore"
+                style={{
+                  width: 26, height: 26, borderRadius: "50%", background: T.s2, cursor: "pointer",
+                  border: `1px dashed ${T.border}`, display: "flex", alignItems: "center",
+                  justifyContent: "center", fontSize: 14, fontWeight: 900, color: T.sub,
+                }}>+</div>
+            )}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <div style={{ width: 22, height: 22, borderRadius: "50%", background: coloreAnteprima, border: `1px solid ${T.border}` }} />
@@ -921,20 +944,189 @@ export function ModelForm({
         </div>
       ))}
 
-      {campo("CATEGORIA TURNO (per i report — opzionale)", (
-        <div style={{ display: "flex", gap: 6 }}>
-          {[["primo", "1° turno"], ["secondo", "2° turno"], [null, "Automatico"]].map(([val, lab]) => (
+      {campo("CATEGORIA TURNO (per report Turnazione)", (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {[["primo", "1° turno"], ["secondo", "2° turno"], [null, "Automatico"], ["nessuna", "Nessuna"]].map(([val, lab]) => (
             <button key={lab} type="button" onClick={() => setForm(prev => ({ ...prev, categoria: val }))}
               style={{
-                ...NB, flex: 1, fontSize: 12, background: (form.categoria || null) === val ? accent : T.s2,
-                color: (form.categoria || null) === val ? accentText : T.text,
-                border: `1px solid ${(form.categoria || null) === val ? accent : T.border}`,
+                ...NB, flex: "1 1 22%", fontSize: 12, background: (form.categoria ?? null) === val ? accent : T.s2,
+                color: (form.categoria ?? null) === val ? accentText : T.text,
+                border: `1px solid ${(form.categoria ?? null) === val ? accent : T.border}`,
               }}>
               {lab}
             </button>
           ))}
         </div>
       ))}
+
+      {!isH24Form && campo("CATEGORIA APP/AUTO (per report Turnazione)", (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {[["app", "APP"], ["auto", "AUTO"], [null, "Automatico"], ["nessuna", "Nessuna"]].map(([val, lab]) => (
+            <button key={lab} type="button" onClick={() => setForm(prev => ({ ...prev, categoriaAppAuto: val }))}
+              style={{
+                ...NB, flex: "1 1 22%", fontSize: 12, background: (form.categoriaAppAuto ?? null) === val ? accent : T.s2,
+                color: (form.categoriaAppAuto ?? null) === val ? accentText : T.text,
+                border: `1px solid ${(form.categoriaAppAuto ?? null) === val ? accent : T.border}`,
+              }}>
+              {lab}
+            </button>
+          ))}
+        </div>
+      ))}
+
+      {activeReports.length > 0 && getConteggioConfig && updateConteggioConfig && (()=>{
+        // Inclusione/esclusione di QUESTO modello in ciascun report attivo.
+        // Stessa logica di statoInclusioneModello usata per il singolo
+        // evento (02-Modelli.jsx), applicata qui direttamente al modello:
+        // non c'è distinzione "solo questo evento" perché qui la scelta
+        // riguarda sempre tutti gli eventi futuri generati da questo modello.
+        const modelloFittizio = { id: form.id, tempo: form.tempo, inizio: form.inizio, fine: form.fine };
+
+        function statoInclusione(r){
+          const cfg = getConteggioConfig(r.id, r.type);
+          if(r.type === "turnazione"){
+            const esclusi = cfg.modelliEsclusi || [];
+            const aggiunti = cfg.modelliAggiunti || [];
+            const isDefault = isModelloTurnazioneDefault(modelloFittizio);
+            if(!form.id) return isDefault; // modello nuovo, non ancora salvato: nessun id da cercare nelle liste
+            return (isDefault && !esclusi.includes(form.id)) || aggiunti.includes(form.id);
+          }
+          const whitelist = cfg.modelliInclusi || [];
+          if(!form.id) return whitelist.length === 0;
+          return whitelist.length === 0 || whitelist.includes(form.id);
+        }
+
+        function setInclusione(r, incluso){
+          if(!form.id) return; // serve un id di modello salvato per poter comparire nelle liste
+          const cfg = getConteggioConfig(r.id, r.type);
+          if(r.type === "turnazione"){
+            const esclusi = cfg.modelliEsclusi || [];
+            const aggiunti = cfg.modelliAggiunti || [];
+            const isDefault = isModelloTurnazioneDefault(modelloFittizio);
+            if(incluso){
+              if(isDefault) updateConteggioConfig(r.id, {...cfg, modelliEsclusi: esclusi.filter(id=>id!==form.id)});
+              else updateConteggioConfig(r.id, {...cfg, modelliAggiunti: [...new Set([...aggiunti, form.id])]});
+            } else {
+              if(isDefault) updateConteggioConfig(r.id, {...cfg, modelliEsclusi: [...new Set([...esclusi, form.id])]});
+              else updateConteggioConfig(r.id, {...cfg, modelliAggiunti: aggiunti.filter(id=>id!==form.id)});
+            }
+          } else {
+            const whitelist = cfg.modelliInclusi || [];
+            if(incluso){
+              const nuova = whitelist.length === 0
+                ? modelli.filter(mm=>mm.id!==form.id).map(mm=>mm.id)
+                : whitelist.filter(id=>id!==form.id);
+              updateConteggioConfig(r.id, {...cfg, modelliInclusi: nuova});
+            } else {
+              updateConteggioConfig(r.id, {...cfg, modelliInclusi: [...new Set([...whitelist, form.id])]});
+            }
+          }
+        }
+
+        function setSottomenuGruppo(r, sm, gruppoKey){
+          if(!form.id) return;
+          const cfg = getConteggioConfig(r.id, r.type);
+          const nuoviSottomenu = (cfg.sottomenu || []).map(s => {
+            if(s.id !== sm.id) return s;
+            const assegnazioni = {...(s.assegnazioni || {})};
+            if(gruppoKey) assegnazioni[form.id] = gruppoKey; else delete assegnazioni[form.id];
+            return {...s, assegnazioni};
+          });
+          updateConteggioConfig(r.id, {...cfg, sottomenu: nuoviSottomenu});
+        }
+
+        return (
+          <div style={{ marginBottom: 14 }}>
+            <button type="button" onClick={() => setReportListaAperta(v => !v)}
+              style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", background: "none",
+                border: "none", padding: 0, marginBottom: 8, cursor: "pointer", textAlign: "left" }}>
+              <span style={{ fontSize: 11, color: T.sub, fontWeight: 700 }}>CATEGORIA REPORT (per questo modello)</span>
+              <span style={{ fontSize: 11, color: T.sub }}>{reportListaAperta ? "▲" : "▼"}</span>
+            </button>
+            {!form.id && (
+              <div style={{ fontSize: 10, color: T.sub, marginBottom: 8 }}>
+                Salva il modello per poter scegliere in quali report includerlo.
+              </div>
+            )}
+            {reportListaAperta && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {activeReports.map(r => {
+                  const incluso = statoInclusione(r);
+                  const espanso = reportEspanso === r.id;
+                  const cfgReport = getConteggioConfig(r.id, r.type);
+                  const sottomenuLiberi = (cfgReport.sottomenu || []).filter(sm => sm.tipo === "libero" && (sm.gruppi || []).length > 0);
+                  const smEspanso = sottomenuEspanso[r.id] || null;
+                  return (
+                    <div key={r.id} style={{ background: incluso ? accent + "1f" : T.s2, borderRadius: 10, overflow: "hidden" }}>
+                      <button type="button" onClick={() => setReportEspanso(espanso ? null : r.id)}
+                        style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+                          width: "100%", padding: "9px 12px", border: "none", cursor: "pointer",
+                          background: "transparent", textAlign: "left" }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{r.label}</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontSize: 11, fontWeight: 800, color: incluso ? accent : T.sub }}>
+                            {incluso ? "✓ Incluso" : "Escluso"}
+                          </span>
+                          <span style={{ fontSize: 11, color: T.sub, padding: "2px 4px" }}>{espanso ? "▲" : "▼"}</span>
+                        </div>
+                      </button>
+                      {espanso && (
+                        <div style={{ padding: "0 12px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            {[["incluso", true], ["escluso", false]].map(([key, val]) => (
+                              <button key={key} type="button" disabled={!form.id} onClick={() => setInclusione(r, val)}
+                                style={{ flex: 1, padding: "7px 4px", borderRadius: 8, cursor: form.id ? "pointer" : "not-allowed",
+                                  fontWeight: 700, fontSize: 11, border: "none", opacity: form.id ? 1 : 0.5,
+                                  background: incluso === val ? accent : T.surface,
+                                  color: incluso === val ? "#fff" : T.sub }}>
+                                {key === "incluso" ? "Incluso" : "Escluso"}
+                              </button>
+                            ))}
+                          </div>
+                          {sottomenuLiberi.map(sm => {
+                            const smAperto = smEspanso === sm.id;
+                            const gruppoScelto = form.id ? (sm.assegnazioni || {})[form.id] || "" : "";
+                            return (
+                              <div key={sm.id} style={{ background: T.surface, borderRadius: 8, overflow: "hidden" }}>
+                                <button type="button" onClick={() => setSottomenuEspanso(prev => ({ ...prev, [r.id]: smAperto ? null : sm.id }))}
+                                  style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+                                    width: "100%", padding: "7px 10px", border: "none", cursor: "pointer",
+                                    background: "transparent", textAlign: "left" }}>
+                                  <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{sm.nome || "Sottomenu"}</span>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                    <span style={{ fontSize: 10, fontWeight: 800, color: gruppoScelto ? accent : T.sub }}>
+                                      {(sm.gruppi || []).find(g => g.key === gruppoScelto)?.label || "—"}
+                                    </span>
+                                    <span style={{ fontSize: 10, color: T.sub }}>{smAperto ? "▲" : "▼"}</span>
+                                  </div>
+                                </button>
+                                {smAperto && (
+                                  <div style={{ padding: "0 10px 10px", display: "flex", gap: 6, flexWrap: "wrap" }}>
+                                    {(sm.gruppi || []).map(g => (
+                                      <button key={g.key} type="button" disabled={!form.id}
+                                        onClick={() => setSottomenuGruppo(r, sm, gruppoScelto === g.key ? null : g.key)}
+                                        style={{ padding: "6px 10px", borderRadius: 8, cursor: form.id ? "pointer" : "not-allowed",
+                                          fontWeight: 700, fontSize: 11, border: "none", opacity: form.id ? 1 : 0.5,
+                                          background: gruppoScelto === g.key ? accent : T.s2,
+                                          color: gruppoScelto === g.key ? "#fff" : T.sub }}>
+                                        {g.label}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       <button onClick={onSave}
         style={{ width: "100%", background: accent, color: accentText, border: "none", borderRadius: 10,
