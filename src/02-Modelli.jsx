@@ -17,26 +17,44 @@ import { ModelloCard, ModelForm, RotazioneCard, RotazioneForm, ModelloSelector,
 import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
 
 // Riga della lista Colori: mostra il pallino colore, etichetta, sottotitolo,
-// contatore di modelli che lo usano e (se applicabile) un pulsante per rimuoverlo.
-function ColorRow({ T, hex, label, sub, count, onClick, onRemove }) {
+// contatore di modelli che lo usano e (se applicabile) pulsanti per
+// spostare, modificare o rimuovere il colore.
+function ColorRow({ T, accent, hex, label, sub, count, onClick, onRemove, onMoveUp, onMoveDown }) {
   return (
     <div onClick={onClick}
       style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",cursor:"pointer"}}>
-      <div style={{width:26,height:26,borderRadius:"50%",background:hex,
+      <div style={{width:20,height:20,borderRadius:5,background:hex,
         border:`2px solid ${T.border}`,flexShrink:0}}/>
       <div style={{flex:1,minWidth:0}}>
-        <div style={{fontSize:14,fontWeight:700,color:T.text,
+        <div style={{fontSize:18,fontWeight:700,color:T.text,
           overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}</div>
-        {sub&&<div style={{fontSize:11,color:T.sub,marginTop:1}}>{sub}</div>}
+        {sub&&<div style={{fontSize:18,color:T.sub,marginTop:1}}>{sub}</div>}
       </div>
       {typeof count==="number"&&count>0&&(
         <span style={{fontSize:11,fontWeight:700,color:T.sub,background:T.s2,
           borderRadius:10,padding:"2px 8px",flexShrink:0}}>{count}</span>
       )}
+      {(onMoveUp||onMoveDown)&&(
+        <div style={{display:"flex",flexDirection:"row",gap:4,flexShrink:0}}>
+          <button type="button" onClick={e=>{e.stopPropagation();onMoveUp&&onMoveUp();}}
+            disabled={!onMoveUp}
+            style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
+              color:onMoveUp?T.text:T.border,padding:"4px 8px",fontSize:14,lineHeight:1,
+              cursor:onMoveUp?"pointer":"default"}}>▲</button>
+          <button type="button" onClick={e=>{e.stopPropagation();onMoveDown&&onMoveDown();}}
+            disabled={!onMoveDown}
+            style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
+              color:onMoveDown?T.text:T.border,padding:"4px 8px",fontSize:14,lineHeight:1,
+              cursor:onMoveDown?"pointer":"default"}}>▼</button>
+        </div>
+      )}
+      <button onClick={e=>{e.stopPropagation();onClick&&onClick();}}
+        style={{background:"none",border:"none",color:accent,cursor:"pointer",
+          padding:8,fontSize:20,lineHeight:1,flexShrink:0}}>✎</button>
       {onRemove&&(
         <button onClick={(e)=>{e.stopPropagation();onRemove();}}
           style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",
-            fontSize:18,padding:"0 4px",flexShrink:0}}>×</button>
+            fontSize:20,padding:8,flexShrink:0}}>🗑</button>
       )}
     </div>
   );
@@ -116,7 +134,7 @@ export default function VistaModelli({ C }){
     syncFromSheets, handleSave, handleLoad, handleSaveSheetsConfig, handleViewDbData, buildBackupPayload,
     handleExportSupabase, handleOpenImportSupabase, handleRestoreBackup, handleLogout, eseguiNormalizzazione, normalizzaModelliTempo,
     normalizzaEventiTempo, modelliOrdinati, importsRecenti, modelliDelCalendario, rinumeraSottoinsieme, spostaModelloPuro,
-    trascinaModelloPuro, salvaModifichePosizioni, moveH24, reorderModelli, ensureColoreRegistrato, registraValoreAutocomplete,
+    trascinaModelloPuro, salvaModifichePosizioni, moveH24, reorderModelli, moveRotazione, moveColoreExtra, ensureColoreRegistrato, registraValoreAutocomplete,
     registraValoriAutocomplete, rimuoviValoreAutocomplete, supabaseUpsertConRetry, saveModello, deleteModello, addColoreExtra,
     ripulisciTutteLePosizioniModelli,
     salvaDisposizioneModelli, ripristinaDisposizioneModelli,
@@ -512,7 +530,11 @@ export default function VistaModelli({ C }){
               </div>
             ):(
               <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
-                {rotazioni.map((r,i,arr)=>(
+                {[...rotazioni].sort((a,b)=>{
+                  const sa=a.sortOrder||0, sb=b.sortOrder||0;
+                  if(sa!==sb) return sa-sb;
+                  return String(a.id).localeCompare(String(b.id));
+                }).map((r,i,arr)=>(
                   <div key={r.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                     <RotazioneCard rot={r} T={T} accent={accent} modelli={
                         modelliOrdinati.filter(m=>(m.calendarId||mainCalId)===calId)
@@ -523,7 +545,9 @@ export default function VistaModelli({ C }){
                         nSettimane:r.nSettimane||52, modellaLavoroId:r.modellaLavoroId||null,
                         modelloNLId:r.modelloNLId||null, modelloRSId:r.modelloRSId||null,
                       }); setShowRotForm(true); }}
-                      onDelete={()=>deleteRotazione(r.id)}/>
+                      onDelete={()=>deleteRotazione(r.id)}
+                      onMoveUp={i>0?()=>moveRotazione(r.id,"up"):null}
+                      onMoveDown={i<arr.length-1?()=>moveRotazione(r.id,"down"):null}/>
                   </div>
                 ))}
               </div>
@@ -557,10 +581,17 @@ export default function VistaModelli({ C }){
           }));
           const rigaH24 = { key:"__h24", hex:COLORE_H24, label:"H24", sub:"Standard turni H24",
             count:contaH24, isFascia:true, fasciaKey:null };
-          const righeExtra = coloriManualiOggetti.map(c=>({
-            key:c.hex, hex:c.hex, label:c.label||c.hex.toUpperCase(), sub:"Personalizzato",
-            count:contaModelli(c.hex), isFascia:false,
-          }));
+          const righeExtra = coloriManualiOggetti
+            .slice()
+            .sort((a,b)=>{
+              const sa=a.sortOrder||0, sb=b.sortOrder||0;
+              if(sa!==sb) return sa-sb;
+              return String(a.hex).localeCompare(String(b.hex));
+            })
+            .map(c=>({
+              key:c.hex, hex:c.hex, label:c.label||c.hex.toUpperCase(), sub:"Personalizzato",
+              count:contaModelli(c.hex), isFascia:false,
+            }));
           const righeTutte = [...righeTutteFasce, rigaH24, ...righeExtra];
           return (
             <div style={{paddingBottom:80}}>
@@ -574,13 +605,22 @@ export default function VistaModelli({ C }){
                 Tocca un colore per rinominarlo o per riassegnarlo ai modelli.
               </div>
               <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
-                {righeTutte.map((r,i,arr)=>(
-                  <div key={r.key} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
-                    <ColorRow T={T} hex={r.hex} label={r.label} sub={r.sub}
-                      count={r.count} onClick={()=>setShowColorAssignPicker(r.hex)}
-                      onRemove={(!r.isFascia && r.count===0)?()=>removeColoreExtra(r.hex):null}/>
-                  </div>
-                ))}
+                {righeTutte.map((r,i,arr)=>{
+                  // Le frecce di spostamento hanno senso solo tra colori
+                  // extra (righeExtra): le fasce automatiche e H24 hanno un
+                  // ordine fisso, deciso altrove (fascia oraria), non spostabile.
+                  const idxExtra = righeExtra.findIndex(e=>e.key===r.key);
+                  const puoSpostare = !r.isFascia && idxExtra!==-1;
+                  return (
+                    <div key={r.key} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
+                      <ColorRow T={T} accent={accent} hex={r.hex} label={r.label} sub={r.sub}
+                        count={r.count} onClick={()=>setShowColorAssignPicker(r.hex)}
+                        onRemove={(!r.isFascia && r.count===0)?()=>removeColoreExtra(r.hex):null}
+                        onMoveUp={puoSpostare&&idxExtra>0?()=>moveColoreExtra(r.hex,"up"):null}
+                        onMoveDown={puoSpostare&&idxExtra<righeExtra.length-1?()=>moveColoreExtra(r.hex,"down"):null}/>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           );
