@@ -448,7 +448,7 @@ function AppInterno({ session }){
                   <NLRSScalanteView rot={showRotDetail} T={T} accent={accent} modelli={modelliDelCalRot2}/>
                 )}
                 {showRotDetail.tipo==="personalizzata"&&(
-                  <div style={{flex:1,minHeight:500}}>
+                  <div style={{flex:1,minHeight:0,display:"flex",flexDirection:"column"}}>
                     <GrigliaRotazione rot={showRotDetail} T={T} accent={accent} modelli={modelliDelCalRot2} fasceAutomatiche={fasceAutomatiche} sundayColor={sundayColor} onUpdate={()=>{}}/>
                   </div>
                 )}
