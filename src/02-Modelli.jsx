@@ -811,7 +811,7 @@ export default function VistaModelli({ C }){
                 style={{background:accent,border:"none",borderRadius:8,color:accentText,
                   padding:"6px 14px",fontSize:13,fontWeight:800,cursor:"pointer"}}>Fatto</button>
             </div>
-            <div style={{flex:1,minHeight:0,display:"flex",flexDirection:"column"}}>
+            <div style={{flex:1,minHeight:0,display:"flex",flexDirection:"column",paddingBottom:64}}>
               {(()=>{
                 const modelliDelCalRot = modelliOrdinati.filter(m=>(m.calendarId||mainCalId)===calId);
                 return (<>
