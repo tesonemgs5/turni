@@ -629,7 +629,7 @@ export function useAppCore(session){
         const cached = loadFromLocalStorage();
         if(cached && cached.calendars.length > 0){
           setStore(s=>({...s, calendars:cached.calendars, events:cached.events, ...(cached.impostazioni||{})}));
-          setModelli(cached.modelli||[]);
+          setModelli((cached.modelli||[]).filter(Boolean));
           const calIdValido = cached.calId && cached.calendars.some(c=>c.id===cached.calId);
           setCalId(calIdValido ? cached.calId : (cached.calendars[0]?.id||null));
           setLoading(false);
