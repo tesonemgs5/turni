@@ -57,13 +57,16 @@ export const PALETTE = [
 export const COLORE_H24 = "#64748b";
 
 // Bande orarie automatiche di default, usate per colorare/etichettare i
-// modelli in base all'orario di inizio (colByTime/colLabel). Da
-// verificare/aggiustare rispetto a quelle realmente in uso prima.
+// modelli in base all'orario di inizio (colByTime/colLabel). Formato
+// allineato a quello letto/scritto dalla UI Impostazioni (updateFascia,
+// 02-Modelli.jsx) e salvato su Supabase in fasce_automatiche: color (hex),
+// from/to in MINUTI dalla mezzanotte (non stringhe "HH:MM"). Valori
+// allineati alla copia di riferimento in 05-Comuni.jsx (stesso sistema).
 export const FASCE_AUTOMATICHE_DEFAULT = [
-  { key:"mattina",   label:"Mattina",   colore:"#f59e0b", da:"06:00", a:"14:00" },
-  { key:"pomeriggio",label:"Pomeriggio",colore:"#0ea5e9", da:"14:00", a:"22:00" },
-  { key:"notte",     label:"Notte",     colore:"#6366f1", da:"22:00", a:"06:00" },
-  { key:"riposo",    label:"Riposo",    colore:"#94a3b8", da:"00:00", a:"00:00" },
+  { key:"mattina",     label:"PRIMO",    color:"#f59e0b", from:360,  to:705  }, // 06:00–11:45
+  { key:"pomeriggio",  label:"SECONDO",  color:"#f97316", from:705,  to:1035 }, // 11:45–17:15
+  { key:"terzo_turno", label:"3° TURNO", color:"#8b5cf6", from:1035, to:1080 }, // 17:15–18:00
+  { key:"notte",       label:"NOTTE",    color:"#1e40af", from:1080, to:360  }, // 18:00–06:00 (attraversa la mezzanotte)
 ];
 
 // Array di chiavi delle festività attive di default (usato come fallback
@@ -225,7 +228,7 @@ function trovaFascia(tIn, fasce) {
   const m = oraInMinuti(tIn);
   if (m == null) return lista[0];
   for (const f of lista) {
-    const da = oraInMinuti(f.da), a = oraInMinuti(f.a);
+    const da = f.from, a = f.to;
     if (da == null || a == null) continue;
     if (da === a) continue; // fascia "riposo" senza intervallo, salta
     if (da < a) { if (m >= da && m < a) return f; }
@@ -236,7 +239,7 @@ function trovaFascia(tIn, fasce) {
 
 export function getColorByTime(tIn, fasceAutomatiche) {
   const f = trovaFascia(tIn, fasceAutomatiche);
-  return f?.colore || PALETTE[0];
+  return f?.color || PALETTE[0];
 }
 export function getColorLabel(tIn, fasceAutomatiche) {
   const f = trovaFascia(tIn, fasceAutomatiche);
