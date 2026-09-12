@@ -1522,7 +1522,7 @@ export default function VistaModelli({ C }){
               <div>
                 <div style={{fontSize:13,fontWeight:600,color:T.text}}>{f.name}</div>
                 <div style={{fontSize:10,color:T.sub,marginTop:1}}>
-                  (es. {String(f.d).padStart(2,"0")}/{String(f.m+1).padStart(2,"0")}/{year})
+                  (es. {String(f.d).padStart(2,"0")}/{String(f.m).padStart(2,"0")}/{year})
                 </div>
               </div>
               <div style={{width:24,height:24,borderRadius:6,flexShrink:0,
