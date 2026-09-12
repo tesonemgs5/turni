@@ -237,7 +237,7 @@ export function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, m
                   {risultato.mancanti.map((m,i)=>(
                     <div key={i} style={{fontSize:17,color:"#000",padding:"5px 0",
                       borderBottom: i<risultato.mancanti.length-1?"1px solid #ddd":"none"}}>
-                      {fmtDataIT(m.data)} — {m.titolo} {m.oraInizio?`(${m.oraInizio}-${m.oraFine})`:"(tutto il giorno)"}
+                      {fmtDataIT(m.data)} — {m.titolo} {m.oraInizio?`(${m.oraInizio}-${m.oraFine})`:"(H24)"}
                     </div>
                   ))}
                 </div>
@@ -278,9 +278,9 @@ export function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, m
                       </div>
                       {(s.vecchio.oraInizio||s.nuovo.oraInizio) && (
                         <div style={{fontSize:12,color:"#555",marginTop:2}}>
-                          {s.vecchio.oraInizio?`${s.vecchio.oraInizio}-${s.vecchio.oraFine}`:"tutto il giorno"}
+                          {s.vecchio.oraInizio?`${s.vecchio.oraInizio}-${s.vecchio.oraFine}`:"H24"}
                           {" → "}
-                          {s.nuovo.oraInizio?`${s.nuovo.oraInizio}-${s.nuovo.oraFine}`:"tutto il giorno"}
+                          {s.nuovo.oraInizio?`${s.nuovo.oraInizio}-${s.nuovo.oraFine}`:"H24"}
                         </div>
                       )}
                       {(s.vecchio.auto||s.nuovo.auto) && s.vecchio.auto!==s.nuovo.auto && (
@@ -324,7 +324,7 @@ export function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, m
                         {sess.mancanti.map((m,i)=>(
                           <div key={i} style={{fontSize:17,color:"#000",padding:"5px 0",
                             borderBottom: i<sess.mancanti.length-1?"1px solid #ddd":"none"}}>
-                            {fmtDataIT(m.data)} — {m.titolo} {m.oraInizio?`(${m.oraInizio}-${m.oraFine})`:"(tutto il giorno)"}
+                            {fmtDataIT(m.data)} — {m.titolo} {m.oraInizio?`(${m.oraInizio}-${m.oraFine})`:"(H24)"}
                           </div>
                         ))}
                       </div>
@@ -1080,7 +1080,7 @@ export function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClos
                           {sess.mancanti.map((m,i)=>(
                             <div key={i} style={{fontSize:13,color:"#000",padding:"5px 0",
                               borderBottom: i<sess.mancanti.length-1?"1px solid #ddd":"none"}}>
-                              {m.data?fmtDataIT(m.data):"(riga senza data)"} — {m.titolo} {m.oraInizio?`(${m.oraInizio}-${m.oraFine})`:"(tutto il giorno)"}
+                              {m.data?fmtDataIT(m.data):"(riga senza data)"} — {m.titolo} {m.oraInizio?`(${m.oraInizio}-${m.oraFine})`:"(H24)"}
                             </div>
                           ))}
                         </div>
@@ -1298,7 +1298,7 @@ export function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClos
                     {risultatoImportOcr.mancanti.map((m,i)=>(
                       <div key={i} style={{fontSize:13,color:"#000",padding:"5px 0",
                         borderBottom: i<risultatoImportOcr.mancanti.length-1?"1px solid #ddd":"none"}}>
-                        {m.data?fmtDataIT(m.data):"(riga senza data)"} — {m.titolo} {m.oraInizio?`(${m.oraInizio}-${m.oraFine})`:"(tutto il giorno)"}
+                        {m.data?fmtDataIT(m.data):"(riga senza data)"} — {m.titolo} {m.oraInizio?`(${m.oraInizio}-${m.oraFine})`:"(H24)"}
                       </div>
                     ))}
                   </div>

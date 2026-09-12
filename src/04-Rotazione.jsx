@@ -795,7 +795,7 @@ export function ModelloSelector({ T, modelli = [], value, onChange }) {
 const TEMPI_MODELLO = [
   { key: "6h15", label: "6h 15m" },
   { key: "6h30", label: "6h 30m" },
-  { key: "h24", label: "Tutto il giorno (H24)" },
+  { key: "h24", label: "H24" },
   { key: "personalizzato", label: "Orario personalizzato" },
 ];
 
@@ -944,27 +944,68 @@ export function ModelForm({
 }
 
 // Card di riepilogo di un modello, per le liste (02-Modelli.jsx).
-export function ModelloCard({ T, modello, accent, onEdit, onDelete }) {
+export function ModelloCard({
+  T, modello, accent, onEdit, onDelete,
+  selectMode, selected, onToggleSelect,
+  onMoveUp, onMoveDown,
+  isDragging, isDropTarget,
+  onTouchStart, onTouchMove, onTouchEnd,
+  onDragStart, onDragOver, onDrop, onDragEnd,
+}) {
   const colore = modello.coloreCustom || COLORE_H24;
+  const inSpostamento = !!(onMoveUp || onMoveDown || onDragStart);
   return (
-    <div style={{
-      display: "flex", alignItems: "center", justifyContent: "space-between",
-      background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "10px 12px", marginBottom: 8,
-    }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-        <div style={{ width: 12, height: 12, borderRadius: "50%", background: colore, flexShrink: 0 }} />
+    <div data-modello-id={modello.id}
+      draggable={!!onDragStart}
+      onTouchStart={onTouchStart || undefined}
+      onTouchMove={onTouchMove || undefined}
+      onTouchEnd={onTouchEnd || undefined}
+      onDragStart={onDragStart || undefined}
+      onDragOver={onDragOver || undefined}
+      onDrop={onDrop || undefined}
+      onDragEnd={onDragEnd || undefined}
+      onClick={selectMode ? onToggleSelect : undefined}
+      style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        background: T.surface,
+        border: isDropTarget ? `2px dashed ${accent}` : `1px solid ${T.border}`,
+        borderRadius: 12, padding: "12px 14px", marginBottom: 8,
+        opacity: isDragging ? 0.5 : 1,
+        cursor: selectMode ? "pointer" : (inSpostamento ? "grab" : "default"),
+      }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0, flex: 1 }}>
+        {selectMode && (
+          <input type="checkbox" checked={!!selected} onChange={onToggleSelect}
+            onClick={e => e.stopPropagation()}
+            style={{ width: 20, height: 20, flexShrink: 0, cursor: "pointer" }} />
+        )}
+        <div style={{ width: 20, height: 20, borderRadius: 5, background: colore, flexShrink: 0 }} />
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: T.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          <div style={{ fontSize: 18, fontWeight: 700, color: T.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {modello.titolo}
           </div>
-          <div style={{ fontSize: 11, color: T.sub }}>
-            {modello.tempo === "h24" ? "Tutto il giorno" : `${modello.inizio || "—"} – ${calcFineModello(modello) || modello.fine || "—"}`}
+          <div style={{ fontSize: 18, color: T.sub }}>
+            {modello.tempo === "h24" ? "H24" : `${modello.inizio || "—"} – ${calcFineModello(modello) || modello.fine || "—"}`}
           </div>
         </div>
       </div>
-      <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-        {onEdit && <button onClick={() => onEdit(modello)} style={{ ...NB, background: "none", color: accent, padding: 4 }}>✎</button>}
-        {onDelete && <button onClick={() => onDelete(modello)} style={{ ...NB, background: "none", color: "#ef4444", padding: 4 }}>🗑</button>}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+        {(onMoveUp || onMoveDown) && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 2, marginRight: 4 }}>
+            <button type="button" onClick={e => { e.stopPropagation(); onMoveUp && onMoveUp(); }}
+              disabled={!onMoveUp}
+              style={{ ...NB, background: T.s2, color: onMoveUp ? T.text : T.border, border: `1px solid ${T.border}`,
+                padding: "4px 8px", fontSize: 14, lineHeight: 1, cursor: onMoveUp ? "pointer" : "default" }}>▲</button>
+            <button type="button" onClick={e => { e.stopPropagation(); onMoveDown && onMoveDown(); }}
+              disabled={!onMoveDown}
+              style={{ ...NB, background: T.s2, color: onMoveDown ? T.text : T.border, border: `1px solid ${T.border}`,
+                padding: "4px 8px", fontSize: 14, lineHeight: 1, cursor: onMoveDown ? "pointer" : "default" }}>▼</button>
+          </div>
+        )}
+        {onEdit && <button onClick={e => { e.stopPropagation(); onEdit(modello); }}
+          style={{ ...NB, background: "none", color: accent, padding: 8, fontSize: 20, lineHeight: 1 }}>✎</button>}
+        {onDelete && <button onClick={e => { e.stopPropagation(); onDelete(modello); }}
+          style={{ ...NB, background: "none", color: "#ef4444", padding: 8, fontSize: 20, lineHeight: 1 }}>🗑</button>}
       </div>
     </div>
   );
