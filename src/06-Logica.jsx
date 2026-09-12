@@ -2195,25 +2195,38 @@ export function useAppCore(session){
     const evtiGiornoCorrente = store.events?.[dayKey]?.[editCalId]||[];
     const evtCorrente = evtiGiornoCorrente.find(e=>e.id===formEffettivo.editId);
     const decodificaMod = decodificaProtrazioneFiglio(evtCorrente?.importId);
-    const eTipoMenoRecuperoQualsiasi = decodificaMod && (decodificaMod.tipo==="meno_recupero" || decodificaMod.tipo==="meno_recupero_entrata" || decodificaMod.tipo==="meno_recupero_uscita");
-    if(decodificaMod && !eTipoMenoRecuperoQualsiasi){
+    if(decodificaMod){
       const { idEventoBase, tipo } = decodificaMod;
-      const campoDaAggiornare = tipo==="pagamento" ? "protPagFine" : "protRecFine";
-      const campoDbDaAggiornare = tipo==="pagamento" ? "prot_pag_fine" : "prot_rec_fine";
       const padreEsiste = evtiGiornoCorrente.some(e=>e.id===idEventoBase);
       if(padreEsiste){
-        setStore(prev=>{
-          const ns = withEventoAggiornato(prev, dayKey, editCalId, idEventoBase, { [campoDaAggiornare]: tOutFinal||"" });
-          saveToLocalStorage(ns.events, ns.calendars, modelli);
-          return ns;
-        });
-        await scriviConBackup({
-          tipo:"update", table:"events", payload:{ [campoDbDaAggiornare]: tOutFinal||null },
-          matchObj:{ id: idEventoBase, user_id: userId },
-          contesto:`Propagazione orario protrazione ${tipo} sul turno base`, ts:new Date().toISOString(),
-          eventsPerSheets: store.events, calendarsPerSheets: store.calendars,
-          opzioni:{ soloLog:true },
-        });
+        let patchLocale = null, patchDb = null;
+        if(tipo==="pagamento"){
+          patchLocale = { protPagFine: tOutFinal||"" };
+          patchDb = { prot_pag_fine: tOutFinal||null };
+        } else if(tipo==="recupero"){
+          patchLocale = { protRecFine: tOutFinal||"" };
+          patchDb = { prot_rec_fine: tOutFinal||null };
+        } else if(tipo==="meno_recupero_entrata"){
+          patchLocale = { protMenoRecIn: tOutFinal||"" };
+          patchDb = { prot_meno_rec_in: tOutFinal||null };
+        } else if(tipo==="meno_recupero_uscita"){
+          patchLocale = { protMenoRecOut: tInFinal||"" };
+          patchDb = { prot_meno_rec_out: tInFinal||null };
+        }
+        if(patchLocale && patchDb){
+          setStore(prev=>{
+            const ns = withEventoAggiornato(prev, dayKey, editCalId, idEventoBase, patchLocale);
+            saveToLocalStorage(ns.events, ns.calendars, modelli);
+            return ns;
+          });
+          await scriviConBackup({
+            tipo:"update", table:"events", payload:patchDb,
+            matchObj:{ id: idEventoBase, user_id: userId },
+            contesto:`Propagazione orario protrazione ${tipo} sul turno base`, ts:new Date().toISOString(),
+            eventsPerSheets: store.events, calendarsPerSheets: store.calendars,
+            opzioni:{ soloLog:true },
+          });
+        }
       }
     }
 
@@ -2313,29 +2326,35 @@ export function useAppCore(session){
     // di protrazione che in calendario non esiste più.
     const evtCorrente = evtiGiorno.find(e=>e.id===evtId);
     const decodifica = decodificaProtrazioneFiglio(evtCorrente?.importId);
-    const eTipoMenoRecuperoQualsiasiDel = decodifica && (decodifica.tipo==="meno_recupero" || decodifica.tipo==="meno_recupero_entrata" || decodifica.tipo==="meno_recupero_uscita");
-    let idEventoBasePulito = null, campoDbDaPulire = null;
-    if(decodifica && !eTipoMenoRecuperoQualsiasiDel){
+    let idEventoBasePulito = null, patchLocalePadre = {}, patchDbPadre = {};
+    if(decodifica){
       const { idEventoBase, tipo } = decodifica;
-      const campoDaPulire = tipo==="pagamento" ? "protPagFine" : "protRecFine";
-      campoDbDaPulire = tipo==="pagamento" ? "prot_pag_fine" : "prot_rec_fine";
       const padreEsiste = evtiGiorno.some(e=>e.id===idEventoBase);
       if(padreEsiste){
         idEventoBasePulito = idEventoBase;
+        if(tipo==="pagamento"){
+          patchLocalePadre = { protPagFine: "" };
+          patchDbPadre = { prot_pag_fine: null };
+        } else if(tipo==="recupero"){
+          patchLocalePadre = { protRecFine: "" };
+          patchDbPadre = { prot_rec_fine: null };
+        } else if(tipo==="meno_recupero_entrata"){
+          patchLocalePadre = { protMenoRecIn: "" };
+          patchDbPadre = { prot_meno_rec_in: null };
+        } else if(tipo==="meno_recupero_uscita"){
+          patchLocalePadre = { protMenoRecOut: "" };
+          patchDbPadre = { prot_meno_rec_out: null };
+        } else if(tipo==="meno_recupero"){
+          patchLocalePadre = { protMenoRecIn: "", protMenoRecOut: "" };
+          patchDbPadre = { prot_meno_rec_in: null, prot_meno_rec_out: null };
+        }
       }
     }
 
-    // 1) SUBITO in locale: pulizia campo sul padre (se serve) + rimozione
-    // dell'evento (+ eventuali figli), tutto a partire dallo STESSO stato
-    // "prev" in un'unica pipeline, così nessuna delle due modifiche
-    // sovrascrive l'altra (bug precedente: due setStore separati, il
-    // secondo costruito dalla variabile "store" non aggiornata, annullava
-    // silenziosamente la pulizia del campo fatta dal primo).
     setStore(prev=>{
       let ns = prev;
-      if(idEventoBasePulito){
-        const campoDaPulire = decodifica.tipo==="pagamento" ? "protPagFine" : "protRecFine";
-        ns = withEventoAggiornato(ns, dKey, cId, idEventoBasePulito, { [campoDaPulire]: "" });
+      if(idEventoBasePulito && Object.keys(patchLocalePadre).length>0){
+        ns = withEventoAggiornato(ns, dKey, cId, idEventoBasePulito, patchLocalePadre);
       }
       ns = withEventoRimosso(ns, dKey, cId, evtId);
       for(const f of figli) ns = withEventoRimosso(ns, dKey, cId, f.id);
@@ -2343,9 +2362,9 @@ export function useAppCore(session){
       storeRef.current = ns;
       return ns;
     });
-    if(idEventoBasePulito){
+    if(idEventoBasePulito && Object.keys(patchDbPadre).length>0){
       await scriviConBackup({
-        tipo:"update", table:"events", payload:{ [campoDbDaPulire]: null },
+        tipo:"update", table:"events", payload:patchDbPadre,
         matchObj:{ id: idEventoBasePulito, user_id: userId },
         contesto:`Pulizia campo protrazione sul turno base`, ts:new Date().toISOString(),
         eventsPerSheets: store.events, calendarsPerSheets: store.calendars,
