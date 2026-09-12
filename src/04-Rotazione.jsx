@@ -756,12 +756,12 @@ export function ModelloSelector({ T, modelli = [], value, onChange }) {
           <button key={m.id} type="button" onClick={() => onChange(m.id)}
             style={{
               display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", borderRadius: 20,
-              border: `1.5px solid ${attivo ? (m?.coloreCustom || "#2563eb") : T.border}`,
-              background: attivo ? (m?.coloreCustom || "#2563eb") : T.s2,
-              color: attivo ? getContrastTextColor(m?.coloreCustom || "#2563eb") : T.text,
+              border: `1.5px solid ${attivo ? (m.coloreCustom || "#2563eb") : T.border}`,
+              background: attivo ? (m.coloreCustom || "#2563eb") : T.s2,
+              color: attivo ? getContrastTextColor(m.coloreCustom || "#2563eb") : T.text,
               fontSize: 12, fontWeight: 700, cursor: "pointer",
             }}>
-            <div style={{ width: 8, height: 8, borderRadius: "50%", background: m?.coloreCustom || "#2563eb" }} />
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: m.coloreCustom || "#2563eb" }} />
             {m.titolo}
           </button>
         );
@@ -930,7 +930,7 @@ export function ModelForm({
 
 // Card di riepilogo di un modello, per le liste (02-Modelli.jsx).
 export function ModelloCard({ T, modello, accent, onEdit, onDelete }) {
-  const colore = modello?.coloreCustom || COLORE_H24;
+  const colore = modello.coloreCustom || COLORE_H24;
   return (
     <div style={{
       display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -1305,7 +1305,8 @@ export function GrigliaRotazione({ rot, T, accent, modelli, fasceAutomatiche, su
     const modId = griglia[dateKey];
     if (!modId) return null;
     const mod = modelli.find(m => m.id === modId);
-    return mod?.coloreCustom || accent;
+    if (!mod) return accent;
+    return mod.coloreCustom || (mod.tempo === "h24" ? COLORE_H24 : getColorByTime(mod.inizio, fasceAutomatiche));
   }
 
   function clickPallino(dateKey) {
@@ -1341,12 +1342,12 @@ export function GrigliaRotazione({ rot, T, accent, modelli, fasceAutomatiche, su
             <button key={m.id} onClick={() => setModelloSelezionato(cur => cur === m.id ? null : m.id)}
               style={{
                 display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", borderRadius: 20,
-                border: `1.5px solid ${attivo ? (m?.coloreCustom || accent) : T.border}`,
-                background: attivo ? (m?.coloreCustom || accent) : T.s2,
-                color: attivo ? getContrastTextColor(m?.coloreCustom || accent) : T.text,
+                border: `1.5px solid ${attivo ? (m.coloreCustom || accent) : T.border}`,
+                background: attivo ? (m.coloreCustom || accent) : T.s2,
+                color: attivo ? getContrastTextColor(m.coloreCustom || accent) : T.text,
                 fontSize: 12, fontWeight: 700, cursor: "pointer"
               }}>
-              <div style={{ width: 8, height: 8, borderRadius: "50%", background: m?.coloreCustom || accent }} />
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: m.coloreCustom || accent }} />
               {m.titolo}
             </button>
           );
@@ -1355,39 +1356,41 @@ export function GrigliaRotazione({ rot, T, accent, modelli, fasceAutomatiche, su
 
       <div style={{ overflowX: "auto", border: `1px solid ${T.border}`, borderRadius: 10 }}>
         <div style={{ display: "inline-block", minWidth: "100%" }}>
-          {NOMI_GIORNI_GRIGLIA.map((nomeGiorno, riga) => (
-            <div key={nomeGiorno} style={{ display: "flex", alignItems: "center" }}>
-              <div style={{
-                width: 34, flexShrink: 0, fontSize: 10, fontWeight: 700, color: T.sub,
-                textAlign: "right", paddingRight: 6, position: "sticky", left: 0, background: T.surface
+          <div style={{ display: "flex", alignItems: "center" }}>
+            <div style={{
+              width: 30, flexShrink: 0, fontSize: 10, fontWeight: 700, color: T.sub,
+              textAlign: "right", paddingRight: 6, position: "sticky", left: 0, background: T.surface
+            }} />
+            {NOMI_GIORNI_GRIGLIA.map(nomeGiorno => (
+              <div key={nomeGiorno} style={{
+                width: 26, flexShrink: 0, fontSize: 10, fontWeight: 700, color: T.sub, textAlign: "center"
               }}>
                 {nomeGiorno}
               </div>
-              {matrice.map((colonna, w) => {
-                const dateKey = colonna[riga];
+            ))}
+          </div>
+          {matrice.map((settimana, w) => (
+            <div key={w} style={{ display: "flex", alignItems: "center" }}>
+              <div style={{
+                width: 30, flexShrink: 0, fontSize: 9, fontWeight: 700, color: T.sub,
+                textAlign: "right", paddingRight: 6, position: "sticky", left: 0, background: T.surface
+              }}>
+                {w + 1}
+              </div>
+              {settimana.map((dateKey, g) => {
                 const colore = coloreDiData(dateKey);
                 return (
                   <div key={dateKey} title={dateKey} onClick={() => clickPallino(dateKey)}
                     style={{
-                      width: 14, height: 14, margin: 1.5, borderRadius: "50%", flexShrink: 0,
+                      width: 22, height: 22, margin: 2, borderRadius: "50%", flexShrink: 0,
                       background: colore || T.s2,
-                      border: `1px solid ${colore || T.border}`,
+                      border: `1.5px solid ${colore || T.border}`,
                       cursor: "pointer"
                     }} />
                 );
               })}
             </div>
           ))}
-          <div style={{ display: "flex", marginTop: 4 }}>
-            <div style={{ width: 34, flexShrink: 0 }} />
-            {matrice.map((_, w) => (
-              <div key={w} style={{
-                width: 14, margin: 1.5, flexShrink: 0, fontSize: 7, color: T.sub, textAlign: "center"
-              }}>
-                {(w % 4 === 0) ? (w + 1) : ""}
-              </div>
-            ))}
-          </div>
         </div>
       </div>
 
