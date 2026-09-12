@@ -60,13 +60,12 @@ export const COLORE_H24 = "#64748b";
 // modelli in base all'orario di inizio (colByTime/colLabel). Formato
 // allineato a quello letto/scritto dalla UI Impostazioni (updateFascia,
 // 02-Modelli.jsx) e salvato su Supabase in fasce_automatiche: color (hex),
-// from/to in MINUTI dalla mezzanotte (non stringhe "HH:MM"). Valori
-// allineati alla copia di riferimento in 05-Comuni.jsx (stesso sistema).
+// from/to in MINUTI dalla mezzanotte (non stringhe "HH:MM").
 export const FASCE_AUTOMATICHE_DEFAULT = [
-  { key:"mattina",     label:"PRIMO",    color:"#f59e0b", from:360,  to:705  }, // 06:00–11:45
-  { key:"pomeriggio",  label:"SECONDO",  color:"#f97316", from:705,  to:1035 }, // 11:45–17:15
-  { key:"terzo_turno", label:"3° TURNO", color:"#8b5cf6", from:1035, to:1080 }, // 17:15–18:00
-  { key:"notte",       label:"NOTTE",    color:"#1e40af", from:1080, to:360  }, // 18:00–06:00 (attraversa la mezzanotte)
+  { key:"mattina",     label:"PRIMO",    color:"#FFEB3C", from:360,  to:705  }, // 06:00–11:45
+  { key:"pomeriggio",  label:"SECONDO",  color:"#FAC02E", from:720,  to:990  }, // 12:00–16:30
+  { key:"terzo_turno", label:"3° TURNO", color:"#90CAF8", from:991,  to:1080 }, // 16:31–18:00
+  { key:"notte",       label:"NOTTE",    color:"#1E40AF", from:1080, to:359  }, // 18:00–05:59 (attraversa la mezzanotte)
 ];
 
 // Array di chiavi delle festività attive di default (usato come fallback
