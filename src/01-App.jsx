@@ -270,15 +270,35 @@ function AppInterno({ session }){
       <BottomNav screen={screen} setScreen={setScreen} T={T} accent={accent}
         onBeforeNavigate={()=>{
           // I 4 tasti della barra di navigazione hanno sempre la precedenza:
-          // se il form Modifica Evento (o qualsiasi popup/finestra a esso
-          // legato) è aperto, lo si chiude prima di cambiare schermata.
-          // "Chiudere" qui significa solo nascondere la UI: lo stato del
+          // qualsiasi popup/finestra/modale aperto nell'app va chiuso prima
+          // di cambiare schermata (elenco esaustivo di tutti gli "show..."
+          // usati come stato di visibilità di un modale in App).
+          // "Chiudere" qui significa solo nascondere la UI: lo stato dei
           // form (comprese le scelte già fatte su categorie/report) resta
           // quello attuale in memoria, non viene azzerato né scartato — se
           // l'utente non ha ancora premuto "Salva" le modifiche restano solo
           // locali fino al salvataggio, esattamente come premendo la ✕.
           if(dayKey){ setDayKey(null); setForm(null); setPal(null); }
           if(showDbModal) setShowDbModal(false);
+          if(showBackupsModal) setShowBackupsModal(false);
+          if(showLocalDataModal) setShowLocalDataModal(false);
+          if(showModelloEditor) setShowModelloEditor(false);
+          if(showSortMenu) setShowSortMenu(false);
+          if(showModelForm) setShowModelForm(false);
+          if(showColorAssignPicker) setShowColorAssignPicker(false);
+          if(showAddColorPicker) setShowAddColorPicker(false);
+          if(showEditFasciaColor) setShowEditFasciaColor(false);
+          if(showRotForm) setShowRotForm(false);
+          if(showRotDetail) setShowRotDetail(false);
+          if(showApplyRotDialog) setShowApplyRotDialog(false);
+          if(showDeleteRotEvtDialog) setShowDeleteRotEvtDialog(false);
+          if(showImportaFotoDialog) setShowImportaFotoDialog(false);
+          if(showImportaTurniJsonDialog) setShowImportaTurniJsonDialog(false);
+          if(showModelloPicker) setShowModelloPicker(false);
+          if(showRotazionePicker) setShowRotazionePicker(false);
+          if(showMeseReportPicker) setShowMeseReportPicker(false);
+          if(showReportModelliPicker) setShowReportModelliPicker(false);
+          if(showFasciaColorPicker) setShowFasciaColorPicker(false);
         }} />
       {banner&&<div style={{position:"fixed",bottom:20,left:"50%",transform:"translateX(-50%)",
         background:"rgba(0,0,0,0.75)",color:"#fff",padding:"6px 16px",
