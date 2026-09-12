@@ -4078,10 +4078,31 @@ const importsRecenti = useMemo(()=>{
     // confronto su quello giusto in TURNI ogni volta che l'orario
     // importato era vuoto (oraInizio/oraFine vuoti combaciano solo con un
     // modello che ha anch'esso inizio/fine vuoti, cioè un H24).
-    const candidati = modelli.filter(m=>
-      (m.titolo||"").trim().toLowerCase()===titolo &&
-      (m.calendarId||mainCalId)===calId
-    );
+    const MAPPING_RADICI = [
+      { r: "prim", t: ["prim", "mattin"] },
+      { r: "second", t: ["second", "pomerigg"] },
+      { r: "terz", t: ["terz", "3°"] },
+      { r: "nott", t: ["nott"] },
+    ];
+    let candidati = modelli.filter(m=>{
+      if((m.calendarId||mainCalId)!==calId) return false;
+      const tm = (m.titolo||"").trim().toLowerCase();
+      const lm = (m.label||"").trim().toLowerCase();
+      return tm === titolo || lm === titolo;
+    });
+    if(candidati.length===0){
+      candidati = modelli.filter(m=>{
+        if((m.calendarId||mainCalId)!==calId) return false;
+        const tm = (m.titolo||"").trim().toLowerCase();
+        const lm = (m.label||"").trim().toLowerCase();
+        if(tm && (titolo.includes(tm) || tm.includes(titolo))) return true;
+        if(lm && (titolo.includes(lm) || lm.includes(titolo))) return true;
+        for(const mapItem of MAPPING_RADICI){
+          if(titolo.includes(mapItem.r) && mapItem.t.some(k => tm.includes(k) || lm.includes(k))) return true;
+        }
+        return false;
+      });
+    }
     if(candidati.length===0) return { mod:null, esito:"assente" };
 
     const orarioFornito = !!(oraInizioTxt || oraFineTxt);
