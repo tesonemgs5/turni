@@ -485,7 +485,23 @@ export function useAppCore(session){
   });
   const [showEditFasciaColor, setShowEditFasciaColor] = useState(null); // key della fascia automatica di cui si sta editando il colore
 
-  const [rotazioni, setRotazioni] = useState([]);
+  const [rotazioni, setRotazioniRaw] = useState([]);
+  // Stessa guardia globale applicata a setModelli: nessun elemento
+  // null/undefined può entrare nello stato rotazioni, qualunque sia la
+  // fonte (cache, DB, aggiornamento locale).
+  function setRotazioni(valoreONuovoValore){
+    setRotazioniRaw(prev=>{
+      const nuovo = typeof valoreONuovoValore==="function" ? valoreONuovoValore(prev) : valoreONuovoValore;
+      const puliti = (nuovo||[]).filter(Boolean);
+      if(puliti.length !== (nuovo||[]).length){
+        segnalaErrore(
+          { message: `setRotazioni ha ricevuto ${(nuovo||[]).length - puliti.length} elementi null/undefined: rimossi automaticamente.` },
+          "Dati rotazioni corrotti (auto-riparazione in setRotazioni)"
+        );
+      }
+      return puliti;
+    });
+  }
   const [showRotForm, setShowRotForm] = useState(false);
   const [editRotazione, setEditRotazione] = useState(null);
   const [rotForm, setRotForm] = useState({ tipo:"personalizzata", titolo:"", dataInizio:"", nSettimane:52, modellaLavoroId:null, modelloNLId:null, modelloRSId:null });
