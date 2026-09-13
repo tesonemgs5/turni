@@ -2630,7 +2630,16 @@ export default function VistaModelli({ C }){
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
                 marginBottom:6,boxSizing:"border-box",outline:"none"}}/>
-            <AutocompleteInput as="textarea" value={form.collega||""} onChange={e=>{setForm(f=>({...f,collega:e.target.value.toUpperCase()}));e.target.style.height="auto";e.target.style.height=e.target.scrollHeight+"px";}}
+            <AutocompleteInput as="textarea" value={form.collega||""} onChange={e=>{setForm(f=>({...f,collega:e.target.value.toUpperCase()}));
+              // Quando si sceglie un suggerimento dal menu (un "nome in
+              // memoria"), AutocompleteInput.scegli() richiama onChange con
+              // un evento SINTETICO ({target:{value:...}}), non con il vero
+              // evento DOM del textarea: quell'oggetto target non ha .style,
+              // quindi il resize automatico va saltato in quel caso (ci
+              // pensa comunque l'useEffect su [as, value] dentro
+              // AutocompleteInput, che ricalcola l'altezza a ogni cambio di
+              // value, incluso questo).
+              if(e.target && e.target.style){ e.target.style.height="auto"; e.target.style.height=e.target.scrollHeight+"px"; }}}
               suggestions={autocompleteValori.collega}
               onRemoveSuggestion={s=>rimuoviValoreAutocomplete("collega", s)}
               textareaProps={{rows:1}}
