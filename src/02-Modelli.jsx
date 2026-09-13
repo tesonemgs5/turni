@@ -1015,11 +1015,11 @@ export default function VistaModelli({ C }){
           e dove, anche se hai scelto di non vederlo più come avviso.
         </div>
 
-        {erroriSilenziatiVisibile && Object.keys(erroriSilenziatiVisibile).length>0 && (
+        {erroriSilenziatiVisibile && erroriSilenziatiVisibile.length>0 && (
           <div style={{marginBottom:16}}>
             <div style={{fontSize:11,fontWeight:800,color:T.sub,marginBottom:8}}>ERRORI SILENZIATI</div>
             <div style={{background:T.s2,borderRadius:10,padding:10}}>
-              {Object.keys(erroriSilenziatiVisibile).map((contesto,i,arr)=>(
+              {erroriSilenziatiVisibile.map((contesto,i,arr)=>(
                 <div key={contesto} style={{display:"flex",alignItems:"center",justifyContent:"space-between",
                   padding:"7px 0",borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                   <div style={{fontSize:12,color:T.text,flex:1,paddingRight:8}}>{contesto}</div>
@@ -1793,15 +1793,21 @@ export default function VistaModelli({ C }){
               // non si rompe nessun calcolo che dipende da durataEvt.
               const durataEvt=(durataBase&&tipoProtQuestoEvento==="meno_recupero")?("-"+durataBase):durataBase;
               const durataEvtFmt = durataEvt ? formattaDurataHM(durataEvt) : "";
-              // Sigla PP/PR: solo per gli eventi di protrazione (pagamento
-              // o recupero), da mostrare come indicatore extra accanto alla
-              // durata sulla card, col segno +/- coerente con l'accumulo
-              // (PP e PR normali = "+", il "meno recupero" = "-", già
-              // riflesso nel segno di durataEvt qui sopra).
-              const siglaProtrazione = tipoProtQuestoEvento==="pagamento" ? "PP"
-                : (tipoProtQuestoEvento==="recupero" || tipoProtQuestoEvento==="meno_recupero") ? "PR"
-                : "";
-              const segnoProtrazione = siglaProtrazione ? (String(durataEvt).startsWith("-") ? "-" : "+") : "";
+              // Indicatori +PP/+PR/-PR: NON descrivono l'evento-protrazione
+              // in sé (quello ha già il suo titolo "PROTRAZIONE A ..."), ma
+              // vanno mostrati sulla card del TURNO PADRE (es. "COT 17.45-00"),
+              // per segnalare a colpo d'occhio quali protrazioni gli sono
+              // collegate. Il turno padre porta già questi campi su di sé
+              // (protPagFine/protRecFine/protMenoRecIn/protMenoRecOut,
+              // valorizzati da sincronizzaEventiProtrazione in 06-Logica.jsx),
+              // quindi basta leggerli direttamente dall'evento — non serve
+              // cercare l'evento figlio. Un turno può avere più protrazioni
+              // insieme (es. sia pagamento che recupero), quindi si accodano.
+              const indicatoriProtrazione = [];
+              if(e.protPagFine) indicatoriProtrazione.push("+PP");
+              if(e.protRecFine) indicatoriProtrazione.push("+PR");
+              if(e.protMenoRecIn||e.protMenoRecOut) indicatoriProtrazione.push("-PR");
+              const testoIndicatoriProtrazione = indicatoriProtrazione.join(" ");
               const modelloCollegato = tipoProtQuestoEvento ? modelli.find(m=>m.id===e.modelloId) : null;
               const labelDaMostrare = (modelloCollegato ? (modelloCollegato.label||modelloCollegato.titolo||e.label) : e.label);
               const modelloDiQuestoEvento = e.modelloId ? modelli.find(m=>m.id===e.modelloId) : null;
@@ -1816,7 +1822,7 @@ export default function VistaModelli({ C }){
               </div>
               {!e.allDay&&tInMostrato&&(
                 <div style={{color:cardSubColor,fontSize:17,marginTop:2}}>
-                  {tInMostrato}{tOutMostrato?` → ${tOutMostrato}`:""}{durataEvtFmt?` · ${durataEvtFmt}`:""}{siglaProtrazione?` ${segnoProtrazione}${siglaProtrazione}`:""}
+                  {tInMostrato}{tOutMostrato?` → ${tOutMostrato}`:""}{durataEvtFmt?` · ${durataEvtFmt}`:""}{testoIndicatoriProtrazione?` ${testoIndicatoriProtrazione}`:""}
                 </div>
               )}
               {(e.auto||e.collega)&&<div style={{color:cardSubColor,fontSize:17,marginTop:3,
