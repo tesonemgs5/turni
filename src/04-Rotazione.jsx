@@ -230,6 +230,21 @@ export function calcDurata(inizio, fine) {
   return b >= a ? b - a : (24 * 60 - a) + b;
 }
 
+// Formatta un numero di minuti (accetta anche stringa, anche negativo, es.
+// da calcDurata o dal "-durata" dei "meno_recupero") in "Nh Mm" per la sola
+// visualizzazione in UI. Non altera il valore numerico usato nei calcoli:
+// va chiamata solo al momento del render, mai al posto di calcDurata.
+export function formattaDurataHM(minutiTotali) {
+  const n = typeof minutiTotali === "string" ? parseInt(minutiTotali, 10) : minutiTotali;
+  if (n == null || isNaN(n)) return "";
+  const negativo = n < 0;
+  const assoluto = Math.abs(n);
+  const ore = Math.floor(assoluto / 60);
+  const minuti = assoluto % 60;
+  const testo = ore > 0 ? `${ore}h ${minuti}m` : `${minuti}m`;
+  return negativo ? `-${testo}` : testo;
+}
+
 export function sameData(a, b) {
   try {
     return JSON.stringify(a) === JSON.stringify(b);

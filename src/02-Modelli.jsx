@@ -3,7 +3,7 @@ import {
   MONTHS, DAYS, PALETTE, FONT_SIZE, NB, COLORE_H24, NOMI_MESI_IT,
   FASCE_AUTOMATICHE_DEFAULT, FESTIVITA_DEFAULT_ATTIVE, SANTI_PATRONI_CITTA,
   getContrastTextColor, daysInMonth, firstDay, fmtDataIT, dkey, uid,
-  oraInMinuti, calcFine6h15, calcFine6h30, calcFineModello, calcDurata,
+  oraInMinuti, calcFine6h15, calcFine6h30, calcFineModello, calcDurata, formattaDurataHM,
   isModelloTurnazioneDefault, withEventoAggiunto, saveToLocalStorage,
   loadFromLocalStorage, clearLocalStorageCache, resolveFestivitaCatalogo,
   leggiLogErrori, leggiErroriSilenziati, impostaSilenziamentoErrore,
@@ -1786,7 +1786,22 @@ export default function VistaModelli({ C }){
               // (usata anche altrove per durate sempre positive) — il segno
               // si aggiunge solo qui, al momento della visualizzazione.
               const durataBase=(!e.allDay&&tInMostrato&&tOutMostrato)?calcDurata(tInMostrato,tOutMostrato):"";
+              // durataEvt resta il valore NUMERICO in minuti (usato altrove
+              // per calcoli): il segno "-" per i "meno_recupero" viene
+              // applicato qui come prima. La formattazione "Nh Mm" per la
+              // visualizzazione è calcolata a parte in durataEvtFmt, così
+              // non si rompe nessun calcolo che dipende da durataEvt.
               const durataEvt=(durataBase&&tipoProtQuestoEvento==="meno_recupero")?("-"+durataBase):durataBase;
+              const durataEvtFmt = durataEvt ? formattaDurataHM(durataEvt) : "";
+              // Sigla PP/PR: solo per gli eventi di protrazione (pagamento
+              // o recupero), da mostrare come indicatore extra accanto alla
+              // durata sulla card, col segno +/- coerente con l'accumulo
+              // (PP e PR normali = "+", il "meno recupero" = "-", già
+              // riflesso nel segno di durataEvt qui sopra).
+              const siglaProtrazione = tipoProtQuestoEvento==="pagamento" ? "PP"
+                : (tipoProtQuestoEvento==="recupero" || tipoProtQuestoEvento==="meno_recupero") ? "PR"
+                : "";
+              const segnoProtrazione = siglaProtrazione ? (String(durataEvt).startsWith("-") ? "-" : "+") : "";
               const modelloCollegato = tipoProtQuestoEvento ? modelli.find(m=>m.id===e.modelloId) : null;
               const labelDaMostrare = (modelloCollegato ? (modelloCollegato.label||modelloCollegato.titolo||e.label) : e.label);
               const modelloDiQuestoEvento = e.modelloId ? modelli.find(m=>m.id===e.modelloId) : null;
@@ -1801,15 +1816,15 @@ export default function VistaModelli({ C }){
               </div>
               {!e.allDay&&tInMostrato&&(
                 <div style={{color:cardSubColor,fontSize:17,marginTop:2}}>
-                  🕐 {tInMostrato}{tOutMostrato?` → ${tOutMostrato}`:""}{durataEvt?` · ${durataEvt}`:""}
+                  {tInMostrato}{tOutMostrato?` → ${tOutMostrato}`:""}{durataEvtFmt?` · ${durataEvtFmt}`:""}{siglaProtrazione?` ${segnoProtrazione}${siglaProtrazione}`:""}
                 </div>
               )}
               {(e.auto||e.collega)&&<div style={{color:cardSubColor,fontSize:17,marginTop:3,
                 whiteSpace:"pre-wrap",wordBreak:"break-word"}}>
-                {e.auto&&<>🚗 {e.auto}</>}{e.collega&&e.auto?<br/>:""}{e.collega&&<>👮 {e.collega}</>}
+                {e.auto&&<>{e.auto}</>}{e.collega&&e.auto?<br/>:""}{e.collega&&<>{e.collega}</>}
               </div>}
               {e.note&&<div style={{color:cardSubColor,fontSize:13,marginTop:3,fontStyle:"italic"}}>
-                📝 {e.note}
+                {e.note}
               </div>}
               {(()=>{
                 // Collegamento Piano Incentivante ↔ RC PI: calcolo dinamico
@@ -2271,8 +2286,19 @@ export default function VistaModelli({ C }){
 
   const renderBtn=(campo, catAuto, flagCampo)=>([v,l])=>{
     const valoreAttuale = form[campo]||"";
-    const selezionato = valoreAttuale===v && !form[flagCampo];
-    const suggeritoDaAuto = !valoreAttuale && v!=="" && v===catAuto && !form[flagCampo];
+    const flagAttivo = !!form[flagCampo];
+    const selezionato = valoreAttuale===v && !flagAttivo;
+    // Il bordo "suggerito da automatismo" ha senso mostrarlo SOLO quando
+    // non c'è ancora nessuna scelta esplicita attiva (valoreAttuale vuoto
+    // e flag disattivo): altrimenti, con una scelta esplicita già fatta
+    // (es. "2° Turno" selezionato), il pulsante "Automatica" mostrava
+    // comunque sfondo pieno (perché v==="" e valoreAttuale==="" combaciano
+    // solo quando NON c'è scelta) — qui invece preveniamo il caso opposto,
+    // cioè che un secondo pulsante venga evidenziato dal bordo mentre un
+    // altro ha già lo sfondo pieno, generando l'effetto "due selezionati"
+    // visto in UI.
+    const nessunaSceltaEsplicita = !valoreAttuale && !flagAttivo;
+    const suggeritoDaAuto = nessunaSceltaEsplicita && v!=="" && v===catAuto;
     const nuovoValore = (selezionato && v!=="") ? "" : v;
     return (
       <button key={v||l} onClick={()=>setForm(f=>({...f,[campo]:nuovoValore,[flagCampo]:false}))}
@@ -2600,7 +2626,7 @@ export default function VistaModelli({ C }){
               }}
               suggestions={autocompleteValori.auto}
               onRemoveSuggestion={s=>rimuoviValoreAutocomplete("auto", s)}
-              placeholder="🚗 Numero auto/pattuglia (opzionale)..."
+              placeholder="Numero auto/pattuglia (opzionale)..."
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
                 marginBottom:6,boxSizing:"border-box",outline:"none"}}/>
@@ -2608,7 +2634,7 @@ export default function VistaModelli({ C }){
               suggestions={autocompleteValori.collega}
               onRemoveSuggestion={s=>rimuoviValoreAutocomplete("collega", s)}
               textareaProps={{rows:1}}
-              placeholder="👮 Collega" rows={1}
+              placeholder="Collega" rows={1}
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
                 marginBottom:6,boxSizing:"border-box",outline:"none",resize:"none",fontFamily:"inherit",
@@ -2616,13 +2642,13 @@ export default function VistaModelli({ C }){
             <AutocompleteInput value={form.place||""} onChange={e=>setForm(f=>({...f,place:e.target.value.toUpperCase()}))}
               suggestions={autocompleteValori.luogo}
               onRemoveSuggestion={s=>rimuoviValoreAutocomplete("luogo", s)}
-              placeholder="📍 LUOGO (OPZIONALE)..."
+              placeholder="LUOGO (OPZIONALE)..."
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
                 marginBottom:6,boxSizing:"border-box",outline:"none"}}/>
             {form.place&&(
               <input value={form.map||""} onChange={e=>setForm(f=>({...f,map:e.target.value}))}
-                placeholder="🗺️ Link Google Maps..."
+                placeholder="Link Google Maps..."
                 style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                   borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
                   marginBottom:6,boxSizing:"border-box",outline:"none"}}/>
