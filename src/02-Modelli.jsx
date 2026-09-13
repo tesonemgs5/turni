@@ -1804,10 +1804,28 @@ export default function VistaModelli({ C }){
               // cercare l'evento figlio. Un turno può avere più protrazioni
               // insieme (es. sia pagamento che recupero), quindi si accodano.
               const indicatoriProtrazione = [];
-              if(e.protPagFine) indicatoriProtrazione.push("+PP");
-              if(e.protRecFine) indicatoriProtrazione.push("+PR");
-              if(e.protMenoRecIn||e.protMenoRecOut) indicatoriProtrazione.push("-PR");
-              const testoIndicatoriProtrazione = indicatoriProtrazione.join(" ");
+              if(e.protPagFine){
+                const minPag = calcDurata(tOutMostrato||e.tOut||"", e.protPagFine);
+                indicatoriProtrazione.push(`+PP${minPag?" "+formattaDurataHM(minPag):""}`);
+              }
+              if(e.protRecFine){
+                const minRec = calcDurata(tOutMostrato||e.tOut||"", e.protRecFine);
+                indicatoriProtrazione.push(`+PR${minRec?" "+formattaDurataHM(minRec):""}`);
+              }
+              if(e.protMenoRecIn||e.protMenoRecOut){
+                // -PROTRAZIONE A RECUPERO: consumo di credito, calcolato come
+                // ritardo in entrata (entrata effettiva dopo l'ingresso
+                // previsto) + anticipo in uscita (uscita effettiva prima
+                // dell'uscita prevista), stessa logica di calcDurMenoRec nel
+                // form di modifica.
+                const mIn1=oraInMinuti(e.tIn||""), mIn2=oraInMinuti(e.protMenoRecIn||"");
+                const mOut1=oraInMinuti(e.tOut||""), mOut2=oraInMinuti(e.protMenoRecOut||"");
+                let ritardoEntrata=0, anticipoUscita=0;
+                if(mIn1!=null&&mIn2!=null){ let d=mIn2-mIn1; if(d<0) d+=24*60; ritardoEntrata=Math.max(0,d); }
+                if(mOut1!=null&&mOut2!=null){ let d=mOut1-mOut2; if(d<0) d+=24*60; anticipoUscita=Math.max(0,d); }
+                const totMenoRec = ritardoEntrata+anticipoUscita;
+                indicatoriProtrazione.push(`-PR${totMenoRec?" "+formattaDurataHM(totMenoRec):""}`);
+              }
               const modelloCollegato = tipoProtQuestoEvento ? modelli.find(m=>m.id===e.modelloId) : null;
               const labelDaMostrare = (modelloCollegato ? (modelloCollegato.label||modelloCollegato.titolo||e.label) : e.label);
               const modelloDiQuestoEvento = e.modelloId ? modelli.find(m=>m.id===e.modelloId) : null;
@@ -1821,8 +1839,11 @@ export default function VistaModelli({ C }){
                 {orarioModello&&<span style={{fontSize:13,fontWeight:700,opacity:0.85}}>{orarioModello}</span>}
               </div>
               {!e.allDay&&tInMostrato&&(
-                <div style={{color:cardSubColor,fontSize:17,marginTop:2}}>
-                  {tInMostrato}{tOutMostrato?` → ${tOutMostrato}`:""}{durataEvtFmt?` · ${durataEvtFmt}`:""}{testoIndicatoriProtrazione?` ${testoIndicatoriProtrazione}`:""}
+                <div style={{color:cardSubColor,fontSize:17,marginTop:2,display:"flex",flexWrap:"wrap",columnGap:8,rowGap:2}}>
+                  <span>{tInMostrato}{tOutMostrato?` → ${tOutMostrato}`:""}{durataEvtFmt?` · ${durataEvtFmt}`:""}</span>
+                  {indicatoriProtrazione.map((ind,i)=>(
+                    <span key={i} style={{fontWeight:800}}>{ind}</span>
+                  ))}
                 </div>
               )}
               {(e.auto||e.collega)&&<div style={{color:cardSubColor,fontSize:17,marginTop:3,
