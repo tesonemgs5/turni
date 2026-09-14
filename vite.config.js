@@ -2,6 +2,27 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
+// Calcola la "versione" dell'app come ggmmaa.hhmm riferita al momento in cui
+// Vercel esegue questa build (npm run build), non al momento in cui il
+// browser carica la pagina. Questo timestamp è la miglior approssimazione
+// disponibile del "Ready" mostrato nella dashboard di Vercel: coincidono a
+// meno dei pochi secondi/minuti che il deploy impiega dopo la build stessa,
+// perché non esiste modo, dentro il codice React in esecuzione nel browser,
+// di leggere l'orario reale di "Ready" di Vercel (quel dato vive solo nella
+// dashboard/API di Vercel, non nel bundle).
+// Uso il fuso orario Europe/Rome esplicitamente: i server di build (es.
+// Vercel) girano tipicamente in UTC, quindi senza questo new Intl la
+// versione mostrerebbe l'ora UTC invece dell'ora italiana.
+function calcolaVersioneBuild() {
+  const ora = new Date();
+  const parti = new Intl.DateTimeFormat('it-IT', {
+    timeZone: 'Europe/Rome',
+    day: '2-digit', month: '2-digit', year: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(ora).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});
+  return `${parti.day}${parti.month}${parti.year}.${parti.hour}${parti.minute}`;
+}
+
 export default defineConfig({
   // Path relativi negli asset generati (dist/index.html usa "./assets/..."
   // invece di "/assets/..."), indispensabile perché l'app Electron carica
@@ -9,6 +30,9 @@ export default defineConfig({
   // browser li interpreta come percorso radice del disco e fallisce con
   // ERR_FILE_NOT_FOUND.
   base: './',
+  define: {
+    __APP_VERSION__: JSON.stringify(calcolaVersioneBuild()),
+  },
   build: {
     minify: 'terser',
     terserOptions: {

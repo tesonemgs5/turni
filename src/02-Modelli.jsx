@@ -885,7 +885,10 @@ export default function VistaModelli({ C }){
 
   const settingsView = (
     <div style={{flex:1,overflowY:"auto",padding:"12px 12px 80px",color:T.text}}>
-      <div style={{fontSize:18,fontWeight:900,fontFamily:"Georgia,serif",marginBottom:14}}>Impostazioni</div>
+      <div style={{fontSize:18,fontWeight:900,fontFamily:"Georgia,serif",marginBottom:2}}>Impostazioni</div>
+      <div style={{fontSize:11,color:T.sub,marginBottom:14}}>
+        Versione {typeof __APP_VERSION__!=="undefined" ? __APP_VERSION__ : "dev"}
+      </div>
       <Sec label="ACCOUNT" T={T}>
         <div style={{fontSize:12,color:T.sub,marginBottom:10}}>{session?.user?.email}</div>
         <button onClick={handleLogout}
