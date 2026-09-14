@@ -12,7 +12,7 @@ import {
 import { CalBadge, SmartTimeInput, AutocompleteInput, ColorPickerModal,
   ModaleErroriMultipli, FasceExpand, ConteggioConfigCard, TurnazioneConfigCard,
   IndennitaConfig, OrePerTurnoView, StraordinariView, GuadagniView, Sec, SecCollapsible,
-  NAV_HEIGHT_CSS } from "./05-Comuni";
+  NAV_HEIGHT_CSS, nomeDelColore } from "./05-Comuni";
 import { ModelloCard, ModelForm, RotazioneCard, RotazioneForm, ModelloSelector,
   GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView } from "./04-Rotazione";
 import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
@@ -2050,11 +2050,14 @@ export default function VistaModelli({ C }){
                     title="Colore evento"
                     onPick={p=>setForm(f=>({...f,colorOvr:p}))}
                     onClose={()=>setPal(null)}
-                    coloriUsati={[...new Set(modelli.map(m=>m.coloreCustom||(m.tempo==="h24"?COLORE_H24:colByTime(m.inizio))).filter(Boolean))]}/>}
+                    coloriUsati={[...new Set(modelli.map(m=>m.coloreCustom||(m.tempo==="h24"?COLORE_H24:colByTime(m.inizio))).filter(Boolean))]}
+                    getNomeColore={p=>nomeDelColore(p,{fasceAutomatiche,coloriExtra})}/>}
                 </div>
                 {form.colorOvr&&(
                   <button onClick={()=>setForm(f=>({...f,colorOvr:null}))}
-                    style={{background:"none",border:"none",color:T.sub,fontSize:13,fontWeight:700,cursor:"pointer"}}>↩ auto</button>
+                    style={{background:"none",border:"none",color:T.sub,fontSize:13,fontWeight:700,cursor:"pointer"}}>
+                    ↩ {nomeDelColore(form.colorOvr,{fasceAutomatiche,coloriExtra})}
+                  </button>
                 )}
               </div>
             )}

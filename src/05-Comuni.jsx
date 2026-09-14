@@ -1851,7 +1851,23 @@ function GridColorPicker({T, value, onChange}){
   );
 }
 
-export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, title="Scegli colore"}){
+// Nome leggibile di un colore: cerca prima tra le fasce automatiche
+// (PRIMO/SECONDO/3° TURNO/NOTTE...), poi H24, poi tra i colori extra con
+// nome assegnato manualmente nella schermata Modelli->Colori. Se il colore
+// non ha ancora un nome da nessuna parte, ricade sul codice esadecimale:
+// appena viene rinominato in Colori, ogni punto che chiama questa funzione
+// mostra subito il nome nuovo, perché il nome non viene mai salvato altrove.
+export function nomeDelColore(hex, {fasceAutomatiche=[], coloriExtra=[]}={}){
+  if(!hex) return null;
+  const fascia = (fasceAutomatiche||[]).find(f=>f.color===hex);
+  if(fascia) return fascia.label;
+  if(hex===COLORE_H24) return "H24";
+  const extra = (coloriExtra||[]).find(c=>c.hex===hex);
+  if(extra&&extra.label) return extra.label;
+  return hex.toUpperCase();
+}
+
+export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, title="Scegli colore", getNomeColore=null}){
   const [pos,setPos]=useState(null); // null = centrato di default
   // Modalità del selettore ("preciso" = riquadro 2D+hue+numeri esistente,
   // "griglia" = pallini precalcolati): PERSISTENTE e GLOBALE in localStorage,
@@ -1918,8 +1934,16 @@ export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, tit
             <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:16}}>
               {coloriUsati.map(p=>(
                 <div key={p} onClick={()=>setPreviewColor(p)}
-                  style={{width:32,height:32,borderRadius:"50%",background:p,cursor:"pointer",
+                  style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3,cursor:"pointer",width:52}}>
+                  <div style={{width:32,height:32,borderRadius:"50%",background:p,
                     outline:previewColor===p?`3px solid ${T.text}`:"none",outlineOffset:2,flexShrink:0}}/>
+                  {getNomeColore&&(
+                    <div style={{fontSize:9,color:T.sub,fontWeight:700,textAlign:"center",
+                      maxWidth:52,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                      {getNomeColore(p)}
+                    </div>
+                  )}
+                </div>
               ))}
               <div onClick={()=>{
                   const hexBox = boxRef.current?.querySelector("[data-hex-picker]");
