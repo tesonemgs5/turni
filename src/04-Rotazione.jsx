@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { ColorPickerModal } from "./05-Comuni";
+import { ColorPickerModal, nomeDelColore as nomeDelColoreShared } from "./05-Comuni";
 
 // ═══════════════════════════════════════════════════════════════════════
 // 04-Rotazione.jsx — RICOSTRUITO
@@ -883,13 +883,7 @@ export function ModelForm({
   // Se il colore non ha ancora un nome assegnato da nessuna parte, ricade
   // sul codice esadecimale (stesso comportamento della schermata Colori).
   function nomeDelColore(hex) {
-    if (!hex) return null;
-    const fascia = (fasceAutomatiche || []).find(f => f.color === hex);
-    if (fascia) return fascia.label;
-    if (hex === COLORE_H24) return "H24";
-    const extra = (coloriExtra || []).find(c => c.hex === hex);
-    if (extra && extra.label) return extra.label;
-    return hex.toUpperCase();
+    return nomeDelColoreShared(hex, { fasceAutomatiche, coloriExtra });
   }
   const nomeColoreAnteprima = nomeDelColore(coloreAnteprima);
 
@@ -1025,6 +1019,7 @@ export function ModelForm({
           {showColorPicker && (
             <ColorPickerModal T={T} cur={coloreAnteprima} title="Colore modello"
               coloriUsati={coloriUsati}
+              getNomeColore={nomeDelColore}
               onPick={c => setForm(prev => ({ ...prev, coloreCustom: c }))}
               onClose={() => setShowColorPicker(false)} />
           )}
