@@ -505,7 +505,7 @@ export function useAppCore(session){
   }
   const [showRotForm, setShowRotForm] = useState(false);
   const [editRotazione, setEditRotazione] = useState(null);
-  const [rotForm, setRotForm] = useState({ tipo:"personalizzata", titolo:"", dataInizio:"", nSettimane:52, modellaLavoroId:null, modelloNLId:null, modelloRSId:null });
+  const [rotForm, setRotForm] = useState({ tipo:"personalizzata", titolo:"", dataInizio:"", nSettimane:52, modellaLavoroId:null, modelloNLId:null, modelloRSId:null, modelloG3Id:null, modelloG4Id:null });
   const [showRotDetail, setShowRotDetail] = useState(null);
   const [showApplyRotDialog, setShowApplyRotDialog] = useState(null);
   const [showDeleteRotEvtDialog, setShowDeleteRotEvtDialog] = useState(null);
@@ -802,6 +802,8 @@ export function useAppCore(session){
           modellaLavoroId:r.modello_lavoro_id||null,
           modelloNLId:r.modello_nl_id||null,
           modelloRSId:r.modello_rs_id||null,
+          modelloG3Id:(r.griglia||{}).__modelloG3Id||null,
+          modelloG4Id:(r.griglia||{}).__modelloG4Id||null,
           griglia:r.griglia||{},
           reperibilitaTurnoPartenza:(r.griglia||{}).__reperibilitaTurnoPartenza||"14-24",
           sortOrder:r.sort_order||0,
@@ -3959,8 +3961,15 @@ const importsRecenti = useMemo(()=>{
     // sparire silenziosamente (prima si perdeva subito dopo il primo giro
     // di sync, e la rotazione "reperibilità" tornava sempre al turno A
     // di default).
+    // modelloG3Id/modelloG4Id (Giorno 3 e Giorno 4 del ciclo reperibilità)
+    // non hanno colonna dedicata: stesso trattamento di
+    // reperibilitaTurnoPartenza qui sopra, dentro "griglia".
     const grigliaConMeta = data.tipo==="reperibilita"
-      ? {...(data.griglia||{}), __reperibilitaTurnoPartenza: data.reperibilitaTurnoPartenza||"14-24"}
+      ? {...(data.griglia||{}),
+          __reperibilitaTurnoPartenza: data.reperibilitaTurnoPartenza||"14-24",
+          __modelloG3Id: data.modelloG3Id||null,
+          __modelloG4Id: data.modelloG4Id||null,
+        }
       : (data.griglia||{});
     const payload={
       user_id:userId, tipo:data.tipo, titolo:data.titolo||"",
@@ -4570,30 +4579,44 @@ const importsRecenti = useMemo(()=>{
         }
       }
     } else if(rot.tipo === "reperibilita") {
-      // Schema fisso, un ciclo = 2 giorni consecutivi:
-      //   Giorno 1        -> modello scelto dall'utente per il Giorno 1
-      //   Giorno 2 (1+1)  -> modello scelto dall'utente per il Giorno 2
-      // Il ciclo si ripete ogni 8 giorni, quindi il ciclo successivo cade
-      // su Giorno 1+8 e Giorno 2+8, poi Giorno 1+16 e Giorno 2+16, ecc.
-      // I modelli sono una libera scelta dell'utente (può cambiarli quando
-      // vuole): qui non si forza né si legge nessun orario fisso, si
-      // inserisce solo il modello scelto nella data giusta.
-      const primoModello = modelli.find(m=>m.id===rot.modelloRSId);  // modello Giorno 1
-      const secondoModello = modelli.find(m=>m.id===rot.modelloNLId); // modello Giorno 2
+      // Schema fisso, un ciclo = 4 giorni a catena rispetto al Giorno 1:
+      //   Giorno 1  (offset +0)  -> modello Giorno 1
+      //   Giorno 2  (Giorno1 +1) -> modello Giorno 2
+      //   Giorno 3  (Giorno2 +7) -> modello Giorno 3
+      //   Giorno 4  (Giorno3 +1) -> modello Giorno 4
+      // Il blocco di 4 giorni si ripete ogni 8 giorni a partire dal Giorno 1
+      // (Giorno1+8, Giorno1+9, Giorno1+16, Giorno1+17, ...), continuando
+      // sempre la stessa sequenza di passi +1,+7,+1,+7,... agganciata
+      // all'ultimo giorno generato, con gli stessi 4 modelli nello stesso
+      // ordine ogni volta. I modelli sono una libera scelta dell'utente
+      // (può cambiarli quando vuole): qui non si forza né si legge nessun
+      // orario fisso, si inserisce solo il modello scelto nella data giusta.
+      const modelloGiorno1 = modelli.find(m=>m.id===rot.modelloRSId);
+      const modelloGiorno2 = modelli.find(m=>m.id===rot.modelloNLId);
+      const modelloGiorno3 = modelli.find(m=>m.id===rot.modelloG3Id);
+      const modelloGiorno4 = modelli.find(m=>m.id===rot.modelloG4Id);
+      const MODELLI_CICLO = [modelloGiorno1, modelloGiorno2, modelloGiorno3, modelloGiorno4];
 
       const [y0, m0, d0] = startDayKey.split("-").map(Number);
       const start = new Date(y0, m0-1, d0);
-      // numRipetizioni = numero di cicli da generare. Ogni ciclo scrive
-      // esattamente 2 eventi (Giorno1 e Giorno2), sul blocco di 8 giorni
-      // che gli compete.
+      // numRipetizioni = numero di blocchi da 4 giorni da generare. Ogni
+      // blocco scrive esattamente 4 eventi, sul blocco di 8 giorni che gli
+      // compete (offset +0, +1, +8, +9 rispetto al Giorno 1 originale).
       for(let ciclo=0; ciclo<numRipetizioni; ciclo++) {
-        const offsetCiclo = ciclo*8;
+        const offsetBlocco = ciclo*8;
         const giorno1 = new Date(start);
-        giorno1.setDate(giorno1.getDate() + offsetCiclo);
-        const giorno2 = new Date(start);
-        giorno2.setDate(giorno2.getDate() + offsetCiclo + 1);
-        if(primoModello) await inserisciEvento(primoModello, giorno1);
-        if(secondoModello) await inserisciEvento(secondoModello, giorno2);
+        giorno1.setDate(giorno1.getDate() + offsetBlocco);
+        const giorno2 = new Date(giorno1);
+        giorno2.setDate(giorno2.getDate() + 1);
+        const giorno3 = new Date(giorno2);
+        giorno3.setDate(giorno3.getDate() + 7);
+        const giorno4 = new Date(giorno3);
+        giorno4.setDate(giorno4.getDate() + 1);
+        const DATE_CICLO = [giorno1, giorno2, giorno3, giorno4];
+
+        for(let g=0; g<4; g++){
+          if(MODELLI_CICLO[g]) await inserisciEvento(MODELLI_CICLO[g], DATE_CICLO[g]);
+        }
       }
     } else if(rot.tipo === "domeniche") {
       const modLav = modelli.find(m=>m.id===rot.modellaLavoroId);

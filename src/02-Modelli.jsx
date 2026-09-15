@@ -271,7 +271,7 @@ export default function VistaModelli({ C }){
                   setShowModelForm(true);
                 } else {
                   setEditRotazione(null);
-                  setRotForm({tipo:"personalizzata",titolo:"",dataInizio:"",nSettimane:52,modellaLavoroId:null,modelloNLId:null,modelloRSId:null});
+                  setRotForm({tipo:"personalizzata",titolo:"",dataInizio:"",nSettimane:52,modellaLavoroId:null,modelloNLId:null,modelloRSId:null,modelloG3Id:null,modelloG4Id:null});
                   setShowRotForm(true);
                 }
               }} style={{background:accent,border:"none",borderRadius:8,padding:"6px 16px",
@@ -560,6 +560,8 @@ export default function VistaModelli({ C }){
                         tipo:r.tipo, titolo:r.titolo||"", dataInizio:r.dataInizio||"",
                         nSettimane:r.nSettimane||52, modellaLavoroId:r.modellaLavoroId||null,
                         modelloNLId:r.modelloNLId||null, modelloRSId:r.modelloRSId||null,
+                        modelloG3Id:r.modelloG3Id||null, modelloG4Id:r.modelloG4Id||null,
+                        griglia:r.griglia||{}, reperibilitaTurnoPartenza:r.reperibilitaTurnoPartenza||"14-24",
                       }); setShowRotForm(true); }}
                       onDelete={()=>deleteRotazione(r.id)}
                       onMoveUp={i>0?()=>moveRotazione(r.id,"up"):null}

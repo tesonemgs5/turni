@@ -1471,41 +1471,11 @@ export function DomenicheView({ rot, T, accent, modelli, fasceAutomatiche, sunda
 // ogni 8 giorni. (invariato rispetto alla patch già validata)
 // ─────────────────────────────────────────────────────────────────────
 
-const GIORNI_CICLO_FORM = [
-  { key: 1, label: "1" }, { key: 2, label: "2" }, { key: 3, label: "3" },
-  { key: 4, label: "4" }, { key: 5, label: "5" }, { key: 6, label: "6" },
-  { key: 7, label: "7" },
-];
-
 export function ReperibilitaFormFields({ T, form, setForm, accent, accentText, modelli, fasceAutomatiche = [] }) {
-  const giornoPartenza = form.reperibilitaGiornoPartenza ?? 1;
+  const mancaQualcheModello = !form.modelloRSId || !form.modelloNLId || !form.modelloG3Id || !form.modelloG4Id;
 
   return (
     <div style={{ marginBottom: 16 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, marginBottom: 6 }}>
-        GIORNO DI PARTENZA DEL CICLO
-      </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
-        {GIORNI_CICLO_FORM.map(g => (
-          <button key={g.key} type="button"
-            onClick={() => setForm(prev => ({ ...prev, reperibilitaGiornoPartenza: g.key }))}
-            style={{
-              background: giornoPartenza === g.key ? accent : T.s2,
-              color: giornoPartenza === g.key ? accentText : T.text,
-              border: `1px solid ${giornoPartenza === g.key ? accent : T.border}`,
-              borderRadius: 8, padding: "8px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer",
-              minWidth: 40,
-            }}>
-            {g.label}
-          </button>
-        ))}
-      </div>
-      <div style={{ fontSize: 11, color: T.sub, marginBottom: 14 }}>
-        Il giorno "1" del ciclo è il primo giorno che sceglierai applicando la
-        rotazione sul calendario (può essere qualsiasi giorno della
-        settimana). Da lì il ciclo prosegue 1→2→3…7, poi ricomincia da 1.
-      </div>
-
       <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, marginBottom: 6 }}>
         MODELLO GIORNO 1
       </div>
@@ -1513,21 +1483,34 @@ export function ReperibilitaFormFields({ T, form, setForm, accent, accentText, m
         onChange={id => setForm(prev => ({ ...prev, modelloRSId: id }))} />
 
       <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, margin: "10px 0 6px" }}>
-        MODELLO GIORNO 2
+        MODELLO GIORNO 2 (Giorno 1 + 1)
       </div>
       <ModelloSelector T={T} modelli={modelli} value={form.modelloNLId} fasceAutomatiche={fasceAutomatiche}
         onChange={id => setForm(prev => ({ ...prev, modelloNLId: id }))} />
 
+      <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, margin: "10px 0 6px" }}>
+        MODELLO GIORNO 3 (Giorno 2 + 7)
+      </div>
+      <ModelloSelector T={T} modelli={modelli} value={form.modelloG3Id} fasceAutomatiche={fasceAutomatiche}
+        onChange={id => setForm(prev => ({ ...prev, modelloG3Id: id }))} />
+
+      <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, margin: "10px 0 6px" }}>
+        MODELLO GIORNO 4 (Giorno 3 + 1)
+      </div>
+      <ModelloSelector T={T} modelli={modelli} value={form.modelloG4Id} fasceAutomatiche={fasceAutomatiche}
+        onChange={id => setForm(prev => ({ ...prev, modelloG4Id: id }))} />
+
       <div style={{ fontSize: 11, color: T.sub, marginTop: 10, marginBottom: 4 }}>
-        Il ciclo dura 2 giorni: Giorno 1 con il primo modello, Giorno 2 (Giorno 1+1)
-        con il secondo. Il ciclo si ripete ogni 8 giorni a partire dal Giorno 1.
+        Il ciclo genera 4 eventi a catena: Giorno 1 → +1 → Giorno 2 → +7 → Giorno 3 → +1 → Giorno 4.
+        Poi la stessa sequenza di passi (+1, +7, +1, +7…) riparte dall'ultimo giorno generato,
+        agganciandosi sempre agli stessi 4 modelli nello stesso ordine.
       </div>
 
-      {(!form.modelloRSId || !form.modelloNLId) && (
+      {mancaQualcheModello && (
         <div style={{ fontSize: 12, color: "#ef4444", fontWeight: 700, marginTop: 10,
           background: "#ef444422", border: "1px solid #ef4444", borderRadius: 8, padding: "8px 10px" }}>
-          ⚠️ Seleziona un modello per entrambi i giorni (Giorno 1 e Giorno 2),
-          altrimenti l'applicazione della rotazione non genera nessun evento.
+          ⚠️ Seleziona un modello per tutti e 4 i giorni,
+          altrimenti l'applicazione della rotazione non genera tutti gli eventi.
         </div>
       )}
     </div>
@@ -1539,16 +1522,25 @@ export function calcolaAnteprimaReperibilita(rot, nBlocchi = 12) {
   const [y0, m0, d0] = rot.dataInizio.split("-").map(Number);
   const start = new Date(y0, m0 - 1, d0);
 
+  const fmt = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
   const righe = [];
   for (let i = 0; i < nBlocchi; i++) {
+    const offsetBlocco = i * 8;
+
     const giorno1 = new Date(start);
-    giorno1.setDate(giorno1.getDate() + i * 8);
+    giorno1.setDate(giorno1.getDate() + offsetBlocco);
     const giorno2 = new Date(giorno1);
     giorno2.setDate(giorno2.getDate() + 1);
+    const giorno3 = new Date(giorno2);
+    giorno3.setDate(giorno3.getDate() + 7);
+    const giorno4 = new Date(giorno3);
+    giorno4.setDate(giorno4.getDate() + 1);
 
-    const fmt = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     righe.push({ data: fmt(giorno1), giornoCiclo: 1 });
     righe.push({ data: fmt(giorno2), giornoCiclo: 2 });
+    righe.push({ data: fmt(giorno3), giornoCiclo: 3 });
+    righe.push({ data: fmt(giorno4), giornoCiclo: 4 });
   }
   return righe;
 }
@@ -1556,27 +1548,28 @@ export function calcolaAnteprimaReperibilita(rot, nBlocchi = 12) {
 export function ReperibilitaView({ rot, T, accent, modelli }) {
   const modA = modelli.find(m => m.id === rot.modelloRSId);
   const modB = modelli.find(m => m.id === rot.modelloNLId);
+  const modC = modelli.find(m => m.id === rot.modelloG3Id);
+  const modD = modelli.find(m => m.id === rot.modelloG4Id);
   const anteprima = calcolaAnteprimaReperibilita(rot, 12);
 
   const NOMI_GIORNI = ["Dom", "Lun", "Mar", "Mer", "Gio", "Ven", "Sab"];
+  const MOD_PER_GIORNO = { 1: modA, 2: modB, 3: modC, 4: modD };
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
-      <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
-        <div style={{ flex: 1, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: 10 }}>
-          <div style={{ fontSize: 10, color: T.sub, fontWeight: 700, marginBottom: 4 }}>GIORNO 1</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <div style={{ width: 10, height: 10, borderRadius: "50%", background: modA?.coloreCustom || accent }} />
-            <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{modA?.titolo || "— nessun modello —"}</div>
-          </div>
-        </div>
-        <div style={{ flex: 1, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: 10 }}>
-          <div style={{ fontSize: 10, color: T.sub, fontWeight: 700, marginBottom: 4 }}>GIORNO 2</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <div style={{ width: 10, height: 10, borderRadius: "50%", background: modB?.coloreCustom || accent }} />
-            <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{modB?.titolo || "— nessun modello —"}</div>
-          </div>
-        </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
+        {[1, 2, 3, 4].map(g => {
+          const mod = MOD_PER_GIORNO[g];
+          return (
+            <div key={g} style={{ flex: "1 1 45%", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: 10 }}>
+              <div style={{ fontSize: 10, color: T.sub, fontWeight: 700, marginBottom: 4 }}>GIORNO {g}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{ width: 10, height: 10, borderRadius: "50%", background: mod?.coloreCustom || accent }} />
+                <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{mod?.titolo || "— nessun modello —"}</div>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, marginBottom: 8 }}>
@@ -1586,7 +1579,7 @@ export function ReperibilitaView({ rot, T, accent, modelli }) {
         {anteprima.map((r, i) => {
           const [ry, rm, rd] = r.data.split("-").map(Number);
           const giornoSett = NOMI_GIORNI[new Date(ry, rm - 1, rd).getDay()];
-          const mod = r.giornoCiclo === 1 ? modA : modB;
+          const mod = MOD_PER_GIORNO[r.giornoCiclo];
           return (
             <div key={r.data + r.giornoCiclo} style={{
               display: "flex", alignItems: "center", justifyContent: "space-between",
