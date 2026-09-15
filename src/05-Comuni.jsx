@@ -408,7 +408,9 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, acce
   const pct = totaleTurni>0 ? Math.round((data.totale/totaleTurni)*100) : 0;
   const [openSottomenu, setOpenSottomenu] = useState(null);
   const [openGruppoDentro, setOpenGruppoDentro] = useState(null); // `${sottomenuId}:${gruppoKey}`
+  const [confermaEliminaGruppo, setConfermaEliminaGruppo] = useState(null); // `${sottomenuId}:${gruppoKey}`
   const [showAggiungiMenu, setShowAggiungiMenu] = useState(false);
+  const [confermaEliminaSottomenu, setConfermaEliminaSottomenu] = useState(null);
 
   const sottomenu = cfg.sottomenu || [];
 
@@ -492,11 +494,16 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, acce
                   padding:"10px 12px",cursor:"pointer"}}>
                 <span style={{fontSize:12,fontWeight:700,color:T.text}}>{sm.nome}</span>
                 <div style={{display:"flex",alignItems:"center",gap:10}}>
-                  <button onClick={e=>{e.stopPropagation();rimuoviSottomenu(sm.id);}}
+                  <button onClick={e=>{e.stopPropagation();setConfermaEliminaSottomenu(sm.id);}}
                     style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:13,padding:"2px 4px"}}>🗑️</button>
                   <span style={{fontSize:12,color:T.sub}}>{isOpen?"▲":"▼"}</span>
                 </div>
               </div>
+              {confermaEliminaSottomenu===sm.id&&(
+                <ConfermaEliminazione T={T} testo={`Vuoi eliminare "${sm.nome}"?`}
+                  onConferma={()=>{setConfermaEliminaSottomenu(null);rimuoviSottomenu(sm.id);}}
+                  onAnnulla={()=>setConfermaEliminaSottomenu(null)}/>
+              )}
               {isOpen && (
                 <div style={{padding:"0 12px 12px"}}>
                   {sm.tipo==="libero" && (
@@ -623,9 +630,14 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, acce
                                   style={{flex:1,background:"transparent",border:"none",outline:"none",
                                     fontSize:13,fontWeight:800,color:"#0f172a"}}/>
                                 <span style={{fontSize:14,fontWeight:900,color:"#0f172a"}}>{count}</span>
-                                <span onClick={()=>rimuoviGruppo(g.key)} style={{cursor:"pointer",fontSize:12,color:"#ef4444"}}>🗑️</span>
+                                <span onClick={()=>setConfermaEliminaGruppo(gk)} style={{cursor:"pointer",fontSize:12,color:"#ef4444"}}>🗑️</span>
                                 <span onClick={()=>setOpenGruppoDentro(isOpenG?null:gk)} style={{cursor:"pointer",fontSize:12,color:"#0f172a"}}>{isOpenG?"▲":"▼"}</span>
                               </div>
+                              {confermaEliminaGruppo===gk&&(
+                                <ConfermaEliminazione T={T} testo={`Vuoi eliminare il gruppo "${g.label}"?`}
+                                  onConferma={()=>{setConfermaEliminaGruppo(null);rimuoviGruppo(g.key);}}
+                                  onAnnulla={()=>setConfermaEliminaGruppo(null)}/>
+                              )}
                               {isOpenG && (
                                 <div style={{background:T.s2,borderRadius:"0 0 8px 8px",border:`1px solid ${g.color}44`,
                                   borderTop:"none",padding:"8px 10px"}}>
@@ -732,7 +744,9 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
   const pct = totaleMinPeriodo>0 ? Math.max(0, Math.min(100, Math.round((data.totaleMin/totaleMinPeriodo)*100))) : 0;
   const [openSottomenu, setOpenSottomenu] = useState(null);
   const [openGruppoDentro, setOpenGruppoDentro] = useState(null);
+  const [confermaEliminaGruppo, setConfermaEliminaGruppo] = useState(null); // `${sottomenuId}:${gruppoKey}`
   const [showAggiungiMenu, setShowAggiungiMenu] = useState(false);
+  const [confermaEliminaSottomenu, setConfermaEliminaSottomenu] = useState(null);
 
   const sottomenu = cfg.sottomenu || [];
 
@@ -809,11 +823,16 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
                   padding:"10px 12px",cursor:"pointer"}}>
                 <span style={{fontSize:12,fontWeight:700,color:T.text}}>{sm.nome}</span>
                 <div style={{display:"flex",alignItems:"center",gap:10}}>
-                  <button onClick={e=>{e.stopPropagation();rimuoviSottomenu(sm.id);}}
+                  <button onClick={e=>{e.stopPropagation();setConfermaEliminaSottomenu(sm.id);}}
                     style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:13,padding:"2px 4px"}}>🗑️</button>
                   <span style={{fontSize:12,color:T.sub}}>{isOpen?"▲":"▼"}</span>
                 </div>
               </div>
+              {confermaEliminaSottomenu===sm.id&&(
+                <ConfermaEliminazione T={T} testo={`Vuoi eliminare "${sm.nome}"?`}
+                  onConferma={()=>{setConfermaEliminaSottomenu(null);rimuoviSottomenu(sm.id);}}
+                  onAnnulla={()=>setConfermaEliminaSottomenu(null)}/>
+              )}
               {isOpen && (
                 <div style={{padding:"0 12px 12px"}}>
                   {sm.tipo==="libero" && (
@@ -934,9 +953,14 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
                                   style={{flex:1,background:"transparent",border:"none",outline:"none",
                                     fontSize:13,fontWeight:800,color:"#0f172a"}}/>
                                 <span style={{fontSize:14,fontWeight:900,color:"#0f172a"}}>{fmtOreMin(minutiGruppo)}</span>
-                                <span onClick={()=>rimuoviGruppo(g.key)} style={{cursor:"pointer",fontSize:12,color:"#ef4444"}}>🗑️</span>
+                                <span onClick={()=>setConfermaEliminaGruppo(gk)} style={{cursor:"pointer",fontSize:12,color:"#ef4444"}}>🗑️</span>
                                 <span onClick={()=>setOpenGruppoDentro(isOpenG?null:gk)} style={{cursor:"pointer",fontSize:12,color:"#0f172a"}}>{isOpenG?"▲":"▼"}</span>
                               </div>
+                              {confermaEliminaGruppo===gk&&(
+                                <ConfermaEliminazione T={T} testo={`Vuoi eliminare il gruppo "${g.label}"?`}
+                                  onConferma={()=>{setConfermaEliminaGruppo(null);rimuoviGruppo(g.key);}}
+                                  onAnnulla={()=>setConfermaEliminaGruppo(null)}/>
+                              )}
                               {isOpenG && (
                                 <div style={{background:T.s2,borderRadius:"0 0 8px 8px",border:`1px solid ${g.color}44`,
                                   borderTop:"none",padding:"8px 10px"}}>
@@ -1241,6 +1265,7 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
   const [tmpName, setTmpName] = useState(r?.label||"Indennità di servizio");
   const [openSottomenu, setOpenSottomenu] = useState(null);
   const [showAggiungiMenu, setShowAggiungiMenu] = useState(false);
+  const [confermaEliminaSottomenu, setConfermaEliminaSottomenu] = useState(null);
 
   const sottomenu = cfg?.sottomenu || [];
   const haViabilita = sottomenu.some(sm=>sm.tipo==="viabilita");
@@ -1339,11 +1364,16 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
                     padding:"10px 12px",cursor:"pointer"}}>
                   <span style={{fontSize:13,fontWeight:700,color:T.text}}>{sm.nome}</span>
                   <div style={{display:"flex",alignItems:"center",gap:8}}>
-                    <button onClick={e=>{e.stopPropagation();rimuoviSottomenu(sm.id);}}
+                    <button onClick={e=>{e.stopPropagation();setConfermaEliminaSottomenu(sm.id);}}
                       style={{background:"none",border:"none",color:"#dc2626",cursor:"pointer",fontSize:14}}>🗑</button>
                     <span style={{color:T.sub,fontSize:12}}>{isOpen?"▲":"▼"}</span>
                   </div>
                 </div>
+              {confermaEliminaSottomenu===sm.id&&(
+                <ConfermaEliminazione T={T} testo={`Vuoi eliminare "${sm.nome}"?`}
+                  onConferma={()=>{setConfermaEliminaSottomenu(null);rimuoviSottomenu(sm.id);}}
+                  onAnnulla={()=>setConfermaEliminaSottomenu(null)}/>
+              )}
                 {isOpen && sm.tipo==="viabilita" && (
                   <div style={{padding:"0 12px 12px"}}>
                     <ViabilitaView T={T} calc={viabilitaCalc}/>
@@ -2002,7 +2032,33 @@ export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, tit
   );
 }
 
+export function ConfermaEliminazione({T, testo="Vuoi eliminare questo elemento?", onConferma, onAnnulla}){
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:100001,
+      display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
+      onClick={e=>{e.stopPropagation();onAnnulla();}}>
+      <div style={{background:T.surface,borderRadius:16,width:"100%",maxWidth:320,padding:20}}
+        onClick={e=>e.stopPropagation()}>
+        <div style={{fontSize:15,fontWeight:800,color:T.text,marginBottom:18,textAlign:"center"}}>{testo}</div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={e=>{e.stopPropagation();onAnnulla();}}
+            style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
+              color:T.text,padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:13}}>
+            Annulla
+          </button>
+          <button onClick={e=>{e.stopPropagation();onConferma();}}
+            style={{flex:1,background:"#ef4444",border:"none",borderRadius:10,
+              color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:13}}>
+            Elimina
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ColorRow({T, hex, label, sub, count, onClick, onRemove}){
+  const [confermaVisibile, setConfermaVisibile] = useState(false);
   return (
     <div style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}} onClick={onClick}>
       <div style={{width:32,height:32,borderRadius:"50%",background:hex,
@@ -2015,10 +2071,15 @@ export function ColorRow({T, hex, label, sub, count, onClick, onRemove}){
         {count} {count===1?"modello":"modelli"}
       </div>
       {onRemove&&(
-        <button onClick={e=>{e.stopPropagation();onRemove();}}
+        <button onClick={e=>{e.stopPropagation();setConfermaVisibile(true);}}
           style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:18,padding:"0 4px",marginRight:2}}>×</button>
       )}
       <span style={{color:T.sub,fontSize:14}}>›</span>
+      {confermaVisibile&&(
+        <ConfermaEliminazione T={T} testo="Vuoi eliminare questo colore?"
+          onConferma={()=>{setConfermaVisibile(false);onRemove();}}
+          onAnnulla={()=>setConfermaVisibile(false)}/>
+      )}
     </div>
   );
 }

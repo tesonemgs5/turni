@@ -2,7 +2,7 @@ import { useState, useRef, useMemo, Fragment, Component } from "react";
 import { useAppCore } from "./06-Logica";
 import VistaCalendario from "./03-Calendario";
 import VistaModelli from "./02-Modelli";
-import { ModaleErroriMultipli, NAV_HEIGHT, NAV_HEIGHT_CSS } from "./05-Comuni";
+import { ModaleErroriMultipli, NAV_HEIGHT, NAV_HEIGHT_CSS, ConfermaEliminazione } from "./05-Comuni";
 import {
   getContrastTextColor, NOMI_MESI_IT, calcFine6h15, calcFine6h30, calcDurata,
   fmtDataIT, impostaSilenziamentoErrore, segnalaErrore,
@@ -115,6 +115,9 @@ function AppInterno({ session }){
   const C = useAppCore(session);
   const { calView, reportView, goPrevMonth, goNextMonth } = VistaCalendario({ C });
   const { modelliView, settingsView, dayModal, dbModal, salvaDisposizionePopup } = VistaModelli({ C });
+  const [confermaCancellaEventiMese, setConfermaCancellaEventiMese] = useState(false);
+  const [confermaEliminaEventiRotazione, setConfermaEliminaEventiRotazione] = useState(false);
+  const [confermaCancellaLogErrori, setConfermaCancellaLogErrori] = useState(false);
 
   const {
     today, store, setStore, loading, setLoading, year,
@@ -300,9 +303,14 @@ function AppInterno({ session }){
           if(showReportModelliPicker) setShowReportModelliPicker(false);
           if(showFasciaColorPicker) setShowFasciaColorPicker(false);
         }} />
-      {banner&&<div style={{position:"fixed",bottom:20,left:"50%",transform:"translateX(-50%)",
+      {banner&&<div style={{position:"fixed",bottom:`calc(${NAV_HEIGHT_CSS} + 12px)`,left:"50%",transform:"translateX(-50%)",
         background:"rgba(0,0,0,0.75)",color:"#fff",padding:"6px 16px",
         borderRadius:20,fontSize:12,zIndex:9999,pointerEvents:"none"}}>{banner}</div>}
+      {confermaCancellaEventiMese&&(
+        <ConfermaEliminazione T={T} testo={`Cancellare TUTTI gli eventi di ${NOMI_MESI_IT[month]} ${year} su questo calendario?`}
+          onConferma={()=>{setConfermaCancellaEventiMese(false);cancellaTuttiEventiMese(year, month, calId);}}
+          onAnnulla={()=>setConfermaCancellaEventiMese(false)}/>
+      )}
       {dayModal}
       {dbModal}
       {salvaDisposizionePopup}
@@ -495,11 +503,7 @@ function AppInterno({ session }){
                   style={{background:"none",border:"none",color:accent,fontSize:20,cursor:"pointer",width:32}}>📷</button>
                 <button onClick={()=>setShowImportaTurniJsonDialog(true)}
                   style={{background:"none",border:"none",color:accent,fontSize:20,cursor:"pointer",width:32}}>📋</button>
-                <button onClick={()=>{
-                    if(confirm(`Cancellare TUTTI gli eventi di ${NOMI_MESI_IT[month]} ${year} su questo calendario? L'azione non è reversibile.`)){
-                      cancellaTuttiEventiMese(year, month, calId);
-                    }
-                  }}
+                <button onClick={()=>setConfermaCancellaEventiMese(true)}
                   style={{background:"none",border:"none",color:"#ef4444",fontSize:20,cursor:"pointer",width:32}}>🗑️</button>
               </div>
             ):showModelloPicker!=="quick"?(
@@ -664,18 +668,22 @@ function AppInterno({ session }){
                   color:T.text,padding:"10px 12px",cursor:"pointer",fontWeight:700,fontSize:13,textAlign:"left"}}>
                 Solo N ripetizioni da questa data
               </button>
-              <button onClick={async()=>{
-                  const {evt,cId}=showDeleteRotEvtDialog;
-                  if(window.confirm("Eliminare TUTTI gli eventi di questa rotazione? L'azione non è reversibile.")){
-                    setShowDeleteRotEvtDialog(null);
-                    await delTutteEvtiRotazione(evt.rotazioneId, cId);
-                  }
-                }}
+              <button onClick={()=>setConfermaEliminaEventiRotazione(true)}
                 style={{background:"#ef444422",border:"1px solid #ef4444",borderRadius:10,
                   color:"#ef4444",padding:"10px 12px",cursor:"pointer",fontWeight:700,fontSize:13,textAlign:"left"}}>
                 Tutti gli eventi della rotazione
               </button>
             </div>
+            {confermaEliminaEventiRotazione&&(
+              <ConfermaEliminazione T={T} testo="Eliminare TUTTI gli eventi di questa rotazione?"
+                onConferma={async()=>{
+                  const {evt,cId}=showDeleteRotEvtDialog;
+                  setConfermaEliminaEventiRotazione(false);
+                  setShowDeleteRotEvtDialog(null);
+                  await delTutteEvtiRotazione(evt.rotazioneId, cId);
+                }}
+                onAnnulla={()=>setConfermaEliminaEventiRotazione(false)}/>
+            )}
             <button onClick={()=>setShowDeleteRotEvtDialog(null)}
               style={{width:"100%",background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
                 color:T.sub,padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>

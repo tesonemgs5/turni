@@ -12,7 +12,7 @@ import {
 import { CalBadge, SmartTimeInput, AutocompleteInput, ColorPickerModal,
   ModaleErroriMultipli, FasceExpand, ConteggioConfigCard, TurnazioneConfigCard,
   IndennitaConfig, OrePerTurnoView, StraordinariView, GuadagniView, Sec, SecCollapsible,
-  NAV_HEIGHT_CSS, nomeDelColore } from "./05-Comuni";
+  NAV_HEIGHT_CSS, nomeDelColore, ConfermaEliminazione } from "./05-Comuni";
 import { ModelloCard, ModelForm, RotazioneCard, RotazioneForm, ModelloSelector,
   GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView } from "./04-Rotazione";
 import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
@@ -21,6 +21,7 @@ import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
 // contatore di modelli che lo usano e (se applicabile) pulsanti per
 // spostare, modificare o rimuovere il colore.
 function ColorRow({ T, accent, hex, label, sub, count, onClick, onRemove, onMoveUp, onMoveDown }) {
+  const [confermaVisibile, setConfermaVisibile] = useState(false);
   return (
     <div onClick={onClick}
       style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",cursor:"pointer"}}>
@@ -53,9 +54,14 @@ function ColorRow({ T, accent, hex, label, sub, count, onClick, onRemove, onMove
         style={{background:"none",border:"none",color:accent,cursor:"pointer",
           padding:8,fontSize:20,lineHeight:1,flexShrink:0}}>✎</button>
       {onRemove&&(
-        <button onClick={(e)=>{e.stopPropagation();onRemove();}}
+        <button onClick={(e)=>{e.stopPropagation();setConfermaVisibile(true);}}
           style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",
             fontSize:20,padding:8,flexShrink:0}}>🗑</button>
+      )}
+      {confermaVisibile&&(
+        <ConfermaEliminazione T={T} testo="Vuoi eliminare questo colore?"
+          onConferma={()=>{setConfermaVisibile(false);onRemove();}}
+          onAnnulla={()=>setConfermaVisibile(false)}/>
       )}
     </div>
   );
@@ -77,6 +83,10 @@ function ColorRow({ T, accent, hex, label, sub, count, onClick, onRemove, onMove
 
 export default function VistaModelli({ C }){
   const [ricercaModelli, setRicercaModelli] = useState("");
+  const [confermaEliminaMultipla, setConfermaEliminaMultipla] = useState(false);
+  const [confermaEliminaCalId, setConfermaEliminaCalId] = useState(null);
+  const [confermaEliminaEvento, setConfermaEliminaEvento] = useState(null); // {dKey, cId, id}
+  const [confermaCancellaLogErrori, setConfermaCancellaLogErrori] = useState(false);
   // Feedback visivo immediato sul pulsante "Salva disposizione" in alto:
   // il banner in basso passa facilmente inosservato mentre si lavora sui
   // pulsanti in alto, quindi qui l'icona stessa cambia temporaneamente
@@ -495,17 +505,22 @@ export default function VistaModelli({ C }){
                   ✏️ Modifica
                 </button>
               )}
-              <button onClick={async()=>{
-                  if(!window.confirm(`Eliminare ${selectedModelloIds.length} modelli selezionati?`)) return;
-                  for(const id of selectedModelloIds) await deleteModello(id);
-                  setSelectedModelloIds([]);
-                }}
+              <button onClick={()=>setConfermaEliminaMultipla(true)}
                 style={{background:"#ef4444",border:"none",borderRadius:8,
                   color:"#fff",padding:"7px 14px",cursor:"pointer",fontWeight:800,fontSize:12}}>
                 🗑️ Elimina
               </button>
             </div>
           </div>
+        )}
+        {confermaEliminaMultipla&&(
+          <ConfermaEliminazione T={T} testo={`Eliminare ${selectedModelloIds.length} modelli selezionati?`}
+            onConferma={async()=>{
+              setConfermaEliminaMultipla(false);
+              for(const id of selectedModelloIds) await deleteModello(id);
+              setSelectedModelloIds([]);
+            }}
+            onAnnulla={()=>setConfermaEliminaMultipla(false)}/>
         )}
         {modelliTab==="rotazioni"&&(
           <div style={{paddingBottom:80}}>
@@ -807,7 +822,7 @@ export default function VistaModelli({ C }){
               </div>
               <div style={{width:32}}/>
             </div>
-            <RotazioneForm T={T} form={rotForm} setForm={setRotForm} accent={accent} modelli={
+            <RotazioneForm T={T} form={rotForm} setForm={setRotForm} accent={accent} fasceAutomatiche={fasceAutomatiche} modelli={
                 modelli.filter(m=>(m.calendarId||mainCalId)===calId)
               }
               sortedModelli={
@@ -1058,16 +1073,20 @@ export default function VistaModelli({ C }){
           </div>
         )}
         {logErroriVisibile?.length>0 && (
-          <button onClick={()=>{
-              if(confirm("Cancellare tutto il log degli errori? L'azione non è reversibile.")){
-                cancellaLogErrori();
-                setLogErroriVisibile([]);
-              }
-            }}
+          <button onClick={()=>setConfermaCancellaLogErrori(true)}
             style={{width:"100%",background:"none",border:"1px solid #ef4444",borderRadius:10,color:"#ef4444",
               padding:"10px 0",fontWeight:800,fontSize:12,cursor:"pointer"}}>
             Cancella log
           </button>
+        )}
+        {confermaCancellaLogErrori&&(
+          <ConfermaEliminazione T={T} testo="Cancellare tutto il log degli errori?"
+            onConferma={()=>{
+              setConfermaCancellaLogErrori(false);
+              cancellaLogErrori();
+              setLogErroriVisibile([]);
+            }}
+            onAnnulla={()=>setConfermaCancellaLogErrori(false)}/>
         )}
       </SecCollapsible>
       <Sec label="TEMA" T={T}>
@@ -1307,14 +1326,20 @@ export default function VistaModelli({ C }){
               <button onClick={()=>setExCal(exCal===c.id?null:c.id)}
                 style={{background:"none",border:"none",color:T.sub,cursor:"pointer",fontSize:12}}>
                 {exCal===c.id?"▲":"▼"}</button>
-              <button onClick={async()=>{
-                if(!window.confirm(`Eliminare il calendario "${c.name}"? Tutti gli eventi associati verranno persi.`)) return;
-                await deleteCalendar(c.id);
-                const newCals=store.calendars.filter(x=>x.id!==c.id);
-                setStore(s=>({...s,calendars:newCals}));
-                syncSeAttivo(store.events,newCals);
-              }} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:18}}>×</button>
+              <button onClick={()=>setConfermaEliminaCalId(c.id)}
+                style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:18}}>×</button>
             </div>
+            {confermaEliminaCalId===c.id&&(
+              <ConfermaEliminazione T={T} testo={`Eliminare il calendario "${c.name}"? Tutti gli eventi associati verranno persi.`}
+                onConferma={async()=>{
+                  setConfermaEliminaCalId(null);
+                  await deleteCalendar(c.id);
+                  const newCals=store.calendars.filter(x=>x.id!==c.id);
+                  setStore(s=>({...s,calendars:newCals}));
+                  syncSeAttivo(store.events,newCals);
+                }}
+                onAnnulla={()=>setConfermaEliminaCalId(null)}/>
+            )}
             {exCal===c.id&&(
               <div style={{background:T.s2,borderRadius:"0 0 10px 10px",padding:"10px",borderTop:`1px solid ${T.border}`}}>
                 <div style={{fontSize:9,color:T.sub,fontWeight:700,marginBottom:8}}>TURNI PREDEFINITI</div>
@@ -1898,7 +1923,7 @@ export default function VistaModelli({ C }){
                 display:soloConsultazione?"none":undefined}}>✏️</button>
             <button onClick={e2=>{e2.stopPropagation();
                 if(e.rotazioneId){ setShowDeleteRotEvtDialog({evt:e, dKey:dayKey, cId:e._cid||calId}); }
-                else if(window.confirm("Eliminare questo evento?")){ delEvt(dayKey,e._cid||calId,e.id); }
+                else setConfermaEliminaEvento({dKey:dayKey, cId:e._cid||calId, id:e.id});
               }}
               style={{background:cardTextColor==="#ffffff"?"rgba(0,0,0,0.2)":"rgba(255,255,255,0.35)",border:"none",borderRadius:6,
                 color:cardTextColor,width:26,height:26,cursor:"pointer",fontSize:14,marginLeft:4,flexShrink:0,
@@ -1908,6 +1933,14 @@ export default function VistaModelli({ C }){
             })()}
           </div>
         ))}
+        {confermaEliminaEvento&&(
+          <ConfermaEliminazione T={T} testo="Vuoi eliminare questo evento?"
+            onConferma={()=>{
+              delEvt(confermaEliminaEvento.dKey,confermaEliminaEvento.cId,confermaEliminaEvento.id);
+              setConfermaEliminaEvento(null);
+            }}
+            onAnnulla={()=>setConfermaEliminaEvento(null)}/>
+        )}
         {form&&(
           <div style={{background:T.s2,borderRadius:12,padding:14,marginTop:8}}>
             {form.editId&&(
