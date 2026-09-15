@@ -269,6 +269,17 @@ export function useAppCore(session){
       if(error) return { verificata:false, direte:eRoreDiRete(error), motivo:`Verifica lettura fallita: ${error.message}` };
       if(!data) return { verificata:false, motivo:"La riga non risulta presente su Supabase dopo il salvataggio." };
       const campiDiversi = [];
+      // Stringify "stabile": per oggetti/array (come griglia, un JSONB),
+      // Postgres può restituire le chiavi in un ordine diverso da quello
+      // con cui sono state scritte — non è un dato diverso, solo riordinato.
+      // JSON.stringify normale è sensibile all'ordine delle chiavi e
+      // genererebbe un falso "Dati diversi" anche a contenuto identico.
+      function stringifyStabile(v){
+        if(v===null || typeof v!=="object") return JSON.stringify(v);
+        if(Array.isArray(v)) return `[${v.map(stringifyStabile).join(",")}]`;
+        const chiavi = Object.keys(v).sort();
+        return `{${chiavi.map(k=>JSON.stringify(k)+":"+stringifyStabile(v[k])).join(",")}}`;
+      }
       for(const k of Object.keys(payloadCorrente||{})){
         if(k==="id") continue;
         const inviato = payloadCorrente[k];
@@ -276,7 +287,7 @@ export function useAppCore(session){
         // Confronto tollerante: null/undefined/"" sono equivalenti (Supabase
         // e il payload locale a volte differiscono solo su questo).
         const norm = v => (v===undefined||v===null) ? "" : v;
-        if(JSON.stringify(norm(inviato))!==JSON.stringify(norm(letto))) campiDiversi.push(k);
+        if(stringifyStabile(norm(inviato))!==stringifyStabile(norm(letto))) campiDiversi.push(k);
       }
       if(campiDiversi.length>0) return { verificata:false, motivo:`Dati diversi da quelli inviati su Supabase per: ${campiDiversi.join(", ")}` };
       return { verificata:true };
