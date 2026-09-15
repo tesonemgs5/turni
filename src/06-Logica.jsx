@@ -4570,22 +4570,31 @@ const importsRecenti = useMemo(()=>{
         }
       }
     } else if(rot.tipo === "reperibilita") {
-      // modelloRSId = turno 14:00-24:00, modelloNLId = turno 00:00-14:00
-      // (stessi due slot già usati da RS/NL scalante, riutilizzati qui).
-      const modA = modelli.find(m=>m.id===rot.modelloRSId); // 14-24
-      const modB = modelli.find(m=>m.id===rot.modelloNLId); // 00-14
+      // Schema fisso, un ciclo = 2 giorni consecutivi:
+      //   Giorno 1        -> modello A (di default 14:00-24:00)
+      //   Giorno 2 (1+1)  -> modello B (di default 00:00-14:00)
+      // Il ciclo si ripete ogni 8 giorni, quindi il ciclo successivo cade
+      // su Giorno 1+8 e Giorno 2+8, poi Giorno 1+16 e Giorno 2+16, ecc.
+      // L'orario di ciascun evento è quello del modello scelto (libera
+      // scelta dell'utente): qui non si forza né si legge nessun orario
+      // fisso, si inserisce solo il modello nella data giusta.
+      const modA = modelli.find(m=>m.id===rot.modelloRSId); // turno di partenza
+      const modB = modelli.find(m=>m.id===rot.modelloNLId); // turno successivo
       const turnoPartenzaA = rot.reperibilitaTurnoPartenza !== "00-14"; // true = A parte con 14-24
       const primoModello = turnoPartenzaA ? modA : modB;
       const secondoModello = turnoPartenzaA ? modB : modA;
 
       const [y0, m0, d0] = startDayKey.split("-").map(Number);
       const start = new Date(y0, m0-1, d0);
-      // numRipetizioni qui indica il numero di BLOCCHI da 8 giorni da generare.
-      for(let i=0; i<numRipetizioni; i++) {
+      // numRipetizioni = numero di cicli da generare. Ogni ciclo scrive
+      // esattamente 2 eventi (Giorno1 e Giorno2), sul blocco di 8 giorni
+      // che gli compete.
+      for(let ciclo=0; ciclo<numRipetizioni; ciclo++) {
+        const offsetCiclo = ciclo*8;
         const giorno1 = new Date(start);
-        giorno1.setDate(giorno1.getDate() + i*8);
-        const giorno2 = new Date(giorno1);
-        giorno2.setDate(giorno2.getDate() + 1);
+        giorno1.setDate(giorno1.getDate() + offsetCiclo);
+        const giorno2 = new Date(start);
+        giorno2.setDate(giorno2.getDate() + offsetCiclo + 1);
         if(primoModello) await inserisciEvento(primoModello, giorno1);
         if(secondoModello) await inserisciEvento(secondoModello, giorno2);
       }
