@@ -1247,19 +1247,17 @@ export function ModelloCard({
       onDragOver={onDragOver || undefined}
       onDrop={onDrop || undefined}
       onDragEnd={onDragEnd || undefined}
-      onClick={selectMode ? undefined : (onEdit || undefined)}
+      onClick={selectMode ? onToggleSelect : undefined}
       style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
         background: selectMode && selected ? `${accent}22` : T.surface,
         border: isDropTarget ? `2px dashed ${accent}` : (selectMode && selected ? `2px solid ${accent}` : `1px solid ${T.border}`),
         borderRadius: 12, padding: "12px 14px", marginBottom: 8,
         opacity: isDragging ? 0.5 : 1,
-        cursor: selectMode ? "default" : (onEdit ? "pointer" : (inSpostamento ? "grab" : "default")),
+        cursor: selectMode ? "pointer" : (inSpostamento ? "grab" : "default"),
       }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0, flex: 1 }}>
-        <div onClick={selectMode ? (e => { e.stopPropagation(); onToggleSelect && onToggleSelect(); }) : undefined}
-          style={{ width: 20, height: 20, borderRadius: 5, background: colore, flexShrink: 0,
-            cursor: selectMode ? "pointer" : "default" }} />
+        <div style={{ width: 20, height: 20, borderRadius: 5, background: colore, flexShrink: 0 }} />
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 18, fontWeight: 700, color: T.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {modello.titolo}
