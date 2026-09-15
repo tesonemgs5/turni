@@ -842,6 +842,57 @@ export function ModelloSelector({ T, modelli = [], value, onChange, fasceAutomat
 }
 
 
+// ModelloSelectorCollassabile — variante compatta di ModelloSelector: un
+// singolo pulsante che mostra il modello attualmente scelto (o "Nessuno")
+// e che apre/chiude, al click, la stessa lista di pill di ModelloSelector
+// per cambiare scelta. Usata dove più selettori simili si susseguono in
+// verticale (es. i 4 campi della Reperibilità), per evitare di mostrare
+// 4 volte l'intera lista dei modelli sempre espansa.
+// ─────────────────────────────────────────────────────────────────────
+
+export function ModelloSelectorCollassabile({ T, modelli = [], value, onChange, fasceAutomatiche = [] }) {
+  const [aperto, setAperto] = useState(false);
+  const modelloScelto = modelli.find(m => m.id === value) || null;
+  const coloreScelto = modelloScelto
+    ? (modelloScelto.coloreCustom || modelloScelto.colore ||
+      (modelloScelto.tempo === "h24" ? COLORE_H24 : getColorByTime(modelloScelto.inizio, fasceAutomatiche)))
+    : null;
+  const orarioScelto = modelloScelto
+    ? (modelloScelto.tempo === "h24" ? "H24" : `${modelloScelto.inizio || "—"} – ${calcFineModello(modelloScelto) || modelloScelto.fine || "—"}`)
+    : null;
+
+  return (
+    <div>
+      <button type="button" onClick={() => setAperto(a => !a)}
+        style={{
+          width: "100%", boxSizing: "border-box", display: "flex", alignItems: "center", gap: 8,
+          padding: "9px 12px", borderRadius: 10, cursor: "pointer", textAlign: "left",
+          border: `1.5px solid ${aperto ? T.sub : T.border}`,
+          background: T.s2, color: T.text,
+        }}>
+        {modelloScelto ? (
+          <>
+            <div style={{ width: 9, height: 9, borderRadius: "50%", background: coloreScelto, flexShrink: 0 }} />
+            <span style={{ fontSize: 13, fontWeight: 700, flex: 1, minWidth: 0,
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{modelloScelto.titolo}</span>
+            <span style={{ fontSize: 12, opacity: 0.7, fontWeight: 600, flexShrink: 0 }}>{orarioScelto}</span>
+          </>
+        ) : (
+          <span style={{ fontSize: 13, fontWeight: 700, color: T.sub, flex: 1 }}>✕ Nessuno</span>
+        )}
+        <span style={{ fontSize: 11, color: T.sub, flexShrink: 0, transform: aperto ? "rotate(180deg)" : "none" }}>▾</span>
+      </button>
+      {aperto && (
+        <div style={{ marginTop: 8 }}>
+          <ModelloSelector T={T} modelli={modelli} value={value} fasceAutomatiche={fasceAutomatiche}
+            onChange={id => { onChange(id); setAperto(false); }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 // ─────────────────────────────────────────────────────────────────────
 // ModelForm — form di creazione/modifica di un "modello turno".
 // NOTA: non include la sezione "conteggio per report" (getConteggioConfig
@@ -1479,25 +1530,25 @@ export function ReperibilitaFormFields({ T, form, setForm, accent, accentText, m
       <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, marginBottom: 6 }}>
         MODELLO GIORNO 1
       </div>
-      <ModelloSelector T={T} modelli={modelli} value={form.modelloRSId} fasceAutomatiche={fasceAutomatiche}
+      <ModelloSelectorCollassabile T={T} modelli={modelli} value={form.modelloRSId} fasceAutomatiche={fasceAutomatiche}
         onChange={id => setForm(prev => ({ ...prev, modelloRSId: id }))} />
 
       <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, margin: "10px 0 6px" }}>
         MODELLO GIORNO 2 (Giorno 1 + 1)
       </div>
-      <ModelloSelector T={T} modelli={modelli} value={form.modelloNLId} fasceAutomatiche={fasceAutomatiche}
+      <ModelloSelectorCollassabile T={T} modelli={modelli} value={form.modelloNLId} fasceAutomatiche={fasceAutomatiche}
         onChange={id => setForm(prev => ({ ...prev, modelloNLId: id }))} />
 
       <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, margin: "10px 0 6px" }}>
         MODELLO GIORNO 3 (Giorno 2 + 7)
       </div>
-      <ModelloSelector T={T} modelli={modelli} value={form.modelloG3Id} fasceAutomatiche={fasceAutomatiche}
+      <ModelloSelectorCollassabile T={T} modelli={modelli} value={form.modelloG3Id} fasceAutomatiche={fasceAutomatiche}
         onChange={id => setForm(prev => ({ ...prev, modelloG3Id: id }))} />
 
       <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, margin: "10px 0 6px" }}>
         MODELLO GIORNO 4 (Giorno 3 + 1)
       </div>
-      <ModelloSelector T={T} modelli={modelli} value={form.modelloG4Id} fasceAutomatiche={fasceAutomatiche}
+      <ModelloSelectorCollassabile T={T} modelli={modelli} value={form.modelloG4Id} fasceAutomatiche={fasceAutomatiche}
         onChange={id => setForm(prev => ({ ...prev, modelloG4Id: id }))} />
 
       <div style={{ fontSize: 11, color: T.sub, marginTop: 10, marginBottom: 4 }}>
@@ -1820,7 +1871,7 @@ export function RotazioneForm({ T, form, setForm, accent, modelli, sortedModelli
       {form.tipo === "domeniche" && (
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, marginBottom: 6 }}>MODELLO GIORNO LAVORO</div>
-          <ModelloSelector T={T} modelli={listaModelli} value={form.modellaLavoroId} fasceAutomatiche={fasceAutomatiche}
+          <ModelloSelectorCollassabile T={T} modelli={listaModelli} value={form.modellaLavoroId} fasceAutomatiche={fasceAutomatiche}
             onChange={id => setForm(prev => ({ ...prev, modellaLavoroId: id }))} />
         </div>
       )}
@@ -1828,10 +1879,10 @@ export function RotazioneForm({ T, form, setForm, accent, modelli, sortedModelli
       {form.tipo === "nlrs_scalante" && (
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, marginBottom: 6 }}>MODELLO RS</div>
-          <ModelloSelector T={T} modelli={listaModelli} value={form.modelloRSId} fasceAutomatiche={fasceAutomatiche}
+          <ModelloSelectorCollassabile T={T} modelli={listaModelli} value={form.modelloRSId} fasceAutomatiche={fasceAutomatiche}
             onChange={id => setForm(prev => ({ ...prev, modelloRSId: id }))} />
           <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, margin: "10px 0 6px" }}>MODELLO NL</div>
-          <ModelloSelector T={T} modelli={listaModelli} value={form.modelloNLId} fasceAutomatiche={fasceAutomatiche}
+          <ModelloSelectorCollassabile T={T} modelli={listaModelli} value={form.modelloNLId} fasceAutomatiche={fasceAutomatiche}
             onChange={id => setForm(prev => ({ ...prev, modelloNLId: id }))} />
         </div>
       )}

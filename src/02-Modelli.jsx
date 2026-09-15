@@ -14,7 +14,7 @@ import { CalBadge, SmartTimeInput, AutocompleteInput, ColorPickerModal,
   IndennitaConfig, OrePerTurnoView, StraordinariView, GuadagniView, Sec, SecCollapsible,
   NAV_HEIGHT_CSS, nomeDelColore, ConfermaEliminazione } from "./05-Comuni";
 import { ModelloCard, ModelForm, RotazioneCard, RotazioneForm, ModelloSelector,
-  GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView } from "./04-Rotazione";
+  GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView, ReperibilitaView } from "./04-Rotazione";
 import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
 
 // Riga della lista Colori: mostra il pallino colore, etichetta, sottotitolo,
@@ -849,10 +849,13 @@ export default function VistaModelli({ C }){
                 <div style={{fontSize:12,color:T.sub}}>
                   {rot.tipo==="domeniche" && rot.dataInizio
                     ? `${rot.nSettimane || 52} settimane (${Math.ceil((rot.nSettimane || 52)/4)} domeniche di lavoro)`
+                    : rot.tipo==="reperibilita"
+                    ? "Ciclo a 4 giorni"
                     : `${Object.values(rot.griglia||{}).filter(Boolean).length} giorni configurati`}
                 </div>
               </div>
               <button onClick={()=>{
+                if(rot.tipo==="reperibilita"){ setShowRotDetail(null); return; }
                 let grigliaFinale = {...(rot.griglia||{})};
                 if(rot.tipo==="domeniche" && rot.dataInizio && rot.modellaLavoroId){
                   const inizio = new Date(rot.dataInizio);
@@ -887,6 +890,9 @@ export default function VistaModelli({ C }){
               )}
               {rot.tipo==="nlrs_scalante"&&(
                 <NLRSScalanteView rot={rot} T={T} accent={accent} modelli={modelliDelCalRot}/>
+              )}
+              {rot.tipo==="reperibilita"&&(
+                <ReperibilitaView rot={rot} T={T} accent={accent} modelli={modelliDelCalRot}/>
               )}
                 </>);
               })()}
