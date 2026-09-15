@@ -729,6 +729,8 @@ function AppInterno({ session }){
               <br/><br/>
               {showApplyRotDialog.tipo==="nlrs_scalante"
                 ?"Il ciclo scalante è di 6 coppie RS/NL. Quante volte vuoi ripeterlo?"
+                :showApplyRotDialog.tipo==="reperibilita"
+                ?"Il ciclo è di 2 giorni (Giorno 1 e Giorno 2), ripetuto ogni 8 giorni. Quanti cicli vuoi generare?"
                 :"Il ciclo è di 4 domeniche. Quante volte vuoi ripeterlo?"}
             </div>
 

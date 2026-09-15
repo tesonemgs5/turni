@@ -1531,9 +1531,8 @@ export function ReperibilitaFormFields({ T, form, setForm, accent, accentText, m
         </button>
       </div>
       <div style={{ fontSize: 11, color: T.sub, marginBottom: 14 }}>
-        Il giorno successivo prende automaticamente l'altro turno.
-        Ogni blocco (2 giorni) si ripete ogni 8 giorni, avanzando di un
-        giorno della settimana ad ogni ripetizione.
+        Il giorno successivo (Giorno 2) prende automaticamente l'altro turno.
+        Il ciclo di 2 giorni si ripete ogni 8 giorni.
       </div>
 
       <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, marginBottom: 6 }}>
@@ -1547,6 +1546,14 @@ export function ReperibilitaFormFields({ T, form, setForm, accent, accentText, m
       </div>
       <ModelloSelector T={T} modelli={modelli} value={form.modelloNLId} fasceAutomatiche={fasceAutomatiche}
         onChange={id => setForm(prev => ({ ...prev, modelloNLId: id }))} />
+
+      {(!form.modelloRSId || !form.modelloNLId) && (
+        <div style={{ fontSize: 12, color: "#ef4444", fontWeight: 700, marginTop: 10,
+          background: "#ef444422", border: "1px solid #ef4444", borderRadius: 8, padding: "8px 10px" }}>
+          ⚠️ Seleziona un modello per entrambi i turni (14:00–24:00 e 00:00–14:00),
+          altrimenti l'applicazione della rotazione non genera nessun evento.
+        </div>
+      )}
     </div>
   );
 }

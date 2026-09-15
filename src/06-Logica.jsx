@@ -803,6 +803,7 @@ export function useAppCore(session){
           modelloNLId:r.modello_nl_id||null,
           modelloRSId:r.modello_rs_id||null,
           griglia:r.griglia||{},
+          reperibilitaTurnoPartenza:(r.griglia||{}).__reperibilitaTurnoPartenza||"14-24",
           sortOrder:r.sort_order||0,
         // Stesso motivo dell'ordinamento dei modelli sopra: la RPC non
         // garantisce l'ordine delle righe, quindi ordiniamo qui in modo
@@ -3660,19 +3661,12 @@ const importsRecenti = useMemo(()=>{
         return risInsert;
       }
 
-      // FIX BUG "evento sparisce dopo refresh": chi crea un modello e SUBITO
-      // DOPO crea/aggancia un evento a quel modello (vedi
-      // trovaOCreaModelloProtrazione, per gli eventi figli "-PR RECUPERO")
-      // deve avere la GARANZIA che il modello sia davvero arrivato su
-      // Supabase prima di procedere — altrimenti l'evento figlio può essere
-      // scritto sul server con un modello_id che punta a un modello mai
-      // salvato (il suo insert, lanciato qui in background senza await,
-      // poteva ancora essere in corso o fallire silenziosamente). Al refresh
-      // successivo con cache svuotata, l'evento orfano di modello risultava
-      // invisibile. Con data.attendiBackup=true si aspetta qui il vero
-      // esito dell'insert prima di ritornare al chiamante; altrimenti
-      // (comportamento di sempre, usato dal form Modelli) si parte in
-      // background senza bloccare l'utente.
+      // Il modello locale (modelloCreato, con idLocale) è già pronto e
+      // usabile subito da chi lo ha chiesto (form Modelli, o
+      // trovaOCreaModelloProtrazione per gli eventi figli di protrazione):
+      // si parte sempre in background senza bloccare l'utente, così tutto
+      // funziona anche offline. Se il backup fallisce o è in coda,
+      // processaCodaSync lo ritenterà in automatico appena torna la rete.
       if(data.attendiBackup){
         const risInsert = await backupInsertModello();
         if(risInsert?.errore){
@@ -3959,13 +3953,22 @@ const importsRecenti = useMemo(()=>{
 
   async function saveRotazione(data){
     if(!userId) return;
+    // reperibilitaTurnoPartenza non ha una colonna dedicata su Supabase:
+    // lo teniamo dentro "griglia" (già un JSON libero) sotto una chiave
+    // riservata, così sopravvive al salvataggio/ricaricamento invece di
+    // sparire silenziosamente (prima si perdeva subito dopo il primo giro
+    // di sync, e la rotazione "reperibilità" tornava sempre al turno A
+    // di default).
+    const grigliaConMeta = data.tipo==="reperibilita"
+      ? {...(data.griglia||{}), __reperibilitaTurnoPartenza: data.reperibilitaTurnoPartenza||"14-24"}
+      : (data.griglia||{});
     const payload={
       user_id:userId, tipo:data.tipo, titolo:data.titolo||"",
       data_inizio:data.dataInizio||null, n_settimane:data.nSettimane||52,
       modello_lavoro_id:data.modellaLavoroId||null,
       modello_nl_id:data.modelloNLId||null,
       modello_rs_id:data.modelloRSId||null,
-      griglia:data.griglia||{},
+      griglia:grigliaConMeta,
     };
     if(data.id){
       // 1) SUBITO in locale.
@@ -4219,23 +4222,28 @@ const importsRecenti = useMemo(()=>{
     }
     if(modelloProtrazioneCacheRef.current[cacheKey]) return modelloProtrazioneCacheRef.current[cacheKey];
 
+    // Il modello viene creato SUBITO in locale (id locale valido, vedi
+    // sopra: setModelli/saveToLocalStorage avvengono prima di questo
+    // punto), esattamente come per eventi e rotazioni altrove nell'app.
+    // In precedenza qui si passava attendiBackup:true e si aspettava la
+    // vera conferma di Supabase prima di procedere, per evitare eventi
+    // figli "orfani" in caso di fallimento silenzioso dell'insert in
+    // background. Il prezzo di quell'attesa era però che, offline (o con
+    // rete lenta/instabile), la creazione dell'evento PROTRAZIONE non
+    // avveniva affatto o restava sospesa a lungo: l'app perdeva la
+    // garanzia "tutto funziona offline, il backup arriva quando può" che
+    // vale per il resto delle funzionalità.
+    // Il modello locale appena creato ha già un id stabile e valido (non
+    // cambia quando arriva la risposta di Supabase: l'insert usa lo
+    // stesso idLocale), quindi l'evento figlio può agganciarsi subito ad
+    // esso senza aspettare nulla: se il backup fallisce o è in coda,
+    // processaCodaSync lo ritenterà in automatico appena torna la rete,
+    // esattamente come già avviene per gli eventi normali.
     const esito = await saveModello({
       titolo, label: labelBreve, tempo:"h24",
       coloreCustom: tipo==="recupero" ? "#f9a8d4" : "#ec4899",
       calendarId: targetCalId,
       silenzioso: true,
-      // FIX BUG "evento sparisce dopo refresh": qui il modello appena
-      // creato viene usato SUBITO per agganciarci un evento figlio (vedi
-      // sincronizzaEventiProtrazione, chiamante di questa funzione). Senza
-      // attendiBackup, il salvataggio del modello su Supabase partiva in
-      // background (fire-and-forget) mentre l'evento figlio veniva già
-      // scritto sul server con modello_id puntato a un modello che, in
-      // caso di rete instabile o refresh rapido, poteva non essere ancora
-      // (o mai) arrivato sul server: al refresh successivo con cache
-      // svuotata l'evento risultava orfano e spariva dal calendario.
-      // Con attendiBackup:true aspettiamo qui la conferma reale prima di
-      // procedere a creare l'evento figlio.
-      attendiBackup: true,
     });
     // saveModello ora ritorna direttamente l'oggetto appena creato: niente
     // più bisogno di rileggere modelliRef.current dopo un setTimeout(0),
