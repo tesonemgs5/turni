@@ -1479,7 +1479,6 @@ const GIORNI_CICLO_FORM = [
 
 export function ReperibilitaFormFields({ T, form, setForm, accent, accentText, modelli, fasceAutomatiche = [] }) {
   const giornoPartenza = form.reperibilitaGiornoPartenza ?? 1;
-  const turnoPartenza = form.reperibilitaTurnoPartenza || "14-24";
 
   return (
     <div style={{ marginBottom: 16 }}>
@@ -1508,49 +1507,26 @@ export function ReperibilitaFormFields({ T, form, setForm, accent, accentText, m
       </div>
 
       <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, marginBottom: 6 }}>
-        TURNO DI PARTENZA (nel giorno scelto sopra)
-      </div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-        <button type="button" onClick={() => setForm(prev => ({ ...prev, reperibilitaTurnoPartenza: "14-24" }))}
-          style={{
-            flex: 1, background: turnoPartenza === "14-24" ? accent : T.s2,
-            color: turnoPartenza === "14-24" ? accentText : T.text,
-            border: `1px solid ${turnoPartenza === "14-24" ? accent : T.border}`,
-            borderRadius: 8, padding: "10px 0", fontWeight: 700, fontSize: 13, cursor: "pointer"
-          }}>
-          14:00 – 24:00
-        </button>
-        <button type="button" onClick={() => setForm(prev => ({ ...prev, reperibilitaTurnoPartenza: "00-14" }))}
-          style={{
-            flex: 1, background: turnoPartenza === "00-14" ? accent : T.s2,
-            color: turnoPartenza === "00-14" ? accentText : T.text,
-            border: `1px solid ${turnoPartenza === "00-14" ? accent : T.border}`,
-            borderRadius: 8, padding: "10px 0", fontWeight: 700, fontSize: 13, cursor: "pointer"
-          }}>
-          00:00 – 14:00
-        </button>
-      </div>
-      <div style={{ fontSize: 11, color: T.sub, marginBottom: 14 }}>
-        Il giorno successivo (Giorno 2) prende automaticamente l'altro turno.
-        Il ciclo di 2 giorni si ripete ogni 8 giorni.
-      </div>
-
-      <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, marginBottom: 6 }}>
-        MODELLO PER 14:00–24:00
+        MODELLO GIORNO 1
       </div>
       <ModelloSelector T={T} modelli={modelli} value={form.modelloRSId} fasceAutomatiche={fasceAutomatiche}
         onChange={id => setForm(prev => ({ ...prev, modelloRSId: id }))} />
 
       <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, margin: "10px 0 6px" }}>
-        MODELLO PER 00:00–14:00
+        MODELLO GIORNO 2
       </div>
       <ModelloSelector T={T} modelli={modelli} value={form.modelloNLId} fasceAutomatiche={fasceAutomatiche}
         onChange={id => setForm(prev => ({ ...prev, modelloNLId: id }))} />
 
+      <div style={{ fontSize: 11, color: T.sub, marginTop: 10, marginBottom: 4 }}>
+        Il ciclo dura 2 giorni: Giorno 1 con il primo modello, Giorno 2 (Giorno 1+1)
+        con il secondo. Il ciclo si ripete ogni 8 giorni a partire dal Giorno 1.
+      </div>
+
       {(!form.modelloRSId || !form.modelloNLId) && (
         <div style={{ fontSize: 12, color: "#ef4444", fontWeight: 700, marginTop: 10,
           background: "#ef444422", border: "1px solid #ef4444", borderRadius: 8, padding: "8px 10px" }}>
-          ⚠️ Seleziona un modello per entrambi i turni (14:00–24:00 e 00:00–14:00),
+          ⚠️ Seleziona un modello per entrambi i giorni (Giorno 1 e Giorno 2),
           altrimenti l'applicazione della rotazione non genera nessun evento.
         </div>
       )}
@@ -1562,8 +1538,6 @@ export function calcolaAnteprimaReperibilita(rot, nBlocchi = 12) {
   if (!rot?.dataInizio) return [];
   const [y0, m0, d0] = rot.dataInizio.split("-").map(Number);
   const start = new Date(y0, m0 - 1, d0);
-  const turnoA = rot.reperibilitaTurnoPartenza === "00-14" ? "00:00-14:00" : "14:00-24:00";
-  const turnoB = turnoA === "14:00-24:00" ? "00:00-14:00" : "14:00-24:00";
 
   const righe = [];
   for (let i = 0; i < nBlocchi; i++) {
@@ -1573,8 +1547,8 @@ export function calcolaAnteprimaReperibilita(rot, nBlocchi = 12) {
     giorno2.setDate(giorno2.getDate() + 1);
 
     const fmt = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    righe.push({ data: fmt(giorno1), turno: turnoA });
-    righe.push({ data: fmt(giorno2), turno: turnoB });
+    righe.push({ data: fmt(giorno1), giornoCiclo: 1 });
+    righe.push({ data: fmt(giorno2), giornoCiclo: 2 });
   }
   return righe;
 }
@@ -1590,14 +1564,14 @@ export function ReperibilitaView({ rot, T, accent, modelli }) {
     <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
       <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
         <div style={{ flex: 1, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: 10 }}>
-          <div style={{ fontSize: 10, color: T.sub, fontWeight: 700, marginBottom: 4 }}>TURNO 14:00–24:00</div>
+          <div style={{ fontSize: 10, color: T.sub, fontWeight: 700, marginBottom: 4 }}>GIORNO 1</div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <div style={{ width: 10, height: 10, borderRadius: "50%", background: modA?.coloreCustom || accent }} />
             <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{modA?.titolo || "— nessun modello —"}</div>
           </div>
         </div>
         <div style={{ flex: 1, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: 10 }}>
-          <div style={{ fontSize: 10, color: T.sub, fontWeight: 700, marginBottom: 4 }}>TURNO 00:00–14:00</div>
+          <div style={{ fontSize: 10, color: T.sub, fontWeight: 700, marginBottom: 4 }}>GIORNO 2</div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <div style={{ width: 10, height: 10, borderRadius: "50%", background: modB?.coloreCustom || accent }} />
             <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{modB?.titolo || "— nessun modello —"}</div>
@@ -1612,9 +1586,9 @@ export function ReperibilitaView({ rot, T, accent, modelli }) {
         {anteprima.map((r, i) => {
           const [ry, rm, rd] = r.data.split("-").map(Number);
           const giornoSett = NOMI_GIORNI[new Date(ry, rm - 1, rd).getDay()];
-          const mod = r.turno === "14:00-24:00" ? modA : modB;
+          const mod = r.giornoCiclo === 1 ? modA : modB;
           return (
-            <div key={r.data + r.turno} style={{
+            <div key={r.data + r.giornoCiclo} style={{
               display: "flex", alignItems: "center", justifyContent: "space-between",
               padding: "9px 14px", borderBottom: i < anteprima.length - 1 ? `1px solid ${T.border}` : "none"
             }}>
@@ -1623,7 +1597,7 @@ export function ReperibilitaView({ rot, T, accent, modelli }) {
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <div style={{ width: 8, height: 8, borderRadius: "50%", background: mod?.coloreCustom || accent }} />
-                <div style={{ fontSize: 12, color: T.sub }}>{r.turno}</div>
+                <div style={{ fontSize: 12, color: T.sub }}>{mod?.titolo || `Giorno ${r.giornoCiclo}`}</div>
               </div>
             </div>
           );

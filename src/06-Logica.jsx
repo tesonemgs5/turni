@@ -4571,18 +4571,15 @@ const importsRecenti = useMemo(()=>{
       }
     } else if(rot.tipo === "reperibilita") {
       // Schema fisso, un ciclo = 2 giorni consecutivi:
-      //   Giorno 1        -> modello A (di default 14:00-24:00)
-      //   Giorno 2 (1+1)  -> modello B (di default 00:00-14:00)
+      //   Giorno 1        -> modello scelto dall'utente per il Giorno 1
+      //   Giorno 2 (1+1)  -> modello scelto dall'utente per il Giorno 2
       // Il ciclo si ripete ogni 8 giorni, quindi il ciclo successivo cade
       // su Giorno 1+8 e Giorno 2+8, poi Giorno 1+16 e Giorno 2+16, ecc.
-      // L'orario di ciascun evento è quello del modello scelto (libera
-      // scelta dell'utente): qui non si forza né si legge nessun orario
-      // fisso, si inserisce solo il modello nella data giusta.
-      const modA = modelli.find(m=>m.id===rot.modelloRSId); // turno di partenza
-      const modB = modelli.find(m=>m.id===rot.modelloNLId); // turno successivo
-      const turnoPartenzaA = rot.reperibilitaTurnoPartenza !== "00-14"; // true = A parte con 14-24
-      const primoModello = turnoPartenzaA ? modA : modB;
-      const secondoModello = turnoPartenzaA ? modB : modA;
+      // I modelli sono una libera scelta dell'utente (può cambiarli quando
+      // vuole): qui non si forza né si legge nessun orario fisso, si
+      // inserisce solo il modello scelto nella data giusta.
+      const primoModello = modelli.find(m=>m.id===rot.modelloRSId);  // modello Giorno 1
+      const secondoModello = modelli.find(m=>m.id===rot.modelloNLId); // modello Giorno 2
 
       const [y0, m0, d0] = startDayKey.split("-").map(Number);
       const start = new Date(y0, m0-1, d0);
