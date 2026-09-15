@@ -4,6 +4,7 @@ import {
   getContrastTextColor, leggiRegistroImportProblemi, normalizzaRigheImportGrezzo,
   normalizzaTestoGrezzoTurni, oraInMinuti, registraProblemiImport, segnalaErroreSoloLog
 } from "./04-Rotazione";
+import { ConfermaEliminazione } from "./05-Comuni";
 
 // ═══════════════════════════════════════════════════════════════
 // importTurni.jsx — Dialog di importazione turni: da JSON e da
@@ -21,6 +22,8 @@ export function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, m
   const [errore, setErrore] = useState("");
   const [risultato, setRisultato] = useState(null);
   const [registro, setRegistro] = useState(null);
+  const [confermaEliminaImportId, setConfermaEliminaImportId] = useState(null);
+  const [confermaCancellaRegistro, setConfermaCancellaRegistro] = useState(false);
   const fileInputRef = useRef(null);
   const testoJsonRef = useRef(null);
   const syncTimeoutRef = useRef(null);
@@ -134,16 +137,22 @@ export function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, m
                       <div style={{fontSize:13,color:T.text,fontWeight:700}}>{imp.count} eventi</div>
                       <div style={{fontSize:11,color:T.sub}}>{fmtDataIT(imp.minDate)} → {fmtDataIT(imp.maxDate)}</div>
                     </div>
-                    <button onClick={()=>{
-                        if(confirm(`Eliminare tutti i ${imp.count} eventi di questa importazione (dal ${fmtDataIT(imp.minDate)} al ${fmtDataIT(imp.maxDate)})? L'azione non è reversibile.`)){
-                          onDeleteImport(imp.importId);
-                        }
-                      }}
+                    <button onClick={()=>setConfermaEliminaImportId(imp.importId)}
                       style={{background:"none",border:"none",color:"#ef4444",fontSize:18,cursor:"pointer",padding:4}}>🗑️</button>
                   </div>
                 ))}
               </div>
             )}
+            {confermaEliminaImportId&&(()=>{
+              const imp = importsRecenti.find(i=>i.importId===confermaEliminaImportId);
+              if(!imp) return null;
+              return (
+                <ConfermaEliminazione T={T}
+                  testo={`Eliminare tutti i ${imp.count} eventi di questa importazione (dal ${fmtDataIT(imp.minDate)} al ${fmtDataIT(imp.maxDate)})?`}
+                  onConferma={()=>{setConfermaEliminaImportId(null);onDeleteImport(imp.importId);}}
+                  onAnnulla={()=>setConfermaEliminaImportId(null)}/>
+              );
+            })()}
 
             <button onClick={onClose}
               style={{width:"100%",background:"none",border:"none",color:T.sub,
@@ -348,16 +357,20 @@ export function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, m
               </div>
             )}
             {registro?.length>0 && (
-              <button onClick={()=>{
-                  if(confirm("Cancellare tutto il registro dei problemi di import? L'azione non è reversibile.")){
-                    cancellaRegistroImportProblemi();
-                    setRegistro([]);
-                  }
-                }}
+              <button onClick={()=>setConfermaCancellaRegistro(true)}
                 style={{width:"100%",background:"none",border:"1px solid #ef4444",borderRadius:10,color:"#ef4444",
                   padding:"10px 0",fontWeight:800,fontSize:13,cursor:"pointer",marginBottom:10}}>
                 Cancella registro
               </button>
+            )}
+            {confermaCancellaRegistro&&(
+              <ConfermaEliminazione T={T} testo="Cancellare tutto il registro dei problemi di import?"
+                onConferma={()=>{
+                  setConfermaCancellaRegistro(false);
+                  cancellaRegistroImportProblemi();
+                  setRegistro([]);
+                }}
+                onAnnulla={()=>setConfermaCancellaRegistro(false)}/>
             )}
             <button onClick={()=>setStep("menu")}
               style={{width:"100%",background:"none",border:"none",color:T.sub,
@@ -425,6 +438,7 @@ export function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClos
   // secondo momento indipendentemente da questa sessione.
   const [risultatoImportOcr, setRisultatoImportOcr] = useState(null);
   const [registroOcr, setRegistroOcr] = useState(null);
+  const [confermaCancellaRegistroOcr, setConfermaCancellaRegistroOcr] = useState(false);
   const [importando, setImportando] = useState(false); // true durante l'elaborazione del JSON incollato, per disabilitare il pulsante e mostrare feedback visivo
   // --- Verifica incrociata OCR (backend Render) sul JSON incollato ---
   const [fotoVerifica, setFotoVerifica] = useState(null); // File della foto per il doppio controllo
@@ -1122,16 +1136,20 @@ export function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClos
                 </div>
               )}
               {registroOcr?.length>0 && (
-                <button onClick={()=>{
-                    if(confirm("Cancellare tutto il registro dei problemi di import? L'azione non è reversibile.")){
-                      cancellaRegistroImportProblemi();
-                      setRegistroOcr([]);
-                    }
-                  }}
+                <button onClick={()=>setConfermaCancellaRegistroOcr(true)}
                   style={{width:"100%",background:"none",border:"1px solid #ef4444",borderRadius:10,color:"#ef4444",
                     padding:"10px 0",fontWeight:800,fontSize:13,cursor:"pointer",marginBottom:10}}>
                   Cancella registro
                 </button>
+              )}
+              {confermaCancellaRegistroOcr&&(
+                <ConfermaEliminazione T={T} testo="Cancellare tutto il registro dei problemi di import?"
+                  onConferma={()=>{
+                    setConfermaCancellaRegistroOcr(false);
+                    cancellaRegistroImportProblemi();
+                    setRegistroOcr([]);
+                  }}
+                  onAnnulla={()=>setConfermaCancellaRegistroOcr(false)}/>
               )}
               <button onClick={()=>setStep("scegli-tipo")}
                 style={{width:"100%",background:"none",border:"none",color:T.sub,

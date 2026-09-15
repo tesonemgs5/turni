@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { ColorPickerModal, nomeDelColore as nomeDelColoreShared } from "./05-Comuni";
+import { ColorPickerModal, nomeDelColore as nomeDelColoreShared, ConfermaEliminazione } from "./05-Comuni";
 
 // ═══════════════════════════════════════════════════════════════════════
 // 04-Rotazione.jsx — RICOSTRUITO
@@ -807,7 +807,7 @@ export function withEventoRimosso(store, dateKey, calId, eventId) {
 // esistente (usato da RotazioneForm, ReperibilitaFormFields, GrigliaRotazione).
 // ─────────────────────────────────────────────────────────────────────
 
-export function ModelloSelector({ T, modelli = [], value, onChange }) {
+export function ModelloSelector({ T, modelli = [], value, onChange, fasceAutomatiche = [] }) {
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
       <button type="button" onClick={() => onChange(null)}
@@ -820,17 +820,20 @@ export function ModelloSelector({ T, modelli = [], value, onChange }) {
       </button>
       {modelli.map(m => {
         const attivo = value === m.id;
+        const colore = m.coloreCustom || m.colore || (m.tempo === "h24" ? COLORE_H24 : getColorByTime(m.inizio, fasceAutomatiche));
+        const orario = m.tempo === "h24" ? "H24" : `${m.inizio || "—"} – ${calcFineModello(m) || m.fine || "—"}`;
         return (
           <button key={m.id} type="button" onClick={() => onChange(m.id)}
             style={{
               display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", borderRadius: 20,
-              border: `1.5px solid ${attivo ? (m.coloreCustom || "#2563eb") : T.border}`,
-              background: attivo ? (m.coloreCustom || "#2563eb") : T.s2,
-              color: attivo ? getContrastTextColor(m.coloreCustom || "#2563eb") : T.text,
+              border: `1.5px solid ${attivo ? colore : T.border}`,
+              background: attivo ? colore : T.s2,
+              color: attivo ? getContrastTextColor(colore) : T.text,
               fontSize: 12, fontWeight: 700, cursor: "pointer",
             }}>
-            <div style={{ width: 8, height: 8, borderRadius: "50%", background: m.coloreCustom || "#2563eb" }} />
-            {m.titolo}
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: colore, flexShrink: 0 }} />
+            <span>{m.titolo}</span>
+            <span style={{ opacity: 0.85, fontWeight: 600 }}>{orario}</span>
           </button>
         );
       })}
@@ -1233,6 +1236,7 @@ export function ModelloCard({
   // fallback solo se manca proprio tutto (dato mai popolato).
   const colore = modello.coloreCustom || modello.colore || COLORE_H24;
   const inSpostamento = !!(onMoveUp || onMoveDown || onDragStart);
+  const [confermaVisibile, setConfermaVisibile] = useState(false);
   return (
     <div data-modello-id={modello.id}
       draggable={!!onDragStart}
@@ -1243,22 +1247,19 @@ export function ModelloCard({
       onDragOver={onDragOver || undefined}
       onDrop={onDrop || undefined}
       onDragEnd={onDragEnd || undefined}
-      onClick={selectMode ? onToggleSelect : undefined}
+      onClick={selectMode ? undefined : (onEdit || undefined)}
       style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
-        background: T.surface,
-        border: isDropTarget ? `2px dashed ${accent}` : `1px solid ${T.border}`,
+        background: selectMode && selected ? `${accent}22` : T.surface,
+        border: isDropTarget ? `2px dashed ${accent}` : (selectMode && selected ? `2px solid ${accent}` : `1px solid ${T.border}`),
         borderRadius: 12, padding: "12px 14px", marginBottom: 8,
         opacity: isDragging ? 0.5 : 1,
-        cursor: selectMode ? "pointer" : (inSpostamento ? "grab" : "default"),
+        cursor: selectMode ? "default" : (onEdit ? "pointer" : (inSpostamento ? "grab" : "default")),
       }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0, flex: 1 }}>
-        {selectMode && (
-          <input type="checkbox" checked={!!selected} onChange={onToggleSelect}
-            onClick={e => e.stopPropagation()}
-            style={{ width: 20, height: 20, flexShrink: 0, cursor: "pointer" }} />
-        )}
-        <div style={{ width: 20, height: 20, borderRadius: 5, background: colore, flexShrink: 0 }} />
+        <div onClick={selectMode ? (e => { e.stopPropagation(); onToggleSelect && onToggleSelect(); }) : undefined}
+          style={{ width: 20, height: 20, borderRadius: 5, background: colore, flexShrink: 0,
+            cursor: selectMode ? "pointer" : "default" }} />
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 18, fontWeight: 700, color: T.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {modello.titolo}
@@ -1281,11 +1282,14 @@ export function ModelloCard({
                 padding: "4px 8px", fontSize: 14, lineHeight: 1, cursor: onMoveDown ? "pointer" : "default" }}>▼</button>
           </div>
         )}
-        {onEdit && <button onClick={e => { e.stopPropagation(); onEdit(modello); }}
-          style={{ ...NB, background: "none", color: accent, padding: 8, fontSize: 20, lineHeight: 1 }}>✎</button>}
-        {onDelete && <button onClick={e => { e.stopPropagation(); onDelete(modello); }}
+        {onDelete && <button onClick={e => { e.stopPropagation(); setConfermaVisibile(true); }}
           style={{ ...NB, background: "none", color: "#ef4444", padding: 8, fontSize: 20, lineHeight: 1 }}>🗑</button>}
       </div>
+      {confermaVisibile && (
+        <ConfermaEliminazione T={T} testo={`Vuoi eliminare "${modello.titolo}"?`}
+          onConferma={() => { setConfermaVisibile(false); onDelete(modello); }}
+          onAnnulla={() => setConfermaVisibile(false)} />
+      )}
     </div>
   );
 }
@@ -1296,11 +1300,13 @@ export function ModelloCard({
 // ─────────────────────────────────────────────────────────────────────
 
 export function RotazioneCard({ T, rot, accent, onOpen, onEdit, onDelete, onMoveUp, onMoveDown }) {
+  const [confermaVisibile, setConfermaVisibile] = useState(false);
   const tipoLabel = rot.tipo === "domeniche" ? "🗓 Domeniche 1/4"
     : rot.tipo === "reperibilita" ? "📞 Reperibilità"
     : rot.tipo === "nlrs_scalante" ? "📅 RS/NL Scalante"
     : "🗓️ Personalizzata";
   return (
+    <>
     <div onClick={() => onOpen && onOpen(rot)} style={{
       display: "flex", alignItems: "center", justifyContent: "space-between",
       background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "12px 14px",
@@ -1328,11 +1334,17 @@ export function RotazioneCard({ T, rot, accent, onOpen, onEdit, onDelete, onMove
             style={{ ...NB, background: "none", color: accent, padding: 8, fontSize: 20, lineHeight: 1 }}>✎</button>
         )}
         {onDelete && (
-          <button onClick={e => { e.stopPropagation(); onDelete(rot); }}
+          <button onClick={e => { e.stopPropagation(); setConfermaVisibile(true); }}
             style={{ ...NB, background: "none", color: "#ef4444", padding: 8, fontSize: 20, lineHeight: 1 }}>🗑</button>
         )}
       </div>
     </div>
+    {confermaVisibile && (
+      <ConfermaEliminazione T={T} testo={`Vuoi eliminare "${rot.titolo || 'questa rotazione'}"?`}
+        onConferma={() => { setConfermaVisibile(false); onDelete(rot); }}
+        onAnnulla={() => setConfermaVisibile(false)} />
+    )}
+    </>
   );
 }
 
@@ -1461,34 +1473,40 @@ export function DomenicheView({ rot, T, accent, modelli, fasceAutomatiche, sunda
 // ogni 8 giorni. (invariato rispetto alla patch già validata)
 // ─────────────────────────────────────────────────────────────────────
 
-const GIORNI_SETTIMANA_FORM = [
-  { key: 1, label: "Lun" }, { key: 2, label: "Mar" }, { key: 3, label: "Mer" },
-  { key: 4, label: "Gio" }, { key: 5, label: "Ven" }, { key: 6, label: "Sab" },
-  { key: 0, label: "Dom" },
+const GIORNI_CICLO_FORM = [
+  { key: 1, label: "1" }, { key: 2, label: "2" }, { key: 3, label: "3" },
+  { key: 4, label: "4" }, { key: 5, label: "5" }, { key: 6, label: "6" },
+  { key: 7, label: "7" },
 ];
 
-export function ReperibilitaFormFields({ T, form, setForm, accent, accentText, modelli }) {
+export function ReperibilitaFormFields({ T, form, setForm, accent, accentText, modelli, fasceAutomatiche = [] }) {
   const giornoPartenza = form.reperibilitaGiornoPartenza ?? 1;
   const turnoPartenza = form.reperibilitaTurnoPartenza || "14-24";
 
   return (
     <div style={{ marginBottom: 16 }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, marginBottom: 6 }}>
-        GIORNO DI PARTENZA
+        GIORNO DI PARTENZA DEL CICLO
       </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
-        {GIORNI_SETTIMANA_FORM.map(g => (
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
+        {GIORNI_CICLO_FORM.map(g => (
           <button key={g.key} type="button"
             onClick={() => setForm(prev => ({ ...prev, reperibilitaGiornoPartenza: g.key }))}
             style={{
               background: giornoPartenza === g.key ? accent : T.s2,
               color: giornoPartenza === g.key ? accentText : T.text,
               border: `1px solid ${giornoPartenza === g.key ? accent : T.border}`,
-              borderRadius: 8, padding: "8px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer"
+              borderRadius: 8, padding: "8px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer",
+              minWidth: 40,
             }}>
             {g.label}
           </button>
         ))}
+      </div>
+      <div style={{ fontSize: 11, color: T.sub, marginBottom: 14 }}>
+        Il giorno "1" del ciclo è il primo giorno che sceglierai applicando la
+        rotazione sul calendario (può essere qualsiasi giorno della
+        settimana). Da lì il ciclo prosegue 1→2→3…7, poi ricomincia da 1.
       </div>
 
       <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, marginBottom: 6 }}>
@@ -1523,13 +1541,13 @@ export function ReperibilitaFormFields({ T, form, setForm, accent, accentText, m
       <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, marginBottom: 6 }}>
         MODELLO PER 14:00–24:00
       </div>
-      <ModelloSelector T={T} modelli={modelli} value={form.modelloRSId}
+      <ModelloSelector T={T} modelli={modelli} value={form.modelloRSId} fasceAutomatiche={fasceAutomatiche}
         onChange={id => setForm(prev => ({ ...prev, modelloRSId: id }))} />
 
       <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, margin: "10px 0 6px" }}>
         MODELLO PER 00:00–14:00
       </div>
-      <ModelloSelector T={T} modelli={modelli} value={form.modelloNLId}
+      <ModelloSelector T={T} modelli={modelli} value={form.modelloNLId} fasceAutomatiche={fasceAutomatiche}
         onChange={id => setForm(prev => ({ ...prev, modelloNLId: id }))} />
     </div>
   );
@@ -1759,7 +1777,7 @@ export function GrigliaRotazione({ rot, T, accent, modelli, fasceAutomatiche, su
             <div style={{ fontSize: 14, fontWeight: 800, color: T.text, marginBottom: 12 }}>
               {pallinoAttivo}
             </div>
-            <ModelloSelector T={T} modelli={modelli} value={griglia[pallinoAttivo] || null}
+            <ModelloSelector T={T} modelli={modelli} value={griglia[pallinoAttivo] || null} fasceAutomatiche={fasceAutomatiche}
               onChange={id => {
                 const nuova = { ...griglia };
                 if (id) nuova[pallinoAttivo] = id; else delete nuova[pallinoAttivo];
@@ -1779,7 +1797,7 @@ export function GrigliaRotazione({ rot, T, accent, modelli, fasceAutomatiche, su
 // classico rimosso, Reperibilità aggiunta al suo posto.
 // ─────────────────────────────────────────────────────────────────────
 
-export function RotazioneForm({ T, form, setForm, accent, modelli, sortedModelli, onSave }) {
+export function RotazioneForm({ T, form, setForm, accent, modelli, sortedModelli, fasceAutomatiche = [], onSave }) {
   const accentText = getContrastTextColor(accent);
   const listaModelli = sortedModelli || modelli || [];
 
@@ -1824,13 +1842,13 @@ export function RotazioneForm({ T, form, setForm, accent, modelli, sortedModelli
 
       {form.tipo === "reperibilita" && (
         <ReperibilitaFormFields T={T} form={form} setForm={setForm} accent={accent}
-          accentText={accentText} modelli={listaModelli} />
+          accentText={accentText} modelli={listaModelli} fasceAutomatiche={fasceAutomatiche} />
       )}
 
       {form.tipo === "domeniche" && (
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, marginBottom: 6 }}>MODELLO GIORNO LAVORO</div>
-          <ModelloSelector T={T} modelli={listaModelli} value={form.modellaLavoroId}
+          <ModelloSelector T={T} modelli={listaModelli} value={form.modellaLavoroId} fasceAutomatiche={fasceAutomatiche}
             onChange={id => setForm(prev => ({ ...prev, modellaLavoroId: id }))} />
         </div>
       )}
@@ -1838,10 +1856,10 @@ export function RotazioneForm({ T, form, setForm, accent, modelli, sortedModelli
       {form.tipo === "nlrs_scalante" && (
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, marginBottom: 6 }}>MODELLO RS</div>
-          <ModelloSelector T={T} modelli={listaModelli} value={form.modelloRSId}
+          <ModelloSelector T={T} modelli={listaModelli} value={form.modelloRSId} fasceAutomatiche={fasceAutomatiche}
             onChange={id => setForm(prev => ({ ...prev, modelloRSId: id }))} />
           <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, margin: "10px 0 6px" }}>MODELLO NL</div>
-          <ModelloSelector T={T} modelli={listaModelli} value={form.modelloNLId}
+          <ModelloSelector T={T} modelli={listaModelli} value={form.modelloNLId} fasceAutomatiche={fasceAutomatiche}
             onChange={id => setForm(prev => ({ ...prev, modelloNLId: id }))} />
         </div>
       )}

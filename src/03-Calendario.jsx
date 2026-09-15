@@ -12,7 +12,7 @@ import {
 import { CalBadge, SmartTimeInput, AutocompleteInput, ColorPickerModal,
   ModaleErroriMultipli, FasceExpand, ConteggioConfigCard, TurnazioneConfigCard, OreTurnoConfigCard, fmtOreMin,
   IndennitaConfig, OrePerTurnoView, StraordinariView, GuadagniView,
-  ViabilitaView, TicketConfig, NAV_HEIGHT_CSS } from "./05-Comuni";
+  ViabilitaView, TicketConfig, NAV_HEIGHT_CSS, ConfermaEliminazione } from "./05-Comuni";
 import { ModelloCard, ModelForm, RotazioneCard, RotazioneForm, ModelloSelector,
   GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView } from "./04-Rotazione";
 import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
@@ -30,6 +30,7 @@ import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
 // ═══════════════════════════════════════════════════════════════
 
 export default function VistaCalendario({ C }){
+  const [confermaEliminaReportId, setConfermaEliminaReportId] = useState(null);
   const {
     today, store, setStore, loading, setLoading, year,
     setYear, month, setMonth, calId, setCalId, editMode,
@@ -491,12 +492,17 @@ export default function VistaCalendario({ C }){
         <div style={{display:"flex",alignItems:"center",padding:"12px 14px",
           borderBottom:`1px solid ${T.border}`,cursor:"pointer"}}
           onClick={()=>setOpenReportConfig(isOpen?null:r.id)}>
-          <button onClick={e=>{e.stopPropagation();if(window.confirm("Eliminare questo report?"))removeReport(r.id);}}
+          <button onClick={e=>{e.stopPropagation();setConfermaEliminaReportId(r.id);}}
             style={{width:26,height:26,borderRadius:"50%",border:"none",cursor:"pointer",
               background:"#ef4444",color:"#fff",fontSize:16,fontWeight:700,
               display:"flex",alignItems:"center",justifyContent:"center",marginRight:12,flexShrink:0}}>
             –
           </button>
+          {confermaEliminaReportId===r.id&&(
+            <ConfermaEliminazione T={T} testo="Vuoi eliminare questo report?"
+              onConferma={()=>{setConfermaEliminaReportId(null);removeReport(r.id);}}
+              onAnnulla={()=>setConfermaEliminaReportId(null)}/>
+          )}
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:22,fontWeight:700,color:T.text,overflow:"hidden",
               textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.label}</div>
