@@ -119,6 +119,12 @@ function AppInterno({ session }){
   const [confermaEliminaEventiRotazione, setConfermaEliminaEventiRotazione] = useState(false);
   const [confermaCancellaLogErrori, setConfermaCancellaLogErrori] = useState(false);
 
+  // Indice (0..3) del giorno del ciclo di Reperibilità da cui far partire
+  // la sequenza sulla data scelta a calendario: 0=Giorno 1, 1=Giorno 2,
+  // 2=Giorno 3, 3=Giorno 4. Serve perché l'utente non parte per forza dal
+  // Giorno 1 del ciclo, ma dal punto in cui si trova la sua turnazione.
+  const [rotGiornoPartenza, setRotGiornoPartenza] = useState(0);
+
   const {
     today, store, setStore, loading, setLoading, year,
     setYear, month, setMonth, calId, setCalId, editMode,
@@ -391,7 +397,8 @@ function AppInterno({ session }){
                     return (
                       <div key={r.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                         <div onClick={()=>{
-                          if(r.tipo==="domeniche"||r.tipo==="nlrs_scalante"){
+                          if(r.tipo==="domeniche"||r.tipo==="nlrs_scalante"||r.tipo==="reperibilita"){
+                            setRotGiornoPartenza(0);
                             setShowApplyRotDialog(r);
                           } else {
                             setShowRotDetail(r);
@@ -725,12 +732,14 @@ function AppInterno({ session }){
             <div style={{fontSize:16,fontWeight:900,color:T.text,marginBottom:8}}>Applica Rotazione</div>
             <div style={{fontSize:13,color:T.sub,marginBottom:16}}>
               Stai applicando la rotazione <strong>{showApplyRotDialog.titolo||"Senza nome"}</strong> a partire dal {fmtDataIT(dayKey)}
-              {showApplyRotDialog.tipo==="nlrs_scalante"?" (primo RS)":" (domenica)"}.
+              {showApplyRotDialog.tipo==="nlrs_scalante"?" (primo RS)"
+                :showApplyRotDialog.tipo==="reperibilita"?""
+                :" (domenica)"}.
               <br/><br/>
               {showApplyRotDialog.tipo==="nlrs_scalante"
                 ?"Il ciclo scalante è di 6 coppie RS/NL. Quante volte vuoi ripeterlo?"
                 :showApplyRotDialog.tipo==="reperibilita"
-                ?"Il ciclo è di 2 giorni (Giorno 1 e Giorno 2), ripetuto ogni 8 giorni. Quanti cicli vuoi generare?"
+                ?"Il ciclo è di 4 giorni con passo +1 / +7 / +1, e la ripetizione successiva riparte 7 giorni dopo l'ultimo giorno (blocco di 16 giorni). Quanti cicli vuoi generare?"
                 :"Il ciclo è di 4 domeniche. Quante volte vuoi ripeterlo?"}
             </div>
 
@@ -757,6 +766,44 @@ function AppInterno({ session }){
               </div>
             )}
 
+            {showApplyRotDialog.tipo==="reperibilita"&&(()=>{
+              // I 4 giorni del ciclo, con il titolo del modello associato:
+              // l'utente sceglie a quale di questi corrisponde la data che
+              // ha toccato a calendario, così la sequenza può partire da un
+              // punto qualsiasi del ciclo invece che solo dal Giorno 1.
+              const idsCiclo = [showApplyRotDialog.modelloRSId, showApplyRotDialog.modelloNLId,
+                                showApplyRotDialog.modelloG3Id, showApplyRotDialog.modelloG4Id];
+              return (
+                <div style={{marginBottom:16}}>
+                  <span style={{fontSize:13,color:T.text,fontWeight:700,display:"block",marginBottom:8}}>
+                    Da quale giorno del ciclo parti?
+                  </span>
+                  <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                    {idsCiclo.map((mid,idx)=>{
+                      const mod = modelli.find(m=>m.id===mid);
+                      const sel = rotGiornoPartenza===idx;
+                      return (
+                        <button key={idx} type="button" onClick={()=>setRotGiornoPartenza(idx)}
+                          style={{display:"flex",alignItems:"center",gap:8,textAlign:"left",
+                            background:sel?accent+"22":T.s2,border:`2px solid ${sel?accent:T.border}`,
+                            borderRadius:8,padding:"8px 10px",cursor:"pointer"}}>
+                          <div style={{width:9,height:9,borderRadius:"50%",flexShrink:0,
+                            background:mod?.colore||T.sub}}/>
+                          <span style={{fontSize:11,fontWeight:800,color:sel?accent:T.sub,flexShrink:0}}>
+                            GIORNO {idx+1}
+                          </span>
+                          <span style={{fontSize:12,fontWeight:700,color:T.text,overflow:"hidden",
+                            textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                            {mod?.titolo||"— nessun modello —"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
               <span style={{fontSize:13,color:T.text,fontWeight:700}}>Ripetizioni:</span>
               <input type="number" defaultValue={4} min={1} max={52} id="num_ripetizioni_rot"
@@ -776,7 +823,7 @@ function AppInterno({ session }){
                 setShowApplyRotDialog(null);
                 setShowRotazionePicker(false);
                 setDayKey(null);
-                await applyRotazione(showApplyRotDialog.id, dayKey, inputVal, modPartenza);
+                await applyRotazione(showApplyRotDialog.id, dayKey, inputVal, modPartenza, rotGiornoPartenza);
               }}
                 style={{flex:2,background:accent,border:"none",borderRadius:10,
                   color:getContrastTextColor(accent),padding:"10px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
