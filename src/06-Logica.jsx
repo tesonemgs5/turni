@@ -4524,7 +4524,7 @@ const importsRecenti = useMemo(()=>{
     return nScritte;
   }
 
-  async function applyRotazione(rotId, startDayKey, numRipetizioni, modPartenza="RS") {
+  async function applyRotazione(rotId, startDayKey, numRipetizioni, modPartenza="RS", giornoPartenza=0) {
     if(!userId || !calId || !startDayKey || !numRipetizioni) return;
     const rot = rotazioni.find(r=>r.id===rotId);
     if(!rot) return;
@@ -4593,46 +4593,40 @@ const importsRecenti = useMemo(()=>{
         }
       }
     } else if(rot.tipo === "reperibilita") {
-      // Schema fisso, un ciclo = 4 giorni a catena rispetto al Giorno 1:
-      //   Giorno 1  (offset +0)  -> modello Giorno 1
-      //   Giorno 2  (Giorno1 +1) -> modello Giorno 2
-      //   Giorno 3  (Giorno2 +7) -> modello Giorno 3
-      //   Giorno 4  (Giorno3 +1) -> modello Giorno 4
-      // In assoluto rispetto al Giorno 1 del ciclo: +0, +1, +8, +9.
-      // Il ciclo successivo deve ripartire da +16 (non +8!): con +8 il
-      // Giorno 1/Giorno 2 del ciclo successivo (+8/+9) coinciderebbero
-      // esattamente con il Giorno 3/Giorno 4 del ciclo precedente (anch'essi
-      // a +8/+9), generando eventi duplicati sulle stesse date ad ogni
-      // ciclo oltre il primo invece di proseguire la sequenza. I modelli
-      // sono una libera scelta dell'utente (può cambiarli quando vuole):
-      // qui non si forza né si legge nessun orario fisso, si inserisce
-      // solo il modello scelto nella data giusta.
-      const modelloGiorno1 = modelli.find(m=>m.id===rot.modelloRSId);
-      const modelloGiorno2 = modelli.find(m=>m.id===rot.modelloNLId);
-      const modelloGiorno3 = modelli.find(m=>m.id===rot.modelloG3Id);
-      const modelloGiorno4 = modelli.find(m=>m.id===rot.modelloG4Id);
-      const MODELLI_CICLO = [modelloGiorno1, modelloGiorno2, modelloGiorno3, modelloGiorno4];
+      // Ciclo di 4 giorni. La catena dei passi, a partire dal Giorno 1, è:
+      //   Giorno 1 -> Giorno 2 : +1
+      //   Giorno 2 -> Giorno 3 : +7
+      //   Giorno 3 -> Giorno 4 : +1
+      //   Giorno 4 -> Giorno 1 del ciclo successivo : +7
+      // In assoluto rispetto al Giorno 1: +0, +1, +8, +9, poi il ciclo dopo
+      // riparte a +16. I passi quindi si alternano SEMPRE +1/+7: dopo un
+      // giorno di indice pari (Giorno 1, Giorno 3) si aggiunge 1, dopo uno
+      // di indice dispari (Giorno 2, Giorno 4) si aggiunge 7. Generando la
+      // sequenza in questo modo — un passo alla volta invece che a blocchi
+      // — la rotazione può partire da un giorno QUALSIASI del ciclo
+      // (giornoPartenza 0..3), cosa impossibile con il calcolo a blocchi
+      // fissi ancorato al Giorno 1.
+      const MODELLI_CICLO = [
+        modelli.find(m=>m.id===rot.modelloRSId),
+        modelli.find(m=>m.id===rot.modelloNLId),
+        modelli.find(m=>m.id===rot.modelloG3Id),
+        modelli.find(m=>m.id===rot.modelloG4Id),
+      ];
 
       const [y0, m0, d0] = startDayKey.split("-").map(Number);
-      const start = new Date(y0, m0-1, d0);
-      // numRipetizioni = numero di cicli da 4 giorni da generare. Ogni
-      // ciclo scrive esattamente 4 eventi, sul blocco di 16 giorni che gli
-      // compete (offset +0, +1, +8, +9 rispetto al Giorno 1 del ciclo).
-      for(let ciclo=0; ciclo<numRipetizioni; ciclo++) {
-        const offsetCiclo = ciclo*16;
-        const giorno1 = new Date(start);
-        giorno1.setDate(giorno1.getDate() + offsetCiclo);
-        const giorno2 = new Date(giorno1);
-        giorno2.setDate(giorno2.getDate() + 1);
-        const giorno3 = new Date(giorno2);
-        giorno3.setDate(giorno3.getDate() + 7);
-        const giorno4 = new Date(giorno3);
-        giorno4.setDate(giorno4.getDate() + 1);
-        const DATE_CICLO = [giorno1, giorno2, giorno3, giorno4];
+      const cursore = new Date(y0, m0-1, d0);
+      // numRipetizioni = numero di cicli da 4 giorni: ogni ciclo scrive
+      // esattamente 4 eventi, quindi in totale numRipetizioni*4 eventi.
+      const nEventi = numRipetizioni * 4;
+      let idx = ((giornoPartenza % 4) + 4) % 4;
 
-        for(let g=0; g<4; g++){
-          if(MODELLI_CICLO[g]) await inserisciEvento(MODELLI_CICLO[g], DATE_CICLO[g]);
-        }
+      for(let k=0; k<nEventi; k++){
+        const mod = MODELLI_CICLO[idx];
+        if(mod) await inserisciEvento(mod, new Date(cursore));
+        // Passo verso l'evento successivo: +1 dopo Giorno 1/Giorno 3,
+        // +7 dopo Giorno 2/Giorno 4.
+        cursore.setDate(cursore.getDate() + (idx % 2 === 0 ? 1 : 7));
+        idx = (idx + 1) % 4;
       }
     } else if(rot.tipo === "domeniche") {
       const modLav = modelli.find(m=>m.id===rot.modellaLavoroId);
