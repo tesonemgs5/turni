@@ -1553,8 +1553,8 @@ export function ReperibilitaFormFields({ T, form, setForm, accent, accentText, m
 
       <div style={{ fontSize: 11, color: T.sub, marginTop: 10, marginBottom: 4 }}>
         Il ciclo genera 4 eventi a catena: Giorno 1 → +1 → Giorno 2 → +7 → Giorno 3 → +1 → Giorno 4.
-        Poi la stessa sequenza di passi (+1, +7, +1, +7…) riparte dall'ultimo giorno generato,
-        agganciandosi sempre agli stessi 4 modelli nello stesso ordine.
+        Il ciclo successivo riparte 16 giorni dopo il Giorno 1 precedente, con la stessa
+        sequenza e gli stessi 4 modelli nello stesso ordine.
       </div>
 
       {mancaQualcheModello && (
@@ -1577,7 +1577,13 @@ export function calcolaAnteprimaReperibilita(rot, nBlocchi = 12) {
 
   const righe = [];
   for (let i = 0; i < nBlocchi; i++) {
-    const offsetBlocco = i * 8;
+    // Ogni ciclo genera 4 giorni con offset +0,+1,+8,+9 dal proprio Giorno 1
+    // (G1 →+1→ G2 →+7→ G3 →+1→ G4). Il ciclo successivo deve perciò
+    // ripartire da +16, non +8: con +8 il Giorno1/Giorno2 del ciclo
+    // successivo (+8/+9) coinciderebbero esattamente con il Giorno3/Giorno4
+    // del ciclo precedente (anch'essi a +8/+9), duplicando gli eventi sulle
+    // stesse date invece di proseguire la sequenza.
+    const offsetBlocco = i * 16;
 
     const giorno1 = new Date(start);
     giorno1.setDate(giorno1.getDate() + offsetBlocco);

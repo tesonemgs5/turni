@@ -4595,13 +4595,15 @@ const importsRecenti = useMemo(()=>{
       //   Giorno 2  (Giorno1 +1) -> modello Giorno 2
       //   Giorno 3  (Giorno2 +7) -> modello Giorno 3
       //   Giorno 4  (Giorno3 +1) -> modello Giorno 4
-      // Il blocco di 4 giorni si ripete ogni 8 giorni a partire dal Giorno 1
-      // (Giorno1+8, Giorno1+9, Giorno1+16, Giorno1+17, ...), continuando
-      // sempre la stessa sequenza di passi +1,+7,+1,+7,... agganciata
-      // all'ultimo giorno generato, con gli stessi 4 modelli nello stesso
-      // ordine ogni volta. I modelli sono una libera scelta dell'utente
-      // (può cambiarli quando vuole): qui non si forza né si legge nessun
-      // orario fisso, si inserisce solo il modello scelto nella data giusta.
+      // In assoluto rispetto al Giorno 1 del ciclo: +0, +1, +8, +9.
+      // Il ciclo successivo deve ripartire da +16 (non +8!): con +8 il
+      // Giorno 1/Giorno 2 del ciclo successivo (+8/+9) coinciderebbero
+      // esattamente con il Giorno 3/Giorno 4 del ciclo precedente (anch'essi
+      // a +8/+9), generando eventi duplicati sulle stesse date ad ogni
+      // ciclo oltre il primo invece di proseguire la sequenza. I modelli
+      // sono una libera scelta dell'utente (può cambiarli quando vuole):
+      // qui non si forza né si legge nessun orario fisso, si inserisce
+      // solo il modello scelto nella data giusta.
       const modelloGiorno1 = modelli.find(m=>m.id===rot.modelloRSId);
       const modelloGiorno2 = modelli.find(m=>m.id===rot.modelloNLId);
       const modelloGiorno3 = modelli.find(m=>m.id===rot.modelloG3Id);
@@ -4610,13 +4612,13 @@ const importsRecenti = useMemo(()=>{
 
       const [y0, m0, d0] = startDayKey.split("-").map(Number);
       const start = new Date(y0, m0-1, d0);
-      // numRipetizioni = numero di blocchi da 4 giorni da generare. Ogni
-      // blocco scrive esattamente 4 eventi, sul blocco di 8 giorni che gli
-      // compete (offset +0, +1, +8, +9 rispetto al Giorno 1 originale).
+      // numRipetizioni = numero di cicli da 4 giorni da generare. Ogni
+      // ciclo scrive esattamente 4 eventi, sul blocco di 16 giorni che gli
+      // compete (offset +0, +1, +8, +9 rispetto al Giorno 1 del ciclo).
       for(let ciclo=0; ciclo<numRipetizioni; ciclo++) {
-        const offsetBlocco = ciclo*8;
+        const offsetCiclo = ciclo*16;
         const giorno1 = new Date(start);
-        giorno1.setDate(giorno1.getDate() + offsetBlocco);
+        giorno1.setDate(giorno1.getDate() + offsetCiclo);
         const giorno2 = new Date(giorno1);
         giorno2.setDate(giorno2.getDate() + 1);
         const giorno3 = new Date(giorno2);
