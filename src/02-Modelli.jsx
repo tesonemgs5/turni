@@ -1,7 +1,7 @@
     import { useState, useEffect, useRef, useMemo, Fragment } from "react";
 import {
   MONTHS, DAYS, PALETTE, FONT_SIZE, NB, COLORE_H24, NOMI_MESI_IT,
-  FASCE_AUTOMATICHE_DEFAULT, FESTIVITA_DEFAULT_ATTIVE, SANTI_PATRONI_CITTA,
+  FASCE_AUTOMATICHE_DEFAULT, FESTIVITA_DEFAULT_ATTIVE, FESTIVITA_CATEGORIE,
   getContrastTextColor, daysInMonth, firstDay, fmtDataIT, dkey, uid,
   oraInMinuti, calcFine6h15, calcFine6h30, calcFineModello, calcDurata, formattaDurataHM,
   isModelloTurnazioneDefault, withEventoAggiunto, saveToLocalStorage,
@@ -112,7 +112,7 @@ export default function VistaModelli({ C }){
     setNcColor, nsName, setNsName, nsColor, setNsColor, exCal,
     setExCal, nhName, setNhName, patronoCittaSel, setPatronoCittaSel, syncMsg, setSyncMsg, backupsList,
     setBackupsList, showBackupsModal, setShowBackupsModal, showLocalDataModal, setShowLocalDataModal, syncing,
-    setSyncing, nhD, setNhD, nhM, setNhM, bgSyncing,
+    setSyncing, nhD, setNhD, nhM, setNhM, nhY, setNhY, bgSyncing,
     setBgSyncing, dbError, setDbError, isWideScreen, setIsWideScreen, evtFontSize,
     dbErrorTimer, codaErrori, setCodaErrori, logErroriVisibile, setLogErroriVisibile, erroriSilenziatiVisibile,
     setErroriSilenziatiVisibile, segnalaErroreDb, dbUpdate, dbDelete, dbInsert, scriviConBackup,
@@ -1597,52 +1597,144 @@ export default function VistaModelli({ C }){
       )}
 
       <SecCollapsible label="FESTIVI" T={T}>
-      <SecCollapsible label="FESTIVITÀ NAZIONALI" T={T}>
-        <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
-          Scegli quali festività colorare automaticamente come festivo nel calendario.
-        </div>
-        {resolveFestivitaCatalogo(year).map(f=>{
-          const enabled = (store.nationalHolsEnabled||FESTIVITA_DEFAULT_ATTIVE).includes(f.key);
+
+      {/* ── MENU UNICO: nazionali + mobili + regionali + patroni ────── */}
+      <SecCollapsible label="CALENDARIO FESTIVITÀ" T={T}>
+        {(()=>{
+          const catalogo = resolveFestivitaCatalogo(year);
+          const attive = store.nationalHolsEnabled||FESTIVITA_DEFAULT_ATTIVE;
+          // Normalizzazione per la ricerca: minuscole e senza accenti, così
+          // "citta", "città", "CITTÀ" e "Citta" trovano tutti la stessa voce.
+          const norm = t => (t||"").toString().toLowerCase()
+            .normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+          const q = norm(patronoCittaSel).trim();
+          const match = f => !q ||
+            norm(f.name).includes(q) || norm(f.luogo).includes(q);
+          const toggle = key => {
+            const cur = store.nationalHolsEnabled||FESTIVITA_DEFAULT_ATTIVE;
+            const next = cur.includes(key) ? cur.filter(k=>k!==key) : [...cur, key];
+            setStore(s=>({...s, nationalHolsEnabled:next}));
+            saveSettings({national_hols_enabled:next});
+          };
+          const setMolte = (keys, on) => {
+            const cur = store.nationalHolsEnabled||FESTIVITA_DEFAULT_ATTIVE;
+            const next = on
+              ? Array.from(new Set([...cur, ...keys]))
+              : cur.filter(k=>!keys.includes(k));
+            setStore(s=>({...s, nationalHolsEnabled:next}));
+            saveSettings({national_hols_enabled:next});
+          };
           return (
-            <div key={f.key} onClick={()=>{
-                const cur = store.nationalHolsEnabled||FESTIVITA_DEFAULT_ATTIVE;
-                const next = enabled ? cur.filter(k=>k!==f.key) : [...cur, f.key];
-                setStore(s=>({...s, nationalHolsEnabled:next}));
-                saveSettings({national_hols_enabled:next});
-              }}
-              style={{display:"flex",alignItems:"center",justifyContent:"space-between",
-                padding:"10px 4px",borderBottom:`1px solid ${T.border}`,cursor:"pointer"}}>
-              <div>
-                <div style={{fontSize:13,fontWeight:600,color:T.text}}>{f.name}</div>
-                <div style={{fontSize:10,color:T.sub,marginTop:1}}>
-                  (es. {String(f.d).padStart(2,"0")}/{String(f.m).padStart(2,"0")}/{year})
+            <>
+              <div style={{fontSize:11,color:T.sub,marginBottom:8,lineHeight:1.45}}>
+                Un solo elenco con festività nazionali, mobili, ricorrenze regionali e
+                santi patroni delle città. Le voci attivate vengono colorate come
+                festivo nel calendario e contano come festivo nei report.
+                Pasqua, Pasquetta e le altre mobili sono <b>ricalcolate
+                automaticamente ogni anno</b> (riferimento: {year}).
+              </div>
+              <div style={{display:"flex",gap:6,marginBottom:10}}>
+                <input value={patronoCittaSel} onChange={e=>setPatronoCittaSel(e.target.value)}
+                  placeholder="🔍 Cerca festività, santo o città…"
+                  style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
+                    padding:"8px 10px",color:T.text,fontSize:12,outline:"none"}}/>
+                {patronoCittaSel&&(
+                  <button onClick={()=>setPatronoCittaSel("")}
+                    style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
+                      color:T.sub,padding:"0 12px",cursor:"pointer",fontSize:16}}>×</button>
+                )}
+              </div>
+              <div style={{fontSize:10,color:T.sub,marginBottom:10}}>
+                {attive.length} festività attive su {catalogo.length}
+              </div>
+
+              {FESTIVITA_CATEGORIE.map(cg=>{
+                const voci = catalogo.filter(f=>f.cat===cg.cat).filter(match);
+                if(voci.length===0) return null;
+                const keys = voci.map(f=>f.key);
+                const tutteOn = keys.every(k=>attive.includes(k));
+                return (
+                  <div key={cg.cat} style={{marginBottom:14}}>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+                      marginBottom:4,paddingBottom:4,borderBottom:`2px solid ${T.border}`}}>
+                      <div style={{fontSize:10,fontWeight:800,color:T.sub,letterSpacing:0.4}}>
+                        {cg.label} ({voci.length})
+                      </div>
+                      <button onClick={()=>setMolte(keys,!tutteOn)}
+                        style={{background:"none",border:"none",color:accent,fontSize:10,
+                          fontWeight:800,cursor:"pointer",padding:"2px 4px"}}>
+                        {tutteOn?"Deseleziona tutti":"Seleziona tutti"}
+                      </button>
+                    </div>
+                    {voci.map(f=>{
+                      const enabled = attive.includes(f.key);
+                      return (
+                        <div key={f.key} onClick={()=>toggle(f.key)}
+                          style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+                            gap:10,padding:"9px 4px",borderBottom:`1px solid ${T.border}`,cursor:"pointer"}}>
+                          <div style={{minWidth:0}}>
+                            <div style={{fontSize:13,fontWeight:600,color:T.text}}>
+                              {f.luogo&&f.cat!=="nazionale"&&(
+                                <span style={{color:accent,fontWeight:800}}>{f.luogo} · </span>
+                              )}
+                              {f.name}
+                            </div>
+                            <div style={{fontSize:10,color:T.sub,marginTop:1}}>
+                              {String(f.d).padStart(2,"0")}/{String(f.m).padStart(2,"0")}/{f.y}
+                              {f.mobile&&<span style={{color:accent,fontWeight:700}}> · data mobile</span>}
+                            </div>
+                          </div>
+                          <div style={{width:24,height:24,borderRadius:6,flexShrink:0,
+                            border:`2px solid ${enabled?accent:T.border}`,background:enabled?accent:T.s2,
+                            display:"flex",alignItems:"center",justifyContent:"center",
+                            color:"#fff",fontSize:15,fontWeight:900}}>
+                            {enabled?"✓":""}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+
+              {catalogo.filter(match).length===0&&(
+                <div style={{textAlign:"center",color:T.sub,fontSize:12,padding:"18px 0"}}>
+                  Nessuna festività trovata per “{patronoCittaSel}”.
                 </div>
-              </div>
-              <div style={{width:24,height:24,borderRadius:6,flexShrink:0,
-                border:`2px solid ${enabled?accent:T.border}`,background:enabled?accent:T.s2,
-                display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:15,fontWeight:900}}>
-                {enabled?"✓":""}
-              </div>
-            </div>
+              )}
+
+              <button onClick={()=>{
+                setStore(s=>({...s, nationalHolsEnabled:FESTIVITA_DEFAULT_ATTIVE}));
+                saveSettings({national_hols_enabled:FESTIVITA_DEFAULT_ATTIVE});
+                setPatronoCittaSel("");
+              }} style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,
+                color:T.sub,padding:"9px 0",cursor:"pointer",fontWeight:700,fontSize:12,marginTop:6}}>
+                ↩ Ripristina selezione predefinita
+              </button>
+            </>
           );
-        })}
-        <button onClick={()=>{
-          setStore(s=>({...s, nationalHolsEnabled:FESTIVITA_DEFAULT_ATTIVE}));
-          saveSettings({national_hols_enabled:FESTIVITA_DEFAULT_ATTIVE});
-        }} style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,
-          color:T.sub,padding:"9px 0",cursor:"pointer",fontWeight:700,fontSize:12,marginTop:10}}>
-          ↩ Ripristina selezione predefinita
-        </button>
+        })()}
       </SecCollapsible>
 
-      <SecCollapsible label="FESTIVI LOCALI" T={T}>
-        <div style={{fontSize:11,color:T.sub,marginBottom:8}}>
-          Domeniche e festivi nazionali italiani sono già in rosso automaticamente.
+      {/* ── DATE PERSONALI: solo ciò che non sta nel catalogo ────────── */}
+      <SecCollapsible label="FESTIVI PERSONALIZZATI" T={T}>
+        <div style={{fontSize:11,color:T.sub,marginBottom:8,lineHeight:1.45}}>
+          Qui solo le <b>tue date personali</b> (permessi, ricorrenze, chiusure aziendali).
+          Le festività nazionali e i patroni delle città stanno nel menu qui sopra.
+          Lasciando vuoto l'anno la data si ripete ogni anno.
         </div>
+        {(store.extraHols||[]).length===0&&(
+          <div style={{textAlign:"center",color:T.sub,fontSize:12,padding:"10px 0"}}>
+            Nessuna data personale inserita.
+          </div>
+        )}
         {(store.extraHols||[]).map((h,i)=>(
           <div key={i} style={{display:"flex",alignItems:"center",gap:8,
             background:T.s2,borderRadius:8,padding:"6px 10px",marginBottom:6}}>
-            <span style={{flex:1,fontSize:12,color:T.text}}>🎉 {h.name} — {h.d}/{h.m}</span>
+            <span style={{flex:1,fontSize:12,color:T.text}}>
+              🎉 {h.name} — {String(h.d).padStart(2,"0")}/{String(h.m).padStart(2,"0")}
+              {h.y?`/${h.y}`:" (ogni anno)"}
+            </span>
             <button onClick={()=>{
               const newH=(store.extraHols||[]).filter((_,j)=>j!==i);
               setStore(s=>({...s,extraHols:newH}));
@@ -1651,31 +1743,7 @@ export default function VistaModelli({ C }){
           </div>
         ))}
         <div style={{fontSize:10,color:T.sub,fontWeight:700,marginTop:10,marginBottom:6}}>
-          SANTO PATRONO (scelta rapida)
-        </div>
-        <div style={{display:"flex",gap:6,marginBottom:12}}>
-          <select value={patronoCittaSel} onChange={e=>setPatronoCittaSel(e.target.value)}
-            style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
-              padding:"7px 10px",color:T.text,fontSize:12,outline:"none"}}>
-            <option value="">Scegli una città...</option>
-            {SANTI_PATRONI_CITTA.map(p=>(
-              <option key={p.citta} value={p.citta}>{p.citta} — {p.nome} ({String(p.d).padStart(2,"0")}/{String(p.m).padStart(2,"0")})</option>
-            ))}
-          </select>
-          <button onClick={()=>{
-            const p = SANTI_PATRONI_CITTA.find(pp=>pp.citta===patronoCittaSel);
-            if(!p) return;
-            const giaPresente = (store.extraHols||[]).some(h=>+h.d===p.d && +h.m===p.m && h.name===p.nome);
-            if(giaPresente) return;
-            const newH=[...(store.extraHols||[]),{name:p.nome, d:p.d, m:p.m}];
-            setStore(s=>({...s,extraHols:newH}));
-            saveSettings({theme:store.theme,extra_hols:newH});
-            setPatronoCittaSel("");
-          }} disabled={!patronoCittaSel} style={{background:patronoCittaSel?"#ef4444":T.s2,border:"none",borderRadius:8,
-            color:patronoCittaSel?"#fff":T.sub,padding:"7px 14px",cursor:patronoCittaSel?"pointer":"default",fontWeight:800}}>+</button>
-        </div>
-        <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>
-          OPPURE INSERISCI A MANO
+          AGGIUNGI UNA DATA
         </div>
         <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
           <input value={nhName} onChange={e=>setNhName(e.target.value)} placeholder="Nome..."
@@ -1687,12 +1755,17 @@ export default function VistaModelli({ C }){
           <input value={nhM} onChange={e=>setNhM(e.target.value)} placeholder="MM" type="number"
             style={{width:50,background:T.s2,border:`1px solid ${T.border}`,
               borderRadius:8,padding:"7px 6px",color:T.text,fontSize:12,outline:"none",textAlign:"center"}}/>
+          <input value={nhY} onChange={e=>setNhY(e.target.value)} placeholder="AAAA" type="number"
+            style={{width:66,background:T.s2,border:`1px solid ${T.border}`,
+              borderRadius:8,padding:"7px 6px",color:T.text,fontSize:12,outline:"none",textAlign:"center"}}/>
           <button onClick={()=>{
             if(!nhName.trim()||!nhD||!nhM) return;
-            const newH=[...(store.extraHols||[]),{name:nhName.trim(),d:nhD,m:nhM}];
+            const voce={name:nhName.trim(),d:+nhD,m:+nhM};
+            if(nhY&&String(nhY).length===4) voce.y=+nhY;
+            const newH=[...(store.extraHols||[]),voce];
             setStore(s=>({...s,extraHols:newH}));
             saveSettings({theme:store.theme,extra_hols:newH});
-            setNhName(""); setNhD(""); setNhM("");
+            setNhName(""); setNhD(""); setNhM(""); setNhY("");
           }} style={{background:"#ef4444",border:"none",borderRadius:8,
             color:"#fff",padding:"7px 12px",cursor:"pointer",fontWeight:800}}>+</button>
         </div>

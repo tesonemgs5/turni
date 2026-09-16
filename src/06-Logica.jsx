@@ -95,6 +95,9 @@ export function useAppCore(session){
   const [syncing,  setSyncing]  = useState(false);
   const [nhD,     setNhD]     = useState("");
   const [nhM,     setNhM]     = useState("");
+  // Anno opzionale dei Festivi Personalizzati: se vuoto la data si ripete
+  // ogni anno, se valorizzato vale solo per quell'anno specifico.
+  const [nhY,     setNhY]     = useState("");
   const [bgSyncing, setBgSyncing] = useState(false);
   const [dbError, setDbError] = useState("");
   const [isWideScreen, setIsWideScreen] = useState(typeof window!=="undefined"?window.innerWidth>900:false);
@@ -1502,7 +1505,7 @@ export function useAppCore(session){
   function isRed(d,m){
     const meseUmano = m+1;
     return hols.some(h=>h.m===meseUmano&&h.d===d) ||
-      (store.extraHols||[]).some(h=>+h.m===meseUmano&&+h.d===d);
+      (store.extraHols||[]).some(h=>+h.m===meseUmano&&+h.d===d&&(h.y==null||+h.y===year));
   }
   const sundayColor = store.sundayColor || (dark?"#2d0a0a":"#fff5f5");
   const holidayColor = store.holidayColor || (dark?"#2d0a0a":"#fff5f5");
@@ -5065,7 +5068,7 @@ const importsRecenti = useMemo(()=>{
     const totaliMin = { diurno:0, notturno:0, festivo:0, notturno_festivo:0 };
     for(const [dateKey, calMap] of Object.entries(store.events)){
       if(dateKey < from || dateKey > to) continue;
-      const fest = isFestivo(dateKey);
+      const fest = isFestivo(dateKey, store.nationalHolsEnabled, store.extraHols);
       for(const [cid, evts] of Object.entries(calMap)){
         if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
         for(const e of evts){
@@ -5437,6 +5440,8 @@ const importsRecenti = useMemo(()=>{
     nhD,
     setNhD,
     nhM,
+    setNhY,
+    nhY,
     setNhM,
     bgSyncing,
     setBgSyncing,

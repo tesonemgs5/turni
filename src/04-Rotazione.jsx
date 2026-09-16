@@ -69,49 +69,6 @@ export const FASCE_AUTOMATICHE_DEFAULT = [
   { key:"notte",       label:"NOTTE",    color:"#1E40AF", from:1080, to:359  }, // 18:00–05:59 (attraversa la mezzanotte)
 ];
 
-// Array di chiavi delle festività attive di default (usato come fallback
-// di store.nationalHolsEnabled finché l'utente non personalizza le sue
-// preferenze in Impostazioni -> Festivi). Le chiavi devono corrispondere
-// a quelle restituite da resolveFestivitaCatalogo().
-export const FESTIVITA_DEFAULT_ATTIVE = [
-  "capodanno", "epifania", "liberazione", "lavoro", "repubblica",
-  "ferragosto", "ognissanti", "immacolata", "natale", "santostefano",
-];
-
-// Santi patroni delle città italiane più grandi/comuni, per popolare una
-// scelta rapida in Impostazioni -> Festivi Locali (l'utente clicca invece
-// di dover digitare nome e data a mano). Sono festività locali, non
-// nazionali: nel giorno del patrono la città in questione è festiva, il
-// resto d'Italia no — per questo restano fuori da FESTIVITA_FISSE/
-// FESTIVITA_DEFAULT_ATTIVE e vivono come proprio catalogo separato.
-// Date fisse e stabili (non richiedono calcolo per anno).
-export const SANTI_PATRONI_CITTA = [
-  { citta: "Italia",    nome: "San Francesco d'Assisi (Patrono d'Italia)", d: 4, m: 10 },
-  { citta: "Roma",      nome: "San Pietro e Paolo",     d: 29, m: 6  },
-  { citta: "Milano",    nome: "Sant'Ambrogio",          d: 7,  m: 12 },
-  { citta: "Napoli",    nome: "San Gennaro",            d: 19, m: 9  },
-  { citta: "Torino",    nome: "San Giovanni Battista",  d: 24, m: 6  },
-  { citta: "Palermo",   nome: "Santa Rosalia",          d: 15, m: 7  },
-  { citta: "Genova",    nome: "San Giovanni Battista",  d: 24, m: 6  },
-  { citta: "Bologna",   nome: "San Petronio",           d: 4,  m: 10 },
-  { citta: "Firenze",   nome: "San Giovanni Battista",  d: 24, m: 6  },
-  { citta: "Bari",      nome: "San Nicola",             d: 6,  m: 12 },
-  { citta: "Catania",   nome: "Sant'Agata",             d: 5,  m: 2  },
-  { citta: "Venezia",   nome: "San Marco",              d: 25, m: 4  },
-  { citta: "Verona",    nome: "San Zeno",               d: 21, m: 5  },
-  { citta: "Messina",   nome: "Madonna della Lettera",  d: 3,  m: 6  },
-  { citta: "Padova",    nome: "Sant'Antonio",           d: 13, m: 6  },
-  { citta: "Trieste",   nome: "San Giusto",             d: 3,  m: 11 },
-  { citta: "Assisi",    nome: "San Francesco",          d: 4,  m: 10 },
-  { citta: "Perugia",   nome: "Sant'Ercolano",          d: 1,  m: 3  },
-  { citta: "Cagliari",  nome: "Sant'Efisio",            d: 1,  m: 5  },
-  { citta: "Reggio Calabria", nome: "San Giorgio",      d: 23, m: 4  },
-  { citta: "Ancona",    nome: "San Ciriaco",            d: 4,  m: 5  },
-];
-// San Francesco d'Assisi (4 ottobre) è patrono d'Italia (voce "Italia" in
-// cima al catalogo sopra) ED è anche il patrono locale di Assisi stessa
-// (voce separata): stesso giorno, due voci diverse, perché l'utente
-// potrebbe cercare l'una o l'altra a seconda del motivo per cui gli serve.
 
 export const NB = {
   padding:"10px 14px", borderRadius:10, fontWeight:700, fontSize:13,
@@ -328,63 +285,291 @@ export function getShiftBand(tIn, fasceAutomatiche) {
   return getColorLabel(tIn, fasceAutomatiche);
 }
 
-// Festività italiane fisse (non include la Pasqua/Pasquetta, che sono
-// mobili — se ti servono aggiungile qui calcolandole per anno). Chiave
-// stabile condivisa con FESTIVITA_DEFAULT_ATTIVE e resolveFestivitaCatalogo,
-// così le tre restano sempre coerenti tra loro.
-const FESTIVITA_FISSE = [
-  { key: "capodanno",    name: "Capodanno",              m: 1,  d: 1 },
-  { key: "epifania",     name: "Epifania",                m: 1,  d: 6 },
-  { key: "liberazione",  name: "Festa della Liberazione", m: 4,  d: 25 },
-  { key: "lavoro",       name: "Festa dei Lavoratori",    m: 5,  d: 1 },
-  { key: "repubblica",   name: "Festa della Repubblica",  m: 6,  d: 2 },
-  { key: "ferragosto",   name: "Ferragosto",              m: 8,  d: 15 },
-  { key: "ognissanti",   name: "Ognissanti",              m: 11, d: 1 },
-  { key: "immacolata",   name: "Immacolata Concezione",   m: 12, d: 8 },
-  { key: "natale",       name: "Natale",                  m: 12, d: 25 },
-  { key: "santostefano", name: "Santo Stefano",           m: 12, d: 26 },
+// ─────────────────────────────────────────────────────────────────────
+// FESTIVITÀ — catalogo unico (nazionali + mobili + regionali + patroni)
+// ─────────────────────────────────────────────────────────────────────
+// Un solo elenco per TUTTE le festività selezionabili dall'utente in
+// Impostazioni -> Festivi. Ogni voce ha una chiave stabile (`key`) che è
+// ciò che viene salvato in store.nationalHolsEnabled / Supabase
+// (national_hols_enabled): i nomi e le categorie possono cambiare senza
+// rompere le preferenze già salvate, le chiavi no.
+//
+// Due forme possibili per la data:
+//   - FISSA:  { m, d }            es. Natale { m:12, d:25 }
+//   - MOBILE: { off: <giorni> }   offset in giorni rispetto alla Pasqua
+//                                 di quell'anno (Pasquetta = off:1)
+// Le mobili NON hanno data in catalogo: viene calcolata ogni volta per
+// l'anno richiesto, quindi il ricalcolo annuale è automatico e non
+// richiede alcun aggiornamento manuale del codice.
+//
+// Categorie (`cat`), usate solo per raggruppare la lista nella UI:
+//   nazionale | mobile | regionale | patrono
+
+// Domenica di Pasqua per l'anno indicato (calendario gregoriano,
+// algoritmo di Meeus/Jones/Butcher). Restituisce { m, d } con mese
+// 1-based, coerente con il resto del catalogo.
+export function calcolaPasqua(year) {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const mm = Math.floor((a + 11 * h + 22 * l) / 451);
+  const mese = Math.floor((h + l - 7 * mm + 114) / 31);
+  const giorno = ((h + l - 7 * mm + 114) % 31) + 1;
+  return { m: mese, d: giorno };
+}
+
+// Data ottenuta spostando la Pasqua di `off` giorni (off può essere
+// negativo: Venerdì Santo = -2, Carnevale = -47).
+function dataDaPasqua(year, off) {
+  const p = calcolaPasqua(year);
+  const dt = new Date(year, p.m - 1, p.d + off);
+  return { m: dt.getMonth() + 1, d: dt.getDate() };
+}
+
+export const FESTIVITA_CATALOGO = [
+  // ── Festività nazionali civili e religiose a data fissa ────────────
+  { key:"capodanno",    cat:"nazionale", name:"Capodanno",                    m:1,  d:1  },
+  { key:"epifania",     cat:"nazionale", name:"Epifania",                     m:1,  d:6  },
+  { key:"liberazione",  cat:"nazionale", name:"Festa della Liberazione",      m:4,  d:25 },
+  { key:"lavoro",       cat:"nazionale", name:"Festa dei Lavoratori",         m:5,  d:1  },
+  { key:"repubblica",   cat:"nazionale", name:"Festa della Repubblica",       m:6,  d:2  },
+  { key:"ferragosto",   cat:"nazionale", name:"Ferragosto — Assunzione",      m:8,  d:15 },
+  { key:"ognissanti",   cat:"nazionale", name:"Ognissanti",                   m:11, d:1  },
+  { key:"immacolata",   cat:"nazionale", name:"Immacolata Concezione",        m:12, d:8  },
+  { key:"natale",       cat:"nazionale", name:"Natale",                       m:12, d:25 },
+  { key:"santostefano", cat:"nazionale", name:"Santo Stefano",                m:12, d:26 },
+
+  // ── Festività mobili legate alla Pasqua (ricalcolate ogni anno) ────
+  { key:"carnevale",    cat:"mobile", name:"Martedì Grasso (Carnevale)",      off:-47 },
+  { key:"ceneri",       cat:"mobile", name:"Mercoledì delle Ceneri",          off:-46 },
+  { key:"domenicapalme",cat:"mobile", name:"Domenica delle Palme",            off:-7  },
+  { key:"giovedisanto", cat:"mobile", name:"Giovedì Santo",                   off:-3  },
+  { key:"venerdisanto", cat:"mobile", name:"Venerdì Santo",                   off:-2  },
+  { key:"sabatosanto",  cat:"mobile", name:"Sabato Santo",                    off:-1  },
+  { key:"pasqua",       cat:"mobile", name:"Pasqua",                          off:0   },
+  { key:"pasquetta",    cat:"mobile", name:"Lunedì dell'Angelo (Pasquetta)",  off:1   },
+  { key:"ascensione",   cat:"mobile", name:"Ascensione",                      off:39  },
+  { key:"pentecoste",   cat:"mobile", name:"Pentecoste",                      off:49  },
+  { key:"lunpentecoste",cat:"mobile", name:"Lunedì di Pentecoste",            off:50  },
+  { key:"corpusdomini", cat:"mobile", name:"Corpus Domini",                   off:60  },
+
+  // ── Ricorrenze regionali / statutarie ──────────────────────────────
+  { key:"reg_sardegna", cat:"regionale", luogo:"Sardegna",  name:"Sa Die de sa Sardigna",          m:4,  d:28 },
+  { key:"reg_sicilia",  cat:"regionale", luogo:"Sicilia",   name:"Autonomia siciliana",            m:5,  d:15 },
+  { key:"reg_friuli",   cat:"regionale", luogo:"Friuli-VG", name:"Festa della Patria del Friuli",  m:4,  d:3  },
+  { key:"reg_sudtirol", cat:"regionale", luogo:"Alto Adige",name:"Sacro Cuore di Gesù (Herz-Jesu)",m:6,  d:20 },
+  { key:"reg_valdaosta",cat:"regionale", luogo:"Valle d'Aosta", name:"Sant'Orso",                  m:2,  d:1  },
+  { key:"reg_trentino", cat:"regionale", luogo:"Trentino",  name:"San Vigilio",                    m:6,  d:26 },
+
+  // ── Patroni: Italia e Europa ───────────────────────────────────────
+  { key:"pat_italia",    cat:"patrono", luogo:"ITALIA",  name:"San Francesco d'Assisi — Patrono d'Italia", m:10, d:4  },
+  { key:"pat_italia_cat",cat:"patrono", luogo:"ITALIA",  name:"Santa Caterina da Siena — Patrona d'Italia", m:4, d:29 },
+  { key:"pat_padrepio",  cat:"patrono", luogo:"ITALIA",  name:"San Pio da Pietrelcina (Padre Pio)", m:9,  d:23 },
+  { key:"pat_sanantonio",cat:"patrono", luogo:"ITALIA",  name:"Sant'Antonio Abate",                 m:1,  d:17 },
+  { key:"pat_sangiuseppe",cat:"patrono",luogo:"ITALIA",  name:"San Giuseppe (Festa del Papà)",      m:3,  d:19 },
+
+  // ── Patroni delle città (capoluoghi e principali centri) ───────────
+  { key:"pat_agrigento",  cat:"patrono", luogo:"Agrigento",       name:"San Gerlando",                  m:2,  d:25 },
+  { key:"pat_alessandria",cat:"patrono", luogo:"Alessandria",     name:"San Baudolino",                 m:11, d:10 },
+  { key:"pat_ancona",     cat:"patrono", luogo:"Ancona",          name:"San Ciriaco",                   m:5,  d:4  },
+  { key:"pat_aosta",      cat:"patrono", luogo:"Aosta",           name:"San Grato",                     m:9,  d:7  },
+  { key:"pat_arezzo",     cat:"patrono", luogo:"Arezzo",          name:"San Donato",                    m:8,  d:7  },
+  { key:"pat_ascoli",     cat:"patrono", luogo:"Ascoli Piceno",   name:"Sant'Emidio",                   m:8,  d:5  },
+  { key:"pat_assisi",     cat:"patrono", luogo:"Assisi",          name:"San Francesco",                 m:10, d:4  },
+  { key:"pat_asti",       cat:"patrono", luogo:"Asti",            name:"San Secondo",                   m:3,  d:30 },
+  { key:"pat_avellino",   cat:"patrono", luogo:"Avellino",        name:"San Modestino",                 m:2,  d:14 },
+  { key:"pat_bari",       cat:"patrono", luogo:"Bari",            name:"San Nicola",                    m:12, d:6  },
+  { key:"pat_barletta",   cat:"patrono", luogo:"Barletta",        name:"San Ruggero",                   m:12, d:30 },
+  { key:"pat_belluno",    cat:"patrono", luogo:"Belluno",         name:"San Martino",                   m:11, d:11 },
+  { key:"pat_benevento",  cat:"patrono", luogo:"Benevento",       name:"San Bartolomeo",                m:8,  d:24 },
+  { key:"pat_bergamo",    cat:"patrono", luogo:"Bergamo",         name:"Sant'Alessandro",               m:8,  d:26 },
+  { key:"pat_biella",     cat:"patrono", luogo:"Biella",          name:"Santo Stefano",                 m:12, d:26 },
+  { key:"pat_bologna",    cat:"patrono", luogo:"Bologna",         name:"San Petronio",                  m:10, d:4  },
+  { key:"pat_bolzano",    cat:"patrono", luogo:"Bolzano",         name:"Santa Maria Assunta",           m:8,  d:15 },
+  { key:"pat_brescia",    cat:"patrono", luogo:"Brescia",         name:"Santi Faustino e Giovita",      m:2,  d:15 },
+  { key:"pat_brindisi",   cat:"patrono", luogo:"Brindisi",        name:"San Teodoro d'Amasea",          m:9,  d:7  },
+  { key:"pat_cagliari",   cat:"patrono", luogo:"Cagliari",        name:"Sant'Efisio",                   m:5,  d:1  },
+  { key:"pat_caltaniss",  cat:"patrono", luogo:"Caltanissetta",   name:"San Michele Arcangelo",         m:9,  d:29 },
+  { key:"pat_campobasso", cat:"patrono", luogo:"Campobasso",      name:"San Giorgio",                   m:4,  d:23 },
+  { key:"pat_caserta",    cat:"patrono", luogo:"Caserta",         name:"Sant'Anna",                     m:7,  d:26 },
+  { key:"pat_catania",    cat:"patrono", luogo:"Catania",         name:"Sant'Agata",                    m:2,  d:5  },
+  { key:"pat_catanzaro",  cat:"patrono", luogo:"Catanzaro",       name:"San Vitaliano",                 m:7,  d:16 },
+  { key:"pat_chieti",     cat:"patrono", luogo:"Chieti",          name:"San Giustino",                  m:5,  d:11 },
+  { key:"pat_como",       cat:"patrono", luogo:"Como",            name:"Sant'Abbondio",                 m:8,  d:31 },
+  { key:"pat_cosenza",    cat:"patrono", luogo:"Cosenza",         name:"Madonna del Pilerio",           m:2,  d:12 },
+  { key:"pat_cremona",    cat:"patrono", luogo:"Cremona",         name:"Sant'Omobono",                  m:11, d:13 },
+  { key:"pat_crotone",    cat:"patrono", luogo:"Crotone",         name:"San Dionigi",                   m:10, d:9  },
+  { key:"pat_cuneo",      cat:"patrono", luogo:"Cuneo",           name:"San Michele Arcangelo",         m:9,  d:29 },
+  { key:"pat_enna",       cat:"patrono", luogo:"Enna",            name:"Maria SS. della Visitazione",   m:7,  d:2  },
+  { key:"pat_ferrara",    cat:"patrono", luogo:"Ferrara",         name:"San Giorgio",                   m:4,  d:23 },
+  { key:"pat_firenze",    cat:"patrono", luogo:"Firenze",         name:"San Giovanni Battista",         m:6,  d:24 },
+  { key:"pat_foggia",     cat:"patrono", luogo:"Foggia",          name:"Madonna dei Sette Veli",        m:3,  d:22 },
+  { key:"pat_forli",      cat:"patrono", luogo:"Forlì",           name:"Madonna del Fuoco",             m:2,  d:4  },
+  { key:"pat_frosinone",  cat:"patrono", luogo:"Frosinone",       name:"San Silverio",                  m:6,  d:20 },
+  { key:"pat_genova",     cat:"patrono", luogo:"Genova",          name:"San Giovanni Battista",         m:6,  d:24 },
+  { key:"pat_gorizia",    cat:"patrono", luogo:"Gorizia",         name:"Santi Ilario e Taziano",        m:3,  d:16 },
+  { key:"pat_grosseto",   cat:"patrono", luogo:"Grosseto",        name:"San Lorenzo",                   m:8,  d:10 },
+  { key:"pat_imperia",    cat:"patrono", luogo:"Imperia",         name:"San Leonardo",                  m:11, d:6  },
+  { key:"pat_isernia",    cat:"patrono", luogo:"Isernia",         name:"San Pietro Celestino",          m:5,  d:19 },
+  { key:"pat_laquila",    cat:"patrono", luogo:"L'Aquila",        name:"San Massimo",                   m:6,  d:10 },
+  { key:"pat_laspezia",   cat:"patrono", luogo:"La Spezia",       name:"San Giuseppe",                  m:3,  d:19 },
+  { key:"pat_latina",     cat:"patrono", luogo:"Latina",          name:"San Marco",                     m:4,  d:25 },
+  { key:"pat_lecce",      cat:"patrono", luogo:"Lecce",           name:"Sant'Oronzo",                   m:8,  d:26 },
+  { key:"pat_lecco",      cat:"patrono", luogo:"Lecco",           name:"San Nicolò",                    m:12, d:6  },
+  { key:"pat_livorno",    cat:"patrono", luogo:"Livorno",         name:"Santa Giulia",                  m:5,  d:22 },
+  { key:"pat_lodi",       cat:"patrono", luogo:"Lodi",            name:"San Bassiano",                  m:1,  d:19 },
+  { key:"pat_lucca",      cat:"patrono", luogo:"Lucca",           name:"San Paolino",                   m:7,  d:12 },
+  { key:"pat_macerata",   cat:"patrono", luogo:"Macerata",        name:"San Giuliano",                  m:8,  d:31 },
+  { key:"pat_mantova",    cat:"patrono", luogo:"Mantova",         name:"Sant'Anselmo",                  m:3,  d:18 },
+  { key:"pat_massa",      cat:"patrono", luogo:"Massa",           name:"San Francesco",                 m:10, d:4  },
+  { key:"pat_matera",     cat:"patrono", luogo:"Matera",          name:"Madonna della Bruna",           m:7,  d:2  },
+  { key:"pat_messina",    cat:"patrono", luogo:"Messina",         name:"Madonna della Lettera",         m:6,  d:3  },
+  { key:"pat_milano",     cat:"patrono", luogo:"Milano",          name:"Sant'Ambrogio",                 m:12, d:7  },
+  { key:"pat_modena",     cat:"patrono", luogo:"Modena",          name:"San Geminiano",                 m:1,  d:31 },
+  { key:"pat_monza",      cat:"patrono", luogo:"Monza",           name:"San Giovanni Battista",         m:6,  d:24 },
+  { key:"pat_napoli",     cat:"patrono", luogo:"Napoli",          name:"San Gennaro",                   m:9,  d:19 },
+  { key:"pat_novara",     cat:"patrono", luogo:"Novara",          name:"San Gaudenzio",                 m:1,  d:22 },
+  { key:"pat_nuoro",      cat:"patrono", luogo:"Nuoro",           name:"Madonna delle Grazie",          m:9,  d:8  },
+  { key:"pat_oristano",   cat:"patrono", luogo:"Oristano",        name:"Sant'Archelao",                 m:2,  d:13 },
+  { key:"pat_padova",     cat:"patrono", luogo:"Padova",          name:"Sant'Antonio da Padova",        m:6,  d:13 },
+  { key:"pat_palermo",    cat:"patrono", luogo:"Palermo",         name:"Santa Rosalia",                 m:7,  d:15 },
+  { key:"pat_parma",      cat:"patrono", luogo:"Parma",           name:"Sant'Ilario",                   m:1,  d:13 },
+  { key:"pat_pavia",      cat:"patrono", luogo:"Pavia",           name:"San Siro",                      m:12, d:9  },
+  { key:"pat_perugia",    cat:"patrono", luogo:"Perugia",         name:"Sant'Ercolano",                 m:3,  d:1  },
+  { key:"pat_pesaro",     cat:"patrono", luogo:"Pesaro",          name:"San Terenzio",                  m:9,  d:24 },
+  { key:"pat_pescara",    cat:"patrono", luogo:"Pescara",         name:"San Cetteo",                    m:10, d:10 },
+  { key:"pat_piacenza",   cat:"patrono", luogo:"Piacenza",        name:"Sant'Antonino",                 m:7,  d:4  },
+  { key:"pat_pisa",       cat:"patrono", luogo:"Pisa",            name:"San Ranieri",                   m:6,  d:17 },
+  { key:"pat_pistoia",    cat:"patrono", luogo:"Pistoia",         name:"San Jacopo",                    m:7,  d:25 },
+  { key:"pat_pordenone",  cat:"patrono", luogo:"Pordenone",       name:"San Marco",                     m:4,  d:25 },
+  { key:"pat_potenza",    cat:"patrono", luogo:"Potenza",         name:"San Gerardo",                   m:5,  d:30 },
+  { key:"pat_prato",      cat:"patrono", luogo:"Prato",           name:"Santo Stefano",                 m:12, d:26 },
+  { key:"pat_ragusa",     cat:"patrono", luogo:"Ragusa",          name:"San Giovanni Battista",         m:8,  d:29 },
+  { key:"pat_ravenna",    cat:"patrono", luogo:"Ravenna",         name:"Sant'Apollinare",               m:7,  d:23 },
+  { key:"pat_reggiocal",  cat:"patrono", luogo:"Reggio Calabria", name:"San Giorgio",                   m:4,  d:23 },
+  { key:"pat_reggioem",   cat:"patrono", luogo:"Reggio Emilia",   name:"San Prospero",                  m:11, d:24 },
+  { key:"pat_rieti",      cat:"patrono", luogo:"Rieti",           name:"Santa Barbara",                 m:12, d:4  },
+  { key:"pat_rimini",     cat:"patrono", luogo:"Rimini",          name:"San Gaudenzio",                 m:10, d:14 },
+  { key:"pat_roma",       cat:"patrono", luogo:"Roma",            name:"Santi Pietro e Paolo",          m:6,  d:29 },
+  { key:"pat_rovigo",     cat:"patrono", luogo:"Rovigo",          name:"San Bellino",                   m:11, d:26 },
+  { key:"pat_salerno",    cat:"patrono", luogo:"Salerno",         name:"San Matteo",                    m:9,  d:21 },
+  { key:"pat_sassari",    cat:"patrono", luogo:"Sassari",         name:"San Nicola",                    m:12, d:6  },
+  { key:"pat_savona",     cat:"patrono", luogo:"Savona",          name:"N.S. della Misericordia",       m:3,  d:18 },
+  { key:"pat_siena",      cat:"patrono", luogo:"Siena",           name:"Sant'Ansano",                   m:12, d:1  },
+  { key:"pat_siracusa",   cat:"patrono", luogo:"Siracusa",        name:"Santa Lucia",                   m:12, d:13 },
+  { key:"pat_sondrio",    cat:"patrono", luogo:"Sondrio",         name:"Santi Gervasio e Protasio",     m:6,  d:19 },
+  { key:"pat_taranto",    cat:"patrono", luogo:"Taranto",         name:"San Cataldo",                   m:5,  d:10 },
+  { key:"pat_teramo",     cat:"patrono", luogo:"Teramo",          name:"San Berardo",                   m:12, d:19 },
+  { key:"pat_terni",      cat:"patrono", luogo:"Terni",           name:"San Valentino",                 m:2,  d:14 },
+  { key:"pat_torino",     cat:"patrono", luogo:"Torino",          name:"San Giovanni Battista",         m:6,  d:24 },
+  { key:"pat_trapani",    cat:"patrono", luogo:"Trapani",         name:"Sant'Alberto degli Abati",      m:8,  d:7  },
+  { key:"pat_trento",     cat:"patrono", luogo:"Trento",          name:"San Vigilio",                   m:6,  d:26 },
+  { key:"pat_treviso",    cat:"patrono", luogo:"Treviso",         name:"San Liberale",                  m:4,  d:27 },
+  { key:"pat_trieste",    cat:"patrono", luogo:"Trieste",         name:"San Giusto",                    m:11, d:3  },
+  { key:"pat_udine",      cat:"patrono", luogo:"Udine",           name:"Santi Ermacora e Fortunato",    m:7,  d:12 },
+  { key:"pat_varese",     cat:"patrono", luogo:"Varese",          name:"San Vittore",                   m:5,  d:8  },
+  { key:"pat_venezia",    cat:"patrono", luogo:"Venezia",         name:"San Marco",                     m:4,  d:25 },
+  { key:"pat_verbania",   cat:"patrono", luogo:"Verbania",        name:"San Vittore",                   m:5,  d:8  },
+  { key:"pat_vercelli",   cat:"patrono", luogo:"Vercelli",        name:"Sant'Eusebio",                  m:8,  d:1  },
+  { key:"pat_verona",     cat:"patrono", luogo:"Verona",          name:"San Zeno",                      m:5,  d:21 },
+  { key:"pat_vibo",       cat:"patrono", luogo:"Vibo Valentia",   name:"Santa Maria Maggiore",          m:8,  d:5  },
+  { key:"pat_vicenza",    cat:"patrono", luogo:"Vicenza",         name:"Madonna di Monte Berico",       m:9,  d:8  },
+  { key:"pat_viterbo",    cat:"patrono", luogo:"Viterbo",         name:"Santa Rosa",                    m:9,  d:4  },
 ];
 
-// Restituisce le festività EFFETTIVAMENTE attive per un anno, filtrate in
-// base a nationalHolsEnabled: un array di chiavi (es. quelle salvate in
-// store.nationalHolsEnabled) oppure `true`/`undefined` per "tutte attive"
-// (comodo per chiamate senza preferenze salvate) o `false` per "nessuna".
-export function italianHols(year, nationalHolsEnabled = true) {
-  if (nationalHolsEnabled === false) return [];
-  const attive = Array.isArray(nationalHolsEnabled)
-    ? FESTIVITA_FISSE.filter(h => nationalHolsEnabled.includes(h.key))
-    : FESTIVITA_FISSE; // true / undefined / altro: tutte attive
-  return attive.map(h => ({ ...h, y: year }));
-}
+// Etichette leggibili delle categorie, per i titoli dei gruppi nella UI.
+export const FESTIVITA_CATEGORIE = [
+  { cat:"nazionale", label:"FESTIVITÀ NAZIONALI" },
+  { cat:"mobile",    label:"FESTIVITÀ MOBILI (ricalcolate ogni anno)" },
+  { cat:"regionale", label:"RICORRENZE REGIONALI" },
+  { cat:"patrono",   label:"SANTI PATRONI — CITTÀ" },
+];
 
-// Catalogo delle festività nazionali disponibili, con chiave stabile e
-// nome leggibile, per popolare l'elenco toggle in Impostazioni -> Festivi.
-// A differenza di italianHols() (che restituisce solo le date attive per
-// un anno) questo elenca SEMPRE tutte le festività note, attive o meno.
+// Chiavi attive di default (fallback di store.nationalHolsEnabled finché
+// l'utente non personalizza la selezione in Impostazioni -> Festivi):
+// le 10 festività nazionali riconosciute per legge più Pasqua e
+// Pasquetta. I patroni restano spenti perché valgono solo nella propria
+// città: è l'utente a scegliere la sua.
+export const FESTIVITA_DEFAULT_ATTIVE = [
+  "capodanno", "epifania", "pasqua", "pasquetta", "liberazione", "lavoro",
+  "repubblica", "ferragosto", "ognissanti", "immacolata", "natale",
+  "santostefano",
+];
+
+// Mantenuto per compatibilità con gli import esistenti: la stessa lista
+// di patroni, derivata dal catalogo unico invece di essere duplicata.
+export const SANTI_PATRONI_CITTA = FESTIVITA_CATALOGO
+  .filter(f => f.cat === "patrono")
+  .map(f => ({ citta: f.luogo, nome: f.name, d: f.d, m: f.m }));
+
+// Cache per anno del catalogo risolto: resolveFestivitaCatalogo viene
+// chiamata a ogni render del calendario e per ogni giorno da isFestivo,
+// quindi ricalcolare Pasqua ogni volta sarebbe uno spreco.
+const _catalogoPerAnno = new Map();
+
+// Catalogo completo con le date CONCRETE dell'anno richiesto: le voci
+// fisse riportano la loro m/d, quelle mobili la data calcolata a partire
+// dalla Pasqua di quell'anno. Cambiando anno il ricalcolo è automatico.
 export function resolveFestivitaCatalogo(year) {
-  return FESTIVITA_FISSE.map(f => ({ ...f, y: year }));
+  const y = Number(year) || new Date().getFullYear();
+  if (_catalogoPerAnno.has(y)) return _catalogoPerAnno.get(y);
+  const risolto = FESTIVITA_CATALOGO.map(f => {
+    if (typeof f.off === "number") {
+      const { m, d } = dataDaPasqua(y, f.off);
+      return { ...f, m, d, y, mobile: true };
+    }
+    return { ...f, y, mobile: false };
+  });
+  _catalogoPerAnno.set(y, risolto);
+  return risolto;
 }
 
-// nationalHolsEnabled: come in italianHols (true/undefined = tutte attive,
-// false = nessuna, array = solo le chiavi elencate). extraHols: array di
-// festivi locali definiti dall'utente in Impostazioni -> Festivi Locali,
-// nello stesso formato salvato da store.extraHols ({name, d, m}, con m
-// 1-based come inserito dall'utente, es. 9 per settembre — NON va
-// convertito a 0-based, altrimenti il confronto con il mese del dateKey
-// (anch'esso 1-based) fallisce sempre).
+// Normalizza il parametro delle festività attive nelle tre forme
+// accettate: array di chiavi, false (nessuna), true/undefined (usa le
+// predefinite — NON tutto il catalogo, che includerebbe i patroni di
+// ogni città d'Italia).
+function chiaviAttive(nationalHolsEnabled) {
+  if (nationalHolsEnabled === false) return [];
+  if (Array.isArray(nationalHolsEnabled)) return nationalHolsEnabled;
+  return FESTIVITA_DEFAULT_ATTIVE;
+}
+
+// Festività EFFETTIVAMENTE attive per un anno, con data risolta.
+export function italianHols(year, nationalHolsEnabled = true) {
+  const keys = chiaviAttive(nationalHolsEnabled);
+  if (keys.length === 0) return [];
+  return resolveFestivitaCatalogo(year).filter(f => keys.includes(f.key));
+}
+
+// nationalHolsEnabled: array di chiavi, oppure true/undefined (attive di
+// default) o false (nessuna). extraHols: festivi PERSONALIZZATI definiti
+// a mano dall'utente, nel formato salvato in store.extraHols
+// ({name, d, m}, con m 1-based come inserito dall'utente — es. 9 per
+// settembre: NON va convertito a 0-based, altrimenti il confronto con il
+// mese del dateKey (anch'esso 1-based) fallisce sempre). Un extraHol può
+// avere anche `y`: in quel caso vale solo per quell'anno (data personale
+// non ricorrente), altrimenti si ripete ogni anno.
 export function isFestivo(dateKey, nationalHolsEnabled = true, extraHols = []) {
   if (!dateKey) return false;
   const [y, m, d] = dateKey.split("-").map(Number);
   if (!y || !m || !d) return false;
   const dow = new Date(y, m - 1, d).getDay();
   if (dow === 0) return true; // domenica
-  const nazionaliAttive = nationalHolsEnabled === false
-    ? []
-    : Array.isArray(nationalHolsEnabled)
-      ? FESTIVITA_FISSE.filter(h => nationalHolsEnabled.includes(h.key))
-      : FESTIVITA_FISSE;
-  if (nazionaliAttive.some(h => h.m === m && h.d === d)) return true;
-  return (extraHols || []).some(h => +h.m === m && +h.d === d);
+  const keys = chiaviAttive(nationalHolsEnabled);
+  if (keys.length > 0) {
+    const attive = resolveFestivitaCatalogo(y).filter(f => keys.includes(f.key));
+    if (attive.some(h => h.m === m && h.d === d)) return true;
+  }
+  return (extraHols || []).some(h =>
+    +h.m === m && +h.d === d && (h.y == null || +h.y === y));
 }
 
 
