@@ -678,7 +678,26 @@ export function useAppCore(session){
         // Supabase rispondeva — il flash visibile ad ogni apertura dell'app.
         const cached = loadFromLocalStorage();
         if(cached && cached.calendars.length > 0){
-          setStore(s=>({...s, calendars:cached.calendars, events:cached.events, ...(cached.impostazioni||{})}));
+          // Le impostazioni (tema, colori, fasce, festività attive...) NON
+          // sono salvate sotto una chiave "impostazioni": saveToLocalStorage
+          // le scrive direttamente nella radice del payload (vedi "extra" in
+          // 04-Rotazione.jsx). Leggere da cached.impostazioni (che non esiste
+          // mai) le faceva ignorare qui, quindi al primo render si vedevano
+          // sempre i default (es. festività di default) finché Supabase non
+          // rispondeva e sovrascriveva tutto — il flash che volevamo evitare.
+          setStore(s=>({...s, calendars:cached.calendars, events:cached.events,
+            theme: cached.theme ?? s.theme,
+            extraHols: cached.extraHols ?? s.extraHols,
+            reports: cached.reports ?? s.reports,
+            reportSettings: cached.reportSettings ?? s.reportSettings,
+            fasceAutomatiche: cached.fasceAutomatiche ?? s.fasceAutomatiche,
+            sundayColor: cached.sundayColor ?? s.sundayColor,
+            holidayColor: cached.holidayColor ?? s.holidayColor,
+            nationalHolsEnabled: cached.nationalHolsEnabled ?? s.nationalHolsEnabled,
+            calEventRows: cached.calEventRows ?? s.calEventRows,
+            calRow1Field: cached.calRow1Field ?? s.calRow1Field,
+            calRow2Field: cached.calRow2Field ?? s.calRow2Field,
+          }));
           setModelli((cached.modelli||[]).filter(Boolean));
           const calIdValido = cached.calId && cached.calendars.some(c=>c.id===cached.calId);
           setCalId(calIdValido ? cached.calId : (cached.calendars[0]?.id||null));

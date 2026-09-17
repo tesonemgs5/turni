@@ -581,7 +581,23 @@ const LS_CACHE_KEY = "turnipm_cache_v1";
 
 export function saveToLocalStorage(events, calendars, modelli, calId, extra = {}) {
   try {
-    const payload = { events, calendars, modelli, calId, ...extra, _savedAt: Date.now() };
+    // Molte chiamate a questa funzione (es. dopo aggiungere/modificare un
+    // singolo evento) passano solo events/calendars/modelli, SENZA extra
+    // (impostazioni: tema, colori, fasce, festività attive...). Se qui
+    // scrivessimo solo i campi ricevuti, ogni salvataggio "parziale"
+    // cancellerebbe dalla cache le impostazioni salvate in precedenza
+    // (es. da un caricamento completo), perché localStorage.setItem
+    // sovrascrive l'intera voce. Per questo prima leggiamo quanto già
+    // presente in cache e facciamo merge: i campi non passati in questa
+    // chiamata restano quelli già salvati, invece di sparire — è proprio
+    // questo il bug che causava il ritorno dei festivi/colori di default
+    // al primo render, ad ogni piccola modifica successiva al calendario.
+    let precedente = {};
+    try {
+      const raw = localStorage.getItem(LS_CACHE_KEY);
+      if (raw) precedente = JSON.parse(raw) || {};
+    } catch { /* cache corrotta o assente: si riparte da vuoto */ }
+    const payload = { ...precedente, events, calendars, modelli, calId, ...extra, _savedAt: Date.now() };
     localStorage.setItem(LS_CACHE_KEY, JSON.stringify(payload));
   } catch (e) {
     // Storage pieno o non disponibile: non blocchiamo l'app per questo.
