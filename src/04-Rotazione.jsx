@@ -597,7 +597,11 @@ export function saveToLocalStorage(events, calendars, modelli, calId, extra = {}
       const raw = localStorage.getItem(LS_CACHE_KEY);
       if (raw) precedente = JSON.parse(raw) || {};
     } catch { /* cache corrotta o assente: si riparte da vuoto */ }
-    const payload = { ...precedente, events, calendars, modelli, calId, ...extra, _savedAt: Date.now() };
+    const payload = {
+      ...precedente, events, calendars, modelli,
+      ...(calId !== undefined ? { calId } : {}),
+      ...extra, _savedAt: Date.now(),
+    };
     localStorage.setItem(LS_CACHE_KEY, JSON.stringify(payload));
   } catch (e) {
     // Storage pieno o non disponibile: non blocchiamo l'app per questo.
