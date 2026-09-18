@@ -113,6 +113,7 @@ export default function VistaModelli({ C }){
     setExCal, nhName, setNhName, patronoCittaSel, setPatronoCittaSel, syncMsg, setSyncMsg, backupsList,
     setBackupsList, showBackupsModal, setShowBackupsModal, showLocalDataModal, setShowLocalDataModal, syncing,
     esitoBackupLocale, setEsitoBackupLocale, confermaImportLocale, setConfermaImportLocale,
+    backupPeriodoDa, setBackupPeriodoDa, backupPeriodoA, setBackupPeriodoA,
     handleEsportaBackupLocale, handleFileSelezionatoImportLocale, confermaEsegueImportBackupLocale,
     setSyncing, nhD, setNhD, nhM, setNhM, nhY, setNhY, bgSyncing,
     setBgSyncing, dbError, setDbError, isWideScreen, setIsWideScreen, evtFontSize,
@@ -1552,11 +1553,26 @@ export default function VistaModelli({ C }){
 
               <div style={{marginTop:16,paddingTop:16,borderTop:`1px solid ${T.border}`}}>
                 <div style={{fontSize:13,fontWeight:900,color:T.text,marginBottom:8}}>Backup locale (file, senza Supabase)</div>
+                <div style={{fontSize:12,color:T.sub,marginBottom:6}}>Periodo da salvare (lascia vuoto per salvare tutto):</div>
+                <div style={{display:"flex",gap:8,marginBottom:10}}>
+                  <input type="date" value={backupPeriodoDa} onChange={e=>setBackupPeriodoDa(e.target.value)}
+                    style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
+                      padding:"10px",color:T.text,fontSize:12,boxSizing:"border-box"}} />
+                  <input type="date" value={backupPeriodoA} onChange={e=>setBackupPeriodoA(e.target.value)}
+                    style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
+                      padding:"10px",color:T.text,fontSize:12,boxSizing:"border-box"}} />
+                </div>
+                {(backupPeriodoDa||backupPeriodoA)&&(
+                  <div style={{fontSize:11,color:"#f59e0b",marginBottom:8,lineHeight:1.4}}>
+                    ⚠️ Il file conterrà solo gli eventi del periodo scelto. Reimportandolo, gli eventi fuori
+                    da questo periodo verranno persi: usalo per archiviare o condividere, non come backup di sicurezza.
+                  </div>
+                )}
                 <div style={{display:"flex",flexDirection:"column",gap:8}}>
                   <button onClick={handleEsportaBackupLocale}
                     style={{background:"#2563eb",color:"#fff",border:"none",borderRadius:10,
                       padding:"12px",fontSize:13,fontWeight:800,cursor:"pointer"}}>
-                    ⬇️ Esporta tutto in un file (.json)
+                    {(backupPeriodoDa||backupPeriodoA) ? "⬇️ Esporta il periodo scelto (.json)" : "⬇️ Esporta tutto in un file (.json)"}
                   </button>
                   <label style={{background:T.s2,color:T.text,border:`1px solid ${T.border}`,borderRadius:10,
                     padding:"12px",fontSize:13,fontWeight:800,cursor:"pointer",textAlign:"center",display:"block"}}>
@@ -1597,6 +1613,15 @@ export default function VistaModelli({ C }){
               ({Object.keys(confermaImportLocale.localStorage||{}).length} elementi nel file, esportato il{" "}
               {confermaImportLocale._esportatoIl ? new Date(confermaImportLocale._esportatoIl).toLocaleString("it-IT") : "—"}).
             </div>
+            {confermaImportLocale._periodo&&(
+              <div style={{fontSize:12,color:"#f59e0b",lineHeight:1.5,marginBottom:8,fontWeight:700}}>
+                ⚠️ Questo è un backup PARZIALE: contiene solo gli eventi dal{" "}
+                {confermaImportLocale._periodo.da || "inizio"} al {confermaImportLocale._periodo.a || "fine"}
+                {typeof confermaImportLocale._periodo.eventiInclusi === "number"
+                  ? ` (${confermaImportLocale._periodo.eventiInclusi} eventi)` : ""}.
+                Tutti gli eventi fuori da questo periodo verranno cancellati da questo dispositivo.
+              </div>
+            )}
             <div style={{fontSize:13,color:T.sub,lineHeight:1.5,marginBottom:16}}>
               Dopo l'importazione, la sincronizzazione automatica con Supabase verrà <b style={{color:T.text}}>disattivata</b>,
               per evitare che il cloud sovrascriva quanto appena ripristinato. Potrai riattivarla in qualsiasi momento dalle Impostazioni.

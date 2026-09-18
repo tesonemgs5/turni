@@ -95,6 +95,10 @@ export function useAppCore(session){
   const [showLocalDataModal, setShowLocalDataModal] = useState(false);
   const [esitoBackupLocale, setEsitoBackupLocale] = useState(null); // {tipo:"ok"|"errore", messaggio} — esito ultimo export/import locale
   const [confermaImportLocale, setConfermaImportLocale] = useState(null); // backup parsato in attesa di conferma prima di sovrascrivere
+  // Periodo opzionale per l'export del backup locale ("YYYY-MM-DD" o ""):
+  // se entrambi vuoti il backup e' completo, come prima.
+  const [backupPeriodoDa, setBackupPeriodoDa] = useState("");
+  const [backupPeriodoA, setBackupPeriodoA] = useState("");
   const [syncing,  setSyncing]  = useState(false);
   const [nhD,     setNhD]     = useState("");
   const [nhM,     setNhM]     = useState("");
@@ -2801,18 +2805,30 @@ export function useAppCore(session){
   // legge solo ciò che è già salvato sul dispositivo in quel momento.
   function handleEsportaBackupLocale(){
     try {
-      const backup = esportaBackupLocaleCompleto();
+      // Se l'utente non indica nessuna delle due date, periodo resta null e
+      // il backup e' completo (comportamento identico a prima).
+      const periodo = (backupPeriodoDa || backupPeriodoA)
+        ? { da: backupPeriodoDa || null, a: backupPeriodoA || null }
+        : null;
+      const backup = esportaBackupLocaleCompleto(periodo);
       const blob = new Blob([JSON.stringify(backup, null, 2)], {type:"application/json"});
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       const bollino = new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
+      // Il periodo finisce nel nome del file: riconoscere un backup parziale
+      // da un backup completo deve essere possibile senza aprirlo.
+      const suffisso = periodo
+        ? `_${periodo.da || "inizio"}_${periodo.a || "fine"}`
+        : "_completo";
       a.href = url;
-      a.download = `turnipm_backup_locale_${bollino}.json`;
+      a.download = `turnipm_backup_locale${suffisso}_${bollino}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       setTimeout(()=>URL.revokeObjectURL(url), 5000);
-      setEsitoBackupLocale({tipo:"ok", messaggio:`Backup locale scaricato: ${backup._numeroChiavi} elementi salvati.`});
+      setEsitoBackupLocale({tipo:"ok", messaggio: periodo
+        ? `Backup scaricato: ${backup._numeroChiavi} elementi, ${backup._periodo?.eventiInclusi ?? 0} eventi nel periodo scelto.`
+        : `Backup locale completo scaricato: ${backup._numeroChiavi} elementi salvati.`});
     } catch(e){
       segnalaErrore(e, "Esportazione backup locale");
       setEsitoBackupLocale({tipo:"errore", messaggio:"Errore durante l'esportazione: "+(e?.message||e)});
@@ -5848,6 +5864,10 @@ const importsRecenti = useMemo(()=>{
     handleExportSupabase,
     handleOpenImportSupabase,
     handleRestoreBackup,
+    backupPeriodoDa,
+    setBackupPeriodoDa,
+    backupPeriodoA,
+    setBackupPeriodoA,
     handleEsportaBackupLocale,
     handleFileSelezionatoImportLocale,
     confermaEsegueImportBackupLocale,

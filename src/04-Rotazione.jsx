@@ -666,7 +666,7 @@ export function saveDatiSessioneLocale({ rotazioni, coloriExtra, autocompleteVal
 // filtro resta come garanzia esplicita piuttosto che implicita).
 const BACKUP_LOCALE_VERSIONE = 1;
 
-export function esportaBackupLocaleCompleto() {
+export function esportaBackupLocaleCompleto(periodo = null) {
   const chiavi = {};
   let nChiavi = 0;
   try {
@@ -690,11 +690,52 @@ export function esportaBackupLocaleCompleto() {
   } catch (e) {
     console.warn("esportaBackupLocaleCompleto: errore durante la scansione di localStorage:", e);
   }
+
+  // Filtro per periodo: agisce SOLO sugli eventi (dentro la chiave
+  // LS_CACHE_KEY). Modelli, rotazioni, colori, indennita, impostazioni e
+  // tutte le altre chiavi restano sempre integrali: pesano pochi kB e
+  // senza di loro gli eventi ripristinati resterebbero orfani (nessun
+  // modello o rotazione a cui agganciarsi). Il confronto fra date usa il
+  // formato "YYYY-MM-DD" delle chiavi di events, che e' ordinabile
+  // lessicograficamente: non serve costruire oggetti Date.
+  let nEventiTenuti = null;
+  const daPeriodo = (periodo && periodo.da) || null;
+  const aPeriodo = (periodo && periodo.a) || null;
+  if (daPeriodo || aPeriodo) {
+    try {
+      const voce = chiavi[LS_CACHE_KEY];
+      if (voce && voce.json && voce.json.events) {
+        const dal = daPeriodo || "0000-01-01";
+        const al = aPeriodo || "9999-12-31";
+        const eventiFiltrati = {};
+        nEventiTenuti = 0;
+        for (const dk of Object.keys(voce.json.events)) {
+          if (dk >= dal && dk <= al) {
+            eventiFiltrati[dk] = voce.json.events[dk];
+            for (const cal of Object.keys(eventiFiltrati[dk] || {})) {
+              nEventiTenuti += (eventiFiltrati[dk][cal] || []).length;
+            }
+          }
+        }
+        const jsonFiltrato = { ...voce.json, events: eventiFiltrati };
+        // grezzo va rigenerato dal json filtrato: e' il grezzo che l'import
+        // riscrive in localStorage, quindi se restasse quello originale il
+        // filtro non avrebbe alcun effetto reale al ripristino.
+        chiavi[LS_CACHE_KEY] = { grezzo: JSON.stringify(jsonFiltrato), json: jsonFiltrato };
+      }
+    } catch (e) {
+      console.warn("esportaBackupLocaleCompleto: filtro periodo non applicato:", e);
+    }
+  }
+
   return {
     _tipo: "turnipm_backup_locale",
     _versione: BACKUP_LOCALE_VERSIONE,
     _esportatoIl: new Date().toISOString(),
     _numeroChiavi: nChiavi,
+    _periodo: (daPeriodo || aPeriodo)
+      ? { da: daPeriodo, a: aPeriodo, eventiInclusi: nEventiTenuti }
+      : null,
     localStorage: chiavi,
   };
 }
