@@ -7,7 +7,7 @@ import {
   isModelloTurnazioneDefault, withEventoAggiunto, saveToLocalStorage,
   loadFromLocalStorage, clearLocalStorageCache, resolveFestivitaCatalogo,
   leggiLogErrori, leggiErroriSilenziati, impostaSilenziamentoErrore,
-  cancellaLogErrori, segnalaErrore,
+  cancellaLogErrori, segnalaErrore, esportaBackupLocaleCompleto, importaBackupLocaleCompleto,
 } from "./04-Rotazione";
 import { CalBadge, SmartTimeInput, AutocompleteInput, ColorPickerModal,
   ModaleErroriMultipli, FasceExpand, ConteggioConfigCard, TurnazioneConfigCard,
@@ -112,6 +112,8 @@ export default function VistaModelli({ C }){
     setNcColor, nsName, setNsName, nsColor, setNsColor, exCal,
     setExCal, nhName, setNhName, patronoCittaSel, setPatronoCittaSel, syncMsg, setSyncMsg, backupsList,
     setBackupsList, showBackupsModal, setShowBackupsModal, showLocalDataModal, setShowLocalDataModal, syncing,
+    esitoBackupLocale, setEsitoBackupLocale, confermaImportLocale, setConfermaImportLocale,
+    handleEsportaBackupLocale, handleFileSelezionatoImportLocale, confermaEsegueImportBackupLocale,
     setSyncing, nhD, setNhD, nhM, setNhM, nhY, setNhY, bgSyncing,
     setBgSyncing, dbError, setDbError, isWideScreen, setIsWideScreen, evtFontSize,
     dbErrorTimer, codaErrori, setCodaErrori, logErroriVisibile, setLogErroriVisibile, erroriSilenziatiVisibile,
@@ -1487,12 +1489,12 @@ export default function VistaModelli({ C }){
           <button onClick={handleExportSupabase}
             style={{flex:1,background:"#16a34a",border:"none",borderRadius:10,
               color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
-            📤 Esporta da Supabase
+            📤 Esporta su Supabase
           </button>
           <button onClick={handleOpenImportSupabase}
             style={{flex:1,background:"#2563eb",border:"none",borderRadius:10,
               color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
-            📥 Importa su Supabase
+            📥 Importa da Supabase
           </button>
         </div>
         <button onClick={()=>setShowLocalDataModal(true)}
@@ -1508,17 +1510,18 @@ export default function VistaModelli({ C }){
           sum + Object.values(calMap||{}).reduce((s2,arr)=>s2+(arr?.length||0), 0), 0) : 0;
         const nCalendars = cached?.calendars?.length || 0;
         const nModelli = cached?.modelli?.length || 0;
-        const ts = cached?.timestamp ? new Date(cached.timestamp).toLocaleString("it-IT") : "Mai";
+        const nRotazioni = cached?.rotazioni?.length || 0;
+        const ts = cached?._savedAt ? new Date(cached._savedAt).toLocaleString("it-IT") : "Mai";
         return (
           <div style={{position:"fixed",top:0,left:0,right:0,bottom:NAV_HEIGHT_CSS,background:"rgba(0,0,0,0.75)",zIndex:500,
             display:"flex",alignItems:"flex-end"}}
-            onClick={e=>{if(e.target===e.currentTarget)setShowLocalDataModal(false);}}>
+            onClick={e=>{if(e.target===e.currentTarget){setShowLocalDataModal(false); setEsitoBackupLocale(null);}}}>
             <div style={{background:T.surface,borderRadius:"18px 18px 0 0",width:"100%",
-              maxWidth:480,margin:"0 auto",padding:"16px"}}
+              maxWidth:480,margin:"0 auto",padding:"16px",maxHeight:"85vh",overflowY:"auto"}}
               onClick={e=>e.stopPropagation()}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
                 <div style={{fontSize:16,fontWeight:900,color:T.text}}>Dati salvati su questo dispositivo</div>
-                <button onClick={()=>setShowLocalDataModal(false)}
+                <button onClick={()=>{setShowLocalDataModal(false); setEsitoBackupLocale(null);}}
                   style={{background:"none",border:"none",color:T.sub,fontSize:22,cursor:"pointer"}}>×</button>
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:8,background:T.s2,borderRadius:10,padding:12}}>
@@ -1535,17 +1538,84 @@ export default function VistaModelli({ C }){
                   <span style={{fontWeight:800,color:T.text}}>{nModelli}</span>
                 </div>
                 <div style={{display:"flex",justifyContent:"space-between",fontSize:13}}>
+                  <span style={{color:T.sub}}>Rotazioni salvate:</span>
+                  <span style={{fontWeight:800,color:T.text}}>{nRotazioni}</span>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:13}}>
                   <span style={{color:T.sub}}>Ultimo salvataggio:</span>
                   <span style={{fontWeight:800,color:T.text}}>{ts}</span>
                 </div>
               </div>
               <div style={{fontSize:11,color:T.sub,marginTop:10,textAlign:"center"}}>
-                Questa è solo una cache locale di sicurezza. I dati reali e definitivi sono su Supabase.
+                Questa cache locale ora contiene tutti i dati dell'app (inclusi rotazioni, colori, indennità), non solo calendario ed eventi: l'app funziona al 100% anche senza connessione. I dati definitivi restano comunque su Supabase.
+              </div>
+
+              <div style={{marginTop:16,paddingTop:16,borderTop:`1px solid ${T.border}`}}>
+                <div style={{fontSize:13,fontWeight:900,color:T.text,marginBottom:8}}>Backup locale (file, senza Supabase)</div>
+                <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  <button onClick={handleEsportaBackupLocale}
+                    style={{background:"#2563eb",color:"#fff",border:"none",borderRadius:10,
+                      padding:"12px",fontSize:13,fontWeight:800,cursor:"pointer"}}>
+                    ⬇️ Esporta tutto in un file (.json)
+                  </button>
+                  <label style={{background:T.s2,color:T.text,border:`1px solid ${T.border}`,borderRadius:10,
+                    padding:"12px",fontSize:13,fontWeight:800,cursor:"pointer",textAlign:"center",display:"block"}}>
+                    ⬆️ Importa da file
+                    <input type="file" accept="application/json,.json" style={{display:"none"}}
+                      onChange={e=>{
+                        const file = e.target.files?.[0];
+                        handleFileSelezionatoImportLocale(file);
+                        e.target.value = ""; // permette di riselezionare lo stesso file una seconda volta
+                      }} />
+                  </label>
+                </div>
+                <div style={{fontSize:11,color:T.sub,marginTop:8,textAlign:"center"}}>
+                  Esporta un unico file .json con tutto ciò che è salvato su questo dispositivo: calendari, eventi, modelli, rotazioni, colori, indennità, log, impostazioni — davvero tutto. L'importazione sovrascrive i dati locali attuali e disattiva la sincronizzazione automatica con Supabase, così quanto importato resta al sicuro finché non la riattivi tu.
+                </div>
+                {esitoBackupLocale&&(
+                  <div style={{marginTop:10,padding:"10px 12px",borderRadius:8,fontSize:12,fontWeight:700,
+                    background: esitoBackupLocale.tipo==="ok" ? "rgba(16,185,129,0.12)" : "rgba(239,68,68,0.12)",
+                    color: esitoBackupLocale.tipo==="ok" ? "#10b981" : "#ef4444"}}>
+                    {esitoBackupLocale.tipo==="ok" ? "✅ " : "❌ "}{esitoBackupLocale.messaggio}
+                  </div>
+                )}
               </div>
             </div>
           </div>
         );
       })()}
+
+      {confermaImportLocale&&(
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.8)",zIndex:600,
+          display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
+          onClick={e=>{if(e.target===e.currentTarget)setConfermaImportLocale(null);}}>
+          <div style={{background:T.surface,borderRadius:14,width:"100%",maxWidth:420,padding:20}}
+            onClick={e=>e.stopPropagation()}>
+            <div style={{fontSize:16,fontWeight:900,color:T.text,marginBottom:10}}>⚠️ Confermi l'importazione?</div>
+            <div style={{fontSize:13,color:T.sub,lineHeight:1.5,marginBottom:8}}>
+              Questo <b style={{color:T.text}}>SOVRASCRIVERÀ</b> tutti i dati attualmente salvati su questo dispositivo
+              ({Object.keys(confermaImportLocale.localStorage||{}).length} elementi nel file, esportato il{" "}
+              {confermaImportLocale._esportatoIl ? new Date(confermaImportLocale._esportatoIl).toLocaleString("it-IT") : "—"}).
+            </div>
+            <div style={{fontSize:13,color:T.sub,lineHeight:1.5,marginBottom:16}}>
+              Dopo l'importazione, la sincronizzazione automatica con Supabase verrà <b style={{color:T.text}}>disattivata</b>,
+              per evitare che il cloud sovrascriva quanto appena ripristinato. Potrai riattivarla in qualsiasi momento dalle Impostazioni.
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>setConfermaImportLocale(null)}
+                style={{flex:1,background:T.s2,color:T.text,border:`1px solid ${T.border}`,borderRadius:10,
+                  padding:"12px",fontSize:13,fontWeight:800,cursor:"pointer"}}>
+                Annulla
+              </button>
+              <button onClick={confermaEsegueImportBackupLocale}
+                style={{flex:1,background:"#ef4444",color:"#fff",border:"none",borderRadius:10,
+                  padding:"12px",fontSize:13,fontWeight:800,cursor:"pointer"}}>
+                Sovrascrivi e importa
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showBackupsModal&&(
         <div style={{position:"fixed",top:0,left:0,right:0,bottom:NAV_HEIGHT_CSS,background:"rgba(0,0,0,0.75)",zIndex:500,
@@ -1561,7 +1631,7 @@ export default function VistaModelli({ C }){
             </div>
             {backupsList.length===0?(
               <div style={{textAlign:"center",padding:"24px",color:T.sub,fontSize:13}}>
-                Nessun backup trovato. Usa "Esporta da Supabase" per crearne uno.
+                Nessun backup trovato. Usa "Esporta su Supabase" per crearne uno.
               </div>
             ):(
               backupsList.map(b=>(

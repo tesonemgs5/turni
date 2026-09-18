@@ -7,7 +7,7 @@ import {
   getContrastTextColor, getShiftBand, isFestivo, isModelloTurnazioneDefault, italianHols,
   leggiCodaSync, leggiErroriSilenziati, leggiLogErrori, loadFromLocalStorage, minsOf,
   minutiTurnoModello, normalizzaOraHHMM, oraInMinuti, registraListenerCodaErrori, registraProblemiImport,
-  sameData, saveToLocalStorage, scriviCodaSync, segnalaErrore, segnalaErroreSoloLog,
+  sameData, saveDatiSessioneLocale, saveToLocalStorage, scriviCodaSync, segnalaErrore, segnalaErroreSoloLog,
   uid, withEventoAggiornato, withEventoAggiunto, withEventoRimosso,
 } from "./04-Rotazione";
 
@@ -92,6 +92,8 @@ export function useAppCore(session){
   const [backupsList, setBackupsList] = useState([]);
   const [showBackupsModal, setShowBackupsModal] = useState(false);
   const [showLocalDataModal, setShowLocalDataModal] = useState(false);
+  const [esitoBackupLocale, setEsitoBackupLocale] = useState(null); // {tipo:"ok"|"errore", messaggio} — esito ultimo export/import locale
+  const [confermaImportLocale, setConfermaImportLocale] = useState(null); // backup parsato in attesa di conferma prima di sovrascrivere
   const [syncing,  setSyncing]  = useState(false);
   const [nhD,     setNhD]     = useState("");
   const [nhM,     setNhM]     = useState("");
@@ -192,6 +194,41 @@ export function useAppCore(session){
       else segnalaErroreDb(error, contesto);
     }
     return { data, error };
+  }
+
+  // ─── Fetch COMPLETO di una tabella, a prescindere da quante righe ha.
+  // Supabase/PostgREST applica di default un limite massimo di 1000 righe
+  // per singola query (impostazione db-max-rows del progetto): un normale
+  // .select("*") su una tabella con più di 1000 eventi ne restituisce solo
+  // i primi 1000, TRONCANDO il resto in silenzio, senza errore. Questo era
+  // il motivo per cui il pannello "Dati salvati in Supabase" mostrava
+  // esattamente "1000" eventi totali (il muro del limite, non il conteggio
+  // vero) e per cui un backup costruito con un select semplice avrebbe
+  // perso ogni evento oltre il millesimo. Questa funzione pagina la lettura
+  // in blocchi da 1000 con .range(), richiamando finché l'ultimo blocco
+  // torna con meno di 1000 righe (segno che si è arrivati alla fine),
+  // così ogni chiamante ottiene SEMPRE l'intera tabella, qualunque sia la
+  // sua dimensione, senza dover sapere nulla del limite sottostante.
+  async function dbSelectTutto(table, { colonne="*", matchObj=null, orderBy=null, ascending=true, contesto }={}){
+    const DIMENSIONE_BLOCCO = 1000;
+    let tutteLeRighe = [];
+    let offset = 0;
+    while(true){
+      let query = supabase.from(table).select(colonne);
+      if(matchObj) query = query.match(matchObj);
+      if(orderBy) query = query.order(orderBy, { ascending });
+      query = query.range(offset, offset + DIMENSIONE_BLOCCO - 1);
+      const { data, error } = await query;
+      if(error){
+        segnalaErroreDb(error, contesto || `Lettura completa tabella "${table}"`);
+        return { data: tutteLeRighe, error };
+      }
+      const blocco = data || [];
+      tutteLeRighe = tutteLeRighe.concat(blocco);
+      if(blocco.length < DIMENSIONE_BLOCCO) break; // ultimo blocco: fine tabella
+      offset += DIMENSIONE_BLOCCO;
+    }
+    return { data: tutteLeRighe, error: null };
   }
 
   // ─── Wrapper unico per OGNI operazione di scrittura CRUD (turni, modelli,
@@ -657,6 +694,33 @@ export function useAppCore(session){
   const [indennita, setIndennita] = useState({ diurno:"", notturno:"", festivo:"", notturno_festivo:"" });
   const [valoreTicket, setValoreTicket] = useState("");
   const [conteggioConfigs, setConteggioConfigs] = useState({});
+
+  // ── PERSISTENZA LOCALE AUTOMATICA per i dati che prima vivevano SOLO in
+  // RAM (arrivavano unicamente da Supabase ad ogni avvio, mai scritti su
+  // localStorage): rotazioni, coloriExtra, autocompleteValori, indennita,
+  // valoreTicket, conteggioConfigs. Con questo useEffect, OGNI cambiamento
+  // a questi 6 stati — da qualunque punto dell'app, presente o futuro —
+  // viene scritto in automatico su localStorage (turnipm_cache_v1), senza
+  // bisogno di aggiungere una chiamata manuale in ogni singolo
+  // setRotazioni/setColoriExtra/setAutocompleteValori/ecc. sparso nel
+  // codice: qualunque nuovo punto che li modifichi in futuro è coperto
+  // automaticamente. Questo chiude il buco per cui, senza connessione dopo
+  // il primo render, un riavvio dell'app faceva ripartire questi dati da
+  // vuoto anche se l'utente li aveva già impostati: ora restano
+  // disponibili offline esattamente come eventi/calendari/modelli.
+  // Il ref sotto salta solo il primissimo giro (i valori iniziali vuoti
+  // degli useState), per non sovrascrivere subito la cache buona già
+  // presente su disco con dati ancora vuoti prima che il caricamento
+  // iniziale (da Supabase, o dalla cache stessa se offline) sia arrivato.
+  const primoRenderDatiSessioneFatto = useRef(false);
+  useEffect(()=>{
+    if(!primoRenderDatiSessioneFatto.current){
+      primoRenderDatiSessioneFatto.current = true;
+      return;
+    }
+    saveDatiSessioneLocale({ rotazioni, coloriExtra, autocompleteValori, indennita, valoreTicket, conteggioConfigs });
+  }, [rotazioni, coloriExtra, autocompleteValori, indennita, valoreTicket, conteggioConfigs]);
+
   const [showReportModelliPicker, setShowReportModelliPicker] = useState(null); // reportId aperto
   const [editFascia, setEditFascia] = useState(null); // key fascia in editing (nome/orario)
   const [showFasciaColorPicker, setShowFasciaColorPicker] = useState(null); // key fascia per cambio colore rapido
@@ -699,6 +763,19 @@ export function useAppCore(session){
             calRow2Field: cached.calRow2Field ?? s.calRow2Field,
           }));
           setModelli((cached.modelli||[]).filter(Boolean));
+          // Ripristino anche i 6 campi che prima vivevano solo in RAM
+          // (rotazioni, colori extra, autocomplete, indennità, ticket,
+          // conteggi): ora sono nella stessa cache locale (vedi
+          // saveDatiSessioneLocale in 04-Rotazione.jsx), quindi l'app parte
+          // con questi dati già pronti anche offline, invece di mostrarli
+          // vuoti finché Supabase non risponde — o per sempre, se la linea
+          // non torna. setRotazioni applica anche la guardia anti-null.
+          if(cached.rotazioni !== undefined) setRotazioni(cached.rotazioni||[]);
+          if(cached.coloriExtra !== undefined) setColoriExtra(cached.coloriExtra||[]);
+          if(cached.autocompleteValori !== undefined) setAutocompleteValori(cached.autocompleteValori||{titolo:[],nome_visualizzato:[],auto:[],luogo:[],collega:[]});
+          if(cached.indennita !== undefined) setIndennita(cached.indennita||{diurno:"",notturno:"",festivo:"",notturno_festivo:""});
+          if(cached.valoreTicket !== undefined) setValoreTicket(cached.valoreTicket||"");
+          if(cached.conteggioConfigs !== undefined) setConteggioConfigs(cached.conteggioConfigs||{});
           const calIdValido = cached.calId && cached.calendars.some(c=>c.id===cached.calId);
           setCalId(calIdValido ? cached.calId : (cached.calendars[0]?.id||null));
           setLoading(false);
@@ -2687,8 +2764,11 @@ export function useAppCore(session){
   async function handleViewDbData(){
     setShowDbModal(true); setDbRawData(null);
     try {
-      const {data:cals}=await supabase.from("calendars").select("*").eq("user_id",userId).order("created_at");
-      const {data:evts}=await supabase.from("events").select("*").eq("user_id",userId).order("date_key",{ascending:false});
+      // Fetch paginato (dbSelectTutto): senza questo, oltre le 1000 righe
+      // il pannello mostrava un conteggio troncato al limite del server
+      // invece del totale reale (vedi commento su dbSelectTutto).
+      const {data:cals}=await dbSelectTutto("calendars", {matchObj:{user_id:userId}, orderBy:"created_at", contesto:"Visualizzazione dati database (pannello admin) — calendari"});
+      const {data:evts}=await dbSelectTutto("events", {matchObj:{user_id:userId}, orderBy:"date_key", ascending:false, contesto:"Visualizzazione dati database (pannello admin) — eventi"});
       setDbCalsCount(cals?.length||0);
       setDbEvtsCount(evts?.length||0);
       setDbRawData({calendars:cals||[],events:evts||[]});
@@ -2696,16 +2776,85 @@ export function useAppCore(session){
   }
 
   async function buildBackupPayload(){
-    const {data:cals} = await supabase.from("calendars").select("*").eq("user_id",userId);
-    const {data:evts} = await supabase.from("events").select("*").eq("user_id",userId);
-    const {data:mods} = await supabase.from("modelli").select("*").eq("user_id",userId);
-    const {data:rots} = await supabase.from("rotazioni").select("*").eq("user_id",userId);
+    // Stesso motivo: fetch paginato per garantire che il backup su Supabase
+    // contenga DAVVERO tutto, non solo le prime 1000 righe di ogni tabella.
+    const {data:cals} = await dbSelectTutto("calendars", {matchObj:{user_id:userId}, contesto:"Esportazione backup — calendari"});
+    const {data:evts} = await dbSelectTutto("events", {matchObj:{user_id:userId}, contesto:"Esportazione backup — eventi"});
+    const {data:mods} = await dbSelectTutto("modelli", {matchObj:{user_id:userId}, contesto:"Esportazione backup — modelli"});
+    const {data:rots} = await dbSelectTutto("rotazioni", {matchObj:{user_id:userId}, contesto:"Esportazione backup — rotazioni"});
+    const {data:colori} = await dbSelectTutto("colori", {matchObj:{user_id:userId}, contesto:"Esportazione backup — colori"});
+    const {data:autocomplete} = await dbSelectTutto("autocomplete_valori", {matchObj:{user_id:userId}, contesto:"Esportazione backup — autocomplete"});
     const {data:sett} = await supabase.from("user_settings").select("*").eq("user_id",userId).maybeSingle();
     return {
       exported_at: new Date().toISOString(),
       calendars: cals||[], events: evts||[], modelli: mods||[],
-      rotazioni: rots||[], user_settings: sett||null,
+      rotazioni: rots||[], colori: colori||[], autocomplete_valori: autocomplete||[],
+      user_settings: sett||null,
     };
+  }
+
+  // ─── BACKUP LOCALE (indipendente da Supabase) ───────────────────────
+  // Esporta TUTTO il localStorage dell'app in un file .json che l'utente
+  // scarica sul proprio dispositivo. A differenza del backup su Supabase
+  // (handleExportSupabase sotto), questo non fa nessuna chiamata di rete:
+  // legge solo ciò che è già salvato sul dispositivo in quel momento.
+  function handleEsportaBackupLocale(){
+    try {
+      const backup = esportaBackupLocaleCompleto();
+      const blob = new Blob([JSON.stringify(backup, null, 2)], {type:"application/json"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const bollino = new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
+      a.href = url;
+      a.download = `turnipm_backup_locale_${bollino}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(()=>URL.revokeObjectURL(url), 5000);
+      setEsitoBackupLocale({tipo:"ok", messaggio:`Backup locale scaricato: ${backup._numeroChiavi} elementi salvati.`});
+    } catch(e){
+      segnalaErrore(e, "Esportazione backup locale");
+      setEsitoBackupLocale({tipo:"errore", messaggio:"Errore durante l'esportazione: "+(e?.message||e)});
+    }
+  }
+
+  // Legge il file scelto dall'utente e lo tiene in attesa di conferma
+  // (confermaImportLocale) prima di scrivere qualunque cosa: l'import
+  // sovrascrive tutto il localStorage esistente, quindi serve una
+  // conferma esplicita mostrata nell'interfaccia, non un window.confirm
+  // silenzioso facile da cliccare via per sbaglio.
+  function handleFileSelezionatoImportLocale(file){
+    if(!file) return;
+    setEsitoBackupLocale(null);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const backup = JSON.parse(ev.target.result);
+        if(!backup || backup._tipo !== "turnipm_backup_locale" || !backup.localStorage){
+          setEsitoBackupLocale({tipo:"errore", messaggio:"Il file selezionato non è un backup locale valido di questa app."});
+          return;
+        }
+        setConfermaImportLocale(backup);
+      } catch(e){
+        setEsitoBackupLocale({tipo:"errore", messaggio:"Il file selezionato non è un JSON valido."});
+      }
+    };
+    reader.onerror = () => setEsitoBackupLocale({tipo:"errore", messaggio:"Impossibile leggere il file selezionato."});
+    reader.readAsText(file);
+  }
+
+  // Eseguita solo dopo la conferma esplicita dell'utente nel modale.
+  function confermaEsegueImportBackupLocale(){
+    if(!confermaImportLocale) return;
+    const risultato = importaBackupLocaleCompleto(confermaImportLocale);
+    setConfermaImportLocale(null);
+    if(risultato.ok){
+      setEsitoBackupLocale({tipo:"ok", messaggio:risultato.messaggio+" Ricarico l'app…"});
+      setTimeout(()=>window.location.reload(), 1800);
+    } else {
+      segnalaErrore({message:`Import backup locale: ${risultato.errori.length} chiavi non scritte (${risultato.errori.map(e=>e.chiave).join(", ")})`}, "Importazione backup locale");
+      setEsitoBackupLocale({tipo:"errore", messaggio:risultato.messaggio});
+    }
   }
 
   async function handleExportSupabase(){
@@ -2723,11 +2872,14 @@ export function useAppCore(session){
   async function handleOpenImportSupabase(){
     setSyncMsg("⏳ Carico elenco backup...");
     try {
+      // Alzato da 20 a 100: 20 backup (spesso uno al giorno o meno)
+      // scadevano dopo poche settimane di utilizzo, facendo sparire dalla
+      // lista backup vecchi ma ancora potenzialmente utili da recuperare.
       const {data, error} = await supabase.from("backups")
         .select("id, created_at")
         .eq("user_id", userId)
         .order("created_at", {ascending:false})
-        .limit(20);
+        .limit(100);
       if(error) throw error;
       setBackupsList(data||[]);
       setShowBackupsModal(true);
@@ -2755,6 +2907,8 @@ export function useAppCore(session){
       contaErrore(await dbDelete("calendars", {user_id:userId}, "Ripristino backup — pulizia calendari esistenti", {soloLog:true}));
       contaErrore(await dbDelete("modelli", {user_id:userId}, "Ripristino backup — pulizia modelli esistenti", {soloLog:true}));
       contaErrore(await dbDelete("rotazioni", {user_id:userId}, "Ripristino backup — pulizia rotazioni esistenti", {soloLog:true}));
+      contaErrore(await dbDelete("colori", {user_id:userId}, "Ripristino backup — pulizia colori esistenti", {soloLog:true}));
+      contaErrore(await dbDelete("autocomplete_valori", {user_id:userId}, "Ripristino backup — pulizia autocomplete esistenti", {soloLog:true}));
 
       const calIdMap = {};
       for(const c of (backup.calendars||[])){
@@ -2774,18 +2928,9 @@ export function useAppCore(session){
         if(errM) erroriRiscontrati++;
         if(data?.[0]) modIdMap[m.id] = data[0].id;
       }
-      for(const e of (backup.events||[])){
-        const {error:errE} = await dbInsert("events", {
-          user_id:userId, calendar_id: calIdMap[e.calendar_id]||e.calendar_id,
-          date_key:e.date_key, label:e.label, color:e.color, all_day:e.all_day,
-          time_in:e.time_in, time_out:e.time_out, place:e.place, map_url:e.map_url,
-          note:e.note, modello_id: modIdMap[e.modello_id]||null,
-          collega:e.collega, auto:e.auto,
-        }, `Ripristino backup — evento "${e.label}" (${e.date_key})`, {soloLog:true});
-        if(errE) erroriRiscontrati++;
-      }
+      const rotIdMap = {};
       for(const r of (backup.rotazioni||[])){
-        const {error:errR} = await dbInsert("rotazioni", {
+        const {data, error:errR} = await dbInsert("rotazioni", {
           user_id:userId, tipo:r.tipo, titolo:r.titolo, data_inizio:r.data_inizio,
           n_settimane:r.n_settimane,
           modello_lavoro_id: modIdMap[r.modello_lavoro_id]||null,
@@ -2794,6 +2939,55 @@ export function useAppCore(session){
           griglia:r.griglia||{},
         }, `Ripristino backup — rotazione "${r.titolo}"`, {soloLog:true});
         if(errR) erroriRiscontrati++;
+        if(data?.[0]) rotIdMap[r.id] = data[0].id;
+      }
+      // Eventi: PRIMA passata per creare tutte le righe (con tutti i campi
+      // della tabella — in precedenza qui ne mancavano molti, es. note
+      // orario, luogo, protrazioni, categoria turno, report overrides:
+      // venivano scaricati dal backup ma persi in silenzio al ripristino).
+      // rotazione_id e parent_id sono rimappati come calendar_id/modello_id:
+      // puntano rispettivamente a una rotazione e a UN ALTRO EVENTO del
+      // backup, quindi senza rimappaggio punterebbero a id del vecchio
+      // account/sessione, ormai inesistenti dopo la cancellazione sopra.
+      // parent_id referenzia un id-evento del backup stesso: per questo
+      // serve una mappa vecchioId->nuovoId costruita mano a mano (idEvtMap),
+      // quindi gli eventi vanno inseriti in un ordine che garantisca che
+      // il genitore (parent_id null o già mappato) sia processato prima
+      // del figlio — qui li ordiniamo mettendo prima gli eventi senza
+      // parent_id, poi il resto, sufficiente per la profondità 1 usata
+      // dalle protrazioni in questa app.
+      const idEvtMap = {};
+      const eventiOrdinatiPerInserimento = [...(backup.events||[])].sort((a,b)=>(a.parent_id?1:0)-(b.parent_id?1:0));
+      for(const e of eventiOrdinatiPerInserimento){
+        const {data, error:errE} = await dbInsert("events", {
+          user_id:userId, calendar_id: calIdMap[e.calendar_id]||e.calendar_id,
+          date_key:e.date_key, label:e.label, color:e.color, all_day:e.all_day,
+          time_in:e.time_in, time_out:e.time_out, place:e.place, map_url:e.map_url,
+          time_in_note:e.time_in_note, time_out_note:e.time_out_note,
+          note:e.note, modello_id: modIdMap[e.modello_id]||null,
+          rotazione_id: rotIdMap[e.rotazione_id]||null,
+          collega:e.collega, auto:e.auto,
+          parent_id: e.parent_id ? (idEvtMap[e.parent_id]||null) : null,
+          prot_pag_fine:e.prot_pag_fine, prot_rec_fine:e.prot_rec_fine,
+          prot_meno_rec_in:e.prot_meno_rec_in, prot_meno_rec_out:e.prot_meno_rec_out,
+          categoria_turno:e.categoria_turno, categoria_app_auto:e.categoria_app_auto,
+          categoria_turno_vuoto:e.categoria_turno_vuoto, categoria_app_auto_vuoto:e.categoria_app_auto_vuoto,
+          report_overrides:e.report_overrides||{}, import_id:e.import_id||null,
+        }, `Ripristino backup — evento "${e.label}" (${e.date_key})`, {soloLog:true});
+        if(errE) erroriRiscontrati++;
+        if(data?.[0] && e.id) idEvtMap[e.id] = data[0].id;
+      }
+      for(const c of (backup.colori||[])){
+        const {error:errCol} = await dbInsert("colori", {
+          user_id:userId, hex:c.hex, label:c.label||null, sort_order:c.sort_order||0,
+        }, `Ripristino backup — colore "${c.hex}"`, {soloLog:true});
+        if(errCol) erroriRiscontrati++;
+      }
+      for(const a of (backup.autocomplete_valori||[])){
+        const {error:errAc} = await dbInsert("autocomplete_valori", {
+          user_id:userId, campo:a.campo, valore:a.valore,
+        }, `Ripristino backup — autocomplete "${a.campo}"`, {soloLog:true});
+        if(errAc) erroriRiscontrati++;
       }
       if(erroriRiscontrati>0){
         segnalaErrore(`${erroriRiscontrati} elementi non sono stati ripristinati correttamente (dettaglio nel Log). Il resto del backup è stato importato.`, "Ripristino backup");
@@ -5448,6 +5642,10 @@ const importsRecenti = useMemo(()=>{
     setShowBackupsModal,
     showLocalDataModal,
     setShowLocalDataModal,
+    esitoBackupLocale,
+    setEsitoBackupLocale,
+    confermaImportLocale,
+    setConfermaImportLocale,
     syncing,
     setSyncing,
     nhD,
@@ -5649,6 +5847,9 @@ const importsRecenti = useMemo(()=>{
     handleExportSupabase,
     handleOpenImportSupabase,
     handleRestoreBackup,
+    handleEsportaBackupLocale,
+    handleFileSelezionatoImportLocale,
+    confermaEsegueImportBackupLocale,
     handleLogout,
     eseguiNormalizzazione,
     normalizzaModelliTempo,
