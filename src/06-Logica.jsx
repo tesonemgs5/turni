@@ -9,6 +9,7 @@ import {
   minutiTurnoModello, normalizzaOraHHMM, oraInMinuti, registraListenerCodaErrori, registraProblemiImport,
   sameData, saveDatiSessioneLocale, saveToLocalStorage, scriviCodaSync, segnalaErrore, segnalaErroreSoloLog,
   uid, withEventoAggiornato, withEventoAggiunto, withEventoRimosso,
+  esportaBackupLocaleCompleto, importaBackupLocaleCompleto,
 } from "./04-Rotazione";
 
 // ════════════════════════════════════════════════════════════
