@@ -77,6 +77,43 @@ export function useAppCore(session){
       return next;
     });
   }
+  // ─── PRIMA APERTURA SU UN DISPOSITIVO NUOVO ─────────────────────────
+  // selectedCalIds e reportCalIds nascono VUOTI (localStorage vergine su
+  // un telefono/installazione appena fatta) e allEvts() ritorna [] quando
+  // la selezione e' vuota: il risultato era un calendario completamente
+  // vuoto, pur avendo scaricato correttamente tutto da Supabase — nessun
+  // errore, nessun banner, dati intatti sul server, ma niente a schermo.
+  // Nessuno dei setSelectedCalIds sparsi nel codice poteva rimediare,
+  // perche' hanno tutti la guardia `prev.length===0 ? prev : ...` (pensata
+  // per non forzare la selezione a chi l'ha svuotata di proposito), quindi
+  // una selezione vuota restava vuota per sempre finche' l'utente non
+  // toccava a mano un calendario.
+  // Qui si normalizza la selezione ogni volta che cambia l'elenco dei
+  // calendari (primo caricamento da cache o da Supabase, calendario
+  // eliminato, import): si tengono solo gli id che esistono davvero e, se
+  // non ne resta nessuno, si seleziona il calendario principale (o il
+  // primo) per il calendario e tutti per il report. L'effetto dipende solo
+  // da store.calendars, non da selectedCalIds: chi deseleziona tutto a
+  // mano durante l'uso non se lo vede riapparire.
+  useEffect(()=>{
+    const cals = store.calendars||[];
+    if(cals.length===0) return;
+    const esiste = id => cals.some(c=>c.id===id);
+    const principale = cals.find(c=>c.isMain) || cals[0];
+    setSelectedCalIds(prev=>{
+      const validi = (prev||[]).filter(esiste);
+      if(validi.length>0) return validi.length===(prev||[]).length ? prev : validi;
+      return principale ? [principale.id] : prev;
+    });
+    setReportCalIds(prev=>{
+      const validi = (prev||[]).filter(esiste);
+      if(validi.length>0) return validi.length===(prev||[]).length ? prev : validi;
+      const tutti = cals.map(c=>c.id);
+      try{ localStorage.setItem('cache_reportCalIds', JSON.stringify(tutti)); }catch(e){}
+      return tutti;
+    });
+  }, [store.calendars]);
+
   const [selectedModelloIds, setSelectedModelloIds] = useState([]); // selezione multipla modelli (editMode OFF)
   const [screen, setScreen] = useState("cal");
   const [dayKey, setDayKey] = useState(null);
