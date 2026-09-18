@@ -7,7 +7,7 @@ import {
   isModelloTurnazioneDefault, withEventoAggiunto, saveToLocalStorage,
   loadFromLocalStorage, clearLocalStorageCache, resolveFestivitaCatalogo,
   leggiLogErrori, leggiErroriSilenziati, impostaSilenziamentoErrore,
-  cancellaLogErrori, segnalaErrore, esportaBackupLocaleCompleto, importaBackupLocaleCompleto,
+  cancellaLogErrori, segnalaErrore,
 } from "./04-Rotazione";
 import { CalBadge, SmartTimeInput, AutocompleteInput, ColorPickerModal,
   ModaleErroriMultipli, FasceExpand, ConteggioConfigCard, TurnazioneConfigCard,
