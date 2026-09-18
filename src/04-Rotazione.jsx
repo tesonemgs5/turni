@@ -619,6 +619,128 @@ export function loadFromLocalStorage() {
   }
 }
 
+// Salva nella STESSA cache (turnipm_cache_v1, merge come saveToLocalStorage)
+// i dati che prima esistevano SOLO in RAM perché arrivavano unicamente da
+// Supabase ad ogni avvio: rotazioni, colori extra, autocomplete, indennità,
+// valore ticket, configurazioni conteggio. Senza questo, un riavvio
+// dell'app senza connessione li faceva ripartire vuoti anche se l'utente
+// li aveva già impostati — l'app doveva restare 100% funzionante offline
+// dopo il primo render, e questi 6 campi erano il buco che lo impediva.
+// Va chiamata da un useEffect che osserva questi stati (vedi 06-Logica.jsx),
+// così ogni punto che li modifica è coperto automaticamente, senza dover
+// aggiungere una chiamata manuale ad ogni singolo setRotazioni/setColoriExtra/ecc.
+export function saveDatiSessioneLocale({ rotazioni, coloriExtra, autocompleteValori, indennita, valoreTicket, conteggioConfigs }) {
+  try {
+    let precedente = {};
+    try {
+      const raw = localStorage.getItem(LS_CACHE_KEY);
+      if (raw) precedente = JSON.parse(raw) || {};
+    } catch { /* cache corrotta o assente: si riparte da vuoto */ }
+    const payload = {
+      ...precedente,
+      ...(rotazioni !== undefined ? { rotazioni } : {}),
+      ...(coloriExtra !== undefined ? { coloriExtra } : {}),
+      ...(autocompleteValori !== undefined ? { autocompleteValori } : {}),
+      ...(indennita !== undefined ? { indennita } : {}),
+      ...(valoreTicket !== undefined ? { valoreTicket } : {}),
+      ...(conteggioConfigs !== undefined ? { conteggioConfigs } : {}),
+      _savedAt: Date.now(),
+    };
+    localStorage.setItem(LS_CACHE_KEY, JSON.stringify(payload));
+  } catch (e) {
+    console.warn("saveDatiSessioneLocale fallito:", e);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// BACKUP LOCALE COMPLETO — export/import, indipendente da Supabase.
+// ─────────────────────────────────────────────────────────────────────
+// Legge/scrive TUTTE le chiavi presenti in localStorage per questa app,
+// senza elencarle una per una a mano: qualunque chiave esista oggi (o
+// venga aggiunta in futuro da qualunque parte del codice) viene inclusa
+// automaticamente. Non è una selezione di "quello che serve": è un dump
+// 1:1 dell'intero localStorage del dominio, con un unico filtro di
+// sicurezza per non catturare eventuali chiavi di ALTRI siti che
+// condividono lo stesso storage (qui non applicabile nella pratica, dato
+// che ogni dominio ha il proprio localStorage isolato dal browser, ma il
+// filtro resta come garanzia esplicita piuttosto che implicita).
+const BACKUP_LOCALE_VERSIONE = 1;
+
+export function esportaBackupLocaleCompleto() {
+  const chiavi = {};
+  let nChiavi = 0;
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k == null) continue;
+      let valoreGrezzo = null;
+      try { valoreGrezzo = localStorage.getItem(k); } catch { continue; }
+      if (valoreGrezzo == null) continue;
+      // Ogni valore viene salvato così com'è (stringa grezza) E, quando è
+      // JSON valido, anche già parsato: questo rende il file leggibile e
+      // ispezionabile da un umano (utile per verificare "c'è davvero
+      // tutto?" aprendo il .json in un editor), mentre l'import userà
+      // sempre e solo il valore grezzo per scrivere su localStorage,
+      // garantendo un ripristino byte-per-byte identico all'originale.
+      let valoreJson = undefined;
+      try { valoreJson = JSON.parse(valoreGrezzo); } catch { /* non è JSON: resta solo grezzo, va bene comunque */ }
+      chiavi[k] = { grezzo: valoreGrezzo, ...(valoreJson !== undefined ? { json: valoreJson } : {}) };
+      nChiavi++;
+    }
+  } catch (e) {
+    console.warn("esportaBackupLocaleCompleto: errore durante la scansione di localStorage:", e);
+  }
+  return {
+    _tipo: "turnipm_backup_locale",
+    _versione: BACKUP_LOCALE_VERSIONE,
+    _esportatoIl: new Date().toISOString(),
+    _numeroChiavi: nChiavi,
+    localStorage: chiavi,
+  };
+}
+
+// Scrive 1:1 ogni chiave del backup in localStorage (sovrascrivendo quelle
+// esistenti con lo stesso nome), poi disattiva syncMode per evitare che al
+// prossimo avvio Supabase (se e quando torna la linea) sovrascriva quanto
+// appena ripristinato prima che l'utente abbia potuto verificarlo o
+// riportarlo lui stesso sul cloud. Ritorna un riepilogo (quante chiavi
+// scritte, eventuali errori) invece di lanciare eccezioni silenziose, così
+// chi chiama questa funzione può mostrare un esito chiaro all'utente.
+export function importaBackupLocaleCompleto(backup) {
+  const risultato = { ok: false, chiaviScritte: 0, chiaviTotali: 0, errori: [], messaggio: "" };
+  if (!backup || typeof backup !== "object" || backup._tipo !== "turnipm_backup_locale" || !backup.localStorage) {
+    risultato.messaggio = "Il file selezionato non è un backup locale valido di questa app.";
+    return risultato;
+  }
+  const chiavi = backup.localStorage;
+  const nomiChiavi = Object.keys(chiavi);
+  risultato.chiaviTotali = nomiChiavi.length;
+  for (const k of nomiChiavi) {
+    try {
+      const voce = chiavi[k];
+      // grezzo è la fonte di verità per l'import: è esattamente ciò che
+      // c'era in localStorage al momento dell'export, senza passare da un
+      // giro di JSON.parse/stringify che potrebbe alterare formattazione
+      // o precisione numerica di casi limite.
+      const valore = (voce && typeof voce === "object" && "grezzo" in voce) ? voce.grezzo : JSON.stringify(voce);
+      localStorage.setItem(k, valore);
+      risultato.chiaviScritte++;
+    } catch (e) {
+      risultato.errori.push({ chiave: k, errore: String(e && e.message || e) });
+    }
+  }
+  // Sync disattivata dopo l'import: i dati locali appena ripristinati
+  // restano quelli in uso finché l'utente stesso non riaccende la
+  // sincronizzazione (vedi toggle in Impostazioni), invece di rischiare
+  // che un successivo avvio online li sovrascriva silenziosamente.
+  try { localStorage.setItem("syncMode", "off"); } catch { /* non bloccante */ }
+  risultato.ok = risultato.errori.length === 0;
+  risultato.messaggio = risultato.ok
+    ? `Importazione completata: ${risultato.chiaviScritte} elementi ripristinati. Sincronizzazione con Supabase disattivata: riattivala dalle Impostazioni quando vuoi tornare a sincronizzare.`
+    : `Importati ${risultato.chiaviScritte}/${risultato.chiaviTotali} elementi, con ${risultato.errori.length} errori. Sincronizzazione con Supabase disattivata.`;
+  return risultato;
+}
+
 // Svuota solo la cache locale dei dati app (eventi/calendari/modelli),
 // usata prima di forzare un ricaricamento completo dal server. Non tocca
 // log errori, coda sync o altre chiavi: quelle restano gestite dalle loro
