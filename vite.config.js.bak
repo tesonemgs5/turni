@@ -17,16 +17,10 @@ function calcolaVersioneBuild() {
   const ora = new Date();
   const parti = new Intl.DateTimeFormat('it-IT', {
     timeZone: 'Europe/Rome',
-    year: 'numeric', month: '2-digit', day: '2-digit',
+    day: '2-digit', month: '2-digit', year: '2-digit',
     hour: '2-digit', minute: '2-digit', hour12: false,
   }).formatToParts(ora).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});
-  const inizioAnno = new Date(Date.UTC(parseInt(parti.year, 10), 0, 1));
-  const oraRoma = new Date(Date.UTC(
-    parseInt(parti.year, 10), parseInt(parti.month, 10) - 1, parseInt(parti.day, 10)
-  ));
-  const giornoAnno = Math.floor((oraRoma - inizioAnno) / 86400000) + 1;
-  const cifraAnno = parti.year.slice(-1);
-  return `${cifraAnno}.${giornoAnno}.${parti.hour}${parti.minute}`;
+  return `${parti.day}${parti.month}${parti.year}.${parti.hour}${parti.minute}`;
 }
 
 export default defineConfig({
