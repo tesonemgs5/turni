@@ -9,7 +9,7 @@ import {
   minutiTurnoModello, normalizzaOraHHMM, oraInMinuti, registraListenerCodaErrori, registraProblemiImport,
   sameData, saveDatiSessioneLocale, saveToLocalStorage, scriviCodaSync, segnalaErrore, segnalaErroreSoloLog,
   uid, withEventoAggiornato, withEventoAggiunto, withEventoRimosso,
-  esportaBackupLocaleCompleto, importaBackupLocaleCompleto,
+  esportaBackupLocaleCompleto, importaBackupLocaleCompleto, CATEGORIE_BACKUP_LOCALE,
 } from "./04-Rotazione";
 
 // ════════════════════════════════════════════════════════════
@@ -2801,9 +2801,19 @@ export function useAppCore(session){
   // scarica sul proprio dispositivo. A differenza del backup su Supabase
   // (handleExportSupabase sotto), questo non fa nessuna chiamata di rete:
   // legge solo ciò che è già salvato sul dispositivo in quel momento.
-  function handleEsportaBackupLocale(){
+  function handleEsportaBackupLocale(categorieSelezionate){
     try {
-      const backup = esportaBackupLocaleCompleto({ dataInizio: backupPeriodoDa, dataFine: backupPeriodoA });
+      // categorieSelezionate: array di id (vedi CATEGORIE_BACKUP_LOCALE in
+      // 04-Rotazione.jsx) scelto nell'interfaccia (02-Modelli.jsx). Se
+      // omesso, o se contiene TUTTE le categorie note, non passiamo alcun
+      // filtro: esportaBackupLocaleCompleto tratta "categorie: null" come
+      // "nessuna restrizione", comportamento identico a prima
+      // dell'introduzione dei checkbox.
+      const filtroCategorieDaPassare =
+        Array.isArray(categorieSelezionate) && categorieSelezionate.length < CATEGORIE_BACKUP_LOCALE.length
+          ? categorieSelezionate
+          : null;
+      const backup = esportaBackupLocaleCompleto({ dataInizio: backupPeriodoDa, dataFine: backupPeriodoA, categorie: filtroCategorieDaPassare });
       const blob = new Blob([JSON.stringify(backup, null, 2)], {type:"application/json"});
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -2820,13 +2830,12 @@ export function useAppCore(session){
       // turnipm_cache_v1) il numero resta piccolo anche con un archivio
       // enorme, e da solo può sembrare un backup incompleto quando non lo
       // è. Per questo il messaggio mostra ANCHE i conteggi veri.
-      // Con un filtro periodo attivo, il conteggio va letto DAL BACKUP
-      // stesso (già filtrato), non dallo stato in memoria (store.events),
-      // altrimenti il messaggio mostrerebbe il totale non filtrato anche
-      // quando il file scaricato ne contiene di meno — la stessa
-      // discrepanza segnalata: "il file è più piccolo ma il conteggio non
-      // lo riflette".
-      const eventsPerConteggio = backup._filtroPeriodo
+      // Con un filtro (periodo O categorie) attivo, il conteggio va letto
+      // DAL BACKUP stesso (già filtrato), non dallo stato in memoria
+      // (store.events), altrimenti il messaggio mostrerebbe il totale non
+      // filtrato anche quando il file scaricato ne contiene di meno.
+      const filtroAttivo = !!(backup._filtroPeriodo || backup._filtroCategorie);
+      const eventsPerConteggio = filtroAttivo
         ? (backup.localStorage?.["turnipm_cache_v1"]?.json?.events || {})
         : (store.events||{});
       const nEventiTotali = Object.values(eventsPerConteggio).reduce((sum,calMap)=>
