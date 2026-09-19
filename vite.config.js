@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import { execSync } from 'node:child_process';
 
 // Calcola la "versione" dell'app come ggmmaa.hhmm riferita al momento in cui
 // Vercel esegue questa build (npm run build), non al momento in cui il
@@ -14,7 +15,22 @@ import { VitePWA } from 'vite-plugin-pwa'
 // Vercel) girano tipicamente in UTC, quindi senza questo new Intl la
 // versione mostrerebbe l'ora UTC invece dell'ora italiana.
 function calcolaVersioneBuild() {
-  const ora = new Date();
+  // Usa la data dell'ULTIMO COMMIT git, non l'istante in cui gira questa
+  // build: cosi' la versione resta IDENTICA sia che la build parta su
+  // Vercel (subito dopo il push) sia che parta in locale ore o giorni
+  // dopo (es. lanciando il file .bat per generare l'APK) -- finche' non
+  // c'e' un nuovo commit, ricompilare produce sempre lo stesso numero.
+  // Se il comando git fallisce per qualsiasi motivo (repo non trovato,
+  // git non installato...) si ripiega sull'istante attuale, cosi' la
+  // build non si blocca mai per questo.
+  let ora;
+  try {
+    const isoCommit = execSync('git log -1 --format=%cI').toString().trim();
+    ora = new Date(isoCommit);
+    if (isNaN(ora.getTime())) throw new Error('data commit non valida');
+  } catch {
+    ora = new Date();
+  }
   const parti = new Intl.DateTimeFormat('it-IT', {
     timeZone: 'Europe/Rome',
     year: 'numeric', month: '2-digit', day: '2-digit',

@@ -77,43 +77,6 @@ export function useAppCore(session){
       return next;
     });
   }
-  // ─── PRIMA APERTURA SU UN DISPOSITIVO NUOVO ─────────────────────────
-  // selectedCalIds e reportCalIds nascono VUOTI (localStorage vergine su
-  // un telefono/installazione appena fatta) e allEvts() ritorna [] quando
-  // la selezione e' vuota: il risultato era un calendario completamente
-  // vuoto, pur avendo scaricato correttamente tutto da Supabase — nessun
-  // errore, nessun banner, dati intatti sul server, ma niente a schermo.
-  // Nessuno dei setSelectedCalIds sparsi nel codice poteva rimediare,
-  // perche' hanno tutti la guardia `prev.length===0 ? prev : ...` (pensata
-  // per non forzare la selezione a chi l'ha svuotata di proposito), quindi
-  // una selezione vuota restava vuota per sempre finche' l'utente non
-  // toccava a mano un calendario.
-  // Qui si normalizza la selezione ogni volta che cambia l'elenco dei
-  // calendari (primo caricamento da cache o da Supabase, calendario
-  // eliminato, import): si tengono solo gli id che esistono davvero e, se
-  // non ne resta nessuno, si seleziona il calendario principale (o il
-  // primo) per il calendario e tutti per il report. L'effetto dipende solo
-  // da store.calendars, non da selectedCalIds: chi deseleziona tutto a
-  // mano durante l'uso non se lo vede riapparire.
-  useEffect(()=>{
-    const cals = store.calendars||[];
-    if(cals.length===0) return;
-    const esiste = id => cals.some(c=>c.id===id);
-    const principale = cals.find(c=>c.isMain) || cals[0];
-    setSelectedCalIds(prev=>{
-      const validi = (prev||[]).filter(esiste);
-      if(validi.length>0) return validi.length===(prev||[]).length ? prev : validi;
-      return principale ? [principale.id] : prev;
-    });
-    setReportCalIds(prev=>{
-      const validi = (prev||[]).filter(esiste);
-      if(validi.length>0) return validi.length===(prev||[]).length ? prev : validi;
-      const tutti = cals.map(c=>c.id);
-      try{ localStorage.setItem('cache_reportCalIds', JSON.stringify(tutti)); }catch(e){}
-      return tutti;
-    });
-  }, [store.calendars]);
-
   const [selectedModelloIds, setSelectedModelloIds] = useState([]); // selezione multipla modelli (editMode OFF)
   const [screen, setScreen] = useState("cal");
   const [dayKey, setDayKey] = useState(null);
@@ -132,10 +95,6 @@ export function useAppCore(session){
   const [showLocalDataModal, setShowLocalDataModal] = useState(false);
   const [esitoBackupLocale, setEsitoBackupLocale] = useState(null); // {tipo:"ok"|"errore", messaggio} — esito ultimo export/import locale
   const [confermaImportLocale, setConfermaImportLocale] = useState(null); // backup parsato in attesa di conferma prima di sovrascrivere
-  // Periodo opzionale per l'export del backup locale ("YYYY-MM-DD" o ""):
-  // se entrambi vuoti il backup e' completo, come prima.
-  const [backupPeriodoDa, setBackupPeriodoDa] = useState("");
-  const [backupPeriodoA, setBackupPeriodoA] = useState("");
   const [syncing,  setSyncing]  = useState(false);
   const [nhD,     setNhD]     = useState("");
   const [nhM,     setNhM]     = useState("");
@@ -2842,30 +2801,28 @@ export function useAppCore(session){
   // legge solo ciò che è già salvato sul dispositivo in quel momento.
   function handleEsportaBackupLocale(){
     try {
-      // Se l'utente non indica nessuna delle due date, periodo resta null e
-      // il backup e' completo (comportamento identico a prima).
-      const periodo = (backupPeriodoDa || backupPeriodoA)
-        ? { da: backupPeriodoDa || null, a: backupPeriodoA || null }
-        : null;
-      const backup = esportaBackupLocaleCompleto(periodo);
+      const backup = esportaBackupLocaleCompleto();
       const blob = new Blob([JSON.stringify(backup, null, 2)], {type:"application/json"});
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       const bollino = new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
-      // Il periodo finisce nel nome del file: riconoscere un backup parziale
-      // da un backup completo deve essere possibile senza aprirlo.
-      const suffisso = periodo
-        ? `_${periodo.da || "inizio"}_${periodo.a || "fine"}`
-        : "_completo";
       a.href = url;
-      a.download = `turnipm_backup_locale${suffisso}_${bollino}.json`;
+      a.download = `turnipm_backup_locale_${bollino}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       setTimeout(()=>URL.revokeObjectURL(url), 5000);
-      setEsitoBackupLocale({tipo:"ok", messaggio: periodo
-        ? `Backup scaricato: ${backup._numeroChiavi} elementi, ${backup._periodo?.eventiInclusi ?? 0} eventi nel periodo scelto.`
-        : `Backup locale completo scaricato: ${backup._numeroChiavi} elementi salvati.`});
+      // "_numeroChiavi" conta le CATEGORIE di dati in localStorage (cache
+      // principale, log errori, coda sync, impostazioni...), non i singoli
+      // eventi: con tutto dentro poche chiavi (es. tutti gli eventi in
+      // turnipm_cache_v1) il numero resta piccolo anche con un archivio
+      // enorme, e da solo può sembrare un backup incompleto quando non lo
+      // è. Per questo il messaggio mostra ANCHE i conteggi veri (eventi,
+      // calendari, modelli, rotazioni) già disponibili in questo momento
+      // dallo stato in memoria, così è chiaro che il backup li contiene.
+      const nEventiTotali = Object.values(store.events||{}).reduce((sum,calMap)=>
+        sum + Object.values(calMap||{}).reduce((s2,arr)=>s2+(arr?.length||0), 0), 0);
+      setEsitoBackupLocale({tipo:"ok", messaggio:`Backup locale scaricato — ${nEventiTotali} eventi, ${store.calendars?.length||0} calendari, ${modelli?.length||0} modelli, ${rotazioni?.length||0} rotazioni (in ${backup._numeroChiavi} categorie di dati).`});
     } catch(e){
       segnalaErrore(e, "Esportazione backup locale");
       setEsitoBackupLocale({tipo:"errore", messaggio:"Errore durante l'esportazione: "+(e?.message||e)});
@@ -5901,10 +5858,6 @@ const importsRecenti = useMemo(()=>{
     handleExportSupabase,
     handleOpenImportSupabase,
     handleRestoreBackup,
-    backupPeriodoDa,
-    setBackupPeriodoDa,
-    backupPeriodoA,
-    setBackupPeriodoA,
     handleEsportaBackupLocale,
     handleFileSelezionatoImportLocale,
     confermaEsegueImportBackupLocale,

@@ -15,7 +15,14 @@ Cosa fa, in ordine:
 1. Corregge la funzione calcolaVersioneBuild() in vite.config.js
    per usare il nuovo formato (fa una copia di sicurezza .bak la
    prima volta che la modifica).
-2. Calcola la versione attuale con quel formato.
+2. Calcola la versione con quel formato a partire dalla data
+   dell'ULTIMO COMMIT GIT, non dall'istante in cui parte questa build:
+   cosi' la versione e' SEMPRE la stessa sia che la calcoli Vercel
+   (build automatica al push) sia che la calcoli questo script in
+   locale, anche giorni dopo — finche' non fai un nuovo commit, la
+   versione resta quella. Prima veniva calcolata dall'orologio della
+   macchina che builda, quindi ogni build (Vercel, poi il PC ore dopo)
+   inventava un numero diverso pur essendo lo stesso identico codice.
 3. Esegue "npm run build": ricompila TUTTO il codice React (01-App.jsx,
    06-Logica.jsx, ecc.) in dist/, incluso il numero di versione che
    vedi in Impostazioni (__APP_VERSION__, calcolato al momento di
@@ -70,24 +77,92 @@ def find_project_root():
     return None
 
 
-def calcola_versione():
-    ora = datetime.now(ROMA) if ROMA else datetime.now()
+def ultima_data_commit(project_root):
+    """
+    Legge la data dell'ultimo commit git, per calcolare la STESSA versione
+    che genera in questa build calcolaVersioneBuild() in vite.config.js
+    (vedi la funzione gemella li'): cosi' versionName (Android) e la
+    versione mostrata nell'app web/PWA coincidono sempre, anche se questo
+    script viene lanciato giorni dopo l'ultimo push. Se git non e'
+    disponibile o fallisce, si ripiega sull'istante attuale (stesso
+    fallback usato lato JS), cosi' la build non si blocca mai per questo.
+    """
+    try:
+        iso = subprocess.check_output(
+            ["git", "log", "-1", "--format=%cI"], cwd=project_root, text=True
+        ).strip()
+        d = datetime.fromisoformat(iso)  # es. "2026-09-18T22:24:10+02:00"
+        return d
+    except Exception:
+        return datetime.now(ROMA) if ROMA else datetime.now()
+
+
+def calcola_versione(project_root):
+    ora = ultima_data_commit(project_root)
+    # Conversione esplicita in Europe/Rome: la data del commit di solito
+    # e' gia' quella locale di chi l'ha fatto, ma non possiamo darlo per
+    # scontato (un commit fatto da un altro fuso orario, o senza ROMA
+    # disponibile sul sistema).
+    if ROMA:
+        try:
+            ora = ora.astimezone(ROMA)
+        except Exception:
+            pass
     anno_cifra = str(ora.year)[-1]              # es. 2026 -> "6"
     giorno_anno = ora.timetuple().tm_yday        # 1-366, senza zeri iniziali
     ora_minuti = ora.strftime("%H%M")            # con zero iniziale se serve
     return f"{anno_cifra}.{giorno_anno}.{ora_minuti}"
 
 
+def assicura_import_execsync(content):
+    """
+    La nuova calcolaVersioneBuild() chiama execSync per leggere la data
+    dell'ultimo commit: serve importarla in cima al file. Se manca la
+    aggiunge subito dopo l'ultimo "import ..." esistente (in ESM gli
+    import possono stare ovunque a livello di modulo, ma tenerli in
+    cima e' piu' leggibile); se proprio non trova nessun import la mette
+    a inizio file. Non tocca nulla se e' gia' presente.
+    """
+    if "node:child_process" in content or "from 'child_process'" in content:
+        return content
+    riga_import = "import { execSync } from 'node:child_process';\n"
+    ultimo_import = None
+    for m in re.finditer(r'^import .*$', content, re.MULTILINE):
+        ultimo_import = m
+    if ultimo_import:
+        pos = ultimo_import.end()
+        return content[:pos] + "\n" + riga_import.rstrip("\n") + content[pos:]
+    return riga_import + content
+
+
 def aggiorna_vite_config(vite_path):
     """
-    Sostituisce il corpo di calcolaVersioneBuild() con la nuova formula.
-    Se la funzione ha gia' il nuovo formato, non tocca nulla.
+    Sostituisce il corpo di calcolaVersioneBuild() con la nuova formula
+    (basata sulla data dell'ultimo commit git, non sull'istante della
+    build) e si assicura che l'import necessario (execSync) sia presente.
+    Se il file ha gia' il nuovo formato, non tocca nulla.
     """
     with open(vite_path, "r", encoding="utf-8") as f:
         content = f.read()
+    content = assicura_import_execsync(content)
 
     nuova_funzione = '''function calcolaVersioneBuild() {
-  const ora = new Date();
+  // Usa la data dell'ULTIMO COMMIT git, non l'istante in cui gira questa
+  // build: cosi' la versione resta IDENTICA sia che la build parta su
+  // Vercel (subito dopo il push) sia che parta in locale ore o giorni
+  // dopo (es. lanciando il file .bat per generare l'APK) -- finche' non
+  // c'e' un nuovo commit, ricompilare produce sempre lo stesso numero.
+  // Se il comando git fallisce per qualsiasi motivo (repo non trovato,
+  // git non installato...) si ripiega sull'istante attuale, cosi' la
+  // build non si blocca mai per questo.
+  let ora;
+  try {
+    const isoCommit = execSync('git log -1 --format=%cI').toString().trim();
+    ora = new Date(isoCommit);
+    if (isNaN(ora.getTime())) throw new Error('data commit non valida');
+  } catch {
+    ora = new Date();
+  }
   const parti = new Intl.DateTimeFormat('it-IT', {
     timeZone: 'Europe/Rome',
     year: 'numeric', month: '2-digit', day: '2-digit',
@@ -122,7 +197,9 @@ def aggiorna_vite_config(vite_path):
     end = i + 1
 
     vecchia_funzione = content[start:end]
-    if vecchia_funzione.strip() == nuova_funzione.strip():
+    con_import_originale = open(vite_path, "r", encoding="utf-8").read()
+    import_gia_presente = ("node:child_process" in con_import_originale or "from 'child_process'" in con_import_originale)
+    if vecchia_funzione.strip() == nuova_funzione.strip() and import_gia_presente:
         print("vite.config.js: formato versione gia' aggiornato, nessuna modifica necessaria.")
         return True
 
@@ -135,7 +212,7 @@ def aggiorna_vite_config(vite_path):
     with open(vite_path, "w", encoding="utf-8") as f:
         f.write(nuovo_content)
 
-    print("vite.config.js: formato versione aggiornato a A.GGG.HHMM.")
+    print("vite.config.js: formato versione aggiornato (calcolata dall'ultimo commit git, import execSync incluso).")
     return True
 
 
@@ -274,11 +351,14 @@ def main():
     run_npm_o_npx(project_root, "npx cap sync android", "sincronizzo dist/ dentro il progetto Android")
 
     # 4. Calcola la versione col nuovo formato (per il numero mostrato
-    #    nel gradle/versionName; quello embedded nel bundle web e' stato
-    #    gia' calcolato un istante fa da "npm run build" qui sopra, con
-    #    lo stesso orologio: coincidono a meno di qualche secondo).
-    nuova_versione = calcola_versione()
-    print(f"\nNuova versione calcolata: {nuova_versione}\n")
+    #    nel gradle/versionName). Basata sulla data dell'ULTIMO COMMIT
+    #    git, non su questo istante: coincide sempre con quella che ha
+    #    gia' calcolato "npm run build" qui sopra (stessa logica lato
+    #    JS in vite.config.js) e con quella che calcolera' Vercel al
+    #    prossimo deploy dello stesso commit — anche a giorni di
+    #    distanza da questo lancio.
+    nuova_versione = calcola_versione(project_root)
+    print(f"\nNuova versione calcolata (dall'ultimo commit git): {nuova_versione}\n")
 
     # 5. Aggiorna build.gradle
     new_code = bump_version_gradle(app_gradle_path, nuova_versione)
