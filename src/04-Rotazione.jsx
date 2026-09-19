@@ -1755,7 +1755,14 @@ export function ModelloCard({
             {modello.titolo}
           </div>
           <div style={{ fontSize: 18, color: T.sub }}>
-            {modello.tempo === "h24" ? "H24" : `${modello.inizio || "—"} – ${calcFineModello(modello) || modello.fine || "—"}`}
+            {modello.tempo === "h24" ? "H24" : (() => {
+              const fineCalcolata = calcFineModello(modello) || modello.fine || "—";
+              const testoOrario = `${modello.inizio || "—"} – ${fineCalcolata}`;
+              if (!modello.inizio || fineCalcolata === "—") return testoOrario;
+              const minuti = calcDurata(modello.inizio, fineCalcolata);
+              const testoDurata = formattaDurataHM(minuti);
+              return testoDurata ? `${testoOrario} • ${testoDurata}` : testoOrario;
+            })()}
           </div>
         </div>
       </div>

@@ -3,7 +3,7 @@ import {
   MONTHS, DAYS, PALETTE, FONT_SIZE, NB, COLORE_H24, NOMI_MESI_IT,
   FASCE_AUTOMATICHE_DEFAULT, FESTIVITA_DEFAULT_ATTIVE,
   getContrastTextColor, daysInMonth, firstDay, fmtDataIT, dkey, uid,
-  oraInMinuti, calcFine6h15, calcFine6h30, calcFineModello, calcDurata,
+  oraInMinuti, calcFine6h15, calcFine6h30, calcFineModello, calcDurata, formattaDurataHM,
   isModelloTurnazioneDefault, withEventoAggiunto, saveToLocalStorage, generaIdLocale,
   loadFromLocalStorage, clearLocalStorageCache, resolveFestivitaCatalogo,
   leggiLogErrori, leggiErroriSilenziati, impostaSilenziamentoErrore,
@@ -176,7 +176,7 @@ export default function VistaCalendario({ C }){
       case "titolo": return e.label||"";
       case "inizio": return e.tIn||"";
       case "fine":   return e.tOut||"";
-      case "durata": return (e.tIn&&e.tOut) ? calcDurata(e.tIn,e.tOut) : "";
+      case "durata": return (e.tIn&&e.tOut) ? formattaDurataHM(calcDurata(e.tIn,e.tOut)) : "";
       case "note":   return e.note||"";
       case "icona":  return e.allDay ? "☀️" : (e.tIn||e.tOut ? "🕒" : "");
       case "---":    return "";
@@ -962,7 +962,7 @@ export default function VistaCalendario({ C }){
                                 <div style={{flex:1,minWidth:0}}>
                                   <div style={{fontSize:15,fontWeight:700,color:T.text}}>{m.titolo||"Senza nome"}</div>
                                   <div style={{fontSize:11,color:T.sub}}>
-                                    {m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${m.fine?` - ${m.fine}`:""}`:""}
+                                    {m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${(calcFineModello(m)||m.fine)?` - ${calcFineModello(m)||m.fine}`:""}`:""}
                                   </div>
                                 </div>
                               </div>
