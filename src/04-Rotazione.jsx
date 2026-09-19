@@ -666,7 +666,21 @@ export function saveDatiSessioneLocale({ rotazioni, coloriExtra, autocompleteVal
 // filtro resta come garanzia esplicita piuttosto che implicita).
 const BACKUP_LOCALE_VERSIONE = 1;
 
-export function esportaBackupLocaleCompleto(periodo = null) {
+// dataInizio/dataFine (stringhe "YYYY-MM-DD", opzionali): se presenti,
+// filtrano SOLO gli eventi dentro la cache principale (turnipm_cache_v1),
+// che sono organizzati come { [calendarId]: { [dateKey]: [eventi] } } con
+// dateKey nello stesso formato "YYYY-MM-DD" — il confronto è quindi un
+// confronto di stringhe, corretto perché il formato è a lunghezza fissa e
+// ordinabile lessicograficamente. Tutte le altre chiavi (log, coda sync,
+// impostazioni, syncMode...) non vengono filtrate: un filtro per periodo
+// ha senso solo sugli eventi, e filtrare anche il resto lascerebbe un
+// backup incoerente (es. modelli o calendari mancanti per eventi che poi
+// non torneresti a vedere). Un file con filtro periodo NON è pensato come
+// backup di sicurezza completo, ma come export mirato per archiviare o
+// condividere un intervallo — per questo l'interfaccia mostra un avviso
+// quando il periodo è impostato (vedi 02-Modelli.jsx).
+export function esportaBackupLocaleCompleto({ dataInizio = "", dataFine = "" } = {}) {
+  const filtraPerData = !!(dataInizio || dataFine);
   const chiavi = {};
   let nChiavi = 0;
   try {
@@ -684,58 +698,37 @@ export function esportaBackupLocaleCompleto(periodo = null) {
       // garantendo un ripristino byte-per-byte identico all'originale.
       let valoreJson = undefined;
       try { valoreJson = JSON.parse(valoreGrezzo); } catch { /* non è JSON: resta solo grezzo, va bene comunque */ }
+
+      if (filtraPerData && k === LS_CACHE_KEY && valoreJson && typeof valoreJson === "object") {
+        const eventsOriginali = valoreJson.events || {};
+        const eventsFiltrati = {};
+        for (const calId of Object.keys(eventsOriginali)) {
+          const perData = eventsOriginali[calId] || {};
+          const perDataFiltrata = {};
+          for (const dateKey of Object.keys(perData)) {
+            const dentroInizio = !dataInizio || dateKey >= dataInizio;
+            const dentroFine = !dataFine || dateKey <= dataFine;
+            if (dentroInizio && dentroFine) perDataFiltrata[dateKey] = perData[dateKey];
+          }
+          if (Object.keys(perDataFiltrata).length > 0) eventsFiltrati[calId] = perDataFiltrata;
+        }
+        const cacheFiltrata = { ...valoreJson, events: eventsFiltrati };
+        valoreJson = cacheFiltrata;
+        valoreGrezzo = JSON.stringify(cacheFiltrata);
+      }
+
       chiavi[k] = { grezzo: valoreGrezzo, ...(valoreJson !== undefined ? { json: valoreJson } : {}) };
       nChiavi++;
     }
   } catch (e) {
     console.warn("esportaBackupLocaleCompleto: errore durante la scansione di localStorage:", e);
   }
-
-  // Filtro per periodo: agisce SOLO sugli eventi (dentro la chiave
-  // LS_CACHE_KEY). Modelli, rotazioni, colori, indennita, impostazioni e
-  // tutte le altre chiavi restano sempre integrali: pesano pochi kB e
-  // senza di loro gli eventi ripristinati resterebbero orfani (nessun
-  // modello o rotazione a cui agganciarsi). Il confronto fra date usa il
-  // formato "YYYY-MM-DD" delle chiavi di events, che e' ordinabile
-  // lessicograficamente: non serve costruire oggetti Date.
-  let nEventiTenuti = null;
-  const daPeriodo = (periodo && periodo.da) || null;
-  const aPeriodo = (periodo && periodo.a) || null;
-  if (daPeriodo || aPeriodo) {
-    try {
-      const voce = chiavi[LS_CACHE_KEY];
-      if (voce && voce.json && voce.json.events) {
-        const dal = daPeriodo || "0000-01-01";
-        const al = aPeriodo || "9999-12-31";
-        const eventiFiltrati = {};
-        nEventiTenuti = 0;
-        for (const dk of Object.keys(voce.json.events)) {
-          if (dk >= dal && dk <= al) {
-            eventiFiltrati[dk] = voce.json.events[dk];
-            for (const cal of Object.keys(eventiFiltrati[dk] || {})) {
-              nEventiTenuti += (eventiFiltrati[dk][cal] || []).length;
-            }
-          }
-        }
-        const jsonFiltrato = { ...voce.json, events: eventiFiltrati };
-        // grezzo va rigenerato dal json filtrato: e' il grezzo che l'import
-        // riscrive in localStorage, quindi se restasse quello originale il
-        // filtro non avrebbe alcun effetto reale al ripristino.
-        chiavi[LS_CACHE_KEY] = { grezzo: JSON.stringify(jsonFiltrato), json: jsonFiltrato };
-      }
-    } catch (e) {
-      console.warn("esportaBackupLocaleCompleto: filtro periodo non applicato:", e);
-    }
-  }
-
   return {
     _tipo: "turnipm_backup_locale",
     _versione: BACKUP_LOCALE_VERSIONE,
     _esportatoIl: new Date().toISOString(),
     _numeroChiavi: nChiavi,
-    _periodo: (daPeriodo || aPeriodo)
-      ? { da: daPeriodo, a: aPeriodo, eventiInclusi: nEventiTenuti }
-      : null,
+    _filtroPeriodo: filtraPerData ? { dataInizio: dataInizio||null, dataFine: dataFine||null } : null,
     localStorage: chiavi,
   };
 }
@@ -748,11 +741,12 @@ export function esportaBackupLocaleCompleto(periodo = null) {
 // scritte, eventuali errori) invece di lanciare eccezioni silenziose, così
 // chi chiama questa funzione può mostrare un esito chiaro all'utente.
 export function importaBackupLocaleCompleto(backup) {
-  const risultato = { ok: false, chiaviScritte: 0, chiaviTotali: 0, errori: [], messaggio: "" };
+  const risultato = { ok: false, chiaviScritte: 0, chiaviTotali: 0, errori: [], messaggio: "", filtroPeriodo: null };
   if (!backup || typeof backup !== "object" || backup._tipo !== "turnipm_backup_locale" || !backup.localStorage) {
     risultato.messaggio = "Il file selezionato non è un backup locale valido di questa app.";
     return risultato;
   }
+  risultato.filtroPeriodo = backup._filtroPeriodo || null;
   const chiavi = backup.localStorage;
   const nomiChiavi = Object.keys(chiavi);
   risultato.chiaviTotali = nomiChiavi.length;
