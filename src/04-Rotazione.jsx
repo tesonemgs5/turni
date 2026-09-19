@@ -700,17 +700,20 @@ export function esportaBackupLocaleCompleto({ dataInizio = "", dataFine = "" } =
       try { valoreJson = JSON.parse(valoreGrezzo); } catch { /* non è JSON: resta solo grezzo, va bene comunque */ }
 
       if (filtraPerData && k === LS_CACHE_KEY && valoreJson && typeof valoreJson === "object") {
+        // Struttura reale (confermata in 06-Logica.jsx, caricamento da
+        // Supabase): events = { [dateKey]: { [calendarId]: [eventi] } } —
+        // la DATA è la chiave esterna, il calendario quella interna. La
+        // primissima versione di questo filtro aveva le due chiavi
+        // invertite (calendario fuori, data dentro): confrontava un id
+        // calendario con una stringa data, il confronto falliva sempre e
+        // il filtro svuotava silenziosamente tutti gli eventi anche con un
+        // periodo che li copriva tutti (es. dal 2023 a oggi → 0 eventi).
         const eventsOriginali = valoreJson.events || {};
         const eventsFiltrati = {};
-        for (const calId of Object.keys(eventsOriginali)) {
-          const perData = eventsOriginali[calId] || {};
-          const perDataFiltrata = {};
-          for (const dateKey of Object.keys(perData)) {
-            const dentroInizio = !dataInizio || dateKey >= dataInizio;
-            const dentroFine = !dataFine || dateKey <= dataFine;
-            if (dentroInizio && dentroFine) perDataFiltrata[dateKey] = perData[dateKey];
-          }
-          if (Object.keys(perDataFiltrata).length > 0) eventsFiltrati[calId] = perDataFiltrata;
+        for (const dateKey of Object.keys(eventsOriginali)) {
+          const dentroInizio = !dataInizio || dateKey >= dataInizio;
+          const dentroFine = !dataFine || dateKey <= dataFine;
+          if (dentroInizio && dentroFine) eventsFiltrati[dateKey] = eventsOriginali[dateKey];
         }
         const cacheFiltrata = { ...valoreJson, events: eventsFiltrati };
         valoreJson = cacheFiltrata;
