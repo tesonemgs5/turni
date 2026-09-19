@@ -7,7 +7,7 @@ import {
   isModelloTurnazioneDefault, withEventoAggiunto, saveToLocalStorage,
   loadFromLocalStorage, clearLocalStorageCache, resolveFestivitaCatalogo,
   leggiLogErrori, leggiErroriSilenziati, impostaSilenziamentoErrore,
-  cancellaLogErrori, segnalaErrore,
+  cancellaLogErrori, segnalaErrore, CATEGORIE_BACKUP_LOCALE,
 } from "./04-Rotazione";
 import { CalBadge, SmartTimeInput, AutocompleteInput, ColorPickerModal,
   ModaleErroriMultipli, FasceExpand, ConteggioConfigCard, TurnazioneConfigCard,
@@ -87,6 +87,13 @@ export default function VistaModelli({ C }){
   const [confermaEliminaCalId, setConfermaEliminaCalId] = useState(null);
   const [confermaEliminaEvento, setConfermaEliminaEvento] = useState(null); // {dKey, cId, id}
   const [confermaCancellaLogErrori, setConfermaCancellaLogErrori] = useState(false);
+  // Categorie incluse nel backup locale (export): di default TUTTE attive,
+  // così senza toccare nulla il comportamento resta "esporta tutto" come
+  // prima dei checkbox — l'utente deve deselezionare esplicitamente per
+  // restringere, non il contrario.
+  const [categorieBackupSelezionate, setCategorieBackupSelezionate] = useState(
+    ()=>new Set(CATEGORIE_BACKUP_LOCALE.map(c=>c.id))
+  );
   // Feedback visivo immediato sul pulsante "Salva disposizione" in alto:
   // il banner in basso passa facilmente inosservato mentre si lavora sui
   // pulsanti in alto, quindi qui l'icona stessa cambia temporaneamente
@@ -1486,7 +1493,7 @@ export default function VistaModelli({ C }){
             color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12,marginBottom:8}}>
           🔍 Visualizza Dati in Supabase
         </button>
-        <div style={{display:"flex",gap:8,marginBottom:8}}>
+        <div style={{display:"flex",gap:8}}>
           <button onClick={handleExportSupabase}
             style={{flex:1,background:"#16a34a",border:"none",borderRadius:10,
               color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
@@ -1497,6 +1504,12 @@ export default function VistaModelli({ C }){
               color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
             📥 Importa da Supabase
           </button>
+        </div>
+      </SecCollapsible>
+
+      <SecCollapsible label="BACKUP LOCALE (TELEFONO)" T={T}>
+        <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
+          Dati salvati su questo dispositivo, indipendenti da Supabase: statistiche, esportazione e ripristino da file.
         </div>
         <button onClick={()=>setShowLocalDataModal(true)}
           style={{width:"100%",background:"#7c3aed",border:"none",borderRadius:10,
@@ -1568,11 +1581,48 @@ export default function VistaModelli({ C }){
                     da questo periodo verranno persi: usalo per archiviare o condividere, non come backup di sicurezza.
                   </div>
                 )}
+
+                <div style={{fontSize:12,color:T.sub,marginTop:12,marginBottom:6}}>Cosa includere nel file:</div>
+                <div style={{display:"flex",flexDirection:"column",gap:4,marginBottom:6}}>
+                  {CATEGORIE_BACKUP_LOCALE.map(cat=>{
+                    const selezionata = categorieBackupSelezionate.has(cat.id);
+                    return (
+                      <label key={cat.id} style={{display:"flex",alignItems:"center",gap:8,
+                        fontSize:12,color:T.text,cursor:"pointer",padding:"4px 2px"}}>
+                        <input type="checkbox" checked={selezionata}
+                          onChange={e=>{
+                            setCategorieBackupSelezionate(prev=>{
+                              const next = new Set(prev);
+                              if(e.target.checked) next.add(cat.id); else next.delete(cat.id);
+                              return next;
+                            });
+                          }}
+                          style={{width:16,height:16,cursor:"pointer"}} />
+                        <span>{cat.label}{cat.obbligatorio&&!selezionata ? " ⚠️" : ""}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                {CATEGORIE_BACKUP_LOCALE.some(c=>c.obbligatorio && !categorieBackupSelezionate.has(c.id))&&(
+                  <div style={{fontSize:11,color:"#f59e0b",marginBottom:8,lineHeight:1.4}}>
+                    ⚠️ Hai escluso una categoria base (calendari/eventi/modelli): un successivo import di
+                    questo file potrebbe risultare incompleto o incoerente con i riferimenti tra i dati.
+                  </div>
+                )}
+                {categorieBackupSelezionate.size < CATEGORIE_BACKUP_LOCALE.length && (
+                  <button onClick={()=>setCategorieBackupSelezionate(new Set(CATEGORIE_BACKUP_LOCALE.map(c=>c.id)))}
+                    style={{background:"none",border:"none",color:T.sub,fontSize:11,textDecoration:"underline",
+                      cursor:"pointer",padding:0,marginBottom:10,textAlign:"left"}}>
+                    Riseleziona tutto
+                  </button>
+                )}
+
                 <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                  <button onClick={handleEsportaBackupLocale}
+                  <button onClick={()=>handleEsportaBackupLocale(Array.from(categorieBackupSelezionate))}
                     style={{background:"#2563eb",color:"#fff",border:"none",borderRadius:10,
                       padding:"12px",fontSize:13,fontWeight:800,cursor:"pointer"}}>
-                    {(backupPeriodoDa||backupPeriodoA) ? "⬇️ Esporta il periodo scelto (.json)" : "⬇️ Esporta tutto in un file (.json)"}
+                    {(backupPeriodoDa||backupPeriodoA||categorieBackupSelezionate.size<CATEGORIE_BACKUP_LOCALE.length)
+                      ? "⬇️ Esporta la selezione (.json)" : "⬇️ Esporta tutto in un file (.json)"}
                   </button>
                   <label style={{background:T.s2,color:T.text,border:`1px solid ${T.border}`,borderRadius:10,
                     padding:"12px",fontSize:13,fontWeight:800,cursor:"pointer",textAlign:"center",display:"block"}}>

@@ -666,27 +666,82 @@ export function saveDatiSessioneLocale({ rotazioni, coloriExtra, autocompleteVal
 // filtro resta come garanzia esplicita piuttosto che implicita).
 const BACKUP_LOCALE_VERSIONE = 1;
 
+// Categorie selezionabili per il backup: ogni voce elenca i CAMPI dentro
+// turnipm_cache_v1 che rappresenta (la cache principale mescola più tipi
+// di dato nella stessa chiave localStorage), più eventuali CHIAVI intere
+// di localStorage a sé stanti (log, coda sync...). "obbligatorio: true"
+// segna le categorie che, se disattivate, romperebbero la coerenza di un
+// import successivo (es. escludere "calendari" ma includere "eventi" che
+// li referenziano) — restano selezionabili ma con un avviso, non bloccate,
+// perché un export mirato (es. solo per ispezionare) può comunque avere
+// senso senza quel vincolo.
+// Anticipate qui (erano dichiarate più sotto, vicino alle funzioni di
+// log): servono a CATEGORIE_BACKUP_LOCALE qui sotto. In JS, una `const` di
+// modulo referenziata PRIMA della propria dichiarazione testuale genera un
+// ReferenceError al caricamento del modulo (temporal dead zone) — la
+// prima stesura di questo file aveva CATEGORIE_BACKUP_LOCALE sopra queste
+// costanti e mandava in crash l'intera app all'avvio.
+const LS_LOG_ERRORI_KEY = "turnipm_log_errori_v1";
+const LS_ERRORI_SILENZIATI_KEY = "turnipm_errori_silenziati_v1";
+const LS_CODA_SYNC_KEY = "turnipm_coda_sync_v1";
+const LS_REGISTRO_IMPORT_KEY = "turnipm_registro_import_v1";
+
+export const CATEGORIE_BACKUP_LOCALE = [
+  { id: "calendari", label: "Calendari", campiCache: ["calendars"], obbligatorio: true },
+  { id: "eventi", label: "Eventi/turni", campiCache: ["events"], obbligatorio: true },
+  { id: "modelli", label: "Modelli", campiCache: ["modelli"], obbligatorio: true },
+  { id: "rotazioni", label: "Rotazioni", campiCache: ["rotazioni"] },
+  { id: "coloriIndennita", label: "Colori extra e indennità", campiCache: ["coloriExtra","indennita","valoreTicket","conteggioConfigs"] },
+  { id: "autocomplete", label: "Autocomplete (suggerimenti)", campiCache: ["autocompleteValori"] },
+  { id: "impostazioni", label: "Impostazioni e aspetto", campiCache: ["theme","extraHols","fasceAutomatiche","sundayColor","holidayColor","nationalHolsEnabled","calEventRows","calRow1Field","calRow2Field","reportSettings","calId"] },
+  { id: "report", label: "Report salvati", campiCache: ["reports"] },
+  { id: "logTecnici", label: "Log ed errori (tecnico)", chiaviIntere: [LS_LOG_ERRORI_KEY, LS_ERRORI_SILENZIATI_KEY, LS_CODA_SYNC_KEY, LS_REGISTRO_IMPORT_KEY] },
+];
+
 // dataInizio/dataFine (stringhe "YYYY-MM-DD", opzionali): se presenti,
 // filtrano SOLO gli eventi dentro la cache principale (turnipm_cache_v1),
-// che sono organizzati come { [calendarId]: { [dateKey]: [eventi] } } con
+// che sono organizzati come { [dateKey]: { [calendarId]: [eventi] } } con
 // dateKey nello stesso formato "YYYY-MM-DD" — il confronto è quindi un
 // confronto di stringhe, corretto perché il formato è a lunghezza fissa e
-// ordinabile lessicograficamente. Tutte le altre chiavi (log, coda sync,
-// impostazioni, syncMode...) non vengono filtrate: un filtro per periodo
-// ha senso solo sugli eventi, e filtrare anche il resto lascerebbe un
-// backup incoerente (es. modelli o calendari mancanti per eventi che poi
-// non torneresti a vedere). Un file con filtro periodo NON è pensato come
-// backup di sicurezza completo, ma come export mirato per archiviare o
-// condividere un intervallo — per questo l'interfaccia mostra un avviso
-// quando il periodo è impostato (vedi 02-Modelli.jsx).
-export function esportaBackupLocaleCompleto({ dataInizio = "", dataFine = "" } = {}) {
+// ordinabile lessicograficamente.
+//
+// categorie (array di id da CATEGORIE_BACKUP_LOCALE, opzionale): se
+// presente, include SOLO i campi delle categorie scelte. Le chiavi di
+// localStorage non coperte da nessuna categoria elencata sopra (es.
+// syncMode, cache_selectedCalIds, disposizioneModelliBackup...) sono
+// sempre incluse comunque: sono impostazioni minori/di sessione, non dati
+// dell'utente da poter escludere consapevolmente, ed escluderle non
+// avrebbe un beneficio reale mentre rischierebbe comportamenti strani al
+// riavvio dopo un import parziale.
+export function esportaBackupLocaleCompleto({ dataInizio = "", dataFine = "", categorie = null } = {}) {
   const filtraPerData = !!(dataInizio || dataFine);
+  const filtraPerCategoria = Array.isArray(categorie);
+  const categorieSelezionate = filtraPerCategoria ? new Set(categorie) : null;
+
+  // Campi cache da includere e chiavi intere da escludere, derivati dalle
+  // categorie scelte (solo se il filtro categoria è attivo).
+  let campiCacheInclusi = null; // null = tutti
+  let chiaviIntereEscluse = new Set();
+  if (filtraPerCategoria) {
+    for (const cat of CATEGORIE_BACKUP_LOCALE) {
+      if (categorieSelezionate.has(cat.id)) continue;
+      (cat.chiaviIntere||[]).forEach(k=>chiaviIntereEscluse.add(k));
+    }
+    campiCacheInclusi = new Set();
+    for (const cat of CATEGORIE_BACKUP_LOCALE) {
+      if (categorieSelezionate.has(cat.id)) {
+        (cat.campiCache||[]).forEach(c=>campiCacheInclusi.add(c));
+      }
+    }
+  }
+
   const chiavi = {};
   let nChiavi = 0;
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
       if (k == null) continue;
+      if (filtraPerCategoria && chiaviIntereEscluse.has(k)) continue; // categoria "log tecnici" ecc. deselezionata
       let valoreGrezzo = null;
       try { valoreGrezzo = localStorage.getItem(k); } catch { continue; }
       if (valoreGrezzo == null) continue;
@@ -699,25 +754,46 @@ export function esportaBackupLocaleCompleto({ dataInizio = "", dataFine = "" } =
       let valoreJson = undefined;
       try { valoreJson = JSON.parse(valoreGrezzo); } catch { /* non è JSON: resta solo grezzo, va bene comunque */ }
 
-      if (filtraPerData && k === LS_CACHE_KEY && valoreJson && typeof valoreJson === "object") {
-        // Struttura reale (confermata in 06-Logica.jsx, caricamento da
-        // Supabase): events = { [dateKey]: { [calendarId]: [eventi] } } —
-        // la DATA è la chiave esterna, il calendario quella interna. La
-        // primissima versione di questo filtro aveva le due chiavi
-        // invertite (calendario fuori, data dentro): confrontava un id
-        // calendario con una stringa data, il confronto falliva sempre e
-        // il filtro svuotava silenziosamente tutti gli eventi anche con un
-        // periodo che li copriva tutti (es. dal 2023 a oggi → 0 eventi).
-        const eventsOriginali = valoreJson.events || {};
-        const eventsFiltrati = {};
-        for (const dateKey of Object.keys(eventsOriginali)) {
-          const dentroInizio = !dataInizio || dateKey >= dataInizio;
-          const dentroFine = !dataFine || dateKey <= dataFine;
-          if (dentroInizio && dentroFine) eventsFiltrati[dateKey] = eventsOriginali[dateKey];
+      if (k === LS_CACHE_KEY && valoreJson && typeof valoreJson === "object") {
+        let cacheRisultante = valoreJson;
+
+        if (filtraPerData) {
+          // Struttura reale (confermata in 06-Logica.jsx, caricamento da
+          // Supabase): events = { [dateKey]: { [calendarId]: [eventi] } } —
+          // la DATA è la chiave esterna, il calendario quella interna. La
+          // primissima versione di questo filtro aveva le due chiavi
+          // invertite: confrontava un id calendario con una stringa data,
+          // il confronto falliva sempre e il filtro svuotava
+          // silenziosamente tutti gli eventi anche con un periodo che li
+          // copriva tutti (es. dal 2023 a oggi → 0 eventi).
+          const eventsOriginali = cacheRisultante.events || {};
+          const eventsFiltrati = {};
+          for (const dateKey of Object.keys(eventsOriginali)) {
+            const dentroInizio = !dataInizio || dateKey >= dataInizio;
+            const dentroFine = !dataFine || dateKey <= dataFine;
+            if (dentroInizio && dentroFine) eventsFiltrati[dateKey] = eventsOriginali[dateKey];
+          }
+          cacheRisultante = { ...cacheRisultante, events: eventsFiltrati };
         }
-        const cacheFiltrata = { ...valoreJson, events: eventsFiltrati };
-        valoreJson = cacheFiltrata;
-        valoreGrezzo = JSON.stringify(cacheFiltrata);
+
+        if (filtraPerCategoria) {
+          // Tiene solo i campi delle categorie selezionate, cancellando
+          // (impostando a un valore vuoto coerente col tipo) quelli delle
+          // categorie escluse, invece di rimuovere la chiave: un import
+          // successivo che fa merge con una cache preesistente (vedi
+          // saveToLocalStorage) si aspetta comunque la forma giusta, non
+          // "undefined" per un campo che il resto del codice legge sempre
+          // come oggetto o array.
+          const cacheFiltrataCategorie = {};
+          for (const campo of Object.keys(cacheRisultante)) {
+            if (campo.startsWith("_")) { cacheFiltrataCategorie[campo] = cacheRisultante[campo]; continue; } // meta-campi tecnici (_savedAt...)
+            if (campiCacheInclusi.has(campo)) cacheFiltrataCategorie[campo] = cacheRisultante[campo];
+          }
+          cacheRisultante = cacheFiltrataCategorie;
+        }
+
+        valoreJson = cacheRisultante;
+        valoreGrezzo = JSON.stringify(cacheRisultante);
       }
 
       chiavi[k] = { grezzo: valoreGrezzo, ...(valoreJson !== undefined ? { json: valoreJson } : {}) };
@@ -732,6 +808,7 @@ export function esportaBackupLocaleCompleto({ dataInizio = "", dataFine = "" } =
     _esportatoIl: new Date().toISOString(),
     _numeroChiavi: nChiavi,
     _filtroPeriodo: filtraPerData ? { dataInizio: dataInizio||null, dataFine: dataFine||null } : null,
+    _filtroCategorie: filtraPerCategoria ? categorie : null,
     localStorage: chiavi,
   };
 }
@@ -796,10 +873,9 @@ export function clearLocalStorageCache() {
 // ERRORI — coda per il modale, log persistente, silenziamento per
 // contesto, listener registrabile dal componente principale.
 // ─────────────────────────────────────────────────────────────────────
-
-const LS_LOG_ERRORI_KEY = "turnipm_log_errori_v1";
-const LS_ERRORI_SILENZIATI_KEY = "turnipm_errori_silenziati_v1";
-const LS_CODA_SYNC_KEY = "turnipm_coda_sync_v1";
+// (LS_LOG_ERRORI_KEY, LS_ERRORI_SILENZIATI_KEY, LS_CODA_SYNC_KEY sono
+// dichiarate più sopra, vicino a CATEGORIE_BACKUP_LOCALE che le usa prima
+// di questo punto nel file — vedi commento lì.)
 
 let _listenerCodaErrori = null;
 
@@ -903,7 +979,7 @@ export function registraProblemiImport(mancanti = [], sospetti = []) {
 // Registro import problematici: elenco delle sessioni di import che hanno
 // generato avvisi (righe mancanti/sospette), consultabile e cancellabile
 // dall'utente in Impostazioni -> Log import.
-const LS_REGISTRO_IMPORT_KEY = "turnipm_registro_import_v1";
+// (LS_REGISTRO_IMPORT_KEY dichiarata più sopra, vicino a CATEGORIE_BACKUP_LOCALE.)
 
 export function leggiRegistroImportProblemi() {
   try {
