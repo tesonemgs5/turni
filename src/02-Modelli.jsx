@@ -1613,12 +1613,10 @@ export default function VistaModelli({ C }){
               ({Object.keys(confermaImportLocale.localStorage||{}).length} elementi nel file, esportato il{" "}
               {confermaImportLocale._esportatoIl ? new Date(confermaImportLocale._esportatoIl).toLocaleString("it-IT") : "—"}).
             </div>
-            {confermaImportLocale._periodo&&(
+            {confermaImportLocale._filtroPeriodo&&(
               <div style={{fontSize:12,color:"#f59e0b",lineHeight:1.5,marginBottom:8,fontWeight:700}}>
                 ⚠️ Questo è un backup PARZIALE: contiene solo gli eventi dal{" "}
-                {confermaImportLocale._periodo.da || "inizio"} al {confermaImportLocale._periodo.a || "fine"}
-                {typeof confermaImportLocale._periodo.eventiInclusi === "number"
-                  ? ` (${confermaImportLocale._periodo.eventiInclusi} eventi)` : ""}.
+                {confermaImportLocale._filtroPeriodo.dataInizio || "inizio"} al {confermaImportLocale._filtroPeriodo.dataFine || "oggi"}.
                 Tutti gli eventi fuori da questo periodo verranno cancellati da questo dispositivo.
               </div>
             )}

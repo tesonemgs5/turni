@@ -95,6 +95,8 @@ export function useAppCore(session){
   const [showLocalDataModal, setShowLocalDataModal] = useState(false);
   const [esitoBackupLocale, setEsitoBackupLocale] = useState(null); // {tipo:"ok"|"errore", messaggio} — esito ultimo export/import locale
   const [confermaImportLocale, setConfermaImportLocale] = useState(null); // backup parsato in attesa di conferma prima di sovrascrivere
+  const [backupPeriodoDa, setBackupPeriodoDa] = useState(""); // filtro export locale: data inizio (YYYY-MM-DD), vuoto = nessun filtro
+  const [backupPeriodoA, setBackupPeriodoA] = useState("");   // filtro export locale: data fine (YYYY-MM-DD), vuoto = nessun filtro
   const [syncing,  setSyncing]  = useState(false);
   const [nhD,     setNhD]     = useState("");
   const [nhM,     setNhM]     = useState("");
@@ -2801,7 +2803,7 @@ export function useAppCore(session){
   // legge solo ciò che è già salvato sul dispositivo in quel momento.
   function handleEsportaBackupLocale(){
     try {
-      const backup = esportaBackupLocaleCompleto();
+      const backup = esportaBackupLocaleCompleto({ dataInizio: backupPeriodoDa, dataFine: backupPeriodoA });
       const blob = new Blob([JSON.stringify(backup, null, 2)], {type:"application/json"});
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -2817,12 +2819,22 @@ export function useAppCore(session){
       // eventi: con tutto dentro poche chiavi (es. tutti gli eventi in
       // turnipm_cache_v1) il numero resta piccolo anche con un archivio
       // enorme, e da solo può sembrare un backup incompleto quando non lo
-      // è. Per questo il messaggio mostra ANCHE i conteggi veri (eventi,
-      // calendari, modelli, rotazioni) già disponibili in questo momento
-      // dallo stato in memoria, così è chiaro che il backup li contiene.
-      const nEventiTotali = Object.values(store.events||{}).reduce((sum,calMap)=>
+      // è. Per questo il messaggio mostra ANCHE i conteggi veri.
+      // Con un filtro periodo attivo, il conteggio va letto DAL BACKUP
+      // stesso (già filtrato), non dallo stato in memoria (store.events),
+      // altrimenti il messaggio mostrerebbe il totale non filtrato anche
+      // quando il file scaricato ne contiene di meno — la stessa
+      // discrepanza segnalata: "il file è più piccolo ma il conteggio non
+      // lo riflette".
+      const eventsPerConteggio = backup._filtroPeriodo
+        ? (backup.localStorage?.["turnipm_cache_v1"]?.json?.events || {})
+        : (store.events||{});
+      const nEventiTotali = Object.values(eventsPerConteggio).reduce((sum,calMap)=>
         sum + Object.values(calMap||{}).reduce((s2,arr)=>s2+(arr?.length||0), 0), 0);
-      setEsitoBackupLocale({tipo:"ok", messaggio:`Backup locale scaricato — ${nEventiTotali} eventi, ${store.calendars?.length||0} calendari, ${modelli?.length||0} modelli, ${rotazioni?.length||0} rotazioni (in ${backup._numeroChiavi} categorie di dati).`});
+      const etichettaPeriodo = backup._filtroPeriodo
+        ? ` — periodo ${backup._filtroPeriodo.dataInizio||"inizio"} → ${backup._filtroPeriodo.dataFine||"oggi"}`
+        : "";
+      setEsitoBackupLocale({tipo:"ok", messaggio:`Backup locale scaricato${etichettaPeriodo} — ${nEventiTotali} eventi, ${store.calendars?.length||0} calendari, ${modelli?.length||0} modelli, ${rotazioni?.length||0} rotazioni (in ${backup._numeroChiavi} categorie di dati).`});
     } catch(e){
       segnalaErrore(e, "Esportazione backup locale");
       setEsitoBackupLocale({tipo:"errore", messaggio:"Errore durante l'esportazione: "+(e?.message||e)});
@@ -5657,6 +5669,10 @@ const importsRecenti = useMemo(()=>{
     setEsitoBackupLocale,
     confermaImportLocale,
     setConfermaImportLocale,
+    backupPeriodoDa,
+    setBackupPeriodoDa,
+    backupPeriodoA,
+    setBackupPeriodoA,
     syncing,
     setSyncing,
     nhD,
