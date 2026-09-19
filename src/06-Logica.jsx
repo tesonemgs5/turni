@@ -1718,7 +1718,21 @@ export function useAppCore(session){
       if(ca!==cb) return ca-cb;
       const ma = a.modelloId && modOrderIdx.has(a.modelloId) ? modOrderIdx.get(a.modelloId) : 9999;
       const mb = b.modelloId && modOrderIdx.has(b.modelloId) ? modOrderIdx.get(b.modelloId) : 9999;
-      return ma-mb;
+      if(ma!==mb) return ma-mb;
+      // Stesso modello (o entrambi senza modello): a parità di modello
+      // l'ordine non deve dipendere da COME/QUANDO l'evento è stato creato
+      // (dal picker "Scegli modello" vs. altrove), che è arbitrario e
+      // imprevedibile per l'utente. Criterio deterministico: prima per
+      // orario di inizio crescente (un evento allDay/senza tIn va in coda
+      // fra quelli con lo stesso modello), poi per id come ultima risorsa
+      // stabile, così due eventi identici restano comunque in un ordine
+      // fisso e riproducibile invece che "a caso".
+      const tinA = a.tIn ? oraInMinuti(a.tIn) : null;
+      const tinB = b.tIn ? oraInMinuti(b.tIn) : null;
+      if(tinA==null && tinB!=null) return 1;
+      if(tinA!=null && tinB==null) return -1;
+      if(tinA!=null && tinB!=null && tinA!==tinB) return tinA-tinB;
+      return String(a.id).localeCompare(String(b.id));
     });
     // Una protrazione-figlia (PROTRAZIONE PAGAMENTO/RECUPERO agganciata a un
     // turno base) va SEMPRE mostrata subito dopo il proprio turno base,

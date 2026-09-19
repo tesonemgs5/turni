@@ -2082,7 +2082,7 @@ export default function VistaModelli({ C }){
               const labelDaMostrare = (modelloCollegato ? (modelloCollegato.label||modelloCollegato.titolo||e.label) : e.label);
               const modelloDiQuestoEvento = e.modelloId ? modelli.find(m=>m.id===e.modelloId) : null;
               const orarioModello = (modelloDiQuestoEvento && modelloDiQuestoEvento.tempo!=="h24" && modelloDiQuestoEvento.inizio)
-                ? `${modelloDiQuestoEvento.inizio}→${modelloDiQuestoEvento.fine||""}` : null;
+                ? `${modelloDiQuestoEvento.inizio}→${calcFineModello(modelloDiQuestoEvento)||modelloDiQuestoEvento.fine||""}` : null;
               return (
               <>
             <div style={{flex:1}}>
@@ -2176,7 +2176,7 @@ export default function VistaModelli({ C }){
                   const idModelloAttuale = form.modelloId || form.evtModelloId;
                   const modSel = idModelloAttuale && modelli.find(m=>m.id===idModelloAttuale);
                   if(!modSel || modSel.tempo==="h24" || !modSel.inizio) return null;
-                  return <span style={{fontSize:14,color:T.sub,fontWeight:700}}>{modSel.inizio}→{modSel.fine||""}</span>;
+                  return <span style={{fontSize:14,color:T.sub,fontWeight:700}}>{modSel.inizio}→{calcFineModello(modSel)||modSel.fine||""}</span>;
                 })()}
                 <span style={{fontSize:12,color:T.sub,fontWeight:700}}>✎ cambia modello</span>
               </div>
@@ -2199,7 +2199,7 @@ export default function VistaModelli({ C }){
                         onClick={()=>setForm(f=>({...f,modelloId:m.id,shiftId:null,label:m.label||m.titolo,colorOvr:null,
                           dur:m.tempo==="h24"?"allday":m.tempo==="6h15"?"fixed":m.tempo==="6h30"?"fixed30":"custom",
                           tIn:m.inizio||"",
-                          tOut:m.tempo==="6h15"&&m.inizio?calcFine6h15(m.inizio):m.tempo==="6h30"&&m.inizio?calcFine6h30(m.inizio):(m.fine||""),
+                          tOut:calcFineModello(m)||m.fine||"",
                           protPagFine:"",protRecFine:"",protMenoRecIn:"",protMenoRecOut:"",
                           _showModPicker:false}))}
                         style={{background:form.modelloId===m.id?c:T.surface,
@@ -2210,7 +2210,7 @@ export default function VistaModelli({ C }){
                         <div style={{width:8,height:8,borderRadius:"50%",background:c}}/>
                         {m.titolo}
                         {m.tempo!=="h24"&&m.inizio&&(
-                          <span style={{opacity:0.75,fontWeight:600}}>{m.inizio}→{m.fine||""}</span>
+                          <span style={{opacity:0.75,fontWeight:600}}>{m.inizio}→{calcFineModello(m)||m.fine||""}</span>
                         )}
                       </button>
                     );
@@ -2240,7 +2240,7 @@ export default function VistaModelli({ C }){
                         onClick={()=>setForm(f=>({...f,modelloId:m.id,shiftId:null,label:m.label||m.titolo,colorOvr:null,
                           dur:m.tempo==="h24"?"allday":m.tempo==="6h15"?"fixed":m.tempo==="6h30"?"fixed30":"custom",
                           tIn:m.inizio||"",
-                          tOut:m.tempo==="6h15"&&m.inizio?calcFine6h15(m.inizio):m.tempo==="6h30"&&m.inizio?calcFine6h30(m.inizio):(m.fine||"")}))}
+                          tOut:calcFineModello(m)||m.fine||""}))}
                         style={{background:form.modelloId===m.id?c:T.surface,
                           border:`2px solid ${form.modelloId===m.id?c:T.border}`,
                           borderRadius:10,padding:"6px 10px",cursor:"pointer",
@@ -2249,7 +2249,7 @@ export default function VistaModelli({ C }){
                         <div style={{width:8,height:8,borderRadius:"50%",background:c}}/>
                         {m.titolo}
                         {m.tempo!=="h24"&&m.inizio&&(
-                          <span style={{opacity:0.75,fontWeight:600}}>{m.inizio}→{m.fine||""}</span>
+                          <span style={{opacity:0.75,fontWeight:600}}>{m.inizio}→{calcFineModello(m)||m.fine||""}</span>
                         )}
                       </button>
                     );

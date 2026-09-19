@@ -4,7 +4,7 @@ import VistaCalendario from "./03-Calendario";
 import VistaModelli from "./02-Modelli";
 import { ModaleErroriMultipli, NAV_HEIGHT, NAV_HEIGHT_CSS, ConfermaEliminazione } from "./05-Comuni";
 import {
-  getContrastTextColor, NOMI_MESI_IT, calcFine6h15, calcFine6h30, calcDurata,
+  getContrastTextColor, NOMI_MESI_IT, calcFine6h15, calcFine6h30, calcDurata, formattaDurataHM, calcFineModello,
   fmtDataIT, impostaSilenziamentoErrore, segnalaErrore,
   ModelForm, GrigliaRotazione, NLRSScalanteView, DomenicheView, ReperibilitaView,
 } from "./04-Rotazione";
@@ -176,6 +176,20 @@ function AppInterno({ session }){
     removeReport, renameReport, moveReport, getConteggioConfig, updateConteggioConfig, totaleTurni,
     setPrevGrid, REPORT_TEMPLATES, calcolaOrdineModelli, updateFascia,
   } = C;
+
+  // Centralizza "scegli questo modello per il giorno aperto nel calendario":
+  // usata sia cliccando un modello esistente nel picker "Scegli modello",
+  // sia (subito dopo il salvataggio) per un modello appena creato al volo
+  // dallo stesso picker — stessa identica logica in entrambi i casi, così
+  // l'orario di fine è SEMPRE calcolato con calcFineModello (corretto anche
+  // per 6h15/6h30, dove la fine dipende dall'inizio e non è un valore fisso
+  // salvato sul modello) invece di rischiare di leggere un m.fine vuoto.
+  function selezionaModelloPerGiorno(m){
+    setForm({modelloId:m.id,shiftId:null,label:m.titolo,note:"",
+      dur:m.tempo==="h24"?"allday":m.tempo==="6h15"?"fixed":m.tempo==="6h30"?"fixed30":"custom",
+      tIn:m.inizio||"",tOut:calcFineModello(m)||m.fine||"",place:"",map:"",colorOvr:null,collega:"",auto:""});
+    setShowModelloPicker(false);
+  }
 
   return (
     <div style={{display:"flex",flexDirection:"column",height:"100dvh",background:T.bg,
@@ -353,13 +367,22 @@ function AppInterno({ session }){
                   const esito = await saveModello({...modelForm,id:editModello?.id});
                   if(esito?.ok){
                     setShowModelForm(false);
-                    // Torna da dove si era partiti: se il form era stato aperto dal
-                    // picker "Scegli modello" (creazione al volo mentre si sceglieva
-                    // un modello per un evento), si riapre il picker; se era stato
-                    // aperto dalla lista Modelli, si resta semplicemente sulla lista
-                    // (nessun picker da riaprire — prima si andava sempre al picker
-                    // anche partendo dalla lista, comportamento non voluto).
-                    if(origineModelForm==="picker") setShowModelloPicker(true);
+                    // Se il form era stato aperto dal picker "Scegli modello"
+                    // (creazione/modifica al volo mentre si sceglieva un
+                    // modello per un evento), il modello appena salvato -
+                    // già con sortOrder assegnato da saveModello - viene
+                    // collegato SUBITO come evento del giorno corrente,
+                    // esattamente come se l'utente lo avesse cliccato dalla
+                    // lista: niente più "chiudo il form, riapro il picker,
+                    // ricerco il modello appena creato e lo clicco di nuovo"
+                    // (un passaggio in più che, oltre a essere ridondante,
+                    // lasciava l'evento senza l'orario di fine calcolato).
+                    // Se il form era stato aperto dalla lista Modelli, si
+                    // resta semplicemente sulla lista (nessun picker né
+                    // evento da creare).
+                    if(origineModelForm==="picker" && esito.modello){
+                      selezionaModelloPerGiorno(esito.modello);
+                    }
                   } else {
                     segnalaErrore(esito?.errore||"Errore sconosciuto", "Salvataggio modello");
                     alert("Errore nel salvataggio del modello: "+(esito?.errore?.message||esito?.errore||"errore sconosciuto")+"\n\nIl modello NON è stato salvato, controlla i dati e riprova.");
@@ -457,7 +480,7 @@ function AppInterno({ session }){
                     note:"",
                     dur:modelloScelto.tempo==="h24"?"allday":modelloScelto.tempo==="6h15"?"fixed":modelloScelto.tempo==="6h30"?"fixed30":"custom",
                     tIn:modelloScelto.inizio||"",
-                    tOut:modelloScelto.fine||"",
+                    tOut:calcFineModello(modelloScelto)||modelloScelto.fine||"",
                     place:"",map:"",colorOvr:null,collega:"",auto:"",
                     protPagFine:"",protRecFine:"",
                     protMenoRecIn:"",protMenoRecOut:"",
@@ -557,7 +580,7 @@ function AppInterno({ session }){
                   const c=m.coloreCustom||colByTime(m.inizio);
                   const durata=m.tempo==="h24"?"H24"
                     :m.tempo==="6h15"&&m.inizio?`${m.inizio} - ${calcFine6h15(m.inizio)} • 6h 15m`:m.tempo==="6h30"&&m.inizio?`${m.inizio} - ${calcFine6h30(m.inizio)} • 6h 30m`
-                    :m.inizio&&m.fine?`${m.inizio} - ${m.fine} • ${calcDurata(m.inizio,m.fine)}`
+                    :m.inizio&&m.fine?`${m.inizio} - ${m.fine} • ${formattaDurataHM(calcDurata(m.inizio,m.fine))}`
                     :m.inizio?m.inizio:"";
                   return (
                     <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
@@ -566,10 +589,7 @@ function AppInterno({ session }){
                           setQuickModeModello(m.id);
                           return;
                         }
-                        setForm({modelloId:m.id,shiftId:null,label:m.titolo,note:"",
-                          dur:m.tempo==="h24"?"allday":m.tempo==="6h15"?"fixed":m.tempo==="6h30"?"fixed30":"custom",
-                          tIn:m.inizio||"",tOut:m.fine||"",place:"",map:"",colorOvr:null,collega:"",auto:""});
-                        setShowModelloPicker(false);
+                        selezionaModelloPerGiorno(m);
                       }} style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}>
                         <div style={{width:36,height:36,borderRadius:10,background:c+"33",
                           border:`2px solid ${c}`,display:"flex",alignItems:"center",justifyContent:"center",
