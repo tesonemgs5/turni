@@ -2330,9 +2330,9 @@ export default function VistaModelli({ C }){
             </div>
             {form.dur!=="allday"&&(
   <div style={{marginBottom:10}}>
-    <div style={{display:"flex",gap:8,marginBottom:8}}>
-      <div style={{flex:"0 1 130px"}}>
-        <div style={{fontSize:9,color:T.sub,marginBottom:3}}>
+    <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+      <div style={{flex:"1 1 0",minWidth:0}}>
+        <div style={{fontSize:9,color:T.sub,marginBottom:3,minHeight:22,lineHeight:1.3}}>
           {form.modelloId ? "INGRESSO (promemoria, non modifica il modello)" : "INGRESSO"}
         </div>
         <SmartTimeInput value={form.tIn||""} onChange={v=>setForm(f=>({...f,tIn:v,
@@ -2341,24 +2341,24 @@ export default function VistaModelli({ C }){
             borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
       </div>
       {form.dur==="custom"&&(
-        <div style={{flex:"0 1 130px"}}>
-          <div style={{fontSize:9,color:T.sub,marginBottom:3}}>USCITA</div>
+        <div style={{flex:"1 1 0",minWidth:0}}>
+          <div style={{fontSize:9,color:T.sub,marginBottom:3,minHeight:22,lineHeight:1.3}}>USCITA</div>
           <SmartTimeInput value={form.tOut||""} onChange={v=>setForm(f=>({...f,tOut:v}))}
             style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
               borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
         </div>
       )}
       {form.dur==="fixed"&&form.tIn&&(
-        <div style={{flex:"0 1 130px"}}>
-          <div style={{fontSize:9,color:T.sub,marginBottom:3}}>{form.modelloId ? "USCITA (promemoria)" : "USCITA (modif.)"}</div>
+        <div style={{flex:"1 1 0",minWidth:0}}>
+          <div style={{fontSize:9,color:T.sub,marginBottom:3,minHeight:22,lineHeight:1.3}}>{form.modelloId ? "USCITA (promemoria)" : "USCITA (modif.)"}</div>
           <SmartTimeInput value={form.tOut||calcFine6h15(form.tIn)} onChange={v=>setForm(f=>({...f,tOut:v}))}
             style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
               borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
         </div>
       )}
       {form.dur==="fixed30"&&form.tIn&&(
-        <div style={{flex:"0 1 130px"}}>
-          <div style={{fontSize:9,color:T.sub,marginBottom:3}}>USCITA (modif.)</div>
+        <div style={{flex:"1 1 0",minWidth:0}}>
+          <div style={{fontSize:9,color:T.sub,marginBottom:3,minHeight:22,lineHeight:1.3}}>USCITA (modif.)</div>
           <SmartTimeInput value={form.tOut||calcFine6h30(form.tIn)} onChange={v=>setForm(f=>({...f,tOut:v}))}
             style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
               borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
