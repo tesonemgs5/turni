@@ -1,869 +1,5987 @@
-import { useState, useRef, useMemo, Fragment, Component } from "react";
-import { useAppCore } from "./06-Logica";
-import VistaCalendario from "./03-Calendario";
-import VistaModelli from "./02-Modelli";
-import { ModaleErroriMultipli, NAV_HEIGHT, NAV_HEIGHT_CSS, ConfermaEliminazione } from "./05-Comuni";
+    import { useState, useEffect, useRef, useMemo } from "react";
+import { supabase } from "./11-supabase";
 import {
-  getContrastTextColor, NOMI_MESI_IT, calcFine6h15, calcFine6h30, calcDurata, formattaDurataHM, calcFineModello,
-  fmtDataIT, impostaSilenziamentoErrore, segnalaErrore,
-  ModelForm, GrigliaRotazione, NLRSScalanteView, DomenicheView, ReperibilitaView,
+  FASCE_AUTOMATICHE_DEFAULT, FESTIVITA_DEFAULT_ATTIVE, MONTHS, NOMI_GIORNI_IT, PALETTE,
+  calcFine6h15, calcFine6h30, calcFineModello, categoriaAppAutoAutomatica, categoriaTurnoAutomatica,
+  daysInMonth, dkey, generaIdLocale, getColorByTime, getColorLabel,
+  getContrastTextColor, getShiftBand, isFestivo, isModelloTurnazioneDefault, italianHols,
+  leggiCodaSync, leggiErroriSilenziati, leggiLogErrori, loadFromLocalStorage, minsOf,
+  minutiTurnoModello, normalizzaOraHHMM, oraInMinuti, registraListenerCodaErrori, registraProblemiImport,
+  sameData, saveDatiSessioneLocale, saveToLocalStorage, scriviCodaSync, segnalaErrore, segnalaErroreSoloLog,
+  uid, withEventoAggiornato, withEventoAggiunto, withEventoRimosso,
+  esportaBackupLocaleCompleto, importaBackupLocaleCompleto, CATEGORIE_BACKUP_LOCALE,
 } from "./04-Rotazione";
-import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
 
-// ═══════════════════════════════════════════════════════════════
-// ErrorBoundary — rete di sicurezza per QUALSIASI crash React che
-// prima spariva solo in console (F12) senza che l'utente vedesse
-// nulla in app. Cattura l'eccezione, la manda comunque nel Log
-// persistente tramite segnalaErrore (stesso meccanismo usato per
-// gli errori Supabase), e mostra una schermata con un bottone per
-// tornare a usare l'app invece di restare bloccati su una pagina
-// bianca o rotta.
-// NB: un Error Boundary React cattura errori di RENDER, non quelli
-// dentro onClick/async — quelli sono gestiti a parte (vedi i
-// try/catch aggiunti attorno a onSave). I due meccanismi insieme
-// coprono l'intera superficie: sia i crash di rendering sia le
-// eccezioni impreviste dentro le azioni utente.
-// ═══════════════════════════════════════════════════════════════
-class ErrorBoundary extends Component {
-  constructor(props){
-    super(props);
-    this.state = { errore: null };
+// ════════════════════════════════════════════════════════════
+// useAppCore.js — Custom hook che concentra tutto lo stato e la
+// logica dell'app: init, CRUD calendari/eventi, sync Google Sheets
+// + Supabase, CRUD modelli/colori/rotazioni, report helpers.
+// Provenienza: App.jsx originale, sezioni 5-14.
+//
+// Uso: nel componente App, `const C = useAppCore(session);` poi si
+// passa C (o le chiavi che servono) alle viste.
+// ═══════════════════════════════════════════════════════════════
+
+// #region SEZIONE 5: REPORT TEMPLATES + INIT STATE
+// ═══════════════════════════════════════════════════════════════
+const REPORT_TEMPLATES = [
+  { type:"conteggio_turni", label:"Conteggio turni", desc:"Conta i turni per fascia oraria" },
+  { type:"turnazione",      label:"Turnazione", desc:"Turni per modello con date, 1°/2° turno automatico" },
+  { type:"indennita",       label:"Indennità di servizio", desc:"Calcola le indennità per fascia, con Viabilità/Ticket come sottomenu" },
+  { type:"ore_turno",       label:"Ore per turno", desc:"Stima ore lavorate" },
+  { type:"straordinari",    label:"Straordinari", desc:"Protrazioni e straordinari" },
+  { type:"guadagni",        label:"Guadagni", desc:"Stima guadagni da indennità" },
+];
+
+const INIT = { calendars:[], events:{}, theme:"auto", extraHols:[], reports:[], reportSettings:{}, fasceAutomatiche: FASCE_AUTOMATICHE_DEFAULT, sundayColor:"", holidayColor:"", nationalHolsEnabled:FESTIVITA_DEFAULT_ATTIVE, calEventRows:1, calRow1Field:"titolo", calRow2Field:"---" };
+
+export function useAppCore(session){
+  const today = new Date();
+  // <- AGGANCIO: qui aggiungo un <style> globale con @keyframes calFadeIn, iniettato una sola volta nel render finale
+// #endregion
+
+// #region SEZIONE 6: USESTATE HOOKS
+// ═══════════════════════════════════════════════════════════════
+  const [store, setStore] = useState(INIT);
+  // Ref sincrono per leggere l'ultimo valore di store dentro funzioni
+  // async (es. sincronizzaEventiProtrazione chiamata subito dopo un
+  // setStore, prima che il re-render abbia aggiornato la closure di
+  // updateEvt/saveEvt): senza questo ref, la ricerca del figlio di
+  // protrazione esistente può leggere uno snapshot di store "vecchio"
+  // di un giro, non trovare il figlio già creato in una modifica
+  // precedente e crearne un secondo doppione invece di aggiornare quello
+  // già presente. Stesso pattern già usato per modelliRef qui sotto.
+  const storeRef = useRef(INIT);
+  useEffect(()=>{ storeRef.current = store; }, [store]);
+  const [loading, setLoading] = useState(true);
+  const [year,  setYear]  = useState(today.getFullYear());
+  const [month, setMonth] = useState(today.getMonth());
+  const [calId, setCalId] = useState(null);
+  useEffect(()=>{
+    if(calId){ try{ localStorage.setItem('cache_calId', calId); }catch(e){} }
+  }, [calId]);
+  const [editMode, setEditMode] = useState(false); // "M" — ON = modifica singola, OFF = selezione multipla
+  const [selectedCalIds, setSelectedCalIds] = useState(()=>{
+    try{ return JSON.parse(localStorage.getItem('cache_selectedCalIds')||'[]'); }catch(e){ return []; }
+  }); // selezione multipla calendari — determina anche cosa resta visibile in editMode. Persistita: al refresh/riavvio resta quella scelta dall'utente, non torna a "tutti".
+  useEffect(()=>{
+    try{ localStorage.setItem('cache_selectedCalIds', JSON.stringify(selectedCalIds)); }catch(e){}
+  }, [selectedCalIds]);
+  const [reportCalIds, setReportCalIds] = useState(()=>{
+    try{ return JSON.parse(localStorage.getItem('cache_reportCalIds')||'[]'); }catch(e){ return []; }
+  }); // selezione calendari per il Report. Persistita: il salvataggio avviene SINCRONAMENTE dentro l'handler del click (vedi setReportCalIdsPersistito piu' sotto e il suo uso in 3_Calendario.jsx), non tramite useEffect, per evitare che un refresh immediato dopo il click perda la selezione appena fatta.
+  function setReportCalIdsPersistito(updater){
+    setReportCalIds(prev=>{
+      const next = typeof updater==="function" ? updater(prev) : updater;
+      try{ localStorage.setItem('cache_reportCalIds', JSON.stringify(next)); }catch(e){}
+      return next;
+    });
   }
-  static getDerivedStateFromError(errore){
-    return { errore };
-  }
-  componentDidCatch(errore, info){
-    segnalaErrore(
-      { message: `${errore?.message||errore} — ${info?.componentStack?.split("\n").slice(0,15).join(" › ")||""}` },
-      "Errore imprevisto dell'app (crash di rendering)"
-    );
-  }
-  render(){
-    if(this.state.errore){
-      return (
-        <div style={{position:"fixed", inset:0, display:"flex", flexDirection:"column",
-          alignItems:"center", justifyContent:"center", padding:24, background:"#0f172a",
-          color:"#fff", fontFamily:"system-ui,sans-serif", textAlign:"center", zIndex:999999}}>
-          <div style={{fontSize:40, marginBottom:12}}>⚠️</div>
-          <div style={{fontSize:16, fontWeight:900, marginBottom:8}}>Si è verificato un errore imprevisto</div>
-          <div style={{fontSize:13, color:"#cbd5e1", marginBottom:20, maxWidth:340, lineHeight:1.4}}>
-            L'errore è stato registrato nel Log (Impostazioni → Log). I dati già salvati in locale non sono stati toccati.
-          </div>
-          <button onClick={()=>{ this.setState({errore:null}); window.location.reload(); }}
-            style={{background:"#3b82f6", border:"none", borderRadius:10, color:"#fff",
-              padding:"12px 24px", fontWeight:800, fontSize:14, cursor:"pointer"}}>
-            Ricarica l'app
-          </button>
-        </div>
+  const [selectedModelloIds, setSelectedModelloIds] = useState([]); // selezione multipla modelli (editMode OFF)
+  const [screen, setScreen] = useState("cal");
+  const [dayKey, setDayKey] = useState(null);
+  const [form,   setForm]   = useState(null);
+  const [pal,    setPal]    = useState(null);
+  const [ncName,  setNcName]  = useState("");
+  const [ncColor, setNcColor] = useState(PALETTE[9]);
+  const [nsName,  setNsName]  = useState("");
+  const [nsColor, setNsColor] = useState(PALETTE[0]);
+  const [exCal,   setExCal]   = useState(null);
+  const [nhName,  setNhName]  = useState("");
+  const [patronoCittaSel, setPatronoCittaSel] = useState("");
+  const [syncMsg,  setSyncMsg]  = useState("");
+  const [backupsList, setBackupsList] = useState([]);
+  const [showBackupsModal, setShowBackupsModal] = useState(false);
+  const [showLocalDataModal, setShowLocalDataModal] = useState(false);
+  const [esitoBackupLocale, setEsitoBackupLocale] = useState(null); // {tipo:"ok"|"errore", messaggio} — esito ultimo export/import locale
+  const [confermaImportLocale, setConfermaImportLocale] = useState(null); // backup parsato in attesa di conferma prima di sovrascrivere
+  const [backupPeriodoDa, setBackupPeriodoDa] = useState(""); // filtro export locale: data inizio (YYYY-MM-DD), vuoto = nessun filtro
+  const [backupPeriodoA, setBackupPeriodoA] = useState("");   // filtro export locale: data fine (YYYY-MM-DD), vuoto = nessun filtro
+  const [syncing,  setSyncing]  = useState(false);
+  const [nhD,     setNhD]     = useState("");
+  const [nhM,     setNhM]     = useState("");
+  // Anno opzionale dei Festivi Personalizzati: se vuoto la data si ripete
+  // ogni anno, se valorizzato vale solo per quell'anno specifico.
+  const [nhY,     setNhY]     = useState("");
+  const [bgSyncing, setBgSyncing] = useState(false);
+  const [dbError, setDbError] = useState("");
+  const [isWideScreen, setIsWideScreen] = useState(typeof window!=="undefined"?window.innerWidth>900:false);
+  useEffect(()=>{
+    const onResize=()=>setIsWideScreen(window.innerWidth>900);
+    window.addEventListener("resize", onResize);
+    return ()=>window.removeEventListener("resize", onResize);
+  },[]);
+  const evtFontSize = isWideScreen ? "12px" : "clamp(12px,3.2vw,15px)";
+  const dbErrorTimer = useRef(null);
+  // Coda degli errori accodati da segnalaErrore() in qualsiasi punto
+  // dell'app (anche fuori da questo componente). Mostrati uno alla volta:
+  // un solo bottone OK (chiude sempre) + checkbox "non mostrare più" per
+  // quel contesto specifico (silenziamento persistente, riattivabile da
+  // Impostazioni -> Log).
+  const [codaErrori, setCodaErrori] = useState([]);
+  // Dati per la sezione "Log" in Impostazioni: caricati solo quando la
+  // sezione viene aperta (leggiLogErrori/leggiErroriSilenziati leggono da
+  // localStorage, non serve tenerli sempre in memoria).
+  const [logErroriVisibile, setLogErroriVisibile] = useState(null);
+  const [erroriSilenziatiVisibile, setErroriSilenziatiVisibile] = useState(null);
+  useEffect(()=>{
+    registraListenerCodaErrori((nuovoErrore)=>{
+      setCodaErrori(prev=>[...prev, nuovoErrore]);
+    });
+    return ()=>registraListenerCodaErrori(null);
+  }, []);
+  // ─── Rete di sicurezza FINALE, a livello di intera pagina: qualsiasi
+  // eccezione non gestita — sia una Promise async senza try/catch da
+  // qualche parte non ancora coperta, sia un errore sincrono generico —
+  // ora arriva comunque qui invece di sparire silenziosamente in
+  // console (F12) senza che l'utente ne sappia nulla. Non sostituisce i
+  // try/catch mirati già messi sulle azioni principali (salva turno,
+  // salva/elimina modello): quelli danno un messaggio specifico e utile;
+  // questo è l'ultima rete, generica, per tutto il resto.
+  useEffect(()=>{
+    function onUnhandledRejection(ev){
+      segnalaErrore(
+        { message: ev?.reason?.message || String(ev?.reason||"Errore asincrono non gestito") },
+        "Errore imprevisto (operazione non completata)"
       );
     }
-    return this.props.children;
+    function onGlobalError(ev){
+      segnalaErrore(
+        { message: ev?.message || "Errore sconosciuto" },
+        "Errore imprevisto dell'app"
+      );
+    }
+    window.addEventListener("unhandledrejection", onUnhandledRejection);
+    window.addEventListener("error", onGlobalError);
+    return ()=>{
+      window.removeEventListener("unhandledrejection", onUnhandledRejection);
+      window.removeEventListener("error", onGlobalError);
+    };
+  }, []);
+  function segnalaErroreDb(error, contesto){
+    segnalaErrore(error, contesto);
+    const msg = error?.message || "Errore sconosciuto";
+    setDbError(`⚠️ ${contesto}: ${msg}`);
+    if(dbErrorTimer.current) clearTimeout(dbErrorTimer.current);
+    dbErrorTimer.current = setTimeout(()=>setDbError(""), 6000);
   }
-}
+  // ─── Wrapper per il pattern Supabase+gestione errore, ripetuto in tutto
+  // il file: query, controlla error, segnala se fallisce. Un solo posto da
+  // toccare se cambia come viene gestito un errore di scrittura; e soprattutto
+  // impossibile dimenticare il controllo dell'errore, perché è già dentro
+  // il wrapper stesso invece di doverlo scrivere ogni volta a mano.
+  // matchObj: oggetto di filtri applicati con .match() (es. {id, user_id}).
+  // opzioni.soloLog: se true, l'errore va solo nel Log senza aprire il
+  // modale — per i casi dentro un ciclo dove un riepilogo unico basta
+  // (vedi eseguiNormalizzazione).
+  async function dbUpdate(table, payload, matchObj, contesto, opzioni={}){
+    const { data, error } = await supabase.from(table).update(payload).match(matchObj).select();
+    if(error){
+      if(opzioni.soloLog) segnalaErroreSoloLog(error, contesto);
+      else segnalaErroreDb(error, contesto);
+    }
+    return { data, error };
+  }
+  async function dbDelete(table, matchObj, contesto, opzioni={}){
+    const { data, error } = await supabase.from(table).delete().match(matchObj).select();
+    if(error){
+      if(opzioni.soloLog) segnalaErroreSoloLog(error, contesto);
+      else segnalaErroreDb(error, contesto);
+    }
+    return { data, error };
+  }
+  async function dbInsert(table, payload, contesto, opzioni={}){
+    const { data, error } = await supabase.from(table).insert(payload).select();
+    if(error){
+      if(opzioni.soloLog) segnalaErroreSoloLog(error, contesto);
+      else segnalaErroreDb(error, contesto);
+    }
+    return { data, error };
+  }
 
-// ═══════════════════════════════════════════════════════════════
-// BottomNav — barra di navigazione in basso, come componente React
-// vero e proprio (non più un div statico in index.html). Riceve
-// screen/setScreen/T/accent da App e si ridisegna da sola quando
-// cambiano — niente più window.__navGo né getElementById.
-// ═══════════════════════════════════════════════════════════════
-function BottomNav({ screen, setScreen, T, accent, onBeforeNavigate }) {
-  const NAV_ITEMS = [
-    { id: "cal", icon: "▦", label: "Calendario" },
-    { id: "report", icon: "📊", label: "Report" },
-    { id: "modelli", icon: "📋", label: "Modelli" },
-    { id: "settings", icon: "⚙", label: "Impostazioni" },
-  ];
-  return (
-    <nav aria-label="Navigazione principale" style={{
-      position: "fixed", left: 0, right: 0, bottom: 0, maxWidth: 480,
-      margin: "0 auto", display: "flex", borderTop: `1px solid ${T.border}`,
-      background: T.surface, zIndex: 100000, height: NAV_HEIGHT_CSS, boxSizing: "border-box",
-    }}>
-      {NAV_ITEMS.map(item => {
-        const isActive = screen === item.id;
-        return (
-          <button key={item.id} onClick={() => { onBeforeNavigate?.(); setScreen(item.id); }}
-            aria-label={item.label} aria-current={isActive ? "page" : undefined}
-            style={{
-              flex: 1, background: "none", border: "none", padding: "5px 0",
-              cursor: "pointer", display: "flex", flexDirection: "column",
-              alignItems: "center", gap: 1, fontFamily: "system-ui,sans-serif",
-            }}>
-            <span aria-hidden="true" style={{ fontSize: 16, color: isActive ? accent : T.sub }}>{item.icon}</span>
-            <span style={{ fontSize: 9, fontWeight: 700, color: isActive ? accent : T.sub }}>{item.label}</span>
-          </button>
+  // ─── Fetch COMPLETO di una tabella, a prescindere da quante righe ha.
+  // Supabase/PostgREST applica di default un limite massimo di 1000 righe
+  // per singola query (impostazione db-max-rows del progetto): un normale
+  // .select("*") su una tabella con più di 1000 eventi ne restituisce solo
+  // i primi 1000, TRONCANDO il resto in silenzio, senza errore. Questo era
+  // il motivo per cui il pannello "Dati salvati in Supabase" mostrava
+  // esattamente "1000" eventi totali (il muro del limite, non il conteggio
+  // vero) e per cui un backup costruito con un select semplice avrebbe
+  // perso ogni evento oltre il millesimo. Questa funzione pagina la lettura
+  // in blocchi da 1000 con .range(), richiamando finché l'ultimo blocco
+  // torna con meno di 1000 righe (segno che si è arrivati alla fine),
+  // così ogni chiamante ottiene SEMPRE l'intera tabella, qualunque sia la
+  // sua dimensione, senza dover sapere nulla del limite sottostante.
+  async function dbSelectTutto(table, { colonne="*", matchObj=null, orderBy=null, ascending=true, contesto }={}){
+    const DIMENSIONE_BLOCCO = 1000;
+    let tutteLeRighe = [];
+    let offset = 0;
+    while(true){
+      let query = supabase.from(table).select(colonne);
+      if(matchObj) query = query.match(matchObj);
+      if(orderBy) query = query.order(orderBy, { ascending });
+      query = query.range(offset, offset + DIMENSIONE_BLOCCO - 1);
+      const { data, error } = await query;
+      if(error){
+        segnalaErroreDb(error, contesto || `Lettura completa tabella "${table}"`);
+        return { data: tutteLeRighe, error };
+      }
+      const blocco = data || [];
+      tutteLeRighe = tutteLeRighe.concat(blocco);
+      if(blocco.length < DIMENSIONE_BLOCCO) break; // ultimo blocco: fine tabella
+      offset += DIMENSIONE_BLOCCO;
+    }
+    return { data: tutteLeRighe, error: null };
+  }
+
+  // ─── Wrapper unico per OGNI operazione di scrittura CRUD (turni, modelli,
+  // rotazioni, calendari...). Il locale è la fonte di verità: il chiamante
+  // aggiorna SEMPRE lo stato React + localStorage PRIMA di chiamare questa
+  // funzione (quella parte resta specifica di ogni CRUD, cambia da caso a
+  // caso). Da qui in poi, il comportamento è identico per tutti:
+  //
+  //   1) Prova Supabase. Se la tabella rifiuta una colonna che non esiste
+  //      ancora (schema non ancora allineato al codice), la toglie dal
+  //      payload e riprova in automatico (fino a 10 volte) — stesso
+  //      comportamento che aveva supabaseUpsertConRetry, riportato qui.
+  //   2) In PARALLELO (non in sequenza), backup su Sheets con la stessa
+  //      istantanea di dati passata dal chiamante.
+  //   3) Se Supabase fallisce per un'eccezione di rete (offline), l'intera
+  //      operazione (con il suo timestamp) va in coda: verrà ritentata
+  //      identica al ritorno della connessione. Se invece Supabase risponde
+  //      con un errore "vero" (non di rete: validazione, permessi...), non
+  //      va in coda — si segnala e basta, ritentarla non la farebbe passare.
+  //
+  // ts: timestamp ISO dell'istante in cui l'utente ha fatto la modifica
+  // (non di quando questa funzione viene eseguita) — usato per decidere la
+  // precedenza se due dispositivi modificano la stessa riga mentre uno era
+  // offline: vince sempre la modifica con ts più recente.
+  // ─── Verifica indipendente: dopo che Supabase ha risposto "nessun
+  // errore", RILEGGE la riga (o l'assenza di riga, per i delete) per
+  // essere certi che sia davvero scritta/cancellata — non ci si fida
+  // della sola assenza di errore nella risposta dell'insert/update.
+  // Confronta solo i campi presenti nel payload effettivamente inviato
+  // (quello sopravvissuto agli eventuali retry di colonna mancante).
+  // Un fallimento di rete DURANTE la verifica non è come un fallimento di
+  // rete durante la scrittura vera e propria: qui la scrittura (provaSupabase)
+  // è già andata a buon fine senza errori, si sta solo ricontrollando. Se il
+  // fetch di verifica cade per rete instabile, non vuol dire che il dato sia
+  // andato perso: lo segnaliamo con direte:true così il chiamante lo accoda
+  // silenziosamente invece di bloccare con un modale come se fosse un errore vero.
+  function eRoreDiRete(e){
+    // Raccoglie il testo da TUTTE le forme in cui un errore di rete può
+    // presentarsi qui dentro: un vero Error nativo (.message="Failed to
+    // fetch", .name="TypeError"), un errore Postgrest/Supabase (plain
+    // object con .message, a volte .details con lo stack, a volte .cause),
+    // o un AuthRetryableFetchError. Prima si guardava solo e.message: se
+    // quel campo era assente/vuoto o il testo utile stava altrove (es.
+    // .details, .cause.message), il riconoscimento falliva silenziosamente
+    // e l'errore di rete finiva loggato come se fosse un errore "vero"
+    // invece di essere accodato silenziosamente e ritentato.
+    let testo = "";
+    try{
+      testo = [
+        e?.message, e?.details, e?.hint, e?.cause?.message, e?.name,
+        (typeof e==="string") ? e : "",
+      ].filter(Boolean).join(" ").toLowerCase();
+      if(!testo) testo = JSON.stringify(e||"").toLowerCase();
+    }catch(_e){
+      testo = String(e?.message||e||"").toLowerCase();
+    }
+    return testo.includes("failed to fetch") || testo.includes("networkerror") || testo.includes("network request failed")
+      || testo.includes("fetch failed") || testo.includes("network") || testo.includes("timeout")
+      || testo.includes("connection") || testo.includes("name_not_resolved") || testo.includes("internet_disconnected")
+      || testo.includes("err_internet") || testo.includes("err_network") || testo.includes("err_connection")
+      || e?.name==="TypeError" || e?.name==="AuthRetryableFetchError";
+  }
+  async function verificaScrittura(tipo, table, payloadCorrente, matchObj){
+    try{
+      if(tipo==="delete"){
+        const { data, error } = await supabase.from(table).select("id").match(matchObj).limit(1);
+        if(error) return { verificata:false, direte:eRoreDiRete(error), motivo:`Verifica cancellazione fallita: ${error.message}` };
+        if(data && data.length>0) return { verificata:false, motivo:"La riga risulta ancora presente su Supabase dopo la cancellazione." };
+        return { verificata:true };
+      }
+      // insert/update: individua la riga scritta. Per insert uso l'id del
+      // payload se presente (generato in locale), altrimenti matchObj.
+      const filtro = (tipo==="insert" && payloadCorrente?.id)
+        ? { id: payloadCorrente.id }
+        : (matchObj || (payloadCorrente?.id ? { id: payloadCorrente.id } : null));
+      if(!filtro) return { verificata:true }; // niente su cui confrontare: non blocchiamo per questo
+      const { data, error } = await supabase.from(table).select("*").match(filtro).maybeSingle();
+      if(error) return { verificata:false, direte:eRoreDiRete(error), motivo:`Verifica lettura fallita: ${error.message}` };
+      if(!data) return { verificata:false, motivo:"La riga non risulta presente su Supabase dopo il salvataggio." };
+      const campiDiversi = [];
+      // Stringify "stabile": per oggetti/array (come griglia, un JSONB),
+      // Postgres può restituire le chiavi in un ordine diverso da quello
+      // con cui sono state scritte — non è un dato diverso, solo riordinato.
+      // JSON.stringify normale è sensibile all'ordine delle chiavi e
+      // genererebbe un falso "Dati diversi" anche a contenuto identico.
+      function stringifyStabile(v){
+        if(v===null || typeof v!=="object") return JSON.stringify(v);
+        if(Array.isArray(v)) return `[${v.map(stringifyStabile).join(",")}]`;
+        const chiavi = Object.keys(v).sort();
+        return `{${chiavi.map(k=>JSON.stringify(k)+":"+stringifyStabile(v[k])).join(",")}}`;
+      }
+      for(const k of Object.keys(payloadCorrente||{})){
+        if(k==="id") continue;
+        const inviato = payloadCorrente[k];
+        const letto = data[k];
+        // Confronto tollerante: null/undefined/"" sono equivalenti (Supabase
+        // e il payload locale a volte differiscono solo su questo).
+        const norm = v => (v===undefined||v===null) ? "" : v;
+        if(stringifyStabile(norm(inviato))!==stringifyStabile(norm(letto))) campiDiversi.push(k);
+      }
+      if(campiDiversi.length>0) return { verificata:false, motivo:`Dati diversi da quelli inviati su Supabase per: ${campiDiversi.join(", ")}` };
+      return { verificata:true };
+    }catch(e){
+      // eccezione lanciata (non un {error} nella risposta): quasi sempre
+      // un TypeError: Failed to fetch per rete caduta a metà della verifica.
+      return { verificata:false, direte:eRoreDiRete(e), motivo:`Eccezione durante la verifica: ${e?.message||e}` };
+    }
+  }
+
+  async function scriviConBackup({ tipo, table, payload, matchObj, contesto, ts, eventsPerSheets, calendarsPerSheets, modelliPerSheets, opzioni={} }){
+    function accodaSilenziosamente(){
+      // Locale è già scritto dal chiamante prima di arrivare qui: qui si
+      // accoda solo il backup remoto, senza disturbare l'utente. Nessun
+      // popup, nemmeno un banner — è lo stato normale "sto aspettando
+      // che torni la linea", non un errore da segnalare.
+      const coda = leggiCodaSync();
+      coda.push({ id: generaIdLocale(), ts: ts||new Date().toISOString(), tipo, table, payload, match: matchObj, contesto });
+      scriviCodaSync(coda);
+      return { ok:true, accodato:true, errore:null };
+    }
+    // ─── Se il browser segnala che non c'è connessione, non si tenta
+    // nemmeno la scrittura: si accoda direttamente. Provare e fallire non
+    // aggiunge informazione, aggiunge solo un giro a vuoto e rischio di
+    // popup.
+    if(typeof navigator!=="undefined" && navigator.onLine===false){
+      return accodaSilenziosamente();
+    }
+    async function provaSupabase(payloadCorrente, tentativi=0){
+      if(tentativi>=10) return { error:{message:"Troppi tentativi di retry sullo schema"} };
+      let q;
+      if(tipo==="insert") q = supabase.from(table).insert(payloadCorrente);
+      else if(tipo==="update") q = supabase.from(table).update(payloadCorrente).match(matchObj);
+      else q = supabase.from(table).delete().match(matchObj);
+      const { error } = await q;
+      if(!error) return { error:null, payloadUsato:payloadCorrente };
+      const m = /Could not find the '([^']+)' column/.exec(error.message||"");
+      if(m && payloadCorrente && m[1] in payloadCorrente){
+        segnalaErroreSoloLog(`Colonna '${m[1]}' assente su Supabase: omessa e riprovato automaticamente. Esegui l'ALTER TABLE per abilitarla stabilmente.`, `${contesto} (schema database)`);
+        const { [m[1]]: _omessa, ...resto } = payloadCorrente;
+        return provaSupabase(resto, tentativi+1);
+      }
+      return { error, payloadUsato:payloadCorrente };
+    }
+    try{
+      const [risSupabase] = await Promise.all([
+        provaSupabase(payload),
+        (eventsPerSheets!==undefined) ? syncSeAttivo(eventsPerSheets, calendarsPerSheets, modelliPerSheets) : Promise.resolve(),
+      ]);
+      if(risSupabase.error){
+        // Se l'errore sembra di rete (connessione ballerina che ha lasciato
+        // cadere questa singola richiesta, anche se navigator.onLine
+        // risultava true) NON è un errore vero: si accoda silenziosamente,
+        // esattamente come nel caso offline sopra. Il popup è riservato
+        // solo agli errori che una nuova connessione non risolverebbe da
+        // sola (permessi, validazione, RLS...).
+        if(eRoreDiRete(risSupabase.error)){
+          return accodaSilenziosamente();
+        }
+        // soloLog: il locale è comunque già scritto dal chiamante prima di
+        // arrivare qui, quindi un modale bloccante per un errore di solo
+        // backup remoto non aggiunge nulla — resta nel log tecnico e basta.
+        // Il chiamante che ha bisogno di un riepilogo (es. più scritture
+        // della stessa azione utente) lo mostra lui stesso, una volta sola.
+        if(opzioni.soloLog) segnalaErroreSoloLog(risSupabase.error, `${contesto} (backup su Supabase)`);
+        else segnalaErroreDb(risSupabase.error, `${contesto} (backup su Supabase)`);
+        return { ok:false, errore: risSupabase.error };
+      }
+      // ─── DOPPIO CONTROLLO: Supabase non ha segnalato errori, ma
+      // rileggiamo comunque per essere sicuri che il dato sia davvero lì
+      // (o davvero sparito, per i delete) prima di considerare l'operazione
+      // riuscita per davvero. Questo intercetta anche i casi in cui
+      // Supabase risponde "ok" senza aver realmente applicato la scrittura
+      // (RLS silenziosa, rete instabile con risposta falsata, ecc).
+      const verifica = await verificaScrittura(tipo, table, risSupabase.payloadUsato ?? payload, matchObj);
+      if(!verifica.verificata){
+        // La scrittura sopra (provaSupabase) è già andata a buon fine senza
+        // errori: Supabase ha confermato di aver scritto/cancellato la riga.
+        // Se il RICONTROLLO fallisce solo per rete instabile, non significa
+        // che il dato sia andato perso — è solo il secondo fetch che non è
+        // arrivato a destinazione. Non blocchiamo l'utente per questo: lo
+        // segnaliamo nel solo log tecnico e consideriamo l'operazione riuscita.
+        if(verifica.direte || opzioni.soloLog){
+          segnalaErroreSoloLog(`Verifica post-salvataggio non confermata (il salvataggio stesso è andato a buon fine su Supabase). Dettaglio: ${verifica.motivo}`, `${contesto} (verifica saltata)`);
+          return { ok:true, verificaSaltata:true, errore:null };
+        }
+        const erroreVerifica = { message: verifica.motivo };
+        segnalaErroreDb(erroreVerifica, `${contesto} (controllo dopo il salvataggio)`);
+        return { ok:false, errore: erroreVerifica };
+      }
+      return { ok:true, errore:null };
+    }catch(e){
+      // Eccezione di rete (offline, DNS non risolto, timeout...): l'intera
+      // operazione (con il suo timestamp originale) resta in coda, riparte
+      // identica al ritorno online. Nessun popup: è lo stato normale
+      // "sto aspettando che torni la linea", non un errore dell'utente.
+      return accodaSilenziosamente();
+    }
+  }
+  // Normalizza un campo testo in maiuscolo, gestendo null/undefined.
+  // Usata al posto di ripetere ovunque (campo||"").toUpperCase().
+  const up = (v) => (v||"").toUpperCase();
+
+  // Crea un evento su Supabase con i 13 campi standard della tabella
+  // "events" e ne restituisce { data, error }, senza toccare lo stato
+  // locale (quello resta a carico del chiamante, che sa già come
+  // aggiornare la UI nel proprio contesto specifico).
+  // Accorpa in un solo punto i 3 inserimenti quasi identici che
+  // c'erano prima sparsi nel file (salvataggio da form, inserimento
+  // rapido da modello, inserimento generico da rotazione).
+  async function creaEventoSupabase({
+    userId, calId, dateKey, label, color,
+    allDay, tIn="", tOut="", place="", mapUrl="", note="",
+    modelloId=null, rotazioneId=null, collega="", auto="",
+    protPagFine=null, protRecFine=null, importId=null,
+  }){
+    return await supabase.from("events").insert({
+      user_id: userId, calendar_id: calId, date_key: dateKey,
+      label, color, all_day: allDay,
+      time_in: tIn, time_out: tOut,
+      place: up(place), map_url: mapUrl, note: up(note),
+      modello_id: modelloId, rotazione_id: rotazioneId,
+      collega: up(collega), auto: up(auto),
+      prot_pag_fine: protPagFine, prot_rec_fine: protRecFine,
+      import_id: importId,
+    }).select().maybeSingle();
+  }
+  const [sheetsUrl, setSheetsUrl] = useState("");
+  const [sheetsSecret, setSheetsSecret] = useState("");
+  const [stats, setStats] = useState(null);
+  const [showDbModal, setShowDbModal] = useState(false);
+  const [ripristinoInCorso, setRipristinoInCorso] = useState(false);
+  const [ripristinoEsito, setRipristinoEsito] = useState(null);
+  const [showModelloEditor, setShowModelloEditor] = useState(false);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [banner, setBanner] = useState(null);
+  const [syncMode, setSyncMode] = useState(()=>localStorage.getItem('syncMode')||'on');
+  const [dbRawData, setDbRawData] = useState(null);
+  const [dbCalsCount, setDbCalsCount] = useState(0);
+  const [dbEvtsCount, setDbEvtsCount] = useState(0);
+
+  const [modelliTab, setModelliTab] = useState("turni");
+  const [modelli, setModelliRaw] = useState([]);
+  // GUARDIA GLOBALE: qualunque punto dell'app chiami setModelli (array diretto
+  // o funzione prev=>...), il risultato viene SEMPRE ripulito da eventuali
+  // elementi null/undefined prima di entrare in stato. Questo impedisce che
+  // un singolo punto dimenticato (find() senza match, map() malformato, dato
+  // corrotto da cache/DB) faccia crashare l'intera app al primo render che
+  // legge m.qualcosaDiUnDefined su un elemento del genere.
+  function setModelli(valoreONuovoValore){
+    setModelliRaw(prev=>{
+      const nuovo = typeof valoreONuovoValore==="function" ? valoreONuovoValore(prev) : valoreONuovoValore;
+      const puliti = (nuovo||[]).filter(Boolean);
+      if(puliti.length !== (nuovo||[]).length){
+        segnalaErrore(
+          { message: `setModelli ha ricevuto ${(nuovo||[]).length - puliti.length} elementi null/undefined: rimossi automaticamente.` },
+          "Dati modelli corrotti (auto-riparazione in setModelli)"
         );
-      })}
-    </nav>
-  );
-}
+      }
+      return puliti;
+    });
+  }
+  // Ref sincrono per leggere l'ultimo valore di modelli dentro callback
+  // async (es. subito dopo un saveModello, prima che il re-render abbia
+  // aggiornato la closure di questa funzione).
+  const modelliRef = useRef([]);
+  useEffect(()=>{ modelliRef.current = modelli; }, [modelli]);
+  const [modelliSort, setModelliSort] = useState("orario");
+  const [showSortMenu, setShowSortMenu] = useState(false);
+  const [showModelForm, setShowModelForm] = useState(false);
+  // Da dove è stato aperto il form "Nuovo/Modifica modello": determina dove
+  // tornare dopo il salvataggio (lista Modelli, o il picker "Scegli modello"
+  // se si stava scegliendo un modello per un evento). Senza questo, il
+  // salvataggio riportava sempre al picker anche partendo dalla lista.
+  const [origineModelForm, setOrigineModelForm] = useState("lista");
+  const [editModello, setEditModello] = useState(null);
+  const [modelForm, setModelForm] = useState({ titolo:"", tempo:"personalizzato", inizio:"", fine:"", coloreCustom:null, posizione:"" });
 
-// ═══════════════════════════════════════════════════════════════
-// App.jsx — INDICE dell'app.
-//
-// Chiama useAppCore() per avere tutto lo stato e la logica, poi
-// monta Core1 (Calendario + Report) e Core2 (Modelli + Impostazioni
-// + Day Modal + DB Modal), e assembla la shell (barra di
-// navigazione in basso, banner di errore).
-//
-// Per modificare una vista specifica, apri core1.jsx o core2.jsx.
-// Per aggiungere nuovo stato condiviso, apri useAppCore.js.
-// ═══════════════════════════════════════════════════════════════
+  // ── Snapshot manuale dell'ordine dei modelli (sortOrder), per proteggersi
+  // da un bug ancora non individuato che a volte rimescola spontaneamente le
+  // posizioni. Il salvataggio NON avviene mai in automatico: solo quando la
+  // persona preme esplicitamente "Salva disposizione" (o conferma il popup
+  // sotto), per non rischiare di congelare uno stato già corrotto dal bug.
+  // Il timer riparte ad ogni modifica (sposta/aggiungi/elimina un modello) e,
+  // se passano 30s senza un salvataggio manuale, chiede conferma con un
+  // popup. Il flag "modifiche non salvate" e l'istante dell'ultima modifica
+  // sono persistiti su localStorage (non solo stato React) così l'avviso
+  // sopravvive alla chiusura dell'app: se lo schermo si spegne o l'app viene
+  // chiusa con il timer ancora pendente, alla riapertura il popup deve
+  // comunque presentarsi.
+  const [showSalvaDisposizionePopup, setShowSalvaDisposizionePopup] = useState(false);
+  const timerSalvaDisposizioneRef = useRef(null);
+  const ULTIMA_MODIFICA_MODELLI_KEY = "ultimaModificaModelliOrdine";
 
-function AppInterno({ session }){
-  const C = useAppCore(session);
-  const { calView, reportView, goPrevMonth, goNextMonth } = VistaCalendario({ C });
-  const { modelliView, settingsView, dayModal, dbModal, salvaDisposizionePopup } = VistaModelli({ C });
-  const [confermaCancellaEventiMese, setConfermaCancellaEventiMese] = useState(false);
-  const [confermaEliminaEventiRotazione, setConfermaEliminaEventiRotazione] = useState(false);
-  const [confermaCancellaLogErrori, setConfermaCancellaLogErrori] = useState(false);
+  // ── Colori: popup assegnazione modelli + palette colori extra creati dall'utente
+  const [showColorAssignPicker, setShowColorAssignPicker] = useState(null); // colore hex attualmente aperto nel popup
+  const [colorAssignCalFiltro, setColorAssignCalFiltro] = useState(null); // calendari selezionati per filtrare la lista modelli nel popup colore (null = tutti)
+  const [showAddColorPicker, setShowAddColorPicker] = useState(false); // popup "+" per aggiungere un colore alla sezione
+  const [coloriExtra, setColoriExtra] = useState([]); // colori aggiunti manualmente o generati da modelli: array di {hex, label}
+  // ── Autocomplete: 5 liste dedicate, sincronizzate su Supabase (tabella
+  // autocomplete_valori), una per campo. Caricate una volta all'avvio;
+  // l'autocomplete legge SOLO da qui, mai scansionando eventi/modelli —
+  // niente rumore da valori sporadici, sempre veloce indipendentemente da
+  // quanti eventi/modelli esistono.
+  const [autocompleteValori, setAutocompleteValori] = useState({
+    titolo:[], nome_visualizzato:[], auto:[], luogo:[], collega:[],
+  });
+  const [showEditFasciaColor, setShowEditFasciaColor] = useState(null); // key della fascia automatica di cui si sta editando il colore
 
-  // Indice (0..3) del giorno del ciclo di Reperibilità da cui far partire
-  // la sequenza sulla data scelta a calendario: 0=Giorno 1, 1=Giorno 2,
-  // 2=Giorno 3, 3=Giorno 4. Serve perché l'utente non parte per forza dal
-  // Giorno 1 del ciclo, ma dal punto in cui si trova la sua turnazione.
-  const [rotGiornoPartenza, setRotGiornoPartenza] = useState(0);
+  const [rotazioni, setRotazioniRaw] = useState([]);
+  // Stessa guardia globale applicata a setModelli: nessun elemento
+  // null/undefined può entrare nello stato rotazioni, qualunque sia la
+  // fonte (cache, DB, aggiornamento locale).
+  function setRotazioni(valoreONuovoValore){
+    setRotazioniRaw(prev=>{
+      const nuovo = typeof valoreONuovoValore==="function" ? valoreONuovoValore(prev) : valoreONuovoValore;
+      const puliti = (nuovo||[]).filter(Boolean);
+      if(puliti.length !== (nuovo||[]).length){
+        segnalaErrore(
+          { message: `setRotazioni ha ricevuto ${(nuovo||[]).length - puliti.length} elementi null/undefined: rimossi automaticamente.` },
+          "Dati rotazioni corrotti (auto-riparazione in setRotazioni)"
+        );
+      }
+      return puliti;
+    });
+  }
+  const [showRotForm, setShowRotForm] = useState(false);
+  const [editRotazione, setEditRotazione] = useState(null);
+  const [rotForm, setRotForm] = useState({ tipo:"personalizzata", titolo:"", dataInizio:"", nSettimane:52, modellaLavoroId:null, modelloNLId:null, modelloRSId:null, modelloG3Id:null, modelloG4Id:null });
+  const [showRotDetail, setShowRotDetail] = useState(null);
+  const [showApplyRotDialog, setShowApplyRotDialog] = useState(null);
+  const [showDeleteRotEvtDialog, setShowDeleteRotEvtDialog] = useState(null);
+  const [showImportaFotoDialog, setShowImportaFotoDialog] = useState(false);
+  const [showImportaTurniJsonDialog, setShowImportaTurniJsonDialog] = useState(false);
+  const [showModelloPicker, setShowModelloPicker] = useState(false);
+  const [quickModeModello, setQuickModeModello] = useState(null);
+  const [showRotazionePicker, setShowRotazionePicker] = useState(false);
+  const dragSrcId = useRef(null);
+  const dragTargetId = useRef(null); // target reale del drag col mouse, calcolato con elementFromPoint (non l'id della card che riceve l'evento onDrop, inaffidabile su liste lunghe)
+  const touchSrcId = useRef(null);
+  const touchTargetId = useRef(null);
+  const touchStartX = useRef(null);
+  const touchStartY = useRef(null);
+  const [prevGrid, setPrevGrid] = useState(null);
 
-  const {
-    today, store, setStore, loading, setLoading, year,
-    setYear, month, setMonth, calId, setCalId, editMode,
-    setEditMode, selectedCalIds, setSelectedCalIds, reportCalIds, setReportCalIds, selectedModelloIds,
-    setSelectedModelloIds, screen, setScreen, dayKey, setDayKey, form,
-    setForm, pal, setPal, ncName, setNcName, ncColor,
-    setNcColor, nsName, setNsName, nsColor, setNsColor, exCal,
-    setExCal, nhName, setNhName, syncMsg, setSyncMsg, backupsList,
-    setBackupsList, showBackupsModal, setShowBackupsModal, showLocalDataModal, setShowLocalDataModal, syncing,
-    setSyncing, nhD, setNhD, nhM, setNhM, bgSyncing,
-    setBgSyncing, dbError, setDbError, isWideScreen, setIsWideScreen, evtFontSize,
-    dbErrorTimer, codaErrori, setCodaErrori, logErroriVisibile, setLogErroriVisibile, erroriSilenziatiVisibile,
-    setErroriSilenziatiVisibile, segnalaErroreDb, dbUpdate, dbDelete, dbInsert, scriviConBackup,
-    up, creaEventoSupabase, sheetsUrl, setSheetsUrl, sheetsSecret, setSheetsSecret,
-    stats, setStats, showDbModal, setShowDbModal, showModelloEditor, setShowModelloEditor,
-    isOnline, setIsOnline, banner, setBanner, syncMode, setSyncMode,
-    dbRawData, setDbRawData, dbCalsCount, setDbCalsCount, dbEvtsCount, setDbEvtsCount,
-    modelliTab, setModelliTab, modelli, setModelli, modelliSort, setModelliSort,
-    showSortMenu, setShowSortMenu, showModelForm, setShowModelForm, origineModelForm, setOrigineModelForm,
-    editModello, setEditModello, modelForm, setModelForm, showColorAssignPicker, setShowColorAssignPicker,
-    colorAssignCalFiltro, setColorAssignCalFiltro, showAddColorPicker, setShowAddColorPicker, coloriExtra, setColoriExtra,
-    autocompleteValori, setAutocompleteValori, showEditFasciaColor, setShowEditFasciaColor, rotazioni, setRotazioni,
-    showRotForm, setShowRotForm, editRotazione, setEditRotazione, rotForm, setRotForm,
-    showRotDetail, setShowRotDetail, showApplyRotDialog, setShowApplyRotDialog, showDeleteRotEvtDialog, setShowDeleteRotEvtDialog,
-    showImportaFotoDialog, setShowImportaFotoDialog, showImportaTurniJsonDialog, setShowImportaTurniJsonDialog, showModelloPicker, setShowModelloPicker,
-    quickModeModello, setQuickModeModello, showRotazionePicker, setShowRotazionePicker, dragSrcId, dragTargetId,
-    touchSrcId, touchTargetId, touchStartX, touchStartY, prevGrid, modelliScrollRef,
-    autoScrollRAF, autoScrollSpeed, dragOverId, setDragOverId, draggingId, setDraggingId,
-    modalitaSpostamento, setModalitaSpostamento, updateAutoScroll, stopAutoScroll, reportInterval, setReportInterval,
-    reportMeseSel, setReportMeseSel, selezionaReportMese, showMeseReportPicker, setShowMeseReportPicker, reportDateFrom,
-    setReportDateFrom, reportDateTo, setReportDateTo, openReportConfig, setOpenReportConfig, showIntervalPicker,
-    setShowIntervalPicker, indennita, setIndennita, conteggioConfigs, setConteggioConfigs, showReportModelliPicker,
-    setShowReportModelliPicker, editFascia, setEditFascia, showFasciaColorPicker, setShowFasciaColorPicker, userId,
-    isInitialized, processaCodaSync, sysDark, dark, T, activeCal,
-    mainCal, mainCalId, accent, accentText, hols, fasceAutomatiche,
-    colByTime, colLabel, isRed, sundayColor, holidayColor, redBg,
-    getEvts, allEvts, dots, saveSettings, addCalendar, updateCalendar,
-    deleteCalendar, computeEventFields, saveEvt, updateEvt, delEvt, delEvtiRotazioneDaData,
-    delTutteEvtiRotazione, cancellaTuttiEventiMese, calcMinuti, saveToSheets, syncSeAttivo, loadFromSheets,
-    syncFromSheets, handleSave, handleLoad, handleSaveSheetsConfig, handleViewDbData, buildBackupPayload,
-    handleExportSupabase, handleOpenImportSupabase, handleRestoreBackup, handleLogout, eseguiNormalizzazione, normalizzaModelliTempo,
-    normalizzaEventiTempo, modelliOrdinati, importsRecenti, modelliDelCalendario, rinumeraSottoinsieme, spostaModelloPuro,
-    trascinaModelloPuro, salvaModifichePosizioni, moveH24, reorderModelli, ensureColoreRegistrato, registraValoreAutocomplete,
-    registraValoriAutocomplete, rimuoviValoreAutocomplete, supabaseUpsertConRetry, saveModello, deleteModello, addColoreExtra,
-    removeColoreExtra, updateColoreExtraLabel, replaceColoreEverywhere, saveRotazione, deleteRotazione, updateGrigliaRotazione,
-    inserisciEventoGenerico, normOrarioImport, trovaModelloPerTitoloOrario, isRigaProtrazione, tipoProtrazione, importaTurniPdfJson,
-    delTuttiEventiImport, importaEventiSingoli, applyRotazione, getReportRange, splitColleghi, computeConteggioForReport,
-    computeTurnazioneForReport, computeConteggio, computeIndennita, activeReports, inactiveTypes, addReport,
-    removeReport, renameReport, moveReport, getConteggioConfig, updateConteggioConfig, totaleTurni,
-    setPrevGrid, REPORT_TEMPLATES, calcolaOrdineModelli, updateFascia,
-  } = C;
+  // ── Drag & drop modelli: scroll container + autoscroll a velocità variabile + preview ordine live
+  const modelliScrollRef = useRef(null);
+  const autoScrollRAF = useRef(null);
+  const autoScrollSpeed = useRef(0);
+  const [dragOverId, setDragOverId] = useState(null); // id della card su cui si sta trascinando ora (per preview)
+  const [draggingId, setDraggingId] = useState(null); // id della card attualmente trascinata
+  // Su telefono, touchstart/touchmove sulla card altrimenti intercettano SEMPRE
+  // il dito per il drag, impedendo lo scroll verticale normale della lista.
+  // Questo toggle esplicito distingue i due gesti: OFF (default) = il dito
+  // scorre la pagina come sempre; ON = il tocco sulle card trascina per riordinare.
+  const [modalitaSpostamento, setModalitaSpostamento] = useState(false);
 
-  // Centralizza "scegli questo modello per il giorno aperto nel calendario":
-  // usata sia cliccando un modello esistente nel picker "Scegli modello",
-  // sia (subito dopo il salvataggio) per un modello appena creato al volo
-  // dallo stesso picker — stessa identica logica in entrambi i casi, così
-  // l'orario di fine è SEMPRE calcolato con calcFineModello (corretto anche
-  // per 6h15/6h30, dove la fine dipende dall'inizio e non è un valore fisso
-  // salvato sul modello) invece di rischiare di leggere un m.fine vuoto.
-  function selezionaModelloPerGiorno(m){
-    setForm({modelloId:m.id,shiftId:null,label:m.titolo,note:"",
-      dur:m.tempo==="h24"?"allday":m.tempo==="6h15"?"fixed":m.tempo==="6h30"?"fixed30":"custom",
-      tIn:m.inizio||"",tOut:calcFineModello(m)||m.fine||"",place:"",map:"",colorOvr:null,collega:"",auto:""});
-    setShowModelloPicker(false);
+  // Autoscroll della lista modelli durante il trascinamento: quando il dito
+  // (o il cursore) si avvicina al bordo superiore o inferiore del contenitore
+  // scrollabile, la lista scorre automaticamente, a velocità proporzionale
+  // alla vicinanza al bordo. clientY è la coordinata verticale del dito/mouse
+  // nella viewport (non relativa al contenitore).
+  function updateAutoScroll(clientY){
+    const container = modelliScrollRef.current;
+    if(!container) return;
+    const rect = container.getBoundingClientRect();
+    const ZONA = 60; // px dal bordo entro cui parte l'autoscroll
+    const VELOCITA_MAX = 14; // px per frame, alla massima vicinanza al bordo
+    let velocita = 0;
+    if(clientY < rect.top + ZONA){
+      const distanza = Math.max(0, clientY - rect.top);
+      velocita = -VELOCITA_MAX * (1 - distanza/ZONA);
+    } else if(clientY > rect.bottom - ZONA){
+      const distanza = Math.max(0, rect.bottom - clientY);
+      velocita = VELOCITA_MAX * (1 - distanza/ZONA);
+    }
+    autoScrollSpeed.current = velocita;
+    if(velocita!==0 && !autoScrollRAF.current){
+      const step = ()=>{
+        const c = modelliScrollRef.current;
+        if(!c || autoScrollSpeed.current===0){ autoScrollRAF.current=null; return; }
+        c.scrollTop += autoScrollSpeed.current;
+        autoScrollRAF.current = requestAnimationFrame(step);
+      };
+      autoScrollRAF.current = requestAnimationFrame(step);
+    }
+  }
+  function stopAutoScroll(){
+    autoScrollSpeed.current = 0;
+    if(autoScrollRAF.current){ cancelAnimationFrame(autoScrollRAF.current); autoScrollRAF.current=null; }
   }
 
-  return (
-    <div style={{display:"flex",flexDirection:"column",height:"100dvh",background:T.bg,
-      fontFamily:"system-ui,sans-serif",maxWidth:480,margin:"0 auto",overflow:"hidden"}}
-      onClick={()=>pal&&setPal(null)}>
-      {codaErrori.length>0 && (()=>{
-        if(codaErrori.length===1){
-          // Un solo errore: schermata semplice, con la checkbox di
-          // silenziamento diretta (comportamento invariato).
-          const err = codaErrori[0];
-          let nonMostrarePiu = false;
-          return (
-            <div style={{position:"fixed",inset:0,zIndex:99999,background:"rgba(0,0,0,0.5)",
-              display:"flex",alignItems:"center",justifyContent:"center",padding:20}}
-              onClick={e=>e.stopPropagation()}>
-              <div style={{background:"#fff",borderRadius:14,padding:20,maxWidth:380,width:"100%",
-                boxShadow:"0 10px 40px rgba(0,0,0,0.3)"}}>
-                <div style={{fontSize:15,fontWeight:900,color:"#000",marginBottom:8}}>⚠️ {err.contesto}</div>
-                <div style={{fontSize:13,color:"#000",marginBottom:14,lineHeight:1.4}}>{err.messaggio}</div>
-                <div style={{fontSize:11,color:"#666",marginBottom:14}}>
-                  Questo errore resta comunque salvato nel Log (Impostazioni → Log), riattivabile da lì in qualsiasi momento.
-                </div>
-                <label style={{display:"flex",alignItems:"center",gap:8,marginBottom:16,cursor:"pointer",fontSize:12,color:"#000"}}>
-                  <input type="checkbox" defaultChecked={false}
-                    onChange={e=>{ nonMostrarePiu = e.target.checked; }}
-                    style={{width:16,height:16}}/>
-                  Non mostrare più questo errore
-                </label>
-                <button onClick={()=>{
-                    if(nonMostrarePiu) impostaSilenziamentoErrore(err.contesto, true);
-                    setCodaErrori(prev=>prev.slice(1));
-                  }}
-                  style={{width:"100%",background:accent,border:"none",borderRadius:10,color:"#fff",
-                    padding:"11px 0",fontWeight:800,fontSize:14,cursor:"pointer"}}>
-                  OK
-                </button>
-              </div>
-            </div>
+  const [reportInterval, setReportInterval] = useState(()=>{
+    try{
+      const salvato = localStorage.getItem('reportInterval');
+      if(salvato==="mese"||salvato==="anno"||salvato==="custom") return salvato;
+    }catch(e){}
+    return "mese";
+  });
+  function setReportIntervalPersistito(v){
+    setReportInterval(v);
+    try{ localStorage.setItem('reportInterval', v); }catch(e){}
+  }
+  // Mese selezionato per il report (persistente su localStorage, come
+  // syncMode sopra): prima "1 mese" usava sempre new Date(), quindi il
+  // report mostrava sempre il mese corrente e "dimenticava" la scelta ad
+  // ogni uscita dall'app. Ora resta fissato al mese scelto finché l'utente
+  // non lo cambia di nuovo, indipendentemente da quando riapre l'app.
+  const [reportMeseSel, setReportMeseSel] = useState(()=>{
+    try{
+      const salvato = localStorage.getItem('reportMeseSel');
+      if(salvato){ const [y,m]=salvato.split("-").map(Number); if(y&&m) return {anno:y,mese:m}; }
+    }catch(e){}
+    const now = new Date();
+    return { anno: now.getFullYear(), mese: now.getMonth()+1 }; // mese 1-12
+  });
+  function selezionaReportMese(anno, mese){
+    setReportMeseSel({anno, mese});
+    try{ localStorage.setItem('reportMeseSel', `${anno}-${mese}`); }catch(e){}
+  }
+  const [showMeseReportPicker, setShowMeseReportPicker] = useState(false);
+  const [reportDateFrom, setReportDateFrom] = useState(()=>{
+    try{ return localStorage.getItem('reportDateFrom')||""; }catch(e){ return ""; }
+  });
+  const [reportDateTo, setReportDateTo] = useState(()=>{
+    try{ return localStorage.getItem('reportDateTo')||""; }catch(e){ return ""; }
+  });
+  function setReportDateFromPersistito(v){
+    setReportDateFrom(v);
+    try{ localStorage.setItem('reportDateFrom', v||""); }catch(e){}
+  }
+  function setReportDateToPersistito(v){
+    setReportDateTo(v);
+    try{ localStorage.setItem('reportDateTo', v||""); }catch(e){}
+  }
+  // Intervalli personalizzati memorizzati: {id,from,to} salvati dall'utente
+  // per riselezionare con un tap un periodo ricorrente, invece di reimpostare
+  // le due date da capo ogni volta (selezione più veloce).
+  const [intervalliSalvati, setIntervalliSalvati] = useState(()=>{
+    try{
+      const salvato = JSON.parse(localStorage.getItem('intervalliSalvati')||"[]");
+      return Array.isArray(salvato) ? salvato : [];
+    }catch(e){ return []; }
+  });
+  function persistIntervalliSalvati(lista){
+    setIntervalliSalvati(lista);
+    try{ localStorage.setItem('intervalliSalvati', JSON.stringify(lista)); }catch(e){}
+  }
+  function salvaIntervalloCorrente(){
+    if(!reportDateFrom||!reportDateTo) return;
+    const esiste = intervalliSalvati.some(iv=>iv.from===reportDateFrom&&iv.to===reportDateTo);
+    if(esiste) return;
+    persistIntervalliSalvati([...intervalliSalvati, {id:uid(), from:reportDateFrom, to:reportDateTo}]);
+  }
+  function applicaIntervalloSalvato(iv){
+    setReportDateFromPersistito(iv.from);
+    setReportDateToPersistito(iv.to);
+  }
+  function rimuoviIntervalloSalvato(id){
+    persistIntervalliSalvati(intervalliSalvati.filter(iv=>iv.id!==id));
+  }
+  const [openReportConfig, setOpenReportConfig] = useState(null);
+  const [showIntervalPicker, setShowIntervalPicker] = useState(false);
+  const [indennita, setIndennita] = useState({ diurno:"", notturno:"", festivo:"", notturno_festivo:"" });
+  const [valoreTicket, setValoreTicket] = useState("");
+  const [conteggioConfigs, setConteggioConfigs] = useState({});
+
+  // ── PERSISTENZA LOCALE AUTOMATICA per i dati che prima vivevano SOLO in
+  // RAM (arrivavano unicamente da Supabase ad ogni avvio, mai scritti su
+  // localStorage): rotazioni, coloriExtra, autocompleteValori, indennita,
+  // valoreTicket, conteggioConfigs. Con questo useEffect, OGNI cambiamento
+  // a questi 6 stati — da qualunque punto dell'app, presente o futuro —
+  // viene scritto in automatico su localStorage (turnipm_cache_v1), senza
+  // bisogno di aggiungere una chiamata manuale in ogni singolo
+  // setRotazioni/setColoriExtra/setAutocompleteValori/ecc. sparso nel
+  // codice: qualunque nuovo punto che li modifichi in futuro è coperto
+  // automaticamente. Questo chiude il buco per cui, senza connessione dopo
+  // il primo render, un riavvio dell'app faceva ripartire questi dati da
+  // vuoto anche se l'utente li aveva già impostati: ora restano
+  // disponibili offline esattamente come eventi/calendari/modelli.
+  // Il ref sotto salta solo il primissimo giro (i valori iniziali vuoti
+  // degli useState), per non sovrascrivere subito la cache buona già
+  // presente su disco con dati ancora vuoti prima che il caricamento
+  // iniziale (da Supabase, o dalla cache stessa se offline) sia arrivato.
+  const primoRenderDatiSessioneFatto = useRef(false);
+  useEffect(()=>{
+    if(!primoRenderDatiSessioneFatto.current){
+      primoRenderDatiSessioneFatto.current = true;
+      return;
+    }
+    saveDatiSessioneLocale({ rotazioni, coloriExtra, autocompleteValori, indennita, valoreTicket, conteggioConfigs });
+  }, [rotazioni, coloriExtra, autocompleteValori, indennita, valoreTicket, conteggioConfigs]);
+
+  const [showReportModelliPicker, setShowReportModelliPicker] = useState(null); // reportId aperto
+  const [editFascia, setEditFascia] = useState(null); // key fascia in editing (nome/orario)
+  const [showFasciaColorPicker, setShowFasciaColorPicker] = useState(null); // key fascia per cambio colore rapido
+
+  const userId = session?.user?.id;
+  const isInitialized = useRef(false);
+
+  useEffect(()=>{
+// #endregion
+
+// #region SEZIONE 7: USEEFFECT INIT + LOAD DA SUPABASE
+// ═══════════════════════════════════════════════════════════════
+    if(!userId) return;
+    (async()=>{
+      try {
+        // Mostra subito i dati da localStorage, incluse le impostazioni
+        // visive (colori, tema, fasce): senza queste, il calendario partiva
+        // con i colori di default e "scattava" al colore vero dopo che
+        // Supabase rispondeva — il flash visibile ad ogni apertura dell'app.
+        const cached = loadFromLocalStorage();
+        if(cached && cached.calendars.length > 0){
+          // Le impostazioni (tema, colori, fasce, festività attive...) NON
+          // sono salvate sotto una chiave "impostazioni": saveToLocalStorage
+          // le scrive direttamente nella radice del payload (vedi "extra" in
+          // 04-Rotazione.jsx). Leggere da cached.impostazioni (che non esiste
+          // mai) le faceva ignorare qui, quindi al primo render si vedevano
+          // sempre i default (es. festività di default) finché Supabase non
+          // rispondeva e sovrascriveva tutto — il flash che volevamo evitare.
+          setStore(s=>({...s, calendars:cached.calendars, events:cached.events,
+            theme: cached.theme ?? s.theme,
+            extraHols: cached.extraHols ?? s.extraHols,
+            reports: cached.reports ?? s.reports,
+            reportSettings: cached.reportSettings ?? s.reportSettings,
+            fasceAutomatiche: cached.fasceAutomatiche ?? s.fasceAutomatiche,
+            sundayColor: cached.sundayColor ?? s.sundayColor,
+            holidayColor: cached.holidayColor ?? s.holidayColor,
+            nationalHolsEnabled: cached.nationalHolsEnabled ?? s.nationalHolsEnabled,
+            calEventRows: cached.calEventRows ?? s.calEventRows,
+            calRow1Field: cached.calRow1Field ?? s.calRow1Field,
+            calRow2Field: cached.calRow2Field ?? s.calRow2Field,
+          }));
+          setModelli((cached.modelli||[]).filter(Boolean));
+          // Ripristino anche i 6 campi che prima vivevano solo in RAM
+          // (rotazioni, colori extra, autocomplete, indennità, ticket,
+          // conteggi): ora sono nella stessa cache locale (vedi
+          // saveDatiSessioneLocale in 04-Rotazione.jsx), quindi l'app parte
+          // con questi dati già pronti anche offline, invece di mostrarli
+          // vuoti finché Supabase non risponde — o per sempre, se la linea
+          // non torna. setRotazioni applica anche la guardia anti-null.
+          if(cached.rotazioni !== undefined) setRotazioni(cached.rotazioni||[]);
+          if(cached.coloriExtra !== undefined) setColoriExtra(cached.coloriExtra||[]);
+          if(cached.autocompleteValori !== undefined) setAutocompleteValori(cached.autocompleteValori||{titolo:[],nome_visualizzato:[],auto:[],luogo:[],collega:[]});
+          if(cached.indennita !== undefined) setIndennita(cached.indennita||{diurno:"",notturno:"",festivo:"",notturno_festivo:""});
+          if(cached.valoreTicket !== undefined) setValoreTicket(cached.valoreTicket||"");
+          if(cached.conteggioConfigs !== undefined) setConteggioConfigs(cached.conteggioConfigs||{});
+          const calIdValido = cached.calId && cached.calendars.some(c=>c.id===cached.calId);
+          setCalId(calIdValido ? cached.calId : (cached.calendars[0]?.id||null));
+          setLoading(false);
+        }
+        const calIdDaCache = (cached?.calId && cached.calendars.some(c=>c.id===cached.calId))
+          ? cached.calId
+          : (cached?.calendars?.[0]?.id || null);
+
+        // Una sola chiamata al database: la funzione get_user_data (creata su
+        // Supabase) legge le 6 tabelle internamente e restituisce tutto insieme.
+        // Se fallisce (rete instabile, timeout), NON ci si arrende subito:
+        // prima si prova un piccolo numero di retry, perché un fallimento
+        // silenzioso qui lasciava l'utente con la cache locale mostrata in
+        // precedenza — che può essere vuota (es. subito dopo "svuota cache")
+        // dando la falsa impressione che i modelli/dati siano stati persi,
+        // quando in realtà sono ancora sul server e il problema era solo di
+        // rete/caricamento.
+        // Se non c'è proprio linea, non ha senso nemmeno provare la RPC:
+        // sarebbero solo secondi di attesa a vuoto prima del fallimento.
+        // Si resta sulla cache locale già mostrata sopra, senza alcun
+        // banner: l'assenza di connessione non è un errore, è uno stato
+        // normale di attesa — riparte da sola quando la linea torna
+        // (vedi il retry periodico e l'evento 'online' più sotto nel file).
+        if(typeof navigator!=="undefined" && navigator.onLine===false){
+          setLoading(false);
+          return;
+        }
+        let all, rpcErr;
+        for(let tentativo=0; tentativo<3; tentativo++){
+          const risultato = await supabase.rpc("get_user_data", { p_user_id: userId });
+          all = risultato.data; rpcErr = risultato.error;
+          if(!rpcErr) break;
+          if(tentativo<2) await new Promise(r=>setTimeout(r, 800*(tentativo+1)));
+        }
+        if(rpcErr){
+          // Errore di rete (linea caduta a metà dei retry, instabile): non
+          // è un errore vero, resta sulla cache locale già mostrata, senza
+          // banner. Riparte da sola al ritorno della connessione.
+          if(eRoreDiRete(rpcErr)){
+            setLoading(false);
+            return;
+          }
+          // Errore vero (non di rete): avviso VISIBILE invece di lasciare
+          // la UI silenziosamente con la cache (che potrebbe sembrare
+          // "dati spariti" mentre sono solo non ancora ricaricati).
+          setBanner("⚠️ Impossibile caricare i dati dal server. Controlla la connessione e riprova (i tuoi dati sono al sicuro, non sono stati toccati).");
+          setTimeout(()=>setBanner(null), 8000);
+          setLoading(false);
+          return;
+        }
+
+        const cals = all?.calendars || [];
+        const evts = all?.events || [];
+        const settings = all?.user_settings || null;
+        const modelliDb = all?.modelli || [];
+        const coloriDb = all?.colori || [];
+        const rotazioniDb = all?.rotazioni || [];
+
+        // Ordino i calendari secondo sort_order (posizione scelta in Impostazioni con <-‘<-“),
+        // così l'ordine con cui vengono mostrati gli eventi resta coerente anche dopo un refresh.
+        // Come per i modelli poco sotto, la query non garantisce un ordine
+        // stabile quando più calendari hanno lo stesso sort_order (inclusi
+        // due o più con sort_order null): senza uno spareggio esplicito per
+        // id, l'ordine relativo tra loro poteva cambiare da un caricamento
+        // all'altro. Dato che ricalcolaPosizioniGlobali assegna a ogni
+        // calendario un intero blocco di 1000 posizioni in base alla sua
+        // posizione qui, un calendario che "scambiava posto" con un altro
+        // tra due caricamenti si vedeva spostare TUTTI i propri modelli in
+        // un blocco di sortOrder completamente diverso — la causa, mai
+        // isolata prima, del sortOrder dei modelli che "impazzisce da solo".
+        const calsOrdinati = [...cals].sort((a,b)=>{
+          const sa = a.sort_order, sb = b.sort_order;
+          if(sa==null && sb==null) return String(a.id).localeCompare(String(b.id));
+          if(sa==null) return 1;
+          if(sb==null) return -1;
+          if(sa!==sb) return sa-sb;
+          return String(a.id).localeCompare(String(b.id));
+        });
+        const calendars = calsOrdinati.map(c=>({
+          id: c.id, name: c.name, color: c.color, isMain: c.is_main, shifts: c.shifts||[],
+        }));
+        const events = {};
+        (evts||[]).forEach(e=>{
+          if(!events[e.date_key]) events[e.date_key]={};
+          if(!events[e.date_key][e.calendar_id]) events[e.date_key][e.calendar_id]=[];
+          events[e.date_key][e.calendar_id].push({
+            id: e.id, label: e.label, color: e.color, allDay: e.all_day,
+            tIn: e.time_in||"", tOut: e.time_out||"", place: e.place||"",
+            tInNote: e.time_in_note||"", tOutNote: e.time_out_note||"",
+            map: e.map_url||"", note: e.note||"",
+            modelloId: e.modello_id||null, rotazioneId: e.rotazione_id||null, collega: e.collega||null,
+            auto: e.auto||"", parentId: e.parent_id||null,
+            protPagFine: e.prot_pag_fine||"", protRecFine: e.prot_rec_fine||"",
+            protMenoRecIn: e.prot_meno_rec_in||"", protMenoRecOut: e.prot_meno_rec_out||"",
+            categoriaTurno: e.categoria_turno||"", categoriaAppAuto: e.categoria_app_auto||"",
+            turnoVuoto: !!e.categoria_turno_vuoto, appAutoVuoto: !!e.categoria_app_auto_vuoto,
+            reportOverrides: e.report_overrides||{},
+            importId: e.import_id||null,
+          });
+        });
+
+        const theme = settings?.theme||"auto";
+        const extraHols = settings?.extra_hols||[];
+        const sUrl = settings?.sheets_url || "";
+        const sSec = settings?.sheets_secret || "";
+        const savedReports = settings?.reports || [];
+        const savedReportSettings = settings?.report_settings || {};
+        const savedIndennita = settings?.indennita || { diurno:"", notturno:"", festivo:"", notturno_festivo:"" };
+        const savedValoreTicket = settings?.valore_ticket || "";
+        const savedConteggioConfigs = settings?.conteggio_configs || {};
+        const savedFasce = settings?.fasce_automatiche || FASCE_AUTOMATICHE_DEFAULT;
+        const savedSundayColor = settings?.sunday_color || "";
+        const savedHolidayColor = settings?.holiday_color || "";
+        const savedNationalHolsEnabled = settings?.national_hols_enabled || FESTIVITA_DEFAULT_ATTIVE;
+        const savedCalEventRows = settings?.cal_event_rows || 1;
+        const savedCalRow1Field = settings?.cal_row1_field || "titolo";
+        const savedCalRow2Field = settings?.cal_row2_field || "---";
+
+        const modelliMappati = (modelliDb||[]).map(m=>({
+          id:m.id, titolo:m.titolo, label:m.label||"", tempo:m.tempo,
+          inizio:m.inizio||"", fine:m.fine||"",
+          colore:m.colore, coloreCustom:m.colore_custom||null,
+          posizione:m.posizione||"", sortOrder:m.sort_order||0,
+          calendarId:m.calendar_id||null,
+          categoria:(m.categoria==="primo"||m.categoria==="secondo")?m.categoria:"",
+          categoriaAppAuto:(m.categoria_app_auto==="app"||m.categoria_app_auto==="auto")?m.categoria_app_auto:((m.categoria==="app"||m.categoria==="auto")?m.categoria:""),
+          turnoVuoto: !!m.categoria_turno_vuoto,
+          appAutoVuoto: !!m.categoria_app_auto_vuoto,
+        // La RPC get_user_data non garantisce l'ordine delle righe (nessun
+        // ORDER BY lato server): senza un sort esplicito qui, l'ordine
+        // visualizzato dipende dall'ordine fisico di Postgres, che può
+        // cambiare dopo un update (es. dopo un drag&drop + refresh
+        // ravvicinato) finché non si "ristabilizza" da solo. Ordiniamo
+        // sempre per sortOrder (poi per id come spareggio stabile) così
+        // il risultato è deterministico ad ogni caricamento.
+        })).sort((a,b)=>{
+          const sa = a.sortOrder, sb = b.sortOrder;
+          if(sa!==sb) return sa-sb;
+          return String(a.id).localeCompare(String(b.id));
+        });
+
+        const rotazioniMappate = (rotazioniDb||[]).map(r=>({
+          id:r.id, tipo:r.tipo, titolo:r.titolo,
+          dataInizio:r.data_inizio||"", nSettimane:r.n_settimane||52,
+          modellaLavoroId:r.modello_lavoro_id||null,
+          modelloNLId:r.modello_nl_id||null,
+          modelloRSId:r.modello_rs_id||null,
+          modelloG3Id:(r.griglia||{}).__modelloG3Id||null,
+          modelloG4Id:(r.griglia||{}).__modelloG4Id||null,
+          griglia:r.griglia||{},
+          reperibilitaTurnoPartenza:(r.griglia||{}).__reperibilitaTurnoPartenza||"14-24",
+          sortOrder:r.sort_order||0,
+        // Stesso motivo dell'ordinamento dei modelli sopra: la RPC non
+        // garantisce l'ordine delle righe, quindi ordiniamo qui in modo
+        // esplicito e deterministico (sortOrder, poi id come spareggio).
+        })).sort((a,b)=>{
+          const sa = a.sortOrder, sb = b.sortOrder;
+          if(sa!==sb) return sa-sb;
+          return String(a.id).localeCompare(String(b.id));
+        });
+
+        // ─── GUARDIA ANTI-CANCELLAZIONE: prima di sovrascrivere TUTTO lo
+        // store locale con quanto arrivato da Supabase, controlliamo che il
+        // numero di eventi non sia crollato in modo sospetto rispetto a
+        // quello che avevamo già in cache. Una risposta "valida" (nessun
+        // errore RPC) ma con MOLTI MENO eventi di prima è quasi sempre un
+        // sintomo di dati parziali (RLS, query troncata, sync a metà) e
+        // NON deve mai risultare in una cancellazione silenziosa di ciò che
+        // l'utente vede sul calendario. In quel caso: non si applica la
+        // sovrascrittura, si segnala l'errore, e si tiene la cache buona.
+        function contaEventiTotali(ev){
+          let n=0;
+          for(const dk of Object.keys(ev||{})) for(const cid of Object.keys(ev[dk]||{})) n += (ev[dk][cid]||[]).length;
+          return n;
+        }
+        const nEventiNuovi = contaEventiTotali(events);
+        const nEventiCache = contaEventiTotali(cached?.events);
+        // Soglia: un calo superiore al 30% (e comunque di almeno 3 eventi,
+        // per non far scattare l'allarme su differenze minime/normali tipo
+        // un'eliminazione volontaria di un paio di turni) blocca l'applicazione.
+        const caloSospetto = nEventiCache>=5 && nEventiNuovi < nEventiCache*0.7 && (nEventiCache-nEventiNuovi)>=3;
+
+        if(caloSospetto){
+          segnalaErrore(
+            { message: `La sincronizzazione ha restituito ${nEventiNuovi} eventi contro i ${nEventiCache} già presenti in locale: per sicurezza NON è stata applicata, per evitare di cancellare turni per errore. I tuoi dati locali sono intatti. Riprova più tardi o controlla la connessione.` },
+            "Sincronizzazione dati (calo eventi sospetto)"
+          );
+          setLoading(false);
+          return;
+        }
+
+        // Applico TUTTO insieme, in un solo giro di render: niente più
+        // calendario che appare prima e modelli/colori che arrivano dopo.
+        const calendariUguali = cached && sameData(cached.calendars, calendars);
+        const eventiUguali = cached && sameData(cached.events, events);
+        const modelliUguali = cached && sameData(cached.modelli, modelliMappati);
+
+        if(!(calendariUguali && eventiUguali)){
+          setStore(s=>({ ...s, calendars, events, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings, fasceAutomatiche: savedFasce, sundayColor: savedSundayColor, holidayColor: savedHolidayColor, nationalHolsEnabled: savedNationalHolsEnabled, calEventRows: savedCalEventRows, calRow1Field: savedCalRow1Field, calRow2Field: savedCalRow2Field }));
+        } else {
+          setStore(s=>({ ...s, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings, fasceAutomatiche: savedFasce, sundayColor: savedSundayColor, holidayColor: savedHolidayColor, nationalHolsEnabled: savedNationalHolsEnabled, calEventRows: savedCalEventRows, calRow1Field: savedCalRow1Field, calRow2Field: savedCalRow2Field }));
+        }
+        // Aggiorno anche la cache delle impostazioni visive, così il
+        // prossimo avvio dell'app parte già col colore giusto, senza flash.
+        saveToLocalStorage(events, calendars, modelliMappati, calId, {
+          theme, extraHols, sundayColor: savedSundayColor, holidayColor: savedHolidayColor,
+          fasceAutomatiche: savedFasce, nationalHolsEnabled: savedNationalHolsEnabled,
+          calEventRows: savedCalEventRows, calRow1Field: savedCalRow1Field, calRow2Field: savedCalRow2Field,
+          reports: savedReports, reportSettings: savedReportSettings,
+        });
+        if(!modelliUguali){
+          setModelli(modelliMappati);
+        }
+        setColoriExtra((coloriDb||[]).map(c=>({hex:c.hex, label:c.label||null, sortOrder:c.sort_order||0}))
+          .sort((a,b)=>{
+            const sa=a.sortOrder, sb=b.sortOrder;
+            if(sa!==sb) return sa-sb;
+            return String(a.hex).localeCompare(String(b.hex));
+          }));
+        setRotazioni(rotazioniMappate);
+        setSheetsUrl(sUrl);
+        setSheetsSecret(sSec);
+        setIndennita(savedIndennita);
+        setValoreTicket(savedValoreTicket);
+        setConteggioConfigs(savedConteggioConfigs);
+
+        // Autocomplete: tabella dedicata, non inclusa nella RPC get_user_data
+        // (aggiunta successivamente), quindi caricata con una query separata.
+        try {
+          const { data: acRows, error: acErr } = await supabase.from("autocomplete_valori")
+            .select("campo, valore").eq("user_id", userId).order("valore");
+          if(acErr) segnalaErrore(acErr, "Caricamento valori autocomplete");
+          const raggruppati = { titolo:[], nome_visualizzato:[], auto:[], luogo:[], collega:[] };
+          (acRows||[]).forEach(r=>{ if(raggruppati[r.campo]) raggruppati[r.campo].push(r.valore); });
+          setAutocompleteValori(raggruppati);
+        } catch(acEx){ segnalaErrore(acEx, "Caricamento valori autocomplete"); }
+
+        setCalId(prevCalId => {
+          if(prevCalId && calendars.some(c=>c.id===prevCalId)) return prevCalId;
+          const daCache = calIdDaCache && calendars.some(c=>c.id===calIdDaCache) ? calIdDaCache : null;
+          return daCache || calendars[0]?.id || null;
+        });
+        saveToLocalStorage(events, calendars, modelliMappati, cached?.calId);
+        isInitialized.current = true;
+        setLoading(false);
+
+        // ── Da qui in giù: sola manutenzione in background. Non serve per
+        // mostrare il calendario, quindi non blocca né ridisegna la UI a meno
+        // che trovi davvero qualcosa da correggere (casi rari).
+        (async()=>{
+          try {
+            const { data: curStats } = await supabase.from("usage_stats").select("login_count").eq("user_id", userId).maybeSingle();
+            const newCount = (curStats?.login_count || 0) + 1;
+            await supabase.from("usage_stats").upsert({ user_id: userId, last_active: new Date().toISOString(), login_count: newCount });
+          } catch(statErr) { segnalaErrore(statErr, "Aggiornamento statistiche di utilizzo"); }
+
+          // Sincronizza i colori custom già presenti sui modelli con la tabella "colori"
+          try {
+            const coloriUsati = [...new Set((modelliDb||[]).map(m=>m.colore_custom).filter(Boolean))];
+            const coloriGiaSalvati = new Set((coloriDb||[]).map(c=>c.hex));
+            const daSalvare = coloriUsati.filter(hex=>!coloriGiaSalvati.has(hex));
+            const nuoviColoriSalvati = [];
+            for(const hex of daSalvare){
+              const { data:cRes } = await supabase.from("colori").insert({ user_id:userId, hex }).select().maybeSingle();
+              if(cRes) nuoviColoriSalvati.push(hex);
+            }
+            if(nuoviColoriSalvati.length > 0) {
+              setColoriExtra(prev => {
+                const aggiornato = [...prev];
+                nuoviColoriSalvati.forEach(hex => { if(!aggiornato.some(c=>c.hex===hex)) aggiornato.push({hex, label:null, sortOrder:aggiornato.length}); });
+                return aggiornato;
+              });
+            }
+          } catch(e){ segnalaErrore(e, "Sincronizzazione colori modelli all'avvio"); }
+
+          // Inizializza sortOrder per modelli H24 che hanno tutti 0
+          try {
+            // Fix "una tantum": normalizza i sort_order duplicati ALL'INTERNO
+            // DI OGNI SINGOLO CALENDARIO. Con più modelli che condividono lo
+            // stesso sort_order (es. mai assegnato correttamente in passato,
+            // o residuo di versioni precedenti dell'app), l'ordinamento
+            // diventa ambiguo: la posizione calcolata di un modello può non
+            // corrispondere a quella reale, con l'effetto pratico di frecce
+            // che sembrano disabilitate o spostamenti che non hanno effetto
+            // visibile. Il fix raggruppa i modelli per calendario e, solo
+            // dove trova sort_order ripetuti, li rinumera in modo univoco
+            // preservando l'ordine relativo con cui sono arrivati dal DB.
+            const perCalendario = new Map();
+            for(const m of (modelliDb||[])){
+              const cid = m.calendar_id || "null";
+              if(!perCalendario.has(cid)) perCalendario.set(cid, []);
+              perCalendario.get(cid).push(m);
+            }
+            const daCorreggere = [];
+            for(const [, gruppo] of perCalendario){
+              const valori = gruppo.map(m=>m.sort_order||0);
+              const haDuplicati = new Set(valori).size !== valori.length;
+              if(haDuplicati){
+                const ordinatoPerArrivo = [...gruppo].sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
+                ordinatoPerArrivo.forEach((m,i)=>{
+                  const nuovoVal = i*10;
+                  if(nuovoVal!==(m.sort_order||0)) daCorreggere.push({id:m.id, nuovoVal});
+                });
+              }
+            }
+            if(daCorreggere.length>0){
+              await Promise.all(daCorreggere.map(({id,nuovoVal}) =>
+                supabase.from("modelli").update({sort_order:nuovoVal}).eq("id",id).eq("user_id",userId)
+              ));
+              const {data:modelliDb2}=await supabase.from("modelli").select("*").eq("user_id",userId).order("sort_order").order("id");
+              setModelli((modelliDb2||[]).map(m=>({
+                id:m.id,titolo:m.titolo,label:m.label||"",tempo:m.tempo,
+                inizio:m.inizio||"",fine:m.fine||"",
+                colore:m.colore,coloreCustom:m.colore_custom||null,
+                posizione:m.posizione||"",sortOrder:m.sort_order||0,
+              })));
+            }
+          } catch(e){ segnalaErrore(e, "Correzione automatica ordine modelli all'avvio"); }
+
+          // Fix "una tantum": unifica SOLO modelli realmente duplicati —
+          // cioè identici in ogni campo rilevante (titolo, nome mostrato,
+          // tipo tempo, e se non h24 anche inizio/fine). NON unifica più per
+          // "somiglianza" del titolo (es. contiene "PROTRAZIONE" +
+          // "RECUPERO"): quel criterio unificava per errore modelli
+          // DIVERSI creati apposta con nomi simili (es. "PROTRAZIONE
+          // RECUPERO" e "- PROTRAZIONE A RECUPERO" sono due modelli
+          // distinti, non un refuso dello stesso), cancellando quello più
+          // recente ad ogni avvio. Ora due modelli sono considerati
+          // doppioni ESCLUSIVAMENTE se coincidono esattamente su tutti i
+          // campi che li definiscono: una virgola, uno spazio o un minuto
+          // di differenza bastano a considerarli modelli diversi e a non
+          // toccarli.
+          try {
+            function normEsatta(t){
+              return (t||"").trim().toUpperCase().replace(/\s+/g," ");
+            }
+            function chiaveDuplicato(m){
+              const tempo = m.tempo||"";
+              // Per h24 l'orario non ha senso/non è significativo: due h24
+              // con stesso titolo/label sono duplicati a prescindere da
+              // inizio/fine (che dovrebbero comunque essere vuoti).
+              const inizio = tempo==="h24" ? "" : normEsatta(m.inizio);
+              const fine = tempo==="h24" ? "" : normEsatta(m.fine);
+              return [
+                normEsatta(m.titolo),
+                normEsatta(m.label),
+                normEsatta(tempo),
+                inizio,
+                fine,
+              ].join("\u0001");
+            }
+            const perCalendarioModelli = new Map();
+            for(const m of (modelliDb||[])){
+              const cid = m.calendar_id || "null";
+              if(!perCalendarioModelli.has(cid)) perCalendarioModelli.set(cid, []);
+              perCalendarioModelli.get(cid).push(m);
+            }
+            const modelliDaRimappare = new Map(); // vecchioId -> nuovoId (superstite)
+            const modelliIdDaEliminare = [];
+            for(const [cid, gruppo] of perCalendarioModelli){
+              const perChiave = new Map();
+              for(const m of gruppo){
+                const k = chiaveDuplicato(m);
+                if(!perChiave.has(k)) perChiave.set(k, []);
+                perChiave.get(k).push(m);
+              }
+              for(const candidati of perChiave.values()){
+                // Nessun doppione reale (0 o 1 solo modello identico in
+                // tutto per questa chiave): non c'è nulla da unificare.
+                if(candidati.length<=1) continue;
+                const ordinatiPerId = [...candidati].sort((a,b)=>(a.id>b.id?1:-1));
+                const superstite = ordinatiPerId[0];
+                for(let i=1;i<ordinatiPerId.length;i++){
+                  modelliDaRimappare.set(ordinatiPerId[i].id, superstite.id);
+                  modelliIdDaEliminare.push(ordinatiPerId[i].id);
+                }
+              }
+            }
+            if(modelliDaRimappare.size>0){
+              // Sposta ogni evento agganciato a un modello doppione sul modello superstite.
+              for(const [vecchioId, nuovoId] of modelliDaRimappare){
+                await supabase.from("events").update({modello_id:nuovoId}).eq("modello_id",vecchioId).eq("user_id",userId);
+              }
+            }
+            if(modelliIdDaEliminare.length>0){
+              await supabase.from("modelli").delete().in("id", modelliIdDaEliminare).eq("user_id", userId);
+            }
+            if(modelliIdDaEliminare.length>0){
+              // Ricarico i modelli aggiornati (doppioni rimossi) e aggiorno
+              // anche gli eventi in memoria/localStorage che puntavano ai
+              // modelli doppioni, così sparisce subito dalla UI.
+              const {data:modelliDbAggiornati}=await supabase.from("modelli").select("*").eq("user_id",userId).order("sort_order").order("id");
+              setModelli((modelliDbAggiornati||[]).map(m=>({
+                id:m.id,titolo:m.titolo,label:m.label||"",tempo:m.tempo,
+                inizio:m.inizio||"",fine:m.fine||"",
+                colore:m.colore,coloreCustom:m.colore_custom||null,
+                calendarId:m.calendar_id||null,
+                posizione:m.posizione||"",sortOrder:m.sort_order||0,
+              })));
+              if(modelliDaRimappare.size>0){
+                setStore(prev=>{
+                  const ns = JSON.parse(JSON.stringify(prev));
+                  for(const dKey of Object.keys(ns.events||{})){
+                    for(const cid of Object.keys(ns.events[dKey]||{})){
+                      ns.events[dKey][cid] = (ns.events[dKey][cid]||[]).map(e=>
+                        modelliDaRimappare.has(e.modelloId) ? {...e, modelloId: modelliDaRimappare.get(e.modelloId)} : e
+                      );
+                    }
+                  }
+                  saveToLocalStorage(ns.events, ns.calendars, modelli);
+                  return ns;
+                });
+              }
+            }
+          } catch(e){ segnalaErrore(e, "Unificazione automatica modelli protrazione all'avvio"); }
+
+          // Fix "una tantum": assegna il nome breve (label) ai modelli
+          // PROTRAZIONE storici che ne sono privi. Senza un nome breve, il
+          // riquadro calendario (stretto, CSS ellipsis) mostra il titolo
+          // completo troncato a metà parola (es. "PROTRAZIONE RECUPERO" ->
+          // "PROTRA..."). Questo fix riguarda SOLO i tre modelli
+          // PROTRAZIONE (pagamento/recupero/-recupero), riconosciuti dalla
+          // stessa radice usata altrove nel progetto; nessun altro modello
+          // viene toccato, e un modello PROTRAZIONE con un nome breve già
+          // impostato dall'utente (anche diverso da quello di default) non
+          // viene sovrascritto.
+          try {
+            function normRadiceProtrazioneFix(t){
+              return (t||"").trim().toUpperCase().replace(/\s+/g,"");
+            }
+            const labelDaAssegnare = [];
+            for(const m of (modelliDb||[])){
+              if((m.label||"").trim()) continue; // ha già un nome breve: non tocco
+              const titoloRaw = (m.titolo||"").trim();
+              const eMenoRecupero = titoloRaw.startsWith("-");
+              const n = normRadiceProtrazioneFix(titoloRaw);
+              const haRadice = n.includes("PROTRAZIONE") || n.includes("PROTAZIONE");
+              if(!haRadice) continue;
+              let labelBreve = null;
+              if(eMenoRecupero && n.includes("RECUPERO")) labelBreve = "-PR RECUPERO";
+              else if(n.includes("RECUPERO")) labelBreve = "PR RECUPERO";
+              else if(n.includes("PAGAMENTO")) labelBreve = "PR PAGAMENTO";
+              if(labelBreve) labelDaAssegnare.push({ id:m.id, label:labelBreve });
+            }
+            if(labelDaAssegnare.length>0){
+              await Promise.all(labelDaAssegnare.map(({id,label})=>
+                supabase.from("modelli").update({label}).eq("id",id).eq("user_id",userId)
+              ));
+              const {data:modelliDbConLabel}=await supabase.from("modelli").select("*").eq("user_id",userId).order("sort_order").order("id");
+              const labelPerId = new Map(labelDaAssegnare.map(x=>[x.id,x.label]));
+              setModelli((modelliDbConLabel||[]).map(m=>({
+                id:m.id,titolo:m.titolo,label:m.label||"",tempo:m.tempo,
+                inizio:m.inizio||"",fine:m.fine||"",
+                colore:m.colore,coloreCustom:m.colore_custom||null,
+                calendarId:m.calendar_id||null,
+                posizione:m.posizione||"",sortOrder:m.sort_order||0,
+              })));
+              // Aggiorno anche la label sugli eventi già creati da questi
+              // modelli, così il calendario mostra subito il nome breve
+              // senza dover riaprire/risalvare ogni evento singolarmente.
+              setStore(prev=>{
+                const ns = JSON.parse(JSON.stringify(prev));
+                for(const dKey of Object.keys(ns.events||{})){
+                  for(const cid of Object.keys(ns.events[dKey]||{})){
+                    ns.events[dKey][cid] = (ns.events[dKey][cid]||[]).map(e=>
+                      e.modelloId && labelPerId.has(e.modelloId)
+                        ? {...e, label: labelPerId.get(e.modelloId)}
+                        : e
+                    );
+                  }
+                }
+                saveToLocalStorage(ns.events, ns.calendars, modelli);
+                return ns;
+              });
+            }
+          } catch(e){ segnalaErrore(e, "Assegnazione nome breve automatico modelli protrazione all'avvio"); }
+
+          // Fix "una tantum" (eseguito una sola volta per utente, mai più
+          // dopo — vedi flag in localStorage sotto): i modelli PROTRAZIONE
+          // PAGAMENTO/RECUPERO creati da versioni precedenti avevano
+          // tempo:"personalizzato" con un orario fittizio (es. 09:00-09:00)
+          // invece di "h24", e un colore non allineato a quello scelto
+          // dall'utente per PAGAMENTO (rosa). Corregge SOLO tempo/inizio/
+          // fine, mai il colore se l'utente ne ha già impostato uno
+          // (colore_custom valorizzato): dopo la prima esecuzione il flag
+          // impedisce di rieseguirlo, così eventuali scelte successive
+          // dell'utente su questi modelli non vengono più toccate.
+          try {
+            const FLAG_KEY = "fix_protrazione_h24_v1";
+            const giaEseguito = (()=>{ try{ return localStorage.getItem(FLAG_KEY)==="1"; }catch(e){ return false; } })();
+            if(!giaEseguito){
+              function tipoModelloProtrazioneRaw(titolo){
+                const n = (titolo||"").trim().toUpperCase().replace(/\s+/g,"").replace(/^-+/,"");
+                const haRadice = n.includes("PROTRAZIONE") || n.includes("PROTAZIONE");
+                if(!haRadice) return null;
+                if(n.includes("RECUPERO")) return "recupero";
+                if(n.includes("PAGAMENTO")) return "pagamento";
+                return null;
+              }
+              const daCorreggere = [];
+              for(const m of (modelliDb||[])){
+                const tipo = tipoModelloProtrazioneRaw(m.titolo);
+                if(!tipo) continue;
+                if(m.tempo==="h24") continue; // già corretto, non tocco nulla
+                const payloadFix = { tempo:"h24", inizio:null, fine:null };
+                if(!m.colore_custom){
+                  // Solo se l'utente non ha MAI scelto un colore custom:
+                  // imposto un rosa di default (più chiaro per recupero, più
+                  // acceso per pagamento), coerente con quanto richiesto.
+                  payloadFix.colore_custom = tipo==="recupero" ? "#f9a8d4" : "#ec4899";
+                  payloadFix.colore = payloadFix.colore_custom;
+                }
+                daCorreggere.push({ id:m.id, payloadFix });
+              }
+              if(daCorreggere.length>0){
+                await Promise.all(daCorreggere.map(({id,payloadFix})=>
+                  supabase.from("modelli").update(payloadFix).eq("id",id).eq("user_id",userId)
+                ));
+                const {data:modelliDbAggiornati2}=await supabase.from("modelli").select("*").eq("user_id",userId).order("sort_order").order("id");
+                setModelli((modelliDbAggiornati2||[]).map(m=>({
+                  id:m.id,titolo:m.titolo,label:m.label||"",tempo:m.tempo,
+                  inizio:m.inizio||"",fine:m.fine||"",
+                  colore:m.colore,coloreCustom:m.colore_custom||null,
+                  calendarId:m.calendar_id||null,
+                  posizione:m.posizione||"",sortOrder:m.sort_order||0,
+                })));
+              }
+              try{ localStorage.setItem(FLAG_KEY, "1"); }catch(e){}
+            }
+          } catch(e){ segnalaErrore(e, "Correzione automatica modelli protrazione (h24/colore) all'avvio"); }
+
+          // Fix "una tantum": elimina eventi PROTRAZIONE duplicati residui
+          // (stesso turno base + stesso tipo pagamento/recupero, marcati con
+          // lo stesso import_id "protrazione_di_<idBase>_<tipo>"), retaggio
+          // del vecchio bug che poteva crearne più di uno per lo stesso
+          // turno. Tiene sempre il più recente (created_at più alto, o id
+          // più alto in mancanza di quel campo) e cancella gli altri, sia
+          // da Supabase che dallo stato locale, così spariscono subito dal
+          // calendario e dalla vista giorno senza bisogno di refresh.
+          try {
+            const perMarker = new Map();
+            for(const e of (evts||[])){
+              const marker = e.import_id;
+              if(!marker || !/^protrazione_di_.+_(pagamento|meno_recupero_entrata|meno_recupero_uscita|meno_recupero|recupero)$/.test(marker)) continue;
+              if(!perMarker.has(marker)) perMarker.set(marker, []);
+              perMarker.get(marker).push(e);
+            }
+            const idsDaEliminare = [];
+            for(const [, righe] of perMarker){
+              if(righe.length<=1) continue;
+              const ordinate = [...righe].sort((a,b)=>{
+                const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+                const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+                if(ta!==tb) return tb-ta;
+                return (b.id>a.id?1:-1);
+              });
+              for(let i=1;i<ordinate.length;i++) idsDaEliminare.push(ordinate[i].id);
+            }
+            if(idsDaEliminare.length>0){
+              const { error: delDupErr } = await supabase.from("events").delete().in("id", idsDaEliminare).eq("user_id", userId);
+              if(delDupErr){
+                segnalaErroreSoloLog(delDupErr, "Pulizia automatica protrazioni duplicate");
+              } else {
+                const idSet = new Set(idsDaEliminare);
+                setStore(prev=>{
+                  const ns = JSON.parse(JSON.stringify(prev));
+                  for(const dKey of Object.keys(ns.events||{})){
+                    for(const cid of Object.keys(ns.events[dKey]||{})){
+                      ns.events[dKey][cid] = (ns.events[dKey][cid]||[]).filter(e=>!idSet.has(e.id));
+                    }
+                  }
+                  saveToLocalStorage(ns.events, ns.calendars, modelli);
+                  return ns;
+                });
+              }
+            }
+          } catch(e){ segnalaErrore(e, "Pulizia automatica protrazioni duplicate all'avvio"); }
+
+          // Fix "una tantum": elimina eventi PROTRAZIONE "orfani" residui —
+          // cioè un evento agganciato al modello PROTRAZIONE PAGAMENTO o
+          // PROTRAZIONE RECUPERO (per marker import_id, o per modello+orario
+          // quando il marker manca) il cui turno base collegato ha però il
+          // campo prot_pag_fine/prot_rec_fine corrispondente VUOTO: significa
+          // che l'utente ha svuotato/cambiato quel campo ma il vecchio
+          // evento protrazione non era mai stato ripulito di conseguenza
+          // (retaggio di versioni precedenti). Esempio tipico: campo
+          // "PROTRAZIONE A PAGAMENTO" vuoto su AUTO, ma esiste ancora un
+          // evento "PROTRAZIONE PAGAMENTO" nel calendario per quel giorno.
+          try {
+            function tipoDaModelloId(modId){
+              if(!modId) return null;
+              const mod = (modelliDb||[]).find(m=>m.id===modId);
+              if(!mod) return null;
+              const titoloRaw = (mod.titolo||"").trim();
+              const eMenoRecupero = titoloRaw.startsWith("-");
+              const n = titoloRaw.toUpperCase().replace(/\s+/g,"").replace(/^-+/,"");
+              const haRadice = n.includes("PROTRAZIONE") || n.includes("PROTAZIONE");
+              if(!haRadice) return null;
+              if(eMenoRecupero && n.includes("RECUPERO")) return "meno_recupero";
+              if(n.includes("RECUPERO")) return "recupero";
+              if(n.includes("PAGAMENTO")) return "pagamento";
+              return null;
+            }
+            const idsOrfaniDaEliminare = [];
+            for(const e of (evts||[])){
+              const decodifica = decodificaProtrazioneFiglio(e.import_id);
+              const tipo = decodifica ? decodifica.tipo : tipoDaModelloId(e.modello_id);
+              if(!tipo) continue;
+              // "meno_recupero" non ha un campo prot_*_fine dedicato sul
+              // padre (due campi indipendenti entrata/uscita, mai scritti
+              // su Supabase): la pulizia automatica orfani non si applica a
+              // questo tipo, altrimenti cancellerebbe eventi validi.
+              if(tipo==="meno_recupero" || tipo==="meno_recupero_entrata" || tipo==="meno_recupero_uscita") continue;
+              // Trova il turno base: per marker, l'id esplicito; altrimenti
+              // stesso giorno/calendario con tOut base = tIn di questa riga.
+              let base = null;
+              if(decodifica){
+                base = (evts||[]).find(b=>b.id===decodifica.idEventoBase);
+              } else {
+                base = (evts||[]).find(b=>
+                  b.id!==e.id && b.date_key===e.date_key && b.calendar_id===e.calendar_id &&
+                  !decodificaProtrazioneFiglio(b.import_id) && !tipoDaModelloId(b.modello_id) &&
+                  b.time_out && b.time_out===e.time_in
+                );
+              }
+              // Nessun base trovato, oppure base trovato ma col campo
+              // prot*Fine corrispondente vuoto: la protrazione è orfana.
+              const campoAtteso = tipo==="pagamento" ? "prot_pag_fine" : "prot_rec_fine";
+              const orfana = !base || !base[campoAtteso];
+              if(orfana) idsOrfaniDaEliminare.push(e.id);
+            }
+            if(idsOrfaniDaEliminare.length>0){
+              const { error: delOrfErr } = await supabase.from("events").delete().in("id", idsOrfaniDaEliminare).eq("user_id", userId);
+              if(delOrfErr){
+                segnalaErroreSoloLog(delOrfErr, "Pulizia automatica protrazioni orfane");
+              } else {
+                const idSet = new Set(idsOrfaniDaEliminare);
+                setStore(prev=>{
+                  const ns = JSON.parse(JSON.stringify(prev));
+                  for(const dKey of Object.keys(ns.events||{})){
+                    for(const cid of Object.keys(ns.events[dKey]||{})){
+                      ns.events[dKey][cid] = (ns.events[dKey][cid]||[]).filter(e=>!idSet.has(e.id));
+                    }
+                  }
+                  saveToLocalStorage(ns.events, ns.calendars, modelli);
+                  return ns;
+                });
+              }
+            }
+          } catch(e){ segnalaErrore(e, "Pulizia automatica protrazioni orfane all'avvio"); }
+        })();
+      } catch(e){ segnalaErrore(e, "Avvio applicazione (caricamento dati iniziale)"); setLoading(false); }
+    })();
+  },[userId]);
+// #endregion
+
+// #region SEZIONE 8: USEEFFECT OVERSCROLL + ONLINE/OFFLINE
+// ═══════════════════════════════════════════════════════════════
+  // Svuota la coda di sincronizzazione offline: prova ogni operazione in
+  // ordine (crea/modifica/elimina), la toglie dalla coda solo se riesce.
+  // Se un'operazione fallisce di nuovo (rete ancora instabile, o un errore
+  // reale stavolta), resta in coda per il prossimo tentativo — tranne se
+  // l'errore non è di rete, nel qual caso viene comunque segnalata
+  // all'utente (stesso comportamento di sempre per gli errori "veri").
+  async function processaCodaSync(){
+    const coda = leggiCodaSync();
+    if(coda.length===0) return;
+    // Se il browser segnala che non c'è connessione, non si tenta nemmeno
+    // di svuotare la coda: nessuna richiesta parte, quindi nessun errore
+    // in F12. Si riproverà al prossimo giro (evento 'online' o timer
+    // periodico più sotto) — la linea assente non è un errore, è uno
+    // stato normale di attesa.
+    if(typeof navigator!=="undefined" && navigator.onLine===false) return;
+    // Le operazioni più vecchie (ts più basso) vanno riprovate per prime:
+    // se due dispositivi hanno modificato la stessa riga mentre uno era
+    // offline, applicarle in ordine cronologico fa sì che l'ultima
+    // scrittura (quella con ts più recente) sia quella che resta valida.
+    const ordinata = [...coda].sort((a,b)=>(a.ts||"").localeCompare(b.ts||""));
+    const rimasti = [];
+    for(const op of ordinata){
+      async function provaSupabase(payloadCorrente, tentativi=0){
+        if(tentativi>=10) return { error:{message:"Troppi tentativi di retry sullo schema"} };
+        let q;
+        if(op.tipo==="insert") q = supabase.from(op.table).insert(payloadCorrente);
+        else if(op.tipo==="update") q = supabase.from(op.table).update(payloadCorrente).match(op.match);
+        else q = supabase.from(op.table).delete().match(op.match);
+        const { error } = await q;
+        if(!error) return { error:null };
+        const m = /Could not find the '([^']+)' column/.exec(error.message||"");
+        if(m && payloadCorrente && m[1] in payloadCorrente){
+          segnalaErroreSoloLog(`Colonna '${m[1]}' assente su Supabase: omessa e riprovato automaticamente.`, `${op.contesto} (schema database)`);
+          const { [m[1]]: _omessa, ...resto } = payloadCorrente;
+          return provaSupabase(resto, tentativi+1);
+        }
+        return { error };
+      }
+      // Da quanto tempo questa operazione è ferma in coda, per decidere se
+      // è ancora "sto aspettando la linea" o se è il caso di avvisare
+      // l'utente che qualcosa non sta arrivando su Supabase da un pezzo.
+      const etaMs = Date.now() - new Date(op.ts||Date.now()).getTime();
+      const SOGLIA_AVVISO_MS = 15*60*1000; // 15 minuti
+      try{
+        const res = await provaSupabase(op.payload);
+        if(res.error){
+          if(eRoreDiRete(res.error)){
+            // Rete ballerina: la richiesta è arrivata ma è caduta a metà,
+            // senza generare un'eccezione JS. Stesso trattamento del
+            // ramo catch sotto: si riaccoda, ma se è lì da troppo tempo
+            // l'utente va avvisato — non basta più dire "sto aspettando".
+            rimasti.push(op);
+            if(etaMs>SOGLIA_AVVISO_MS && !op._avvisato){
+              op._avvisato = true;
+              segnalaErrore(
+                { message:`Questa modifica è in attesa di sincronizzarsi da più di ${Math.round(etaMs/60000)} minuti (rete instabile). È salvata solo su questo dispositivo finché la connessione non torna stabile.` },
+                `Sincronizzazione in sospeso — ${op.contesto}`
+              );
+            }
+          } else {
+            // Errore vero (validazione, permessi...): non ha senso
+            // ritentarlo all'infinito, si segnala e si scarta.
+            segnalaErrore(res.error, `Sincronizzazione in sospeso — ${op.contesto}`);
+          }
+        } else {
+          rimasti.push(null); // marcato come completato, verrà filtrato sotto
+        }
+      } catch(e){
+        // Eccezione di rete (offline di nuovo, timeout...): resta in coda,
+        // si ritenterà al prossimo giro. Stesso avviso-se-troppo-lunga di
+        // sopra, per non lasciare l'utente all'oscuro a tempo indeterminato.
+        rimasti.push(op);
+        if(etaMs>SOGLIA_AVVISO_MS && !op._avvisato){
+          op._avvisato = true;
+          segnalaErrore(
+            { message:`Questa modifica è in attesa di sincronizzarsi da più di ${Math.round(etaMs/60000)} minuti (rete instabile). È salvata solo su questo dispositivo finché la connessione non torna stabile.` },
+            `Sincronizzazione in sospeso — ${op.contesto}`
           );
         }
-        // Più errori accodati insieme (es. un ciclo con più righe fallite):
-        // un'unica schermata con l'elenco, ciascuno espandibile per vedere
-        // il dettaglio, un solo bottone OK per chiuderli tutti insieme —
-        // invece di N popup identici da chiudere in sequenza.
-        return <ModaleErroriMultipli errori={codaErrori} accent={accent}
-          onChiudi={(contestiSilenziati)=>{
-            contestiSilenziati.forEach(c=>impostaSilenziamentoErrore(c, true));
-            setCodaErrori([]);
-          }}/>;
-      })()}
-      <style>{`
-        @keyframes calSlideOutLeft { from { transform:translateX(0); opacity:1; } to { transform:translateX(-100%); opacity:0; } }
-        @keyframes calSlideOutRight { from { transform:translateX(0); opacity:1; } to { transform:translateX(100%); opacity:0; } }
-        @keyframes calSlideInLeft { from { transform:translateX(100%); opacity:0; } to { transform:translateX(0); opacity:1; } }
-        @keyframes calSlideInRight { from { transform:translateX(-100%); opacity:0; } to { transform:translateX(0); opacity:1; } }
-        @keyframes calSlideOutUp { from { transform:translateY(0); opacity:1; } to { transform:translateY(-100%); opacity:0; } }
-        @keyframes calSlideOutDown { from { transform:translateY(0); opacity:1; } to { transform:translateY(100%); opacity:0; } }
-        @keyframes calSlideInUp { from { transform:translateY(100%); opacity:0; } to { transform:translateY(0); opacity:1; } }
-        @keyframes calSlideInDown { from { transform:translateY(-100%); opacity:0; } to { transform:translateY(0); opacity:1; } }
-        .calOuterArrow{display:flex}
-        @media (hover:none), (max-width:640px) {
-          .calOuterArrow{display:none}
-          .calSlideOutLeft { animation-name:calSlideOutUp !important; }
-          .calSlideOutRight { animation-name:calSlideOutDown !important; }
-          .calSlideInLeft { animation-name:calSlideInUp !important; }
-          .calSlideInRight { animation-name:calSlideInDown !important; }
+      }
+    }
+    scriviCodaSync(rimasti.filter(Boolean));
+    // Backup su Sheets con l'istantanea corrente (dopo aver smaltito la
+    // coda Supabase): un solo invio per l'intero batch, invece di uno per
+    // ogni operazione — Sheets riceve sempre lo stato completo, non un
+    // incremento, quindi rimandarlo N volte non porterebbe beneficio.
+    if(ordinata.length>0) syncSeAttivo(store.events, store.calendars, modelli);
+  }
+  useEffect(()=>{
+    function goOnline(){ setIsOnline(true); processaCodaSync(); }
+    function goOffline(){ setIsOnline(false); }
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    // Anche all'avvio: se erano rimaste operazioni in coda da una sessione
+    // precedente (es. l'app è stata chiusa mentre era offline), si prova
+    // subito a smaltirle.
+    if(navigator.onLine) processaCodaSync();
+    // Timer periodico: la linea "ballerina" (navigator.onLine resta true
+    // ma le richieste cadono comunque) non genera mai l'evento 'online' del
+    // browser, quindi senza un timer la coda potrebbe restare in sospeso a
+    // tempo indeterminato pur avendo la connessione tornata realmente
+    // disponibile. Si riprova ogni 2 minuti, in silenzio — nessun popup,
+    // nessun indicatore: è solo un nuovo tentativo di routine.
+    const timerRetryCoda = setInterval(()=>{ processaCodaSync(); }, 2*60*1000);
+    // Controllo diretto di navigator.onLine ogni pochi secondi: su Capacitor
+    // Android gli eventi 'online'/'offline' del browser spesso non scattano
+    // affatto quando si attiva/disattiva la modalità aereo (limite noto della
+    // WebView nativa), lasciando l'indicatore 🟢 SYNC bloccato sul valore
+    // letto all'avvio anche se nel frattempo si è passati offline. Questo
+    // controllo periodico è indipendente dagli eventi ed è la fonte di
+    // verità più affidabile: aggiorna isOnline solo quando il valore letto
+    // è davvero diverso da quello già mostrato, per non causare re-render
+    // inutili ad ogni giro.
+    const timerCheckOnline = setInterval(()=>{
+      setIsOnline(prev => {
+        const reale = navigator.onLine;
+        if(reale === prev) return prev;
+        if(reale) processaCodaSync();
+        return reale;
+      });
+    }, 3000);
+    return ()=>{
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
+      clearInterval(timerRetryCoda);
+      clearInterval(timerCheckOnline);
+    };
+  },[]);
+// #endregion
+
+// #region SEZIONE 9: THEME & COLORS
+// ═══════════════════════════════════════════════════════════════
+  const sysDark = window.matchMedia?.("(prefers-color-scheme:dark)").matches??false;
+  const dark = store.theme==="auto"?sysDark:store.theme==="dark";
+  const T = {
+    bg:      dark?"#090e1a":"#f1f5f9",
+    surface: dark?"#0f172a":"#ffffff",
+    s2:      dark?"#1e293b":"#f1f5f9",
+    border:  dark?"#334155":"#e2e8f0",
+    text:    "#000000",
+    sub:     "#000000",
+    gap:     dark?"#1e293b":"#e2e8f0",
+  };
+
+  const activeCal = store.calendars.find(c=>c.id===calId)||null;
+  const mainCal   = store.calendars.find(c=>c.isMain)||null;
+  const mainCalId = mainCal?.id||null; // calendario principale: usato come fallback per i modelli/rotazioni senza calendarId esplicito
+
+  // Default per il Report: se reportCalIds risulta vuoto (nessuna scelta
+  // salvata, o per qualunque motivo la persistenza non ha ancora effetto)
+  // e il calendario principale e' disponibile, seleziona SOLO quello
+  // invece di lasciare "vuoto = tutti i calendari mischiati insieme".
+  useEffect(()=>{
+    if(reportCalIds.length===0 && mainCalId){
+      setReportCalIdsPersistito([mainCalId]);
+    }
+  }, [mainCalId]);
+  // Colore dell'interfaccia (pulsanti, badge, evidenziazioni di selezione): FISSO e indipendente
+  // dal colore scelto per i calendari, così i colori dei calendari/modelli (es. giallo) restano
+  // solo lì dove servono a identificarli, senza "colorare" tutti i menu dell'app.
+  const accent    = "#2563eb";
+  const accentText = getContrastTextColor(accent);
+  const hols      = italianHols(year, store.nationalHolsEnabled);
+  const fasceAutomatiche = store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT;
+  const colByTime = (tIn)=>getColorByTime(tIn, fasceAutomatiche);
+  const colLabel  = (tIn)=>getColorLabel(tIn, fasceAutomatiche);
+
+  // "m" qui arriva dal calendario (03-Calendario.jsx) come month 0-based
+  // (gennaio=0, es. month===today.getMonth()), esattamente come
+  // Date.getMonth() in JavaScript. FESTIVITA_FISSE invece usa mesi
+  // 1-based e leggibili (es. Natale m:12), stesso formato in cui l'utente
+  // inserisce i Festivi Locali (extraHols, es. "9" per settembre). Va
+  // quindi sommato 1 a "m" per confrontarlo correttamente con h.m in
+  // entrambi i casi — la versione precedente confrontava 1-based con
+  // 0-based direttamente e non trovava mai corrispondenza.
+  function isRed(d,m){
+    const meseUmano = m+1;
+    return hols.some(h=>h.m===meseUmano&&h.d===d) ||
+      (store.extraHols||[]).some(h=>+h.m===meseUmano&&+h.d===d&&(h.y==null||+h.y===year));
+  }
+  const sundayColor = store.sundayColor || (dark?"#2d0a0a":"#fff5f5");
+  const holidayColor = store.holidayColor || (dark?"#2d0a0a":"#fff5f5");
+  function redBg(isSun,isH){
+    if(isSun&&isH) return `linear-gradient(to bottom, ${sundayColor} 50%, ${holidayColor} 50%)`;
+    return isSun?sundayColor:isH?holidayColor:null;
+  }
+  function getEvts(key,cid){ return store.events?.[key]?.[cid]||[]; }
+  // Riconosce se un modelloId punta a un modello "PROTRAZIONE
+  // PAGAMENTO"/"PROTRAZIONE RECUPERO" (in qualunque variante/refuso di
+  // scrittura storica), guardando il titolo del modello stesso. Usata per
+  // riconoscere una protrazione-figlia anche quando l'evento non ha (o ha
+  // perso) il marker import_id "protrazione_di_...", tipico di eventi
+  // creati a mano dal form invece che da un import PDF.
+  function tipoModelloProtrazione(modelloId){
+    if(!modelloId) return null;
+    const mod = modelli.find(m=>m.id===modelloId);
+    if(!mod) return null;
+    const titoloRaw = (mod.titolo||"").trim();
+    const eMenoRecupero = titoloRaw.startsWith("-");
+    const n = titoloRaw.toUpperCase().replace(/\s+/g,"").replace(/^-+/,"");
+    const haRadice = n.includes("PROTRAZIONE") || n.includes("PROTAZIONE");
+    if(!haRadice) return null;
+    if(eMenoRecupero && n.includes("RECUPERO")) return "meno_recupero";
+    if(n.includes("RECUPERO")) return "recupero";
+    if(n.includes("PAGAMENTO")) return "pagamento";
+    return null;
+  }
+  // Gemella di tipoModelloProtrazione, stesso principio (riconoscimento per
+  // titolo del modello, tollerante a refusi), applicata alla coppia
+  // Piano Incentivante (il credito, maturato lavorando di domenica) /
+  // RC PI - Recupero Compensativo PI (il consumo, un giorno di riposo).
+  // A differenza della Protrazione qui non si lavora in minuti frazionabili:
+  // ogni evento vale "1 giorno" intero, indivisibile.
+  function tipoModelloPI(modelloId){
+    if(!modelloId) return null;
+    const mod = modelli.find(m=>m.id===modelloId);
+    if(!mod) return null;
+    const n = (mod.titolo||"").trim().toUpperCase().replace(/\s+/g,"");
+    if(n.includes("RCPI") || (n.includes("RECUPERO") && n.includes("PI"))) return "rc_pi";
+    if(n.includes("PIANOINCENTIVANTE") || n === "PI") return "piano_incentivante";
+    return null;
+  }
+  // Vero se dateKey (formato YYYY-MM-DD) cade di domenica. Solo i Piani
+  // Incentivanti di domenica maturano un giorno di riposo — quelli nei
+  // festivi infrasettimanali (es. 19 settembre) non generano credito.
+  function eDomenica(dateKey){
+    const [y,m,d] = dateKey.split("-").map(Number);
+    return new Date(y, m-1, d).getDay() === 0;
+  }
+  // Stesso principio di computeStornoRecupero (calcolo dinamico, mai
+  // salvato, sempre ricoerente con lo stato attuale del calendario — così
+  // aggiungere/spostare/cancellare un evento anche mesi dopo riallinea
+  // tutto da solo al giro successivo), applicato alla coppia Piano
+  // Incentivante/RC PI. Differenze rispetto alla Protrazione:
+  // - il credito vale solo se il Piano Incentivante cade di domenica
+  // - ogni credito/consumo vale "1", non è frazionabile in minuti
+  // Ritorna { perEvento } dove perEvento[eventId] = { tipo, collegatoId,
+  // collegatoDateKey } — un Piano Incentivante è collegato a UN SOLO RC PI
+  // (quello più vecchio libero al momento del consumo) e viceversa.
+  function computeStornoPI(){
+    const eventiPI = [];    // { id, dateKey } - Piani Incentivanti di domenica
+    const eventiRcPi = [];  // { id, dateKey } - giorni di RC PI presi
+    for(const [dateKey, calMap] of Object.entries(store.events)){
+      for(const [calId, evts] of Object.entries(calMap)){
+        for(const e of evts){
+          const tipo = tipoModelloPI(e.modelloId);
+          if(tipo==="piano_incentivante" && eDomenica(dateKey)) eventiPI.push({ id:e.id, dateKey });
+          else if(tipo==="rc_pi") eventiRcPi.push({ id:e.id, dateKey });
         }
-      `}</style>
-      {screen==="cal" && (
-        <>
-          <button className="calOuterArrow" onClick={goPrevMonth}
-            style={{position:"fixed",left:"calc(50% - 320px)",top:"50%",transform:"translateY(-50%)",
-              zIndex:50,width:44,height:44,borderRadius:"50%",border:"1px solid #e2e8f0",
-              background:"#fff",color:"#334155",fontSize:22,fontWeight:900,
-              alignItems:"center",justifyContent:"center",cursor:"pointer",
-              boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}}>‹</button>
-          <button className="calOuterArrow" onClick={goNextMonth}
-            style={{position:"fixed",right:"calc(50% - 320px)",top:"50%",transform:"translateY(-50%)",
-              zIndex:50,width:44,height:44,borderRadius:"50%",border:"1px solid #e2e8f0",
-              background:"#fff",color:"#334155",fontSize:22,fontWeight:900,
-              alignItems:"center",justifyContent:"center",cursor:"pointer",
-              boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}}>›</button>
-        </>
-      )}
-      {dbError && (
-        <div style={{position:"fixed",top:8,left:"50%",transform:"translateX(-50%)",zIndex:9999,
-          maxWidth:440,width:"calc(100% - 24px)",background:"#ef4444",color:"#fff",
-          padding:"10px 14px",borderRadius:10,fontSize:12,fontWeight:700,
-          boxShadow:"0 4px 16px rgba(0,0,0,0.25)",display:"flex",alignItems:"center",gap:8}}
-          onClick={()=>setDbError("")}>
-          <span style={{flex:1}}>{dbError}</span>
-          <span style={{cursor:"pointer",opacity:0.8}}>✕</span>
-        </div>
-      )}
-      <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",paddingBottom:44}}>
-        {screen==="cal"      && calView}
-        {screen==="report"   && reportView}
-        {screen==="modelli"  && modelliView}
-        {screen==="settings" && settingsView}
-      </div>
-      <BottomNav screen={screen} setScreen={setScreen} T={T} accent={accent}
-        onBeforeNavigate={()=>{
-          // I 4 tasti della barra di navigazione hanno sempre la precedenza:
-          // qualsiasi popup/finestra/modale aperto nell'app va chiuso prima
-          // di cambiare schermata (elenco esaustivo di tutti gli "show..."
-          // usati come stato di visibilità di un modale in App).
-          // "Chiudere" qui significa solo nascondere la UI: lo stato dei
-          // form (comprese le scelte già fatte su categorie/report) resta
-          // quello attuale in memoria, non viene azzerato né scartato — se
-          // l'utente non ha ancora premuto "Salva" le modifiche restano solo
-          // locali fino al salvataggio, esattamente come premendo la ✕.
-          if(dayKey){ setDayKey(null); setForm(null); setPal(null); }
-          if(showDbModal) setShowDbModal(false);
-          if(showBackupsModal) setShowBackupsModal(false);
-          if(showLocalDataModal) setShowLocalDataModal(false);
-          if(showModelloEditor) setShowModelloEditor(false);
-          if(showSortMenu) setShowSortMenu(false);
-          if(showModelForm) setShowModelForm(false);
-          if(showColorAssignPicker) setShowColorAssignPicker(false);
-          if(showAddColorPicker) setShowAddColorPicker(false);
-          if(showEditFasciaColor) setShowEditFasciaColor(false);
-          if(showRotForm) setShowRotForm(false);
-          if(showRotDetail) setShowRotDetail(false);
-          if(showApplyRotDialog) setShowApplyRotDialog(false);
-          if(showDeleteRotEvtDialog) setShowDeleteRotEvtDialog(false);
-          if(showImportaFotoDialog) setShowImportaFotoDialog(false);
-          if(showImportaTurniJsonDialog) setShowImportaTurniJsonDialog(false);
-          if(showModelloPicker) setShowModelloPicker(false);
-          if(showRotazionePicker) setShowRotazionePicker(false);
-          if(showMeseReportPicker) setShowMeseReportPicker(false);
-          if(showReportModelliPicker) setShowReportModelliPicker(false);
-          if(showFasciaColorPicker) setShowFasciaColorPicker(false);
-        }} />
-      {banner&&<div style={{position:"fixed",bottom:`calc(${NAV_HEIGHT_CSS} + 12px)`,left:"50%",transform:"translateX(-50%)",
-        background:"rgba(0,0,0,0.75)",color:"#fff",padding:"6px 16px",
-        borderRadius:20,fontSize:12,zIndex:9999,pointerEvents:"none"}}>{banner}</div>}
-      {confermaCancellaEventiMese&&(
-        <ConfermaEliminazione T={T} testo={`Cancellare TUTTI gli eventi di ${NOMI_MESI_IT[month]} ${year} su questo calendario?`}
-          onConferma={()=>{setConfermaCancellaEventiMese(false);cancellaTuttiEventiMese(year, month, calId);}}
-          onAnnulla={()=>setConfermaCancellaEventiMese(false)}/>
-      )}
-      {dayModal}
-      {dbModal}
-      {salvaDisposizionePopup}
-      {showModelForm&&(
-        <div style={{position:"fixed",top:0,left:0,right:0,bottom:NAV_HEIGHT_CSS,background:"rgba(0,0,0,0.75)",zIndex:600,
-          display:"flex",alignItems:"flex-end"}}
-          onClick={e=>{if(e.target===e.currentTarget)setShowModelForm(false);}}>
-          <div style={{background:T.surface,borderRadius:"18px 18px 0 0",width:"100%",
-            maxWidth:480,margin:"0 auto",maxHeight:"92vh",overflowY:"auto"}}
-            onClick={e=>e.stopPropagation()}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 16px 0"}}>
-              <button onClick={()=>setShowModelForm(false)}
-                style={{background:"none",border:"none",color:T.sub,fontSize:22,cursor:"pointer",padding:4}}>‹</button>
-              <div style={{fontSize:16,fontWeight:900,color:T.text}}>
-                {editModello?"Modifica modello":"Nuovo modello"}
-              </div>
-              <div style={{width:32}}/>
-            </div>
-            <ModelForm T={T} form={modelForm} setForm={setModelForm} accent={accent} dark={dark}
-              fasceAutomatiche={fasceAutomatiche} modelli={modelli} coloriExtra={coloriExtra}
-              reports={store.reports||[]} getConteggioConfig={getConteggioConfig} updateConteggioConfig={updateConteggioConfig}
-              suggerimentiTitolo={autocompleteValori.titolo} suggerimentiNomeVis={autocompleteValori.nome_visualizzato}
-              onRimuoviSuggerimento={rimuoviValoreAutocomplete}
-              onSave={async()=>{
-                // try/catch qui: un ErrorBoundary React NON intercetta le
-                // eccezioni dentro handler async come questo (sono fuori dal
-                // ciclo di rendering) — senza questo blocco, un errore come
-                // "Cannot read properties of undefined" dentro saveModello
-                // sparisce silenziosamente in console (Uncaught in promise)
-                // senza che l'utente veda nulla, e il form resta aperto senza
-                // spiegazioni. Ora qualsiasi eccezione, attesa o no, arriva
-                // comunque al modale di errore standard dell'app.
-                try{
-                  const esito = await saveModello({...modelForm,id:editModello?.id});
-                  if(esito?.ok){
-                    setShowModelForm(false);
-                    // Se il form era stato aperto dal picker "Scegli modello"
-                    // (creazione/modifica al volo mentre si sceglieva un
-                    // modello per un evento), il modello appena salvato -
-                    // già con sortOrder assegnato da saveModello - viene
-                    // collegato SUBITO come evento del giorno corrente,
-                    // esattamente come se l'utente lo avesse cliccato dalla
-                    // lista: niente più "chiudo il form, riapro il picker,
-                    // ricerco il modello appena creato e lo clicco di nuovo"
-                    // (un passaggio in più che, oltre a essere ridondante,
-                    // lasciava l'evento senza l'orario di fine calcolato).
-                    // Se il form era stato aperto dalla lista Modelli, si
-                    // resta semplicemente sulla lista (nessun picker né
-                    // evento da creare).
-                    if(origineModelForm==="picker" && esito.modello){
-                      selezionaModelloPerGiorno(esito.modello);
-                    }
-                  } else {
-                    segnalaErrore(esito?.errore||"Errore sconosciuto", "Salvataggio modello");
-                    alert("Errore nel salvataggio del modello: "+(esito?.errore?.message||esito?.errore||"errore sconosciuto")+"\n\nIl modello NON è stato salvato, controlla i dati e riprova.");
-                  }
-                }catch(e){
-                  segnalaErrore(e, "Salvataggio modello (errore imprevisto)");
-                  alert("Si è verificato un errore imprevisto salvando il modello. L'errore è stato registrato nel Log (Impostazioni → Log). Il modello potrebbe NON essere stato salvato: controlla in \"Modelli\" e riprova.");
-                }
-              }}/>
-          </div>
-        </div>
-      )}
-      {showRotazionePicker&&(
-        <div style={{position:"fixed",top:0,left:0,right:0,bottom:NAV_HEIGHT_CSS,background:"rgba(0,0,0,0.85)",zIndex:500,
-          display:"flex",flexDirection:"column"}}>
-          {!showRotDetail?(
-            <>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
-                padding:"16px 16px 8px",background:T.surface,borderBottom:`1px solid ${T.border}`}}>
-                <button onClick={()=>setShowRotazionePicker(false)}
-                  style={{background:"none",border:"none",color:T.sub,fontSize:22,cursor:"pointer"}}>‹</button>
-                <div style={{fontSize:16,fontWeight:900,color:T.text}}>Scegli rotazione</div>
-                <div style={{width:32}}/>
-              </div>
-              <div style={{flex:1,overflowY:"auto",padding:12,background:T.bg}}>
-                {rotazioni.length===0&&(
-                  <div style={{textAlign:"center",padding:"40px 24px",color:T.sub}}>
-                    <div style={{fontSize:36,marginBottom:10}}>🔄</div>
-                    <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Nessuna rotazione</div>
-                  </div>
-                )}
-                <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
-                  {rotazioni.map((r,i,arr)=>{
-                    const tipoLabel=r.tipo==="domeniche"?"🗓 Domeniche 1/4":r.tipo==="reperibilita"?"📞 Reperibilità":r.tipo==="nlrs_scalante"?"📅 RS/NL Scalante":"🗓️ Personalizzata";
-                    return (
-                      <div key={r.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
-                        <div onClick={()=>{
-                          if(r.tipo==="domeniche"||r.tipo==="nlrs_scalante"||r.tipo==="reperibilita"){
-                            setRotGiornoPartenza(0);
-                            setShowApplyRotDialog(r);
-                          } else {
-                            setShowRotDetail(r);
-                          }
-                        }}
-                          style={{display:"flex",alignItems:"center",padding:"14px 16px",cursor:"pointer"}}>
-                          <div style={{flex:1,minWidth:0}}>
-                            <div style={{fontSize:16,fontWeight:800,color:T.text}}>{r.titolo||"Senza nome"}</div>
-                            <div style={{fontSize:13,color:T.sub,marginTop:2}}>{tipoLabel}{r.dataInizio?` · dal ${r.dataInizio}`:""}</div>
-                          </div>
-                          <span style={{color:T.sub,fontSize:14}}>›</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </>
-          ):(
-            <>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
-                padding:"16px 16px 8px",background:T.surface,borderBottom:`1px solid ${T.border}`}}>
-                <button onClick={()=>setShowRotDetail(null)}
-                  style={{background:"none",border:"none",color:T.sub,fontSize:22,cursor:"pointer"}}>‹</button>
-                <div style={{fontSize:16,fontWeight:900,color:T.text}}>{showRotDetail.titolo||"Rotazione"}</div>
-                <button onClick={()=>{
-                  const r=showRotDetail;
-                  let modelloScelto=null;
-                  if(r.tipo==="personalizzata"){
-                    modelloScelto=modelli.find(m=>m.id===r.griglia?.[dayKey])||null;
-                  } else if(r.tipo==="domeniche"){
-                    const [di,dm,dd]=r.dataInizio.split("-").map(Number);
-                    const inizio=new Date(di,dm-1,dd);
-                    let prima=new Date(inizio);
-                    while(prima.getDay()!==0) prima.setDate(prima.getDate()+1);
-                    const [ty,tm,td]=dayKey.split("-").map(Number);
-                    const target=new Date(ty,tm-1,td);
-                    const diffMs=target-prima;
-                    const diffSett=Math.floor(diffMs/(7*24*60*60*1000));
-                    if(diffSett>=0&&target.getDay()===0){
-                      const isLav=(diffSett%4)===0;
-                      modelloScelto=modelli.find(m=>m.id===(isLav?r.modellaLavoroId:r.modelloNLId))||null;
-                    }
-                  } else if(r.tipo==="nlrs_scalante"||r.tipo==="reperibilita"){
-                    modelloScelto=modelli.find(m=>m.id===(r.modelloNLId||r.modelloRSId))||null;
-                  }
-                  if(!modelloScelto){
-                    alert("Nessun modello previsto per questo giorno dalla rotazione");
-                    return;
-                  }
-                  setForm({
-                    modelloId:modelloScelto.id,
-                    rotazioneId:r.id,
-                    shiftId:null,
-                    label:modelloScelto.titolo,
-                    note:"",
-                    dur:modelloScelto.tempo==="h24"?"allday":modelloScelto.tempo==="6h15"?"fixed":modelloScelto.tempo==="6h30"?"fixed30":"custom",
-                    tIn:modelloScelto.inizio||"",
-                    tOut:calcFineModello(modelloScelto)||modelloScelto.fine||"",
-                    place:"",map:"",colorOvr:null,collega:"",auto:"",
-                    protPagFine:"",protRecFine:"",
-                    protMenoRecIn:"",protMenoRecOut:"",
-                  });
-                  setShowRotDetail(null);
-                  setShowRotazionePicker(false);
-                }} style={{background:accent,border:"none",borderRadius:8,
-                  color:getContrastTextColor(accent),fontSize:13,fontWeight:800,padding:"6px 14px",cursor:"pointer"}}>
-                  Fatto
-                </button>
-              </div>
-              <div style={{flex:1,minHeight:0,overflow:"hidden",background:T.bg,display:"flex",flexDirection:"column"}}>
-                {(()=>{
-                  const modelliDelCalRot2 = modelliOrdinati.filter(m=>(m.calendarId||mainCalId)===calId);
-                  return (<>
-                {showRotDetail.tipo==="domeniche"&&(
-                  <DomenicheView rot={showRotDetail} T={T} accent={accent} modelli={modelliDelCalRot2} fasceAutomatiche={fasceAutomatiche} onUpdate={()=>{}}/>
-                )}
-                {showRotDetail.tipo==="reperibilita"&&(
-                  <ReperibilitaView rot={showRotDetail} T={T} accent={accent} modelli={modelliDelCalRot2}/>
-                )}
-                {showRotDetail.tipo==="nlrs_scalante"&&(
-                  <NLRSScalanteView rot={showRotDetail} T={T} accent={accent} modelli={modelliDelCalRot2}/>
-                )}
-                {showRotDetail.tipo==="personalizzata"&&(
-                  <div style={{flex:1,minHeight:0,display:"flex",flexDirection:"column"}}>
-                    <GrigliaRotazione rot={showRotDetail} T={T} accent={accent} modelli={modelliDelCalRot2} fasceAutomatiche={fasceAutomatiche} sundayColor={sundayColor} onUpdate={()=>{}}/>
-                  </div>
-                )}
-                  </>);
-                })()}
-              </div>
-            </>
-          )}
-        </div>
-      )}
-      {showModelloPicker&&(
-        <div style={{position:"fixed",top:0,left:0,right:0,bottom:NAV_HEIGHT_CSS,background:"rgba(0,0,0,0.85)",zIndex:500,
-          display:"flex",flexDirection:"column"}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
-            padding:"16px 16px 8px",background:T.surface,borderBottom:`1px solid ${T.border}`}}>
-            <button onClick={()=>{setShowModelloPicker(false);setQuickModeModello(null);}}
-              style={{background:"none",border:"none",color:T.sub,fontSize:22,cursor:"pointer"}}>‹</button>
-            <div style={{fontSize:16,fontWeight:900,color:T.text}}>
-              {showModelloPicker==="quick"?(quickModeModello?"Tocca i giorni da riempire":"Scegli modello da applicare"):"Scegli modello"}
-            </div>
-            {showModelloPicker==="quick"&&!quickModeModello?(
-              <div style={{display:"flex",gap:6}}>
-                <button onClick={()=>setShowImportaFotoDialog(true)}
-                  style={{background:"none",border:"none",color:accent,fontSize:20,cursor:"pointer",width:32}}>📷</button>
-                <button onClick={()=>setShowImportaTurniJsonDialog(true)}
-                  style={{background:"none",border:"none",color:accent,fontSize:20,cursor:"pointer",width:32}}>📋</button>
-                <button onClick={()=>setConfermaCancellaEventiMese(true)}
-                  style={{background:"none",border:"none",color:"#ef4444",fontSize:20,cursor:"pointer",width:32}}>🗑️</button>
-              </div>
-            ):showModelloPicker!=="quick"?(
-              <button onClick={()=>{
-                  setEditModello(null);
-                  setModelForm({titolo:"",tempo:"personalizzato",inizio:"",fine:"",coloreCustom:null,posizione:"",
-                    calendarId: calId||mainCalId||null});
-                  setOrigineModelForm("picker");
-                  setShowModelForm(true);
-                  setShowModelloPicker(false);
-                }}
-                title="Nuovo modello"
-                style={{background:"none",border:"none",color:accent,fontSize:24,cursor:"pointer",width:32,fontWeight:900}}>+</button>
-            ):(
-              <div style={{width:32}}/>
-            )}
-          </div>
-          {showModelloPicker==="quick"&&quickModeModello&&(
-            <div style={{padding:"10px 16px",background:"#0f172a",color:"#fff",fontSize:13,
-              display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-              <span>Modello attivo: <strong>{modelli.find(m=>m.id===quickModeModello)?.titolo}</strong></span>
-              <button onClick={()=>{setShowModelloPicker(false);}}
-                style={{background:"#fff",border:"none",borderRadius:8,padding:"6px 12px",
-                  fontWeight:800,fontSize:12,cursor:"pointer"}}>Fine</button>
-            </div>
-          )}
-          <div style={{flex:1,overflowY:"auto",padding:"12px 12px calc(12px + env(safe-area-inset-bottom, 0px) + 70px)",background:T.bg}}>
-            {modelli.length===0&&(
-              <div style={{textAlign:"center",padding:"40px 24px",color:T.sub}}>
-                <div style={{fontSize:36,marginBottom:10}}>📋</div>
-                <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Nessun modello</div>
-                <div style={{fontSize:13}}>Crea il tuo primo modello turno</div>
-              </div>
-            )}
-            {(()=>{
-              const modelliPicker = modelliOrdinati.filter(m=>{
-                const mcid = m.calendarId||mainCalId;
-                return !calId || mcid===calId;
-              });
-              if(modelliPicker.length===0) return null;
-              return (
-              <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:12}}>
-                {modelliPicker.map((m,i,arr)=>{
-                  const c=m.coloreCustom||colByTime(m.inizio);
-                  const durata=m.tempo==="h24"?"H24"
-                    :m.tempo==="6h15"&&m.inizio?`${m.inizio} - ${calcFine6h15(m.inizio)} • 6h 15m`:m.tempo==="6h30"&&m.inizio?`${m.inizio} - ${calcFine6h30(m.inizio)} • 6h 30m`
-                    :m.inizio&&m.fine?`${m.inizio} - ${m.fine} • ${formattaDurataHM(calcDurata(m.inizio,m.fine))}`
-                    :m.inizio?m.inizio:"";
-                  return (
-                    <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
-                      <div onClick={()=>{
-                        if(showModelloPicker==="quick"){
-                          setQuickModeModello(m.id);
-                          return;
-                        }
-                        selezionaModelloPerGiorno(m);
-                      }} style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}>
-                        <div style={{width:36,height:36,borderRadius:10,background:c+"33",
-                          border:`2px solid ${c}`,display:"flex",alignItems:"center",justifyContent:"center",
-                          flexShrink:0,marginRight:12}}>
-                          <div style={{width:14,height:14,borderRadius:"50%",background:c}}/>
-                        </div>
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:17,fontWeight:800,color:T.text,overflow:"hidden",
-                            textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.titolo||"Senza nome"}</div>
-                          <div style={{fontSize:16,color:T.sub,marginTop:1}}>{durata}</div>
-                        </div>
-                        <span style={{color:T.sub,fontSize:14}}>›</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              );
-            })()}
-            {(activeCal?.shifts||[]).length>0&&(
-              <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:12}}>
-                {activeCal.shifts.map((s,i,arr)=>(
-                  <div key={s.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
-                    <div onClick={()=>{
-                      setForm({modelloId:null,shiftId:s.id,label:s.label,note:"",dur:"allday",
-                        tIn:"",tOut:"",place:"",map:"",colorOvr:null,collega:"",auto:""});
-                      setShowModelloPicker(false);
-                    }} style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}>
-                      <div style={{width:36,height:36,borderRadius:10,background:s.color+"33",
-                        border:`2px solid ${s.color}`,display:"flex",alignItems:"center",justifyContent:"center",
-                        flexShrink:0,marginRight:12}}>
-                        <div style={{width:14,height:14,borderRadius:"50%",background:s.color}}/>
-                      </div>
-                      <div style={{flex:1,fontSize:14,fontWeight:800,color:T.text}}>{s.label}</div>
-                      <span style={{color:T.sub,fontSize:14}}>›</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            {showModelloPicker!=="quick"&&(
-              <>
-                <div onClick={()=>{
-                  setForm({modelloId:null,shiftId:null,label:"",note:"",dur:"allday",
-                    tIn:"",tOut:"",place:"",map:"",colorOvr:null,collega:"",auto:""});
-                  setShowModelloPicker(false);
-                }} style={{display:"flex",alignItems:"center",justifyContent:"center",padding:"12px 14px",
-                  background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,cursor:"pointer",
-                  color:T.sub,fontSize:13,fontWeight:700,marginBottom:12}}>
-                  Evento libero (senza modello)
-                </div>
-                <button onClick={()=>{
-                  setEditModello(null);
-                  // FIX: qui mancava calendarId — a differenza degli altri due
-                  // punti dell'app dove si crea un modello (lista Modelli),
-                  // questo passava sempre calendarId esplicito. Senza,
-                  // saveModello ripiegava su calId/mainCalId che, in certi
-                  // percorsi (es. entrando in modalità Modifica "M" senza
-                  // calendari selezionati), possono essere entrambi vuoti,
-                  // causando un modello salvato senza calendario valido.
-                  setModelForm({titolo:"",tempo:"personalizzato",inizio:"",fine:"",coloreCustom:null,posizione:"",
-                    calendarId: calId||mainCalId||null});
-                  setOrigineModelForm("picker");
-                  setShowModelForm(true);
-                  setShowModelloPicker(false);
-                }} style={{width:"100%",background:accent,border:"none",borderRadius:14,
-                  color:getContrastTextColor(accent),padding:"14px 0",cursor:"pointer",fontWeight:800,fontSize:15}}>
-                  + Nuovo modello
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-      {showDeleteRotEvtDialog && (
-        <div style={{position:"fixed",top:0,left:0,right:0,bottom:NAV_HEIGHT_CSS,background:"rgba(0,0,0,0.8)",zIndex:600,
-          display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
-          onClick={()=>setShowDeleteRotEvtDialog(null)}>
-          <div style={{background:T.surface,borderRadius:16,width:"100%",maxWidth:360,
-            padding:20,boxShadow:"0 8px 32px rgba(0,0,0,0.3)"}}
-            onClick={e=>e.stopPropagation()}>
-            <div style={{fontSize:16,fontWeight:900,color:T.text,marginBottom:8}}>Eliminare evento</div>
-            <div style={{fontSize:13,color:T.sub,marginBottom:16}}>
-              Questo evento fa parte di una rotazione. Cosa vuoi eliminare?
-            </div>
-            <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:12}}>
-              <button onClick={async()=>{
-                  const {evt,dKey,cId}=showDeleteRotEvtDialog;
-                  setShowDeleteRotEvtDialog(null);
-                  await delEvt(dKey,cId,evt.id);
-                }}
-                style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
-                  color:T.text,padding:"10px 12px",cursor:"pointer",fontWeight:700,fontSize:13,textAlign:"left"}}>
-                Solo questa giornata
-              </button>
-              <button onClick={async()=>{
-                  const {evt,dKey,cId}=showDeleteRotEvtDialog;
-                  const n = parseInt(window.prompt("Quante ripetizioni vuoi eliminare (da questa data in poi)?","1"))||0;
-                  setShowDeleteRotEvtDialog(null);
-                  if(n>0) await delEvtiRotazioneDaData(evt.rotazioneId, dKey, cId, n);
-                }}
-                style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
-                  color:T.text,padding:"10px 12px",cursor:"pointer",fontWeight:700,fontSize:13,textAlign:"left"}}>
-                Solo N ripetizioni da questa data
-              </button>
-              <button onClick={()=>setConfermaEliminaEventiRotazione(true)}
-                style={{background:"#ef444422",border:"1px solid #ef4444",borderRadius:10,
-                  color:"#ef4444",padding:"10px 12px",cursor:"pointer",fontWeight:700,fontSize:13,textAlign:"left"}}>
-                Tutti gli eventi della rotazione
-              </button>
-            </div>
-            {confermaEliminaEventiRotazione&&(
-              <ConfermaEliminazione T={T} testo="Eliminare TUTTI gli eventi di questa rotazione?"
-                onConferma={async()=>{
-                  const {evt,cId}=showDeleteRotEvtDialog;
-                  setConfermaEliminaEventiRotazione(false);
-                  setShowDeleteRotEvtDialog(null);
-                  await delTutteEvtiRotazione(evt.rotazioneId, cId);
-                }}
-                onAnnulla={()=>setConfermaEliminaEventiRotazione(false)}/>
-            )}
-            <button onClick={()=>setShowDeleteRotEvtDialog(null)}
-              style={{width:"100%",background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
-                color:T.sub,padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
-              Annulla
-            </button>
-          </div>
-        </div>
-      )}
-      {showImportaFotoDialog && (
-        <ImportaFotoDialog T={T} accent={accent} dark={dark}
-          modelli={modelliOrdinati.filter(m=>(m.calendarId||mainCalId)===calId)}
-          year={year} month={month}
-          onClose={()=>setShowImportaFotoDialog(false)}
-          onConfirm={async(righeValide)=>{
-            const n = await importaEventiSingoli(righeValide);
-            return n;
-          }}/>
-      )}
-      {showImportaTurniJsonDialog && (
-        <ImportaTurniJsonDialog T={T} accent={accent} dark={dark}
-          importsRecenti={importsRecenti}
-          year={year} month={month}
-          onClose={()=>setShowImportaTurniJsonDialog(false)}
-          onConfirm={async(righeJson)=>{
-            const esito = await importaTurniPdfJson(righeJson);
-            return esito;
-          }}
-          onDeleteImport={async(importId)=>{
-            await delTuttiEventiImport(importId, calId);
-          }}/>
-      )}
-      {showApplyRotDialog && (
-        <div style={{position:"fixed",top:0,left:0,right:0,bottom:NAV_HEIGHT_CSS,background:"rgba(0,0,0,0.8)",zIndex:600,
-          display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
-          onClick={()=>setShowApplyRotDialog(null)}>
-          <div style={{background:T.surface,borderRadius:16,width:"100%",maxWidth:360,
-            padding:20,boxShadow:"0 8px 32px rgba(0,0,0,0.3)"}}
-            onClick={e=>e.stopPropagation()}>
-            <div style={{fontSize:16,fontWeight:900,color:T.text,marginBottom:8}}>Applica Rotazione</div>
-            <div style={{fontSize:13,color:T.sub,marginBottom:16}}>
-              Stai applicando la rotazione <strong>{showApplyRotDialog.titolo||"Senza nome"}</strong> a partire dal {fmtDataIT(dayKey)}
-              {showApplyRotDialog.tipo==="nlrs_scalante"?" (primo RS)"
-                :showApplyRotDialog.tipo==="reperibilita"?""
-                :" (domenica)"}.
-              <br/><br/>
-              {showApplyRotDialog.tipo==="nlrs_scalante"
-                ?"Il ciclo scalante è di 6 coppie RS/NL. Quante volte vuoi ripeterlo?"
-                :showApplyRotDialog.tipo==="reperibilita"
-                ?"Il ciclo è di 4 giorni con passo +1 / +7 / +1, e la ripetizione successiva riparte 7 giorni dopo l'ultimo giorno (blocco di 16 giorni). Quanti cicli vuoi generare?"
-                :"Il ciclo è di 4 domeniche. Quante volte vuoi ripeterlo?"}
-            </div>
+      }
+    }
+    function cmp(a,b){
+      if(a.dateKey!==b.dateKey) return a.dateKey<b.dateKey?-1:1;
+      return a.id<b.id?-1:(a.id>b.id?1:0);
+    }
+    eventiPI.sort(cmp);
+    eventiRcPi.sort(cmp);
 
-            {showApplyRotDialog.tipo==="nlrs_scalante"&&(
-              <div style={{marginBottom:16}}>
-                <span style={{fontSize:13,color:T.text,fontWeight:700,display:"block",marginBottom:8}}>
-                  Con quale modello inizi?
-                </span>
-                <div style={{display:"flex",gap:8}}>
-                  <button type="button" onClick={()=>document.getElementById("modello_partenza_rot").value="RS"}
-                    id="btn_rs_partenza"
-                    style={{flex:1,background:"#8b5cf622",border:"2px solid #8b5cf6",borderRadius:8,
-                      color:"#8b5cf6",padding:"8px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
-                    RS
-                  </button>
-                  <button type="button" onClick={()=>document.getElementById("modello_partenza_rot").value="NL"}
-                    id="btn_nl_partenza"
-                    style={{flex:1,background:T.s2,border:`2px solid ${T.border}`,borderRadius:8,
-                      color:T.sub,padding:"8px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
-                    NL
-                  </button>
-                </div>
-                <input type="hidden" id="modello_partenza_rot" defaultValue="RS"/>
-              </div>
-            )}
+    const perEvento = {};
+    eventiPI.forEach(ev=>{ perEvento[ev.id] = { tipo:"piano_incentivante", collegatoId:null, collegatoDateKey:null }; });
+    eventiRcPi.forEach(ev=>{ perEvento[ev.id] = { tipo:"rc_pi", collegatoId:null, collegatoDateKey:null }; });
 
-            {showApplyRotDialog.tipo==="reperibilita"&&(()=>{
-              // I 4 giorni del ciclo, con il titolo del modello associato:
-              // l'utente sceglie a quale di questi corrisponde la data che
-              // ha toccato a calendario, così la sequenza può partire da un
-              // punto qualsiasi del ciclo invece che solo dal Giorno 1.
-              const idsCiclo = [showApplyRotDialog.modelloRSId, showApplyRotDialog.modelloNLId,
-                                showApplyRotDialog.modelloG3Id, showApplyRotDialog.modelloG4Id];
-              return (
-                <div style={{marginBottom:16}}>
-                  <span style={{fontSize:13,color:T.text,fontWeight:700,display:"block",marginBottom:8}}>
-                    Da quale giorno del ciclo parti?
-                  </span>
-                  <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                    {idsCiclo.map((mid,idx)=>{
-                      const mod = modelli.find(m=>m.id===mid);
-                      const sel = rotGiornoPartenza===idx;
-                      return (
-                        <button key={idx} type="button" onClick={()=>setRotGiornoPartenza(idx)}
-                          style={{display:"flex",alignItems:"center",gap:8,textAlign:"left",
-                            background:sel?accent+"22":T.s2,border:`2px solid ${sel?accent:T.border}`,
-                            borderRadius:8,padding:"8px 10px",cursor:"pointer"}}>
-                          <div style={{width:9,height:9,borderRadius:"50%",flexShrink:0,
-                            background:mod?.colore||T.sub}}/>
-                          <span style={{fontSize:11,fontWeight:800,color:sel?accent:T.sub,flexShrink:0}}>
-                            GIORNO {idx+1}
-                          </span>
-                          <span style={{fontSize:12,fontWeight:700,color:T.text,overflow:"hidden",
-                            textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                            {mod?.titolo||"— nessun modello —"}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })()}
+    // FIFO: per ogni RC PI (in ordine cronologico), prendo il primo Piano
+    // Incentivante di domenica non ancora assegnato a un altro RC PI.
+    const piAssegnati = new Set();
+    for(const consumo of eventiRcPi){
+      const credito = eventiPI.find(p=>!piAssegnati.has(p.id));
+      if(!credito) continue; // nessun Piano Incentivante libero da recuperare
+      piAssegnati.add(credito.id);
+      perEvento[consumo.id].collegatoId = credito.id;
+      perEvento[consumo.id].collegatoDateKey = credito.dateKey;
+      perEvento[credito.id].collegatoId = consumo.id;
+      perEvento[credito.id].collegatoDateKey = consumo.dateKey;
+    }
+    return { perEvento };
+  }
+  function allEvts(key){
+    if(!selectedCalIds || selectedCalIds.length===0) return [];
+    const res=[];
+    if(mainCal && selectedCalIds.includes(mainCal.id)) getEvts(key,mainCal.id).forEach(e=>res.push({...e,_cid:mainCal.id}));
+    store.calendars.filter(c=>!c.isMain && selectedCalIds.includes(c.id)).forEach(c=>
+      getEvts(key,c.id).forEach(e=>res.push({...e,_cid:c.id})));
+    // Ordine calendario: posizione dell'evento nell'elenco calendari configurato in Impostazioni
+    const calOrderIdx = new Map(store.calendars.map((c,i)=>[c.id,i]));
+    // Ordine modello: posizione del modello nella schermata Modelli
+    const modOrderIdx = new Map(modelliOrdinati.map((m,i)=>[m.id,i]));
+    const ordinati = res.sort((a,b)=>{
+      const ca = calOrderIdx.has(a._cid) ? calOrderIdx.get(a._cid) : 999;
+      const cb = calOrderIdx.has(b._cid) ? calOrderIdx.get(b._cid) : 999;
+      if(ca!==cb) return ca-cb;
+      const ma = a.modelloId && modOrderIdx.has(a.modelloId) ? modOrderIdx.get(a.modelloId) : 9999;
+      const mb = b.modelloId && modOrderIdx.has(b.modelloId) ? modOrderIdx.get(b.modelloId) : 9999;
+      if(ma!==mb) return ma-mb;
+      // Stesso modello (o entrambi senza modello): a parità di modello
+      // l'ordine non deve dipendere da COME/QUANDO l'evento è stato creato
+      // (dal picker "Scegli modello" vs. altrove), che è arbitrario e
+      // imprevedibile per l'utente. Criterio deterministico: prima per
+      // orario di inizio crescente (un evento allDay/senza tIn va in coda
+      // fra quelli con lo stesso modello), poi per id come ultima risorsa
+      // stabile, così due eventi identici restano comunque in un ordine
+      // fisso e riproducibile invece che "a caso".
+      const tinA = a.tIn ? oraInMinuti(a.tIn) : null;
+      const tinB = b.tIn ? oraInMinuti(b.tIn) : null;
+      if(tinA==null && tinB!=null) return 1;
+      if(tinA!=null && tinB==null) return -1;
+      if(tinA!=null && tinB!=null && tinA!==tinB) return tinA-tinB;
+      return String(a.id).localeCompare(String(b.id));
+    });
+    // Una protrazione-figlia (PROTRAZIONE PAGAMENTO/RECUPERO agganciata a un
+    // turno base) va SEMPRE mostrata subito dopo il proprio turno base,
+    // indipendentemente da dove si trova il modello PROTRAZIONE nella lista
+    // Modelli: senza questo passaggio, se il modello PROTRAZIONE è prima di
+    // AUTO in quella lista, la card della protrazione appare sopra invece
+    // che sotto il turno a cui è collegata.
+    // Riconoscimento su DUE binari, perché non tutti gli eventi hanno il
+    // marker import_id (quelli creati/modificati a mano dal form spesso non
+    // ce l'hanno): 1) marker "protrazione_di_<id>_<tipo>" quando presente;
+    // 2) altrimenti per modello+orario, cioè l'evento usa un modello
+    // PROTRAZIONE e il suo orario di inizio coincide con l'uscita di un
+    // turno base dello stesso giorno/calendario.
+    function trovaBasePerModelloOrario(evt){
+      if(evt.modelloId===null||evt.modelloId===undefined) return null;
+      const tipo = tipoModelloProtrazione(evt.modelloId);
+      if(!tipo || !evt.tIn) return null;
+      const base = ordinati.find(b=>
+        b.id!==evt.id && b._cid===evt._cid &&
+        !decodificaProtrazioneFiglio(b.importId) && !tipoModelloProtrazione(b.modelloId) &&
+        b.tOut && b.tOut===evt.tIn
+      );
+      return base ? base.id : null;
+    }
+    const idxById = new Map(ordinati.map((e,i)=>[e.id,i]));
+    const basiGiaPiazzate = new Set();
+    const risultatoFinale = [];
+    for(const e of ordinati){
+      const decodifica = decodificaProtrazioneFiglio(e.importId);
+      const baseIdPerOrario = !decodifica ? trovaBasePerModelloOrario(e) : null;
+      if(decodifica || baseIdPerOrario){
+        // Salta qui: la protrazione-figlia viene inserita subito dopo il
+        // suo turno base quando processiamo il base stesso (sotto). Se il
+        // base non è (più) presente in questo elenco, la protrazione va
+        // comunque mostrata, altrove non salterebbe fuori da nessuna parte.
+        const idBaseRiferimento = decodifica ? decodifica.idEventoBase : baseIdPerOrario;
+        if(idxById.has(idBaseRiferimento)) continue;
+      }
+      risultatoFinale.push(e);
+      if(!decodifica && !baseIdPerOrario && !basiGiaPiazzate.has(e.id)){
+        basiGiaPiazzate.add(e.id);
+        const prefissoFigli = `protrazione_di_${e.id}_`;
+        const figli = ordinati.filter(f=>{
+          if((f.importId||"").startsWith(prefissoFigli)) return true;
+          if(decodificaProtrazioneFiglio(f.importId)) return false; // già gestito dal marker
+          return trovaBasePerModelloOrario(f)===e.id;
+        });
+        risultatoFinale.push(...figli);
+      }
+    }
+    return risultatoFinale;
+  }
+  function dots(key){ return store.calendars.filter(c=>getEvts(key,c.id).length>0); }
 
-            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
-              <span style={{fontSize:13,color:T.text,fontWeight:700}}>Ripetizioni:</span>
-              <input type="number" defaultValue={4} min={1} max={52} id="num_ripetizioni_rot"
-                style={{width:70,background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
-                  padding:"6px 8px",color:T.text,fontSize:14,fontWeight:700,outline:"none",textAlign:"center"}}/>
-            </div>
+  async function saveSettings(updates={}){
+    if(!userId) return;
+    const { error } = await supabase.from("user_settings").upsert({
+      user_id: userId,
+      theme: store.theme,
+      extra_hols: store.extraHols,
+      cal_event_rows: store.calEventRows,
+      cal_row1_field: store.calRow1Field,
+      cal_row2_field: store.calRow2Field,
+      ...updates,
+      updated_at: new Date().toISOString(),
+    });
+    if(error) segnalaErroreDb(error, "Salvataggio impostazioni");
+  }
 
-            <div style={{display:"flex",gap:8}}>
-              <button onClick={()=>setShowApplyRotDialog(null)}
-                style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
-                  color:T.sub,padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
-                Annulla
-              </button>
-              <button onClick={async()=>{
-                const inputVal = parseInt(document.getElementById("num_ripetizioni_rot")?.value) || 4;
-                const modPartenza = document.getElementById("modello_partenza_rot")?.value || "RS";
-                setShowApplyRotDialog(null);
-                setShowRotazionePicker(false);
-                setDayKey(null);
-                await applyRotazione(showApplyRotDialog.id, dayKey, inputVal, modPartenza, rotGiornoPartenza);
-              }}
-                style={{flex:2,background:accent,border:"none",borderRadius:10,
-                  color:getContrastTextColor(accent),padding:"10px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
-                Conferma
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+  // Spostata qui da SEZIONE 18 (Settings View) perché usata anche da
+  // Modelli View: aggiorna una fascia oraria automatica (label/colore/orario).
+  function updateFascia(key, updates){
+    const nuove = fasceAutomatiche.map(f=>f.key===key?{...f,...updates}:f);
+    setStore(s=>({...s, fasceAutomatiche:nuove}));
+    saveSettings({fasce_automatiche:nuove});
+  }
+// #endregion
+
+// #region SEZIONE 10: CRUD CALENDARI
+// ═══════════════════════════════════════════════════════════════
+  // Genera subito l'id lato client e lo ritorna insieme all'oggetto
+  // calendario completo: il chiamante può aggiornare lo stato locale
+  // all'istante, senza aspettare Supabase. Il backup remoto (con retry
+  // colonna) + Sheets avviene in background, con fallback in coda se offline.
+  async function addCalendar(name, color, isFirst){
+    if(!userId) return null;
+    const idLocale = generaIdLocale();
+    const payload = { id:idLocale, user_id: userId, name, color, is_main: isFirst, shifts: [] };
+    scriviConBackup({
+      tipo:"insert", table:"calendars", payload, matchObj:null,
+      contesto:"Creazione calendario", ts:new Date().toISOString(),
+      eventsPerSheets: store.events, calendarsPerSheets: [...store.calendars, {id:idLocale,name,color,isMain:isFirst,shifts:[]}], modelliPerSheets: modelli,
+    });
+    return { id:idLocale, name, color, is_main:isFirst };
+  }
+  async function updateCalendar(cId, fields){
+    if(!userId) return;
+    const match = { id: cId, user_id: userId };
+    await scriviConBackup({
+      tipo:"update", table:"calendars", payload:fields, matchObj:match,
+      contesto:"Aggiornamento calendario", ts:new Date().toISOString(),
+      eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelli,
+    });
+  }
+  async function deleteCalendar(cId){
+    if(!userId) return;
+    const newCals = store.calendars.filter(c=>c.id!==cId);
+    saveToLocalStorage(store.events, newCals, modelli);
+    setStore(s=>({...s, calendars:newCals}));
+    const match = { id: cId, user_id: userId };
+    await scriviConBackup({
+      tipo:"delete", table:"calendars", payload:null, matchObj:match,
+      contesto:"Eliminazione calendario", ts:new Date().toISOString(),
+      eventsPerSheets: store.events, calendarsPerSheets: newCals, modelliPerSheets: modelli,
+    });
+  }
+// #endregion
+
+// #region SEZIONE 11: CRUD EVENTI
+// ═══════════════════════════════════════════════════════════════
+  // Calcola color/label/orari/shiftId/extraNote a partire dal form corrente.
+  // Funzione condivisa (superset) usata sia da saveEvt che da updateEvt: contiene
+  // TUTTI i rami di entrambe (gestione modelloId, shiftId, fixed/fixed30, extraNote),
+  // così nessuna delle due perde comportamento. Ogni chiamante decide se usare
+  // extraNote o ignorarlo, ma il calcolo avviene sempre allo stesso modo per entrambi.
+  function computeEventFields(form, cal, modelli){
+    let color = form.colorOvr || cal.color;
+    let label = (form.label||"Evento").toUpperCase();
+    let tInFinal = form.dur==="allday"?"":form.tIn||"";
+    let tOutFinal = form.dur==="allday"?"":form.tOut||"";
+    // In creazione il modello scelto sta in form.modelloId; in modifica di un
+    // evento esistente sta invece in form.evtModelloId (form.modelloId resta
+    // null finché non si passa esplicitamente dal picker "cambia modello").
+    // Serve leggere entrambi, altrimenti gli eventi modificati (non ricreati
+    // da zero) non hanno mai gli orari del modello ricalcolati qui sotto.
+    const idModelloForm = form.modelloId || form.evtModelloId;
+    if(idModelloForm){
+      const mod = modelli.find(m=>m.id===idModelloForm);
+      if(mod){
+        color = form.colorOvr||(mod?.coloreCustom||colByTime(mod.inizio));
+        label = (mod.label||mod.titolo||label).toUpperCase();
+        // Orari SEMPRE quelli ufficiali del modello quando un modello è
+        // selezionato: il campo Ingresso/Uscita in alto NON deve più poter
+        // spostare l'identità/conteggio del turno (es. arrivare in ritardo
+        // e recuperare a fine turno non deve trasformare "AUTO 13:45-20:00"
+        // in un evento diverso "AUTO 13:51-20:06"). Chi vuole tracciare uno
+        // scostamento reale usa i campi dedicati "Entrata/Uscita effettiva"
+        // sotto PROTRAZIONE A RECUPERO, pensati apposta per questo.
+        if(mod.tempo==="h24"){ tInFinal=""; tOutFinal=""; }
+        else {
+          tInFinal = mod.inizio||"";
+          // Se il modello ha una fine propria, quella resta "ufficiale" e
+          // non modificabile dal campo Uscita in alto (comportamento
+          // voluto, vedi commento sopra). Ma se il modello NON ha una fine
+          // fissa (es. "PERSONALIZZATO" con solo l'ingresso definito),
+          // non esiste alcun valore "ufficiale" da imporre: in quel caso
+          // l'uscita inserita a mano in form.tOut è l'unica fonte, quindi
+          // va rispettata invece di essere azzerata a "".
+          tOutFinal = mod.fine || form.tOut || "";
+        }
+      }
+    } else if(form.shiftId){
+      const sh = cal.shifts?.find(s=>s.id===form.shiftId);
+      if(sh){ color=form.colorOvr||sh.color; label=sh.label.toUpperCase(); }
+    }
+    if(form.dur==="fixed" && tInFinal && !idModelloForm){
+      tOutFinal = form.tOut||calcFine6h15(tInFinal);
+    }
+    if(form.dur==="fixed30" && tInFinal && !idModelloForm){
+      tOutFinal = form.tOut||calcFine6h30(tInFinal);
+    }
+    let extraNote = form.note||"";
+    if(idModelloForm && tInFinal && tOutFinal){
+      const mod=modelli.find(m=>m.id===idModelloForm);
+      if(mod&&mod.fine&&mod.inizio){
+        const durPrevista=calcMinuti(mod.inizio,mod.fine);
+        const durEffettiva=calcMinuti(tInFinal,tOutFinal);
+        const diff=durEffettiva-durPrevista;
+        if(diff>0) extraNote=(extraNote?extraNote+" | ":"")+`Protrazione: +${Math.floor(diff/60)}h${diff%60>0?diff%60+"m":""}`;
+        if(diff<0) extraNote=(extraNote?extraNote+" | ":"")+`Anticipo: ${Math.floor(Math.abs(diff)/60)}h${Math.abs(diff)%60>0?Math.abs(diff)%60+"m":""}`;
+      }
+    }
+    return { color, label, tInFinal, tOutFinal, extraNote };
+  }
+
+  // Marcatore usato per ritrovare l'evento "figlio" di protrazione
+  // agganciato a un turno base, riusando la colonna import_id (già
+  // esistente su Supabase) invece di aggiungere una colonna nuova.
+  function idProtrazioneFiglio(idEventoBase, tipo){
+    return `protrazione_di_${idEventoBase}_${tipo}`;
+  }
+
+  // Decodifica il marker import_id di un evento: se l'evento È esso stesso
+  // una protrazione-figlia (creata da sincronizzaEventiProtrazione), restituisce
+  // { idEventoBase, tipo }, altrimenti null. Serve per la sincronizzazione
+  // inversa: quando l'utente modifica/elimina la protrazione direttamente
+  // dal calendario, dobbiamo risalire al turno AUTO padre e aggiornarlo.
+  function decodificaProtrazioneFiglio(importId){
+    if(!importId) return null;
+    // FIX BUG DOPPIONE "- PR RECUPERO": con (.+) greedy e le alternative
+    // nell'ordine "pagamento|recupero|meno_recupero", su un importId tipo
+    // "protrazione_di_<uuid>_meno_recupero" il motore regex risaliva da
+    // destra e si accontentava di "recupero" come suffisso (che è anche
+    // suffisso di "meno_recupero"), catturando erroneamente "<uuid>_meno"
+    // come idEventoBase invece di "<uuid>". Quell'id sbagliato non esiste
+    // in nessun elenco di eventi, quindi allEvts() non riusciva mai a
+    // riconoscere il figlio come "già gestito dal turno base" e lo
+    // mostrava DUE volte: una nella sua posizione naturale (ordinamento
+    // per modello) e una seconda volta quando il turno base veniva
+    // processato (lì l'aggancio riuscito, perché lì si usa un semplice
+    // startsWith sul prefisso, non questa regex). Il gruppo (.+?) reso
+    // non-greedy risolve, catturando il minimo necessario e lasciando il
+    // resto al gruppo tipo, che prova "meno_recupero" correttamente.
+    // "meno_recupero" (tipo singolo, storico) è stato sostituito da due
+    // marker distinti — "meno_recupero_entrata" e "meno_recupero_uscita" —
+    // per rappresentare separatamente il ritardo in entrata e l'anticipo
+    // in uscita come due eventi indipendenti quando compresenti. La regex
+    // riconosce entrambi i nuovi marker E il vecchio "meno_recupero" (per
+    // compatibilità con eventi già esistenti creati prima di questo fix,
+    // che restano validi finché non vengono risincronizzati).
+    const m = /^protrazione_di_(.+?)_(pagamento|meno_recupero_entrata|meno_recupero_uscita|meno_recupero|recupero)$/.exec(importId);
+    if(!m) return null;
+    return { idEventoBase: m[1], tipo: m[2] };
+  }
+
+  // Crea/aggiorna/rimuove gli eventi "figli" di protrazione (a pagamento
+  // e/o a recupero) agganciati a un turno base. Ogni figlio è un evento
+  // reale collegato al modello dedicato "PROTRAZIONE PAGAMENTO"/
+  // "PROTRAZIONE RECUPERO" (trovato o creato al volo), con orario
+  // inizio = uscita del turno base e orario fine = protPagFine/protRecFine:
+  // questo lo fa entrare nei report che raggruppano per modelloId, esattamente
+  // come già avviene per le protrazioni importate da PDF.
+  async function sincronizzaEventiProtrazione({ idEventoBase, dayKey, calId, tInBase, tOutBase, protPagFine, protRecFine, menoRecIn, menoRecOut }){
+    if(!idEventoBase||!dayKey||!calId||!userId) return;
+    // Il terzo tipo (-PROTRAZIONE A RECUPERO, consumo del credito) NON è un
+    // singolo range "da->a" come gli altri due, ed EVENT non deve essere
+    // rappresentato con un orario virtuale spostato dopo la fine del turno:
+    // deve invece mostrare l'INTERVALLO REALE in cui il ritardo/anticipo si
+    // accavalla al turno stesso. Ci sono due scostamenti indipendenti,
+    // ciascuno con il proprio intervallo reale:
+    //  - ritardo in entrata: da tInBase (inizio previsto) a menoRecIn
+    //    (arrivo effettivo) — es. turno 07:30-13:45, arrivo alle 08:00:
+    //    intervallo 07:30-08:00.
+    //  - anticipo in uscita: da menoRecOut (uscita effettiva) a tOutBase
+    //    (fine prevista) — es. turno 07:30-13:45, esco alle 13:15:
+    //    intervallo 13:15-13:45.
+    // Se sono presenti ENTRAMBI insieme, non è rappresentabile con un solo
+    // evento (i due intervalli non sono contigui, si accavallano a parti
+    // diverse e lontane del turno): servono due eventi figli separati,
+    // ciascuno con il proprio marker, indipendenti l'uno dall'altro.
+    function minutiRitardoEntrata(){
+      const previsto = oraInMinuti(tInBase||""), effettivo = oraInMinuti(menoRecIn||"");
+      if(previsto===null||effettivo===null) return 0;
+      let d = effettivo-previsto;
+      if(d<0) d+=24*60;
+      return Math.max(0,d);
+    }
+    function minutiAnticipoUscita(){
+      const previsto = oraInMinuti(tOutBase||""), effettivo = oraInMinuti(menoRecOut||"");
+      if(previsto===null||effettivo===null) return 0;
+      let d = previsto-effettivo;
+      if(d<0) d+=24*60;
+      return Math.max(0,d);
+    }
+    const minRitardo = minutiRitardoEntrata();
+    const minAnticipo = minutiAnticipoUscita();
+
+    const richieste = [
+      { tipo:"pagamento", oraFine: protPagFine },
+      { tipo:"recupero",  oraFine: protRecFine },
+      // Ritardo in entrata: intervallo reale tInBase -> menoRecIn.
+      { tipo:"meno_recupero_entrata", oraInizio: minRitardo>0 ? tInBase : "", oraFine: minRitardo>0 ? menoRecIn : "", durataOverride: minRitardo },
+      // Anticipo in uscita: intervallo reale menoRecOut -> tOutBase.
+      { tipo:"meno_recupero_uscita", oraInizio: minAnticipo>0 ? menoRecOut : "", oraFine: minAnticipo>0 ? tOutBase : "", durataOverride: minAnticipo },
+    ];
+    // Leggo SEMPRE da storeRef.current, non dalla "store" chiusa nella
+    // closure di questa funzione: quest'ultima può essere ancora la
+    // fotografia del render precedente quando saveEvt/updateEvt chiamano
+    // sincronizzaEventiProtrazione subito dopo il proprio setStore, prima
+    // che React abbia ri-renderizzato. Se così fosse, un figlio di
+    // protrazione già creato in una modifica precedente non verrebbe
+    // trovato qui sotto (find fallirebbe), e verrebbe creato un secondo
+    // evento doppione invece di aggiornare quello esistente.
+    const evtiGiorno = storeRef.current.events?.[dayKey]?.[calId]||[];
+
+    // MIGRAZIONE: rimuove l'eventuale evento "-PR RECUPERO" creato dalla
+    // vecchia logica (marker singolo "protrazione_di_<id>_meno_recupero",
+    // senza suffisso _entrata/_uscita). Quella versione posizionava
+    // l'evento SEMPRE subito dopo la fine turno (tOutBase -> tOutBase+durata),
+    // anche per un anticipo in uscita, invece di sovrapporlo alla porzione
+    // reale del turno. Il codice attuale non lo trova più (cerca solo i
+    // marker con suffisso) e quindi non lo aggiorna né lo sostituisce mai:
+    // resta in giro per sempre con l'orario vecchio e sbagliato. Lo
+    // eliminiamo qui esplicitamente a ogni sincronizzazione del turno base,
+    // così i due eventi corretti (creati subito sotto) prendono il suo posto.
+    const markerLegacy = idProtrazioneFiglio(idEventoBase, "meno_recupero");
+    const legacyEsistenti = evtiGiorno.filter(e=>e.importId===markerLegacy);
+    for(const legacy of legacyEsistenti){
+      await delEvt(dayKey, calId, legacy.id);
+    }
+
+    for(const { tipo, oraInizio, oraFine, durataOverride } of richieste){
+      const marker = idProtrazioneFiglio(idEventoBase, tipo);
+      // Auto-riparazione: se per lo stesso marker esistono già più eventi
+      // figli (retaggio del bug di race condition risolto sopra, quando la
+      // ricerca leggeva uno store non ancora aggiornato e ne creava un
+      // secondo invece di trovare il primo), tengo solo il più vecchio e
+      // cancello gli altri, così il doppione sparisce automaticamente alla
+      // prossima modifica del turno invece di restare per sempre in giro.
+      const candidatiEsistenti = evtiGiorno.filter(e=>e.importId===marker);
+      const esistente = candidatiEsistenti[0]||null;
+      if(candidatiEsistenti.length>1){
+        for(const doppione of candidatiEsistenti.slice(1)){
+          await delEvt(dayKey, calId, doppione.id);
+        }
+      }
+
+      // Campo vuoto o orario non valido/non successivo alla base: se
+      // esisteva un figlio da una modifica precedente, lo rimuovo.
+      // Per i due tipi meno_recupero_* la durata è già quella calcolata
+      // sopra (durataOverride), non va ricalcolata da tOutBase->oraFine —
+      // e per questi due tipi anche oraInizio deve essere valorizzato,
+      // altrimenti l'intervallo reale non è determinabile.
+      const eMenoRecupero = tipo==="meno_recupero_entrata" || tipo==="meno_recupero_uscita";
+      const durataMin = durataOverride!==undefined ? durataOverride : calcMinuti(tOutBase, oraFine);
+      if(!oraFine || (eMenoRecupero && !oraInizio) || durataMin<=0){
+        if(esistente) await delEvt(dayKey, calId, esistente.id);
+        continue;
+      }
+
+      const tipoModello = eMenoRecupero ? "meno_recupero" : tipo;
+      const mod = await trovaOCreaModelloProtrazione(tipoModello, calId);
+      if(!mod) continue;
+      const color = mod?.coloreCustom || (tipoModello==="recupero" ? "#f9a8d4" : tipoModello==="meno_recupero" ? "#dc2626" : "#ec4899");
+      // Il "nome da mostrare nel calendario" (mod.label) ha PRIORITÀ sul
+      // titolo/codice (mod.titolo): stessa convenzione già usata altrove
+      // (vedi computeEventFields più sopra). Con la vecchia priorità
+      // invertita, un modello con titolo "PROTRAZIONE RECUPERO" e nome da
+      // mostrare "PR RECUPERO" finiva comunque per etichettare l'evento
+      // col titolo lungo, ignorando il nome scelto dall'utente.
+      const label = (mod.label||mod.titolo||"").toUpperCase();
+      // Intervallo reale dell'evento figlio: per pagamento/recupero resta
+      // tOutBase->oraFine come sempre; per i due tipi meno_recupero_* è
+      // invece l'intervallo reale calcolato sopra (oraInizio->oraFine),
+      // che si accavalla a una porzione del turno base invece di stare
+      // dopo la sua fine.
+      const tInEvento = eMenoRecupero ? oraInizio : (tOutBase||"");
+      const tOutEvento = oraFine;
+
+      if(esistente){
+        // Aggiorno l'evento figlio esistente (stesso pattern di updateEvt).
+        const payload = {
+          label, color, all_day:false,
+          time_in: tInEvento, time_out: tOutEvento,
+          modello_id: mod.id||null,
+        };
+        setStore(prev=>{
+          const patch = { label, color, allDay:false, tIn: tInEvento, tOut: tOutEvento, modelloId: mod.id||null };
+          const ns = withEventoAggiornato(prev, dayKey, calId, esistente.id, patch);
+          saveToLocalStorage(ns.events, ns.calendars, modelli);
+          storeRef.current = ns;
+          return ns;
+        });
+        const match = { id: esistente.id, user_id: userId };
+        // storeRef.current, non "store": setStore è asincrono, quindi lo
+        // stato React "store" qui sopra può essere ancora quello vecchio
+        // (senza la modifica appena fatta). storeRef.current viene invece
+        // aggiornato in modo sincrono dentro l'updater qui sopra.
+        await scriviConBackup({
+          tipo:"update", table:"events", payload, matchObj:match,
+          contesto:`Aggiornamento protrazione ${tipo}`, ts:new Date().toISOString(),
+          eventsPerSheets: storeRef.current.events, calendarsPerSheets: storeRef.current.calendars,
+          opzioni:{ soloLog:true },
+        });
+      } else {
+        // Creo il nuovo evento figlio.
+        const idLocale = generaIdLocale();
+        const payload = {
+          id: idLocale,
+          user_id: userId, calendar_id: calId, date_key: dayKey,
+          label, color, all_day:false,
+          time_in: tInEvento, time_out: tOutEvento,
+          place:"", map_url:"", note:"",
+          modello_id: mod.id||null, rotazione_id:null,
+          collega:"", auto:"",
+          prot_pag_fine:null, prot_rec_fine:null,
+          import_id: marker,
+        };
+        const evt = {
+          id: idLocale, color, label, allDay:false,
+          tIn: tInEvento, tOut: tOutEvento,
+          place:"", map:"", note:"", modelloId: mod.id||null, rotazioneId:null,
+          collega:"", auto:"", importId: marker,
+        };
+        setStore(prev=>{
+          const ns = withEventoAggiunto(prev, dayKey, calId, evt);
+          saveToLocalStorage(ns.events, ns.calendars, modelli);
+          storeRef.current = ns;
+          return ns;
+        });
+        // Stesso bugfix del caso "Creazione turno": il calendario dell'evento
+        // figlio (protrazione) deve restare visibile dopo il refresh.
+        setSelectedCalIds(prev => prev.length===0 || prev.includes(calId) ? prev : [...prev, calId]);
+        // storeRef.current, non "store": vedi nota sull'altro scriviConBackup
+        // poco sopra in questa stessa funzione.
+        await scriviConBackup({
+          tipo:"insert", table:"events", payload, matchObj:null,
+          contesto:`Creazione protrazione ${tipo}`, ts:new Date().toISOString(),
+          eventsPerSheets: storeRef.current.events, calendarsPerSheets: storeRef.current.calendars,
+          opzioni:{ soloLog:true },
+        });
+      }
+    }
+  }
+
+  // ── Auto-collegamento evento→modello: se l'utente salva un evento senza
+  // passare dal picker "Scegli modello" (scrivendo a mano titolo/orario),
+  // form.modelloId resta vuoto e l'evento diventa "orfano" — invisibile ai
+  // report, che contano sempre per modelloId, mai per il solo testo/label.
+  // Qui cerchiamo un modello dello stesso calendario con titolo (o label) e
+  // orari IDENTICI: se lo troviamo, colleghiamo l'evento in automatico,
+  // silenziosamente, così il problema non si presenta più al salvataggio.
+  // Match volutamente RIGOROSO (stesso calendario, stesso testo, stessi
+  // orari): meglio lasciare un evento orfano isolato che agganciarlo al
+  // modello sbagliato.
+  function trovaModelloCorrispondente(calId, label, tIn, tOut){
+    if(!label) return null;
+    const norm = s => (s||"").trim().toUpperCase();
+    const target = norm(label);
+    return modelli.find(m=>
+      m.calendarId===calId &&
+      (norm(m.titolo)===target || norm(m.label)===target) &&
+      (m.inizio||"")===(tIn||"") &&
+      (m.fine||"")===(tOut||"")
+    ) || null;
+  }
+
+  async function saveEvt(){
+    try{
+      return await saveEvtInterno();
+    }catch(e){
+      // Il locale è già stato scritto dentro saveEvtInterno prima di
+      // arrivare a scriviConBackup, quindi un'eccezione di rete qui è solo
+      // il backup remoto non riuscito — niente popup, silenziosamente
+      // riprovato più avanti (coda). Solo un errore "vero" merita l'alert.
+      if(eRoreDiRete(e)) return;
+      segnalaErrore(e, "Salvataggio turno (errore imprevisto)");
+      alert("Si è verificato un errore imprevisto salvando il turno. L'errore è stato registrato nel Log (Impostazioni → Log). Controlla il calendario: il turno potrebbe non essere stato salvato.");
+    }
+  }
+  async function saveEvtInterno(){
+    if(!form||!dayKey||!calId||!userId) return;
+    const cal = store.calendars.find(c=>c.id===calId);
+    if(!cal) return;
+    const { color, label, tInFinal, tOutFinal, extraNote } = computeEventFields(form, cal, modelli);
+
+    // Fallback: se il form non ha un modello selezionato ma il testo/orario
+    // combaciano esattamente con un modello esistente, colleghiamolo ora,
+    // prima di scrivere su Supabase — invece di scoprirlo dopo dal report.
+    // NB: `form` proviene dallo stato React (const), quindi non va mai
+    // riassegnato con `=`: usiamo una variabile locale derivata.
+    let formEffettivo = form;
+    if(!form.modelloId){
+      const matchAuto = trovaModelloCorrispondente(calId, label, tInFinal, tOutFinal);
+      if(matchAuto) formEffettivo = {...form, modelloId: matchAuto.id};
+    }
+
+    // L'id viene generato QUI, non più dal database: così l'evento locale
+    // e quello su Supabase condividono lo stesso id fin dal primo istante,
+    // nessuna riconciliazione necessaria dopo che il server risponde.
+    const idLocale = generaIdLocale();
+    const payload = {
+      id: idLocale,
+      user_id: userId, calendar_id: calId, date_key: dayKey,
+      label, color, all_day: formEffettivo.dur==="allday"&&!formEffettivo.modelloId,
+      time_in: tInFinal, time_out: tOutFinal,
+      place: up(formEffettivo.place), map_url: formEffettivo.map||"", note: up(extraNote),
+      modello_id: formEffettivo.modelloId||null, rotazione_id: formEffettivo.rotazioneId||null,
+      collega: up(formEffettivo.collega), auto: up(formEffettivo.auto),
+      prot_pag_fine: formEffettivo.protPagFine||null, prot_rec_fine: formEffettivo.protRecFine||null,
+      prot_meno_rec_in: formEffettivo.protMenoRecIn||null, prot_meno_rec_out: formEffettivo.protMenoRecOut||null,
+      categoria_turno: formEffettivo.categoriaTurno||null, categoria_app_auto: formEffettivo.categoriaAppAuto||null,
+      // "Nessuna categoria" scelto esplicitamente per questo asse su questo
+      // singolo evento (disattiva l'automatismo, priorità massima).
+      categoria_turno_vuoto: !!formEffettivo.turnoVuoto, categoria_app_auto_vuoto: !!formEffettivo.appAutoVuoto,
+      // Override "solo questo evento" per l'inclusione/esclusione dai report
+      // CATEGORIA REPORT (Turnazione, Piano Incentivante, Indennità, ecc.):
+      // { [reportId]: "incluso"|"escluso" }. Ha priorità massima, sopra la
+      // configurazione del modello nel report.
+      report_overrides: (formEffettivo.reportOverrides && Object.keys(formEffettivo.reportOverrides).length>0) ? formEffettivo.reportOverrides : null,
+      // Promemoria di ingresso/uscita realmente digitato dall'utente, separato
+      // dagli orari ufficiali dell'evento (time_in/time_out, sempre uguali al
+      // modello quando c'è un modello collegato). Serve solo per essere
+      // rimostrato nel form al riapertura, non incide su report/conteggi.
+      time_in_note: formEffettivo.modelloId||formEffettivo.evtModelloId ? (formEffettivo.tIn||null) : null,
+      time_out_note: formEffettivo.modelloId||formEffettivo.evtModelloId ? (formEffettivo.tOut||null) : null,
+    };
+
+    // 1) SUBITO in locale: l'utente vede il turno all'istante, online o offline.
+    const evt = {
+      id: idLocale, color, label, allDay: payload.all_day,
+      tIn: tInFinal||"", tOut: tOutFinal||"",
+      tInNote: payload.time_in_note||"", tOutNote: payload.time_out_note||"",
+      place: payload.place||"", map: payload.map_url||"",
+      note: payload.note||"", modelloId: payload.modello_id,
+      rotazioneId: payload.rotazione_id,
+      collega: payload.collega||null, auto: payload.auto||"",
+      protPagFine: payload.prot_pag_fine||"", protRecFine: payload.prot_rec_fine||"",
+      protMenoRecIn: payload.prot_meno_rec_in||"", protMenoRecOut: payload.prot_meno_rec_out||"",
+      categoriaTurno: payload.categoria_turno||"", categoriaAppAuto: payload.categoria_app_auto||"",
+      turnoVuoto: !!payload.categoria_turno_vuoto, appAutoVuoto: !!payload.categoria_app_auto_vuoto,
+      reportOverrides: payload.report_overrides||{},
+    };
+    if(!formEffettivo.modelloId && formEffettivo.label) registraValoreAutocomplete("titolo", label);
+    if(formEffettivo.auto) registraValoreAutocomplete("auto", formEffettivo.auto);
+    if(formEffettivo.place) registraValoreAutocomplete("luogo", formEffettivo.place);
+    if(formEffettivo.collega) registraValoriAutocomplete("collega", formEffettivo.collega.split(/\r?\n/));
+    const nuovoStore = withEventoAggiunto(store, dayKey, calId, evt);
+    saveToLocalStorage(nuovoStore.events, nuovoStore.calendars, modelli);
+    setStore(nuovoStore);
+    // BUGFIX: il calendario dell'evento appena creato deve restare visibile
+    // anche dopo un refresh. selectedCalIds è persistito in localStorage e
+    // filtra allEvts() quando non è vuoto (vedi 06-Logica.jsx allEvts): se
+    // l'utente aveva già selezionato manualmente ALCUNI calendari (lista non
+    // vuota) senza includere calId, l'evento veniva salvato correttamente
+    // ma spariva dalla griglia mensile al primo reload, perché filtrato via
+    // da un selectedCalIds che non lo conteneva — pur non essendoci alcun
+    // errore di salvataggio (il dato era sempre presente su Supabase/locale).
+    setSelectedCalIds(prev => prev.length===0 || prev.includes(calId) ? prev : [...prev, calId]);
+    // Aggiorno anche il ref SUBITO (sincrono): sincronizzaEventiProtrazione
+    // viene chiamata poche righe sotto, prima che React possa aver
+    // ri-renderizzato e propagato nuovoStore dentro storeRef via useEffect.
+    storeRef.current = nuovoStore;
+    setForm(null); setDayKey(null);
+
+    // 2) Backup su Supabase (con retry colonna) + Sheets in parallelo.
+    // Se offline, va in coda con il timestamp di adesso e riparte da sola.
+    await scriviConBackup({
+      tipo:"insert", table:"events", payload, matchObj:null,
+      contesto:"Creazione turno", ts:new Date().toISOString(),
+      eventsPerSheets: nuovoStore.events, calendarsPerSheets: nuovoStore.calendars,
+    });
+
+    // 3) Se il turno porta una protrazione (a pagamento e/o a recupero),
+    // genero/aggiorno anche i rispettivi eventi "figli" agganciati ai
+    // modelli dedicati PROTRAZIONE PAGAMENTO/RECUPERO, così le ore di
+    // protrazione entrano nei report (che raggruppano per modelloId).
+    await sincronizzaEventiProtrazione({
+      idEventoBase: idLocale, dayKey, calId,
+      tInBase: tInFinal, tOutBase: tOutFinal,
+      protPagFine: formEffettivo.protPagFine||"", protRecFine: formEffettivo.protRecFine||"",
+      menoRecIn: formEffettivo.protMenoRecIn||"", menoRecOut: formEffettivo.protMenoRecOut||"",
+    });
+  }
+
+  async function updateEvt(){
+    try{
+      return await updateEvtInterno();
+    }catch(e){
+      // Stesso ragionamento di saveEvt: rete instabile qui non è un errore
+      // vero, il locale è già a posto. Silenzioso, non un doppio popup.
+      if(eRoreDiRete(e)) return;
+      segnalaErrore(e, "Modifica turno (errore imprevisto)");
+      alert("Si è verificato un errore imprevisto modificando il turno. L'errore è stato registrato nel Log (Impostazioni → Log). Controlla il calendario: la modifica potrebbe non essere stata salvata.");
+    }
+  }
+  async function updateEvtInterno(){
+    const editCalId = form?.editCid || calId;
+    if(!form||!dayKey||!editCalId||!userId||!form.editId) return;
+    const cal = store.calendars.find(c=>c.id===editCalId);
+    if(!cal) return;
+    const { color, label, tInFinal, tOutFinal } = computeEventFields(form, cal, modelli);
+
+    // Stesso fallback di saveEvt: se manca modelloId ma testo/orario
+    // combaciano esattamente con un modello esistente, colleghiamolo ora.
+    // NB: `form` proviene dallo stato React (const), quindi non va mai
+    // riassegnato con `=`: usiamo una variabile locale derivata.
+    let formEffettivo = form;
+    if(!form.modelloId){
+      const matchAuto = trovaModelloCorrispondente(editCalId, label, tInFinal, tOutFinal);
+      if(matchAuto) formEffettivo = {...form, modelloId: matchAuto.id};
+    }
+
+    // Sincronizzazione inversa: se l'evento che sto modificando È esso
+    // stesso una protrazione-figlia (l'utente ha cambiato l'orario
+    // direttamente sulla card PROTRAZIONE nel calendario, non sul campo
+    // dentro AUTO), propago il nuovo orario di fine al campo
+    // protPagFine/protRecFine del turno AUTO padre, così restano sempre
+    // allineati indipendentemente da dove viene fatta la modifica.
+    const evtiGiornoCorrente = store.events?.[dayKey]?.[editCalId]||[];
+    const evtCorrente = evtiGiornoCorrente.find(e=>e.id===formEffettivo.editId);
+    const decodificaMod = decodificaProtrazioneFiglio(evtCorrente?.importId);
+    if(decodificaMod){
+      const { idEventoBase, tipo } = decodificaMod;
+      const padreEsiste = evtiGiornoCorrente.some(e=>e.id===idEventoBase);
+      if(padreEsiste){
+        let patchLocale = null, patchDb = null;
+        if(tipo==="pagamento"){
+          patchLocale = { protPagFine: tOutFinal||"" };
+          patchDb = { prot_pag_fine: tOutFinal||null };
+        } else if(tipo==="recupero"){
+          patchLocale = { protRecFine: tOutFinal||"" };
+          patchDb = { prot_rec_fine: tOutFinal||null };
+        } else if(tipo==="meno_recupero_entrata"){
+          patchLocale = { protMenoRecIn: tOutFinal||"" };
+          patchDb = { prot_meno_rec_in: tOutFinal||null };
+        } else if(tipo==="meno_recupero_uscita"){
+          patchLocale = { protMenoRecOut: tInFinal||"" };
+          patchDb = { prot_meno_rec_out: tInFinal||null };
+        }
+        if(patchLocale && patchDb){
+          setStore(prev=>{
+            const ns = withEventoAggiornato(prev, dayKey, editCalId, idEventoBase, patchLocale);
+            saveToLocalStorage(ns.events, ns.calendars, modelli);
+            return ns;
+          });
+          await scriviConBackup({
+            tipo:"update", table:"events", payload:patchDb,
+            matchObj:{ id: idEventoBase, user_id: userId },
+            contesto:`Propagazione orario protrazione ${tipo} sul turno base`, ts:new Date().toISOString(),
+            eventsPerSheets: store.events, calendarsPerSheets: store.calendars,
+            opzioni:{ soloLog:true },
+          });
+        }
+      }
+    }
+
+    const payload = {
+      label, color, all_day: formEffettivo.dur==="allday",
+      time_in: tInFinal, time_out: tOutFinal,
+      place: (formEffettivo.place||"").toUpperCase(),
+      map_url: formEffettivo.map||"",
+      note: (formEffettivo.note||"").toUpperCase(),
+      modello_id: formEffettivo.modelloId||null,
+      collega: (formEffettivo.collega||"").toUpperCase(),
+      auto: (formEffettivo.auto||"").toUpperCase(),
+      prot_pag_fine: formEffettivo.protPagFine||null,
+      prot_rec_fine: formEffettivo.protRecFine||null,
+      prot_meno_rec_in: formEffettivo.protMenoRecIn||null,
+      prot_meno_rec_out: formEffettivo.protMenoRecOut||null,
+      categoria_turno: formEffettivo.categoriaTurno||null,
+      categoria_app_auto: formEffettivo.categoriaAppAuto||null,
+      categoria_turno_vuoto: !!formEffettivo.turnoVuoto,
+      categoria_app_auto_vuoto: !!formEffettivo.appAutoVuoto,
+      // Vedi commento gemello in saveEvt: override "solo questo evento" per
+      // CATEGORIA REPORT.
+      report_overrides: (formEffettivo.reportOverrides && Object.keys(formEffettivo.reportOverrides).length>0) ? formEffettivo.reportOverrides : null,
+      // Vedi commento gemello in saveEvt: promemoria separato dagli orari
+      // ufficiali, per sopravvivere al refresh senza alterare il turno.
+      time_in_note: formEffettivo.modelloId||formEffettivo.evtModelloId ? (formEffettivo.tIn||null) : null,
+      time_out_note: formEffettivo.modelloId||formEffettivo.evtModelloId ? (formEffettivo.tOut||null) : null,
+    };
+    const match = { id: formEffettivo.editId, user_id: userId };
+
+    if(!formEffettivo.modelloId && formEffettivo.label) registraValoreAutocomplete("titolo", label);
+    if(formEffettivo.auto) registraValoreAutocomplete("auto", (formEffettivo.auto||"").toUpperCase());
+    if(formEffettivo.place) registraValoreAutocomplete("luogo", (formEffettivo.place||"").toUpperCase());
+    if(formEffettivo.collega) registraValoriAutocomplete("collega", (formEffettivo.collega||"").toUpperCase().split(/\r?\n/));
+
+    // 1) SUBITO in locale.
+    const patch = {label, color,
+      allDay: formEffettivo.dur==="allday", tIn: tInFinal, tOut: tOutFinal,
+      tInNote: formEffettivo.modelloId||formEffettivo.evtModelloId ? (formEffettivo.tIn||"") : "",
+      tOutNote: formEffettivo.modelloId||formEffettivo.evtModelloId ? (formEffettivo.tOut||"") : "",
+      place: (formEffettivo.place||"").toUpperCase(), map: formEffettivo.map||"",
+      note: (formEffettivo.note||"").toUpperCase(), modelloId: formEffettivo.modelloId||null,
+      collega: (formEffettivo.collega||"").toUpperCase(), auto: (formEffettivo.auto||"").toUpperCase(),
+      protPagFine: formEffettivo.protPagFine||"", protRecFine: formEffettivo.protRecFine||"",
+      protMenoRecIn: formEffettivo.protMenoRecIn||"", protMenoRecOut: formEffettivo.protMenoRecOut||"",
+      categoriaTurno: formEffettivo.categoriaTurno||"", categoriaAppAuto: formEffettivo.categoriaAppAuto||"",
+      turnoVuoto: !!formEffettivo.turnoVuoto, appAutoVuoto: !!formEffettivo.appAutoVuoto,
+      reportOverrides: formEffettivo.reportOverrides||{},
+    };
+    const nuovoStore = withEventoAggiornato(store, dayKey, editCalId, formEffettivo.editId, patch);
+    saveToLocalStorage(nuovoStore.events, nuovoStore.calendars, modelli);
+    setStore(nuovoStore);
+    // Aggiorno anche il ref SUBITO (sincrono): la chiamata a
+    // sincronizzaEventiProtrazione poco sotto deve vedere questo turno
+    // già aggiornato E, soprattutto, l'eventuale figlio "-PROTRAZIONE A
+    // RECUPERO" creato in un salvataggio precedente, che altrimenti (con
+    // la "store" chiusa nella closure, ferma al render precedente) può
+    // risultare non trovato e causare la creazione di un secondo
+    // evento doppione invece di aggiornare quello già esistente.
+    storeRef.current = nuovoStore;
+    setForm(null); setDayKey(null);
+
+    // 2) Backup su Supabase (con retry colonna) + Sheets in parallelo.
+    await scriviConBackup({
+      tipo:"update", table:"events", payload, matchObj:match,
+      contesto:"Modifica turno", ts:new Date().toISOString(),
+      eventsPerSheets: nuovoStore.events, calendarsPerSheets: nuovoStore.calendars,
+    });
+
+    // 3) Sincronizzo (crea/aggiorna/rimuove) gli eventi "figli" di
+    // protrazione, allo stesso modo di saveEvt — solo se l'evento
+    // modificato è un turno base e non una protrazione-figlia (nel
+    // secondo caso l'aggiornamento è già stato propagato sopra, punto 3bis).
+    if(!decodificaMod){
+      await sincronizzaEventiProtrazione({
+        idEventoBase: formEffettivo.editId, dayKey, calId: editCalId,
+        tInBase: tInFinal, tOutBase: tOutFinal,
+        protPagFine: formEffettivo.protPagFine||"", protRecFine: formEffettivo.protRecFine||"",
+        menoRecIn: formEffettivo.protMenoRecIn||"", menoRecOut: formEffettivo.protMenoRecOut||"",
+      });
+    }
+  }
+
+  async function delEvt(dKey, cId, evtId){
+    // Se il turno che sto eliminando ha figli di protrazione agganciati
+    // (import_id "protrazione_di_<evtId>_pagamento/recupero"), li elimino
+    // a cascata: altrimenti resterebbero orfani nel calendario e nei report.
+    const evtiGiorno = store.events?.[dKey]?.[cId]||[];
+    const prefissoFigli = `protrazione_di_${evtId}_`;
+    const figli = evtiGiorno.filter(e=>(e.importId||"").startsWith(prefissoFigli));
+
+    // Sincronizzazione inversa: se l'evento che sto eliminando È esso
+    // stesso una protrazione-figlia (l'utente l'ha cancellata direttamente
+    // dal calendario, non svuotando il campo su AUTO), risalgo al turno
+    // AUTO padre e pulisco il campo protPagFine/protRecFine corrispondente,
+    // altrimenti il padre resterebbe con un riferimento a un orario
+    // di protrazione che in calendario non esiste più.
+    const evtCorrente = evtiGiorno.find(e=>e.id===evtId);
+    const decodifica = decodificaProtrazioneFiglio(evtCorrente?.importId);
+    let idEventoBasePulito = null, patchLocalePadre = {}, patchDbPadre = {};
+    if(decodifica){
+      const { idEventoBase, tipo } = decodifica;
+      const padreEsiste = evtiGiorno.some(e=>e.id===idEventoBase);
+      if(padreEsiste){
+        idEventoBasePulito = idEventoBase;
+        if(tipo==="pagamento"){
+          patchLocalePadre = { protPagFine: "" };
+          patchDbPadre = { prot_pag_fine: null };
+        } else if(tipo==="recupero"){
+          patchLocalePadre = { protRecFine: "" };
+          patchDbPadre = { prot_rec_fine: null };
+        } else if(tipo==="meno_recupero_entrata"){
+          patchLocalePadre = { protMenoRecIn: "" };
+          patchDbPadre = { prot_meno_rec_in: null };
+        } else if(tipo==="meno_recupero_uscita"){
+          patchLocalePadre = { protMenoRecOut: "" };
+          patchDbPadre = { prot_meno_rec_out: null };
+        } else if(tipo==="meno_recupero"){
+          patchLocalePadre = { protMenoRecIn: "", protMenoRecOut: "" };
+          patchDbPadre = { prot_meno_rec_in: null, prot_meno_rec_out: null };
+        }
+      }
+    }
+
+    setStore(prev=>{
+      let ns = prev;
+      if(idEventoBasePulito && Object.keys(patchLocalePadre).length>0){
+        ns = withEventoAggiornato(ns, dKey, cId, idEventoBasePulito, patchLocalePadre);
+      }
+      ns = withEventoRimosso(ns, dKey, cId, evtId);
+      for(const f of figli) ns = withEventoRimosso(ns, dKey, cId, f.id);
+      saveToLocalStorage(ns.events, ns.calendars, modelli);
+      storeRef.current = ns;
+      return ns;
+    });
+    if(idEventoBasePulito && Object.keys(patchDbPadre).length>0){
+      await scriviConBackup({
+        tipo:"update", table:"events", payload:patchDbPadre,
+        matchObj:{ id: idEventoBasePulito, user_id: userId },
+        contesto:`Pulizia campo protrazione sul turno base`, ts:new Date().toISOString(),
+        eventsPerSheets: store.events, calendarsPerSheets: store.calendars,
+        opzioni:{ soloLog:true },
+      });
+    }
+
+    // 1b) Valore locale (non tocca lo stato React, già aggiornato sopra):
+    // serve solo come payload per i backup Sheets/Supabase qui sotto.
+    let nuovoStore = idEventoBasePulito
+      ? withEventoAggiornato(store, dKey, cId, idEventoBasePulito, { [decodifica.tipo==="pagamento"?"protPagFine":"protRecFine"]: "" })
+      : store;
+    nuovoStore = withEventoRimosso(nuovoStore, dKey, cId, evtId);
+    for(const f of figli) nuovoStore = withEventoRimosso(nuovoStore, dKey, cId, f.id);
+    // 2) Backup su Supabase (con retry colonna) + Sheets in parallelo.
+    const match = { id: evtId, user_id: userId };
+    await scriviConBackup({
+      tipo:"delete", table:"events", payload:null, matchObj:match,
+      contesto:"Eliminazione turno", ts:new Date().toISOString(),
+      eventsPerSheets: nuovoStore.events, calendarsPerSheets: nuovoStore.calendars,
+    });
+    for(const f of figli){
+      await scriviConBackup({
+        tipo:"delete", table:"events", payload:null, matchObj:{ id:f.id, user_id:userId },
+        contesto:"Eliminazione protrazione figlia", ts:new Date().toISOString(),
+        eventsPerSheets: nuovoStore.events, calendarsPerSheets: nuovoStore.calendars,
+        opzioni:{ soloLog:true },
+      });
+    }
+  }
+
+  async function delEvtiRotazioneDaData(rotazioneId, fromDateKey, cId, limit=null){
+    let query = supabase.from("events").select("id,date_key")
+      .eq("rotazione_id", rotazioneId).eq("user_id", userId)
+      .gte("date_key", fromDateKey).order("date_key",{ascending:true});
+    const { data: rows, error } = await query;
+    if(error){ segnalaErroreDb(error, "Eliminazione eventi rotazione da data"); return; }
+    if(!rows) return;
+    const toDelete = limit ? rows.slice(0, limit) : rows;
+    const ids = toDelete.map(r=>r.id);
+    if(ids.length===0) return;
+    const { error: delErr } = await supabase.from("events").delete().in("id", ids).eq("user_id", userId);
+    if(delErr){ segnalaErroreDb(delErr, "Eliminazione eventi rotazione da data"); return; }
+    setStore(prev=>{
+      const ns=JSON.parse(JSON.stringify(prev));
+      const idSet = new Set(ids);
+      for(const dKey of Object.keys(ns.events||{})){
+        if(ns.events[dKey]?.[cId]){
+          ns.events[dKey][cId] = ns.events[dKey][cId].filter(e=>!idSet.has(e.id));
+        }
+      }
+      syncSeAttivo(ns.events, ns.calendars);
+      return ns;
+    });
+  }
+
+  async function delTutteEvtiRotazione(rotazioneId, cId){
+    const { data: rows, error } = await supabase.from("events").select("id")
+      .eq("rotazione_id", rotazioneId).eq("user_id", userId);
+    if(error){ segnalaErroreDb(error, "Eliminazione eventi rotazione"); return; }
+    if(!rows) return;
+    const ids = rows.map(r=>r.id);
+    if(ids.length===0) return;
+    const { error: delErr } = await supabase.from("events").delete().in("id", ids).eq("user_id", userId);
+    if(delErr){ segnalaErroreDb(delErr, "Eliminazione eventi rotazione"); return; }
+    setStore(prev=>{
+      const ns=JSON.parse(JSON.stringify(prev));
+      const idSet = new Set(ids);
+      for(const dKey of Object.keys(ns.events||{})){
+        if(ns.events[dKey]?.[cId]){
+          ns.events[dKey][cId] = ns.events[dKey][cId].filter(e=>!idSet.has(e.id));
+        }
+      }
+      syncSeAttivo(ns.events, ns.calendars);
+      return ns;
+    });
+  }
+
+  async function cancellaTuttiEventiMese(y, m, cId){
+    // Cancella tutti gli eventi del mese (y=anno, m=mese 0-based) sul calendario cId
+    const mm = String(m+1).padStart(2,"0");
+    const ultimoGiorno = new Date(y, m+1, 0).getDate();
+    const fromKey = `${y}-${mm}-01`;
+    const toKey = `${y}-${mm}-${String(ultimoGiorno).padStart(2,"0")}`;
+    const { data: rows, error } = await supabase.from("events").select("id")
+      .eq("user_id", userId).eq("calendar_id", cId)
+      .gte("date_key", fromKey).lte("date_key", toKey);
+    if(error){ segnalaErroreDb(error, "Eliminazione eventi del mese"); return; }
+    if(!rows) return;
+    const ids = rows.map(r=>r.id);
+    if(ids.length===0) return;
+    const { error: delErr } = await supabase.from("events").delete().in("id", ids).eq("user_id", userId);
+    if(delErr){ segnalaErroreDb(delErr, "Eliminazione eventi del mese"); return; }
+    setStore(prev=>{
+      const ns=JSON.parse(JSON.stringify(prev));
+      for(const dKey of Object.keys(ns.events||{})){
+        if(dKey>=fromKey && dKey<=toKey && ns.events[dKey]?.[cId]){
+          delete ns.events[dKey][cId];
+        }
+      }
+      saveToLocalStorage(ns.events, ns.calendars, modelli);
+      syncSeAttivo(ns.events, ns.calendars);
+      return ns;
+    });
+  }
+
+  function calcMinuti(tIn, tOut){
+    const m1=oraInMinuti(tIn), m2=oraInMinuti(tOut);
+    if(m1===null||m2===null) return 0;
+    let mins=m2-m1;
+    if(mins<0) mins+=24*60;
+    return mins;
+  }
+// #endregion
+
+// #region SEZIONE 12: SYNC GOOGLE SHEETS + SUPABASE BACKUP
+// ═══════════════════════════════════════════════════════════════
+  async function saveToSheets(events, calendars, customUrl=sheetsUrl, customSecret=sheetsSecret, modelliToSave=modelli){
+    if(!customUrl) return "⚠️ Sheets non configurato";
+    if(!isInitialized.current) return;
+    try {
+      await fetch("/api/sheets", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ secret: customSecret, action:"save", events, calendars, userId }),
+      });
+      await fetch("/api/sheets", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ secret: customSecret, action:"save_modelli", modelli: modelliToSave.map(m=>({
+          ...m,
+          fine: (m.tempo==="6h15"||m.tempo==="6h 15m")&&m.inizio ? calcFine6h15(m.inizio) : (m.tempo==="6h30"||m.tempo==="6h 30m")&&m.inizio ? calcFine6h30(m.inizio) : m.fine||"",
+        }))}),
+      });
+      return "✅ Esportato su Sheets";
+    } catch(e){ return "❌ Errore connessione Sheets"; }
+  }
+
+  // Wrapper unico per il sync "automatico" dopo un CRUD: prima erano 15 punti
+  // diversi nel file, ciascuno con una condizione leggermente diversa
+  // (chi controllava solo syncMode, chi solo sheetsUrl, chi entrambi).
+  // Il salvataggio esplicito da pulsante ("Esporta su Sheets") continua a
+  // chiamare saveToSheets(...) direttamente, senza passare da qui.
+  async function syncSeAttivo(events, calendars, modelliOverride=modelli){
+    if(syncMode!=='on' || !sheetsUrl) return;
+    return saveToSheets(events, calendars, sheetsUrl, sheetsSecret, modelliOverride);
+  }
+
+  async function loadFromSheets(customUrl=sheetsUrl, customSecret=sheetsSecret){
+    try {
+      // Il segreto va nel body (POST), non in query string: la query string
+      // può finire nei log del server o in eventuali proxy/CDN intermedi,
+      // il body no. Coerente con saveToSheets, che già usa POST+body.
+      const res = await fetch(`/api/sheets`, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ secret: customSecret, action:"load", userId }),
+      });
+      return await res.json() || null;
+    } catch(e){ return null; }
+  }
+
+  async function syncFromSheets(cals=store.calendars, evts=store.events, customUrl=sheetsUrl, customSecret=sheetsSecret, isBackground=false){
+    if(!customUrl) return "⚠️ Sincronizzazione non configurata";
+    if(isBackground) setBgSyncing(true); else setSyncing(true);
+    try {
+      const data = await loadFromSheets(customUrl, customSecret);
+      if(!data||!data.data) return "❌ Nessun dato valido da Sheets";
+      const { error: delEvtsErr } = await dbDelete("events", {user_id:userId}, "Sincronizzazione da Sheets — pulizia eventi esistenti", {soloLog:true});
+      if(delEvtsErr){ segnalaErrore("Non sono riuscito a pulire gli eventi esistenti prima di importare da Sheets: l'importazione è stata annullata per evitare duplicati.", "Sincronizzazione da Sheets"); return "❌ Errore durante la sincronizzazione"; }
+      const existingNames = cals.map(c=>c.name);
+      const newCals = [...cals];
+      for(const tabName of (data.tabs||Object.keys(data.data))){
+        if(!existingNames.includes(tabName)){
+          const dbCal = await addCalendar(tabName, PALETTE[newCals.length%PALETTE.length], newCals.length===0);
+          if(dbCal) newCals.push({id:dbCal.id,name:dbCal.name,color:dbCal.color,isMain:dbCal.is_main,shifts:[]});
+        }
+      }
+      const newEvents={};
+      const rowsToInsert = [];
+      for(const cal of newCals){
+        const calData=data.data[cal.name]||{};
+        for(const [dateKey,sheetEvts] of Object.entries(calData)){
+          for(const e of sheetEvts){
+            rowsToInsert.push({
+              user_id:userId, calendar_id:cal.id, date_key:dateKey,
+              label:e.label||"Evento", color:e.color||cal.color,
+              all_day:e.allDay??true, time_in:e.tIn||"", time_out:e.tOut||"",
+              place:e.place||"", map_url:e.map||"", note:e.note||"",
+              modello_id:e.modelloId||null, collega:e.collega||"", auto:e.auto||"",
+            });
+          }
+        }
+      }
+
+      if(rowsToInsert.length > 0) {
+        const { data: insertedEvts, error: insertErr } = await supabase.from("events").insert(rowsToInsert).select();
+        if(insertErr){
+          segnalaErroreDb(insertErr, `Importazione turni (${rowsToInsert.length} eventi)`);
+        }
+        if(!insertErr && insertedEvts) {
+          insertedEvts.forEach(dbEvt => {
+            const dK = dbEvt.date_key;
+            const cI = dbEvt.calendar_id;
+            if(!newEvents[dK]) newEvents[dK]={};
+            if(!newEvents[dK][cI]) newEvents[dK][cI]=[];
+            newEvents[dK][cI].push({
+              id:dbEvt.id, color:dbEvt.color, label:dbEvt.label,
+              allDay:dbEvt.all_day, tIn:dbEvt.time_in||"", tOut:dbEvt.time_out||"",
+              place:dbEvt.place||"", map:dbEvt.map_url||"", note:dbEvt.note||"",
+              modelloId:dbEvt.modello_id||null, collega:dbEvt.collega||"", auto:dbEvt.auto||"",
+            });
+          });
+        }
+      }
+      setStore(s=>({...s, calendars:newCals, events:newEvents}));
+      if(newCals.length>0&&!calId) setCalId(newCals[0].id);
+      try {
+        const resMod = await fetch(`${customUrl}?secret=${customSecret}&action=load_modelli`);
+        const dataMod = await resMod.json();
+        if(dataMod.modelli&&dataMod.modelli.length>0){
+          const { error: delModErr } = await dbDelete("modelli", {user_id:userId}, "Sincronizzazione da Sheets — pulizia modelli esistenti", {soloLog:true});
+          if(delModErr){ segnalaErrore("Non sono riuscito a pulire i modelli esistenti prima di importare da Sheets: l'importazione dei modelli è stata saltata.", "Sincronizzazione da Sheets"); return "✅ Turni importati (modelli non aggiornati, vedi Log)"; }
+          const newModelli=[];
+          for(const m of dataMod.modelli){
+            const coloreEff=m.tempo==="h24"?"#64748b":colByTime(m.inizio);
+            const {data:res2}=await supabase.from("modelli").insert({
+              user_id:userId, titolo:m.titolo.toUpperCase(), tempo:m.tempo,
+              inizio:m.inizio||null, fine:m.fine||null,
+              colore:coloreEff, sort_order:newModelli.length,
+            }).select().maybeSingle();
+            if(res2) newModelli.push({id:res2.id,titolo:res2.titolo,tempo:res2.tempo,
+              inizio:res2.inizio||"",fine:res2.fine||"",colore:coloreEff,
+              coloreCustom:null,posizione:"",sortOrder:res2.sort_order||0});
+          }
+          setModelli(newModelli);
+        }
+      } catch(e){ segnalaErrore(e, "Import modelli da Google Sheets"); }
+      return "✅ Importazione completata";
+    } catch(e){
+      segnalaErrore(e, "Sincronizzazione con Google Sheets");
+      return "❌ Errore sincronizzazione Sheets";
+    } finally {
+      if(isBackground) setBgSyncing(false); else setSyncing(false);
+    }
+  }
+
+  async function handleSave(){
+    setSyncing(true); setSyncMsg("");
+    const msg = await saveToSheets(store.events, store.calendars);
+    setSyncMsg(msg); setSyncing(false);
+  }
+  async function handleLoad(){
+    setSyncMsg("");
+    const msg = await syncFromSheets(store.calendars, store.events, sheetsUrl, sheetsSecret, false);
+    setSyncMsg(msg);
+  }
+  async function handleSaveSheetsConfig(){
+    if(!userId) return;
+    setSyncing(true); setSyncMsg("");
+    try {
+      const {error} = await supabase.from("user_settings").upsert({
+        user_id:userId, sheets_url:sheetsUrl.trim(), sheets_secret:sheetsSecret.trim(),
+        updated_at:new Date().toISOString(),
+      });
+      if(error) throw error;
+      setSyncMsg("✅ Impostazioni Google Sheets salvate");
+    } catch(err){ setSyncMsg("❌ Errore salvataggio: "+err.message); }
+    finally { setSyncing(false); }
+  }
+
+  useEffect(()=>{
+    if(screen==="settings" && session?.user?.email==='tesonemgs5@gmail.com'){
+      (async()=>{
+        try {
+          const {data,error}=await supabase.rpc('get_app_stats');
+          if(error){ segnalaErrore(error, "Caricamento statistiche amministratore"); }
+          if(!error&&data&&data.length>0) setStats(data[0]);
+        } catch(e){ segnalaErrore(e, "Caricamento statistiche amministratore"); }
+      })();
+    }
+  },[screen, session]);
+
+  async function handleViewDbData(){
+    setShowDbModal(true); setDbRawData(null);
+    try {
+      // Fetch paginato (dbSelectTutto): senza questo, oltre le 1000 righe
+      // il pannello mostrava un conteggio troncato al limite del server
+      // invece del totale reale (vedi commento su dbSelectTutto).
+      const {data:cals}=await dbSelectTutto("calendars", {matchObj:{user_id:userId}, orderBy:"created_at", contesto:"Visualizzazione dati database (pannello admin) — calendari"});
+      const {data:evts}=await dbSelectTutto("events", {matchObj:{user_id:userId}, orderBy:"date_key", ascending:false, contesto:"Visualizzazione dati database (pannello admin) — eventi"});
+      setDbCalsCount(cals?.length||0);
+      setDbEvtsCount(evts?.length||0);
+      setDbRawData({calendars:cals||[],events:evts||[]});
+    } catch(e){ segnalaErrore(e, "Visualizzazione dati database (pannello admin)"); }
+  }
+
+  async function buildBackupPayload(){
+    // Stesso motivo: fetch paginato per garantire che il backup su Supabase
+    // contenga DAVVERO tutto, non solo le prime 1000 righe di ogni tabella.
+    const {data:cals} = await dbSelectTutto("calendars", {matchObj:{user_id:userId}, contesto:"Esportazione backup — calendari"});
+    const {data:evts} = await dbSelectTutto("events", {matchObj:{user_id:userId}, contesto:"Esportazione backup — eventi"});
+    const {data:mods} = await dbSelectTutto("modelli", {matchObj:{user_id:userId}, contesto:"Esportazione backup — modelli"});
+    const {data:rots} = await dbSelectTutto("rotazioni", {matchObj:{user_id:userId}, contesto:"Esportazione backup — rotazioni"});
+    const {data:colori} = await dbSelectTutto("colori", {matchObj:{user_id:userId}, contesto:"Esportazione backup — colori"});
+    const {data:autocomplete} = await dbSelectTutto("autocomplete_valori", {matchObj:{user_id:userId}, contesto:"Esportazione backup — autocomplete"});
+    const {data:sett} = await supabase.from("user_settings").select("*").eq("user_id",userId).maybeSingle();
+    return {
+      exported_at: new Date().toISOString(),
+      calendars: cals||[], events: evts||[], modelli: mods||[],
+      rotazioni: rots||[], colori: colori||[], autocomplete_valori: autocomplete||[],
+      user_settings: sett||null,
+    };
+  }
+
+  // ─── BACKUP LOCALE (indipendente da Supabase) ───────────────────────
+  // Esporta TUTTO il localStorage dell'app in un file .json che l'utente
+  // scarica sul proprio dispositivo. A differenza del backup su Supabase
+  // (handleExportSupabase sotto), questo non fa nessuna chiamata di rete:
+  // legge solo ciò che è già salvato sul dispositivo in quel momento.
+  function handleEsportaBackupLocale(categorieSelezionate){
+    try {
+      // categorieSelezionate: array di id (vedi CATEGORIE_BACKUP_LOCALE in
+      // 04-Rotazione.jsx) scelto nell'interfaccia (02-Modelli.jsx). Se
+      // omesso, o se contiene TUTTE le categorie note, non passiamo alcun
+      // filtro: esportaBackupLocaleCompleto tratta "categorie: null" come
+      // "nessuna restrizione", comportamento identico a prima
+      // dell'introduzione dei checkbox.
+      const filtroCategorieDaPassare =
+        Array.isArray(categorieSelezionate) && categorieSelezionate.length < CATEGORIE_BACKUP_LOCALE.length
+          ? categorieSelezionate
+          : null;
+      const backup = esportaBackupLocaleCompleto({ dataInizio: backupPeriodoDa, dataFine: backupPeriodoA, categorie: filtroCategorieDaPassare });
+      const blob = new Blob([JSON.stringify(backup, null, 2)], {type:"application/json"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const bollino = new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
+      a.href = url;
+      a.download = `turnipm_backup_locale_${bollino}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(()=>URL.revokeObjectURL(url), 5000);
+      // "_numeroChiavi" conta le CATEGORIE di dati in localStorage (cache
+      // principale, log errori, coda sync, impostazioni...), non i singoli
+      // eventi: con tutto dentro poche chiavi (es. tutti gli eventi in
+      // turnipm_cache_v1) il numero resta piccolo anche con un archivio
+      // enorme, e da solo può sembrare un backup incompleto quando non lo
+      // è. Per questo il messaggio mostra ANCHE i conteggi veri.
+      // Con un filtro (periodo O categorie) attivo, il conteggio va letto
+      // DAL BACKUP stesso (già filtrato), non dallo stato in memoria
+      // (store.events), altrimenti il messaggio mostrerebbe il totale non
+      // filtrato anche quando il file scaricato ne contiene di meno.
+      const filtroAttivo = !!(backup._filtroPeriodo || backup._filtroCategorie);
+      const eventsPerConteggio = filtroAttivo
+        ? (backup.localStorage?.["turnipm_cache_v1"]?.json?.events || {})
+        : (store.events||{});
+      const nEventiTotali = Object.values(eventsPerConteggio).reduce((sum,calMap)=>
+        sum + Object.values(calMap||{}).reduce((s2,arr)=>s2+(arr?.length||0), 0), 0);
+      const etichettaPeriodo = backup._filtroPeriodo
+        ? ` — periodo ${backup._filtroPeriodo.dataInizio||"inizio"} → ${backup._filtroPeriodo.dataFine||"oggi"}`
+        : "";
+      setEsitoBackupLocale({tipo:"ok", messaggio:`Backup locale scaricato${etichettaPeriodo} — ${nEventiTotali} eventi, ${store.calendars?.length||0} calendari, ${modelli?.length||0} modelli, ${rotazioni?.length||0} rotazioni (in ${backup._numeroChiavi} categorie di dati).`});
+    } catch(e){
+      segnalaErrore(e, "Esportazione backup locale");
+      setEsitoBackupLocale({tipo:"errore", messaggio:"Errore durante l'esportazione: "+(e?.message||e)});
+    }
+  }
+
+  // Legge il file scelto dall'utente e lo tiene in attesa di conferma
+  // (confermaImportLocale) prima di scrivere qualunque cosa: l'import
+  // sovrascrive tutto il localStorage esistente, quindi serve una
+  // conferma esplicita mostrata nell'interfaccia, non un window.confirm
+  // silenzioso facile da cliccare via per sbaglio.
+  function handleFileSelezionatoImportLocale(file){
+    if(!file) return;
+    setEsitoBackupLocale(null);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const backup = JSON.parse(ev.target.result);
+        if(!backup || backup._tipo !== "turnipm_backup_locale" || !backup.localStorage){
+          setEsitoBackupLocale({tipo:"errore", messaggio:"Il file selezionato non è un backup locale valido di questa app."});
+          return;
+        }
+        setConfermaImportLocale(backup);
+      } catch(e){
+        setEsitoBackupLocale({tipo:"errore", messaggio:"Il file selezionato non è un JSON valido."});
+      }
+    };
+    reader.onerror = () => setEsitoBackupLocale({tipo:"errore", messaggio:"Impossibile leggere il file selezionato."});
+    reader.readAsText(file);
+  }
+
+  // Eseguita solo dopo la conferma esplicita dell'utente nel modale.
+  function confermaEsegueImportBackupLocale(){
+    if(!confermaImportLocale) return;
+    const risultato = importaBackupLocaleCompleto(confermaImportLocale);
+    setConfermaImportLocale(null);
+    if(risultato.ok){
+      setEsitoBackupLocale({tipo:"ok", messaggio:risultato.messaggio+" Ricarico l'app…"});
+      setTimeout(()=>window.location.reload(), 1800);
+    } else {
+      segnalaErrore({message:`Import backup locale: ${risultato.errori.length} chiavi non scritte (${risultato.errori.map(e=>e.chiave).join(", ")})`}, "Importazione backup locale");
+      setEsitoBackupLocale({tipo:"errore", messaggio:risultato.messaggio});
+    }
+  }
+
+  async function handleExportSupabase(){
+    setSyncMsg("⏳ Esportazione in corso...");
+    try {
+      const backup = await buildBackupPayload();
+      const {error:insErr} = await supabase.from("backups").insert({
+        user_id:userId, data:backup,
+      });
+      if(insErr) throw insErr;
+      setSyncMsg("✅ Backup salvato su Supabase");
+    } catch(e){ segnalaErrore(e, "Esportazione backup su Supabase"); setSyncMsg("❌ Errore durante l'esportazione: "+e.message); }
+  }
+
+  async function handleOpenImportSupabase(){
+    setSyncMsg("⏳ Carico elenco backup...");
+    try {
+      // Alzato da 20 a 100: 20 backup (spesso uno al giorno o meno)
+      // scadevano dopo poche settimane di utilizzo, facendo sparire dalla
+      // lista backup vecchi ma ancora potenzialmente utili da recuperare.
+      const {data, error} = await supabase.from("backups")
+        .select("id, created_at")
+        .eq("user_id", userId)
+        .order("created_at", {ascending:false})
+        .limit(100);
+      if(error) throw error;
+      setBackupsList(data||[]);
+      setShowBackupsModal(true);
+      setSyncMsg("");
+    } catch(e){ segnalaErrore(e, "Caricamento elenco backup"); setSyncMsg("❌ Errore nel caricare i backup: "+e.message); }
+  }
+
+  async function handleRestoreBackup(backupId){
+    if(!window.confirm("Questo SOVRASCRIVERÀ tutti i dati attuali con quelli del backup selezionato. Continuare?")) return;
+    setSyncMsg("⏳ Importazione in corso...");
+    setShowBackupsModal(false);
+    try {
+      const {data:row, error} = await supabase.from("backups").select("data").eq("id", backupId).eq("user_id", userId).maybeSingle();
+      if(error) throw error;
+      if(!row?.data) throw new Error("Backup non trovato");
+      const backup = row.data;
+
+      // Ogni fallimento qui sotto viene contato (prima erano ignorati in
+      // silenzio): se qualcosa non si cancella o non si inserisce, l'utente
+      // lo sa a fine ripristino invece di scoprire dati incoerenti dopo.
+      let erroriRiscontrati = 0;
+      const contaErrore = ({error}) => { if(error) erroriRiscontrati++; };
+
+      contaErrore(await dbDelete("events", {user_id:userId}, "Ripristino backup — pulizia eventi esistenti", {soloLog:true}));
+      contaErrore(await dbDelete("calendars", {user_id:userId}, "Ripristino backup — pulizia calendari esistenti", {soloLog:true}));
+      contaErrore(await dbDelete("modelli", {user_id:userId}, "Ripristino backup — pulizia modelli esistenti", {soloLog:true}));
+      contaErrore(await dbDelete("rotazioni", {user_id:userId}, "Ripristino backup — pulizia rotazioni esistenti", {soloLog:true}));
+      contaErrore(await dbDelete("colori", {user_id:userId}, "Ripristino backup — pulizia colori esistenti", {soloLog:true}));
+      contaErrore(await dbDelete("autocomplete_valori", {user_id:userId}, "Ripristino backup — pulizia autocomplete esistenti", {soloLog:true}));
+
+      const calIdMap = {};
+      for(const c of (backup.calendars||[])){
+        const {data, error:errC} = await dbInsert("calendars", {
+          user_id:userId, name:c.name, color:c.color, is_main:c.is_main, shifts:c.shifts||[],
+        }, `Ripristino backup — calendario "${c.name}"`, {soloLog:true});
+        if(errC) erroriRiscontrati++;
+        if(data?.[0]) calIdMap[c.id] = data[0].id;
+      }
+      const modIdMap = {};
+      for(const m of (backup.modelli||[])){
+        const {data, error:errM} = await dbInsert("modelli", {
+          user_id:userId, titolo:m.titolo, tempo:m.tempo, inizio:m.inizio, fine:m.fine,
+          colore:m.colore, colore_custom:m.colore_custom, posizione:m.posizione||"", // flag "manuale"/vuoto, non un id: nessun rimapping necessario
+          sort_order:m.sort_order, calendar_id: calIdMap[m.calendar_id]||null,
+        }, `Ripristino backup — modello "${m.titolo}"`, {soloLog:true});
+        if(errM) erroriRiscontrati++;
+        if(data?.[0]) modIdMap[m.id] = data[0].id;
+      }
+      const rotIdMap = {};
+      for(const r of (backup.rotazioni||[])){
+        const {data, error:errR} = await dbInsert("rotazioni", {
+          user_id:userId, tipo:r.tipo, titolo:r.titolo, data_inizio:r.data_inizio,
+          n_settimane:r.n_settimane,
+          modello_lavoro_id: modIdMap[r.modello_lavoro_id]||null,
+          modello_nl_id: modIdMap[r.modello_nl_id]||null,
+          modello_rs_id: modIdMap[r.modello_rs_id]||null,
+          griglia:r.griglia||{},
+        }, `Ripristino backup — rotazione "${r.titolo}"`, {soloLog:true});
+        if(errR) erroriRiscontrati++;
+        if(data?.[0]) rotIdMap[r.id] = data[0].id;
+      }
+      // Eventi: PRIMA passata per creare tutte le righe (con tutti i campi
+      // della tabella — in precedenza qui ne mancavano molti, es. note
+      // orario, luogo, protrazioni, categoria turno, report overrides:
+      // venivano scaricati dal backup ma persi in silenzio al ripristino).
+      // rotazione_id e parent_id sono rimappati come calendar_id/modello_id:
+      // puntano rispettivamente a una rotazione e a UN ALTRO EVENTO del
+      // backup, quindi senza rimappaggio punterebbero a id del vecchio
+      // account/sessione, ormai inesistenti dopo la cancellazione sopra.
+      // parent_id referenzia un id-evento del backup stesso: per questo
+      // serve una mappa vecchioId->nuovoId costruita mano a mano (idEvtMap),
+      // quindi gli eventi vanno inseriti in un ordine che garantisca che
+      // il genitore (parent_id null o già mappato) sia processato prima
+      // del figlio — qui li ordiniamo mettendo prima gli eventi senza
+      // parent_id, poi il resto, sufficiente per la profondità 1 usata
+      // dalle protrazioni in questa app.
+      const idEvtMap = {};
+      const eventiOrdinatiPerInserimento = [...(backup.events||[])].sort((a,b)=>(a.parent_id?1:0)-(b.parent_id?1:0));
+      for(const e of eventiOrdinatiPerInserimento){
+        const {data, error:errE} = await dbInsert("events", {
+          user_id:userId, calendar_id: calIdMap[e.calendar_id]||e.calendar_id,
+          date_key:e.date_key, label:e.label, color:e.color, all_day:e.all_day,
+          time_in:e.time_in, time_out:e.time_out, place:e.place, map_url:e.map_url,
+          time_in_note:e.time_in_note, time_out_note:e.time_out_note,
+          note:e.note, modello_id: modIdMap[e.modello_id]||null,
+          rotazione_id: rotIdMap[e.rotazione_id]||null,
+          collega:e.collega, auto:e.auto,
+          parent_id: e.parent_id ? (idEvtMap[e.parent_id]||null) : null,
+          prot_pag_fine:e.prot_pag_fine, prot_rec_fine:e.prot_rec_fine,
+          prot_meno_rec_in:e.prot_meno_rec_in, prot_meno_rec_out:e.prot_meno_rec_out,
+          categoria_turno:e.categoria_turno, categoria_app_auto:e.categoria_app_auto,
+          categoria_turno_vuoto:e.categoria_turno_vuoto, categoria_app_auto_vuoto:e.categoria_app_auto_vuoto,
+          report_overrides:e.report_overrides||{}, import_id:e.import_id||null,
+        }, `Ripristino backup — evento "${e.label}" (${e.date_key})`, {soloLog:true});
+        if(errE) erroriRiscontrati++;
+        if(data?.[0] && e.id) idEvtMap[e.id] = data[0].id;
+      }
+      for(const c of (backup.colori||[])){
+        const {error:errCol} = await dbInsert("colori", {
+          user_id:userId, hex:c.hex, label:c.label||null, sort_order:c.sort_order||0,
+        }, `Ripristino backup — colore "${c.hex}"`, {soloLog:true});
+        if(errCol) erroriRiscontrati++;
+      }
+      for(const a of (backup.autocomplete_valori||[])){
+        const {error:errAc} = await dbInsert("autocomplete_valori", {
+          user_id:userId, campo:a.campo, valore:a.valore,
+        }, `Ripristino backup — autocomplete "${a.campo}"`, {soloLog:true});
+        if(errAc) erroriRiscontrati++;
+      }
+      if(erroriRiscontrati>0){
+        segnalaErrore(`${erroriRiscontrati} elementi non sono stati ripristinati correttamente (dettaglio nel Log). Il resto del backup è stato importato.`, "Ripristino backup");
+      }
+      setSyncMsg("✅ Importazione completata — ricarico l'app...");
+      setTimeout(()=>window.location.reload(), 1500);
+    } catch(e){ segnalaErrore(e, "Ripristino backup (sovrascrittura dati)"); setSyncMsg("❌ Errore durante l'importazione: "+e.message); }
+  }
+
+  async function handleLogout(){ await supabase.auth.signOut(); }
+
+  // ─── Scheletro condiviso per gli script di manutenzione "una tantum" ───
+  // Entrambe le normalizzazioni (modelli e eventi) seguono sempre la stessa
+  // sequenza: calcola cosa andrebbe cambiato -> se dryRun, mostra l'anteprima
+  // e si ferma -> altrimenti scrive su Supabase riga per riga, contando
+  // successi/errori -> stampa il messaggio finale. Questa sequenza è scritta
+  // UNA sola volta qui: se in futuro cambia (es. il formato dei log, o si
+  // vuole scrivere in batch invece che riga per riga), la si cambia in un
+  // solo posto e sia normalizzaModelliTempo che normalizzaEventiTempo la
+  // seguono automaticamente — non esiste una seconda copia da dimenticare.
+  //
+  // Parametri:
+  //   nomeOperazione: stringa per i messaggi di log (es. "modelli", "eventi")
+  //   trovaDaSistemare: () => [{...}] — calcola l'elenco delle righe da
+  //     cambiare, ciascuna deve avere almeno {id} più i campi target
+  //   formatoTabella: (item) => oggetto per console.table (colonne attuale/nuovo)
+  //   applicaSuDb: (item) => Promise — esegue l'update Supabase per un item
+  //   applicaSuStatoLocale: (itemsSistemati) => void — aggiorna lo state React
+  //     (facoltativo: se assente, serve un refresh manuale per vedere i dati)
+  async function eseguiNormalizzazione({ nomeOperazione, trovaDaSistemare, formatoTabella, applicaSuDb, applicaSuStatoLocale, dryRun }){
+    const daSistemare = trovaDaSistemare();
+    if(daSistemare.length===0){ console.log(`✅ Nessun elemento (${nomeOperazione}) da normalizzare, sono già tutti in formato standard.`); return; }
+    console.table(daSistemare.map(formatoTabella));
+    if(dryRun){
+      console.log(`ℹ️ Anteprima (${nomeOperazione}): ${daSistemare.length} elementi verrebbero normalizzati. Richiama con {dryRun:false} per applicare davvero su Supabase.`);
+      return daSistemare;
+    }
+    let ok=0, ko=0;
+    const sistematiConSuccesso = [];
+    for(const item of daSistemare){
+      try{
+        const { error } = await applicaSuDb(item);
+        // Ogni singolo fallimento va comunque nel Log (per tracciare quale
+        // riga esatta non è passata), ma qui NON si accoda un modale per
+        // ognuno: in un ciclo con più righe sarebbe una sequenza di N popup
+        // da chiudere uno a uno. Un solo alert riassuntivo compare alla fine.
+        if(error){ segnalaErroreSoloLog(error, `Normalizzazione ${nomeOperazione} — elemento "${item.id}"`); ko++; }
+        else { ok++; sistematiConSuccesso.push(item); }
+      } catch(err){ segnalaErroreSoloLog(err, `Normalizzazione ${nomeOperazione} — elemento "${item.id}"`); ko++; }
+    }
+    console.log(`✅ Normalizzati ${ok} elementi (${nomeOperazione}) su Supabase${ko>0?`, ${ko} da controllare a mano`:""}. Ricarica la pagina per vedere i dati aggiornati.`);
+    if(ko>0) segnalaErrore(`${ko} elementi su ${daSistemare.length} non sono stati normalizzati (dettaglio nel Log). ${ok} completati con successo.`, `Normalizzazione ${nomeOperazione}`);
+    if(applicaSuStatoLocale) applicaSuStatoLocale(sistematiConSuccesso);
+  }
+
+  // ─── Manutenzione: standardizza tempo/inizio/fine di tutti i modelli ───
+  // Riscrive su Supabase, per ogni modello con formato "sporco", i campi:
+  //   - tempo: "6h15" quando la durata è 6h15/6h30 (qualunque fosse la scrittura originale)
+  //   - inizio: sempre in "HH:MM" pulito (es. "6.15" -> "06:15")
+  //   - fine: ricalcolata da inizio via calcFine6h15 per i modelli 6h15/6h30,
+  //           altrimenti solo normalizzata in "HH:MM" per i modelli personalizzati
+  // Va lanciata una tantum (es. da console: window.normalizzaModelliTempo())
+  // dopo aver verificato in anteprima l'elenco che stampa.
+  async function normalizzaModelliTempo({dryRun=true}={}){
+    if(!userId){ segnalaErrore("Utente non loggato", "Normalizzazione modelli (manutenzione)"); return; }
+    function calcolaTarget(m){
+      if(m.tempo==="h24") return null; // H24 non ha inizio/fine, niente da normalizzare
+      const inizioNorm=normalizzaOraHHMM(m.inizio);
+      const mins=minutiTurnoModello(m);
+      const isDefault = mins===375 || mins===390;
+      const target = isDefault
+        ? { tempo:"6h15", inizio:inizioNorm, fine: inizioNorm?calcFine6h15(inizioNorm):(m.fine||"") }
+        : { tempo:"personalizzato", inizio:inizioNorm, fine: normalizzaOraHHMM(m.fine) };
+      const cambiato = target.tempo!==m.tempo || target.inizio!==(m.inizio||"") || target.fine!==(m.fine||"");
+      return cambiato ? target : null;
+    }
+    return eseguiNormalizzazione({
+      nomeOperazione: "modelli",
+      dryRun,
+      trovaDaSistemare: () => (modelli||[])
+        .map(m=>({ id:m.id, m, target: calcolaTarget(m) }))
+        .filter(x=>x.target!==null),
+      formatoTabella: ({m,target}) => ({
+        id:m.id, titolo:m.titolo,
+        tempo_attuale:m.tempo, tempo_nuovo:target.tempo,
+        inizio_attuale:m.inizio, inizio_nuovo:target.inizio,
+        fine_attuale:m.fine, fine_nuovo:target.fine,
+      }),
+      applicaSuDb: async ({m,target}) => {
+        // Caso speciale: durata 6h15/6h30 ma nessun orario di inizio leggibile
+        // -> non scrivibile in automatico, va segnalato come errore invece di
+        // essere silenziosamente scartato (comportamento invariato rispetto
+        // a prima, solo ora passa dallo stesso canale ok/ko dello scheletro).
+        if(target.tempo==="6h15" && !target.inizio){
+          return { error: { message:`Modello "${m.titolo}" (${m.id}) ha durata 6h15/6h30 ma nessun orario di inizio leggibile: sistemalo a mano.` } };
+        }
+        return await supabase.from("modelli")
+          .update({ tempo:target.tempo, inizio:target.inizio, fine:target.fine })
+          .eq("id", m.id).eq("user_id", userId);
+      },
+      applicaSuStatoLocale: (sistemati) => {
+        setModelli(prev=>(prev||[]).filter(Boolean).map(m=>{
+          const hit=sistemati.find(d=>d.m.id===m.id);
+          return hit ? {...m, ...hit.target} : m;
+        }));
+      },
+    });
+  }
+  // Non più esposta su window: era uno script di migrazione una tantum,
+  // già eseguito. La funzione resta definita sopra se dovesse servire ancora
+  // (richiamabile riattivando temporaneamente l'useEffect qui sotto),
+  // ma non è più raggiungibile dalla console di chiunque apra l'app pubblica.
+  // useEffect(()=>{
+  //   if(typeof window!=="undefined") window.normalizzaModelliTempo = normalizzaModelliTempo;
+  // }, [modelli, userId]);
+
+  // ─── Manutenzione: sistema eventi storici con orario di uscita mancante ───
+  // Prima del fix, un evento con modello 6h15/6h30 (o INGRESSO digitato a mano)
+  // poteva salvare time_out vuoto pur mostrandolo calcolato in UI.
+  // Per ogni evento con time_in valorizzato e time_out vuoto:
+  //   - se ha un modello collegato con tempo "6h15" -> fine = calcFine6h15(time_in)
+  //   - se ha un modello collegato "personalizzato" con fine propria -> fine = mod.fine
+  //   - altrimenti (nessun modello o non determinabile) -> calcFine6h15(time_in) come fallback standard
+  // Va lanciata una tantum da console: window.normalizzaEventiTempo({dryRun:false})
+  async function normalizzaEventiTempo({dryRun=true}={}){
+    if(!userId){ segnalaErrore("Utente non loggato", "Normalizzazione eventi (manutenzione)"); return; }
+    const { data: evts, error: fetchErr } = await supabase.from("events")
+      .select("id,date_key,time_in,time_out,modello_id,label").eq("user_id", userId);
+    if(fetchErr){ segnalaErrore(fetchErr, "Normalizzazione eventi — lettura dati"); return; }
+    // Il fetch iniziale è asincrono e serve prima di poter calcolare
+    // daSistemare: lo scheletro condiviso assume la lista già pronta, quindi
+    // il fetch resta qui fuori (unica differenza reale tra le due periferiche)
+    // e si passa allo scheletro solo il calcolo che segue.
+    const daSistemare = (evts||[])
+      .filter(e=>e.time_in && !e.time_out)
+      .map(e=>{
+        const mod = modelli.find(m=>m.id===e.modello_id);
+        let fineCalcolata = "";
+        if(mod && mod.tempo==="6h15") fineCalcolata = calcFine6h15(e.time_in);
+        else if(mod && mod.fine) fineCalcolata = normalizzaOraHHMM(mod.fine);
+        else fineCalcolata = calcFine6h15(e.time_in); // fallback standard 6h15
+        return { id:e.id, e, fineCalcolata };
+      })
+      .filter(x=>x.fineCalcolata);
+    return eseguiNormalizzazione({
+      nomeOperazione: "eventi",
+      dryRun,
+      trovaDaSistemare: () => daSistemare,
+      formatoTabella: ({e,fineCalcolata}) => ({
+        id:e.id, data:e.date_key, label:e.label,
+        time_in:e.time_in, time_out_attuale:e.time_out||"(vuoto)", time_out_nuovo:fineCalcolata,
+      }),
+      applicaSuDb: async ({e,fineCalcolata}) =>
+        await supabase.from("events").update({ time_out: fineCalcolata }).eq("id", e.id).eq("user_id", userId),
+      // Nessun applicaSuStatoLocale qui: comportamento invariato rispetto a
+      // prima (lo stato locale degli eventi non veniva aggiornato in memoria,
+      // serviva ricaricare la pagina — lo dice già il messaggio finale).
+    });
+  }
+  // Stesso discorso: script di migrazione una tantum, non più esposto su window.
+  // useEffect(()=>{
+  //   if(typeof window!=="undefined") window.normalizzaEventiTempo = normalizzaEventiTempo;
+  // }, [modelli, userId]);
+// #endregion
+
+// #region SEZIONE 13: CRUD MODELLI + COLORI
+// ═══════════════════════════════════════════════════════════════
+// Sistema di ordinamento a BLOCCHI CONTIGUI GLOBALI: ogni calendario occupa
+// un intervallo continuo di numeri (es. Turni 1-150, B 151-190, C 191-250),
+// nell'ordine in cui i calendari sono elencati in Impostazioni (store.calendars,
+// già ordinato per sort_order). Il sortOrder di un modello è quindi univoco
+// su TUTTA l'app, non solo dentro il suo calendario: inserire un modello in
+// mezzo al blocco di un calendario fa scalare di +1 anche tutti i modelli
+// dei calendari successivi, per mantenere i blocchi sempre contigui e senza
+// sovrapposizioni. Le frecce ↑↓ restano vincolate a muovere un modello solo
+// dentro il blocco del proprio calendario (non lo fanno mai "sconfinare" nel
+// blocco di un altro), ma il numero assoluto risultante riflette lo shift
+// globale se necessario.
+function calcolaOrdineModelli(sottoinsieme){
+  return [...(sottoinsieme||[])].filter(Boolean).sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
 }
 
-// Export reale: avvolge tutto in ErrorBoundary. Qualsiasi crash di
-// rendering, in qualunque schermata dell'app, ora finisce qui invece
-// che in una pagina bianca silenziosa vista solo in F12.
-export default function App({ session }){
-  return (
-    <ErrorBoundary>
-      <AppInterno session={session}/>
-    </ErrorBoundary>
-  );
+// ── Ordinamento per FASCIA ORARIA D'INIZIO, usato SOLO dal pulsante
+// "Riordina posizione modelli" (non tocca il comportamento normale di
+// calcolaOrdineModelli, usato ovunque altrove). Dentro ogni calendario i
+// modelli vengono raggruppati in blocchi, nell'ordine:
+//   1) NOTTE        — inizio esattamente 00:00
+//   2) MATTINA       — inizio da 06:00 a 11:45
+//   3) POMERIGGIO    — inizio da 12:00 a 17:15
+//   4) 3° TURNO      — inizio da 17:15 a 18:00
+//   5) tutti gli altri (H24 e qualsiasi orario fuori dalle fasce sopra),
+//      lasciati in coda, ordinati anch'essi per orario di inizio crescente.
+// All'interno di ciascun blocco l'ordine è per orario di inizio crescente.
+function classificaFasciaOrariaModello(m){
+  // GUARDIA: un modello H24 va SEMPRE in coda con gli "altri", anche se il
+  // campo inizio conserva ancora un valore residuo (es. "00:00" salvato in
+  // precedenza o non ripulito): senza questo controllo esplicito su m.tempo,
+  // un H24 con inizio="00:00" veniva scambiato per un modello NOTTE e
+  // finiva mischiato in mezzo ai modelli con orario reale.
+  //
+  // ECCEZIONE: i 4 modelli "etichetta di fascia" (titolo letteralmente
+  // NOTTE / MATTINA / POMERIGGIO / 3 TURNO) non vanno in coda con gli
+  // "altri": vanno nella fascia che rappresentano, per comparire in testa
+  // al blocco di quella fascia. Vedi fasciaModelloEtichetta più sotto.
+  const fasciaEtichetta = fasciaModelloEtichetta(m);
+  if(fasciaEtichetta!=null) return fasciaEtichetta;
+  if(m.tempo==="h24") return 4;
+  const mins = oraInMinuti(m.inizio||"");
+  if(mins==null) return 4; // senza orario valido -> in coda con gli "altri"
+  if(mins===0) return 0; // NOTTE: 00:00
+  if(mins>=360 && mins<=705) return 1; // MATTINA: 06:00–11:45
+  if(mins>=720 && mins<=1035) return 2; // POMERIGGIO: 12:00–17:15
+  if(mins>1035 && mins<=1080) return 3; // 3° TURNO: 17:15–18:00
+  return 4; // altri (H24, ecc.)
 }
+// Riconosce i 4 modelli "etichetta di fascia" dal titolo (case-insensitive,
+// tollerante a spazi e simbolo gradi): restituisce il numero di fascia
+// (0=NOTTE,1=MATTINA,2=POMERIGGIO,3=3 TURNO) se il titolo corrisponde,
+// altrimenti null (modello normale, classificato per orario come sempre).
+function fasciaModelloEtichetta(m){
+  const t = (m.titolo||"").toUpperCase().replace(/[°.\s]/g,"");
+  if(t==="NOTTE") return 0;
+  if(t==="MATTINA") return 1;
+  if(t==="POMERIGGIO") return 2;
+  if(t==="3TURNO"||t==="3ETURNO"||t==="TERZOTURNO") return 3;
+  return null;
+}
+function calcolaOrdinePerFasciaOraria(sottoinsieme){
+  return [...sottoinsieme].sort((a,b)=>{
+    const fa = classificaFasciaOrariaModello(a);
+    const fb = classificaFasciaOrariaModello(b);
+    if(fa!==fb) return fa-fb;
+    // I 4 modelli "etichetta di fascia" vanno sempre per primi dentro il
+    // loro blocco, prima di qualunque altro modello della stessa fascia
+    // (anche se quell'altro modello ha un orario di inizio più basso).
+    const etichettaA = fasciaModelloEtichetta(a)!=null;
+    const etichettaB = fasciaModelloEtichetta(b)!=null;
+    if(etichettaA!==etichettaB) return etichettaA ? -1 : 1;
+    // Per gli H24 (fascia 4) l'orario di inizio non è significativo anche se
+    // il campo contiene ancora un valore residuo: si ignora e si passa
+    // direttamente allo spareggio per sortOrder, così due H24 non vengono
+    // riordinati tra loro in base a un orario che per loro non ha senso.
+    const ma = a.tempo==="h24" ? 0 : (oraInMinuti(a.inizio||"") ?? 0);
+    const mb = b.tempo==="h24" ? 0 : (oraInMinuti(b.inizio||"") ?? 0);
+    if(ma!==mb) return ma-mb;
+    return (a.sortOrder||0)-(b.sortOrder||0); // spareggio stabile, non tocca H24 tra loro
+  });
+}
+
+// ── Rinumerazione GLOBALE a blocchi contigui. "ordiniPerCalendario" è una
+// Map calendarId -> array di modelli di quel calendario, già nell'ordine
+// interno desiderato dal chiamante (per orario in caso di inserimento/
+// modifica, o l'ordine con cui erano già visti in caso di riordino "silenzioso").
+// "calendarsOrdinati" è l'elenco dei calendarId nell'ordine di Impostazioni:
+// determina QUALE blocco viene prima. I calendari non presenti in
+// ordiniPerCalendario (non toccati da questa operazione) mantengono il loro
+// ordine interno attuale, letto da "prev".
+// Dimensione del blocco riservato a ciascun calendario nella numerazione
+// globale dei modelli. Il PRIMO calendario in Impostazioni è il numero 1
+// (non 0), il secondo è il 2, ecc. Ogni calendario N riceve il blocco
+// N*1000+1 .. N*1000+999:
+//   calendario 1 (es. TURNI)       -> 1001-1999
+//   calendario 2 (es. FURERIA)     -> 2001-2999
+//   calendario 3 (es. PROGRAMMAZIONE) -> 3001-3999
+//   calendario 4 (es. COT)         -> 4001-4999
+//   calendario 5 (es. MARY)        -> 5001-5999
+//   calendario 6                   -> 6001-6999
+// e così via. 999 posizioni utili per calendario: margine ampio per
+// crescere senza mai far sconfinare un blocco nell'altro.
+const BLOCCO_POSIZIONI_CALENDARIO = 1000;
+
+function ricalcolaPosizioniGlobali(prev, calendarsOrdinati, ordiniPerCalendario, mainCalId){
+  const idsTutti = new Set(calendarsOrdinati);
+  // Aggiungo in coda eventuali calendari presenti nei modelli ma assenti
+  // dall'elenco Impostazioni (caso limite: calendario cancellato o dati
+  // orfani), così nessun modello resta senza una posizione assegnata.
+  prev.forEach(m=>{
+    const cId = m.calendarId||mainCalId;
+    if(!idsTutti.has(cId)){ idsTutti.add(cId); calendarsOrdinati = [...calendarsOrdinati, cId]; }
+  });
+  // BUG FIX: prima qui c'era un cursore UNICO e progressivo (1,2,3...) che
+  // attraversava tutti i calendari senza soluzione di continuità — un
+  // calendario finiva a 194, il successivo ripartiva da 195 invece che dal
+  // suo blocco dedicato. Ora ogni calendario riceve SEMPRE lo stesso range
+  // fisso, indipendente da quanti modelli contiene.
+  const nuoviValori = new Map();
+  for(let i=0; i<calendarsOrdinati.length; i++){
+    const numeroCalendario = i+1; // il primo calendario è il numero 1, non 0
+    const cId = calendarsOrdinati[i];
+    const ordineBlocco = ordiniPerCalendario.has(cId)
+      ? ordiniPerCalendario.get(cId)
+      : calcolaOrdineModelli(prev.filter(m=>(m.calendarId||mainCalId)===cId));
+    const basePosizione = numeroCalendario*BLOCCO_POSIZIONI_CALENDARIO + 1;
+    ordineBlocco.forEach((m, indiceNelBlocco)=>{
+      nuoviValori.set(m.id, basePosizione + indiceNelBlocco);
+    });
+  }
+  return prev.map(m=> nuoviValori.has(m.id) ? {...m, sortOrder:nuoviValori.get(m.id)} : m);
+}
+
+// Elenco completo (tutti i calendari insieme), usato dove serve una vista
+// globale — es. il ripristino da backup, o quando calId===null ("tutti").
+const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
+
+const importsRecenti = useMemo(()=>{
+  const gruppi = {};
+  for(const [dateKey, calMap] of Object.entries(store.events||{})){
+    const lista = calMap?.[calId] || [];
+    for(const ev of lista){
+      if(!ev.importId) continue;
+      if(!gruppi[ev.importId]) gruppi[ev.importId] = { importId: ev.importId, count:0, minDate:dateKey, maxDate:dateKey };
+      gruppi[ev.importId].count++;
+      if(dateKey < gruppi[ev.importId].minDate) gruppi[ev.importId].minDate = dateKey;
+      if(dateKey > gruppi[ev.importId].maxDate) gruppi[ev.importId].maxDate = dateKey;
+    }
+  }
+  return Object.values(gruppi).sort((a,b)=> (b.importId||"").localeCompare(a.importId||""));
+}, [store.events, calId]);
+
+
+  // Pinna un modello: lo aggancia "sopra" il modello che si trova alla
+  // posizione newIdx nell'elenco visivo corrente (già senza il modello
+  // stesso). Se newIdx è oltre la fine della lista (va portato in fondo),
+  // lo spinna senza riferimento (torna automatico, va in fondo per orario
+  // di default 99999 se non ha inizio, altrimenti resta comunque ultimo tra
+  // i pari-orario) — nel nostro caso pratico c'è sempre un vicino di sotto
+  // perché non permettiamo di superare i confini della lista.
+  // ── pinnaSoprapPuro: funzione PURA (nessuna lettura di state esterno, nessun
+  // side-effect) che calcola il nuovo elenco modelli dato lo stato attuale
+  // (prev). Prima questa logica leggeva "modelli" (lo state catturato al
+  // momento della creazione della funzione) invece di "prev": con click
+  // ravvicinati sulle frecce, la seconda chiamata poteva ancora vedere lo
+  // stato PRIMA del primo spostamento, calcolando sortOrder e controllo
+  // anti-ciclo su dati superati — causa architetturale dei blocchi e salti
+  // imprevedibili. Ora tutto il calcolo avviene sullo stato più recente,
+  // dentro un'unica operazione atomica di setModelli.
+  // ── Sottoinsieme dei modelli appartenenti a un dato calendario (o tutti,
+  // se calIdFiltro è null). Sempre calcolato da "prev" (lo stato più
+  // recente), mai da uno snapshot esterno del render, per evitare le
+  // desincronizzazioni con click ravvicinati viste nell'architettura precedente.
+  function modelliDelCalendario(prev, calIdFiltro){
+    const puliti = (prev||[]).filter(Boolean);
+    if(calIdFiltro==null) return puliti;
+    return puliti.filter(m=>(m.calendarId||mainCalId)===calIdFiltro);
+  }
+
+  // -- Sposta un modello di UNA posizione (freccia ^) all'interno del suo
+  // calendario: lo scambia con il vicino immediato nella direzione scelta,
+  // poi rinumera tutta l'app a blocchi globali (vedi ricalcolaPosizioniGlobali)
+  // cosi' il blocco di questo calendario resta contiguo e ordinato, e gli
+  // altri calendari mantengono la loro posizione relativa.
+  function spostaModelloPuro(prev, id, dir, calIdFiltro){
+    const sottoinsieme = calcolaOrdineModelli(modelliDelCalendario(prev, calIdFiltro));
+    const idx = sottoinsieme.findIndex(m=>m.id===id);
+    if(idx===-1) return prev;
+    const vicinoIdx = dir==="up" ? idx-1 : idx+1;
+    if(vicinoIdx<0 || vicinoIdx>=sottoinsieme.length) return prev; // gia' al limite, nessun movimento
+    const riordinato = [...sottoinsieme];
+    [riordinato[idx], riordinato[vicinoIdx]] = [riordinato[vicinoIdx], riordinato[idx]];
+    const calendarsOrdinati = store.calendars.map(c=>c.id);
+    const ordiniPerCalendario = new Map([[calIdFiltro, riordinato]]);
+    return ricalcolaPosizioniGlobali(prev, calendarsOrdinati, ordiniPerCalendario, mainCalId);
+  }
+
+  // -- Trascina un modello (drag & drop) fino alla posizione esatta di
+  // dstId, all'interno dello stesso calendario: lo rimuove dalla sua
+  // posizione, lo reinserisce nell'indice di destinazione, poi rinumera
+  // tutta l'app a blocchi globali, mantenendo il blocco di questo
+  // calendario contiguo e gli altri calendari invariati.
+  function trascinaModelloPuro(prev, srcId, dstId, calIdFiltro){
+    if(!srcId || !dstId || srcId===dstId){
+      return prev;
+    }
+    const sottoinsiemeIds = new Set(modelliDelCalendario(prev, calIdFiltro).map(m=>m.id));
+    if(!sottoinsiemeIds.has(srcId) || !sottoinsiemeIds.has(dstId)){
+      return prev;
+    }
+    const ordinato = calcolaOrdineModelli(modelliDelCalendario(prev, calIdFiltro));
+    const srcIdx = ordinato.findIndex(m=>m.id===srcId);
+    const dstIdx = ordinato.findIndex(m=>m.id===dstId);
+    if(srcIdx===-1 || dstIdx===-1){
+      return prev;
+    }
+    const riordinato = [...ordinato];
+    const [tolto] = riordinato.splice(srcIdx,1);
+    riordinato.splice(dstIdx,0,tolto);
+    const calendarsOrdinati = store.calendars.map(c=>c.id);
+    const ordiniPerCalendario = new Map([[calIdFiltro, riordinato]]);
+    return ricalcolaPosizioniGlobali(prev, calendarsOrdinati, ordiniPerCalendario, mainCalId);
+  }
+
+  // Salva su Supabase i modelli effettivamente cambiati (confronto tra stato
+  // precedente e nuovo), scoperti passando entrambi gli elenchi.
+  //
+  // Lo stato locale (React + eventuale cache) è GIÀ aggiornato dal chiamante
+  // prima di arrivare qui: il nuovo ordine è quindi visibile e utilizzabile
+  // da subito, a prescindere da Supabase. Da qui in poi si usa
+  // scriviConBackup (lo stesso meccanismo usato per turni/eventi) così che:
+  //   - se la rete è instabile o assente, il salvataggio va in coda silenziosa
+  //     e riparte da solo alla riconnessione — nessun popup, nessun blocco;
+  //   - solo un errore "vero" (permessi, RLS, validazione — qualcosa che una
+  //     nuova connessione non risolverebbe da sola) resta nel log tecnico.
+  // In nessun caso l'utente resta bloccato in attesa che Supabase risponda.
+  async function salvaModifichePosizioni(prevElenco, nuovoElenco){
+    const prevById = new Map(prevElenco.map(m=>[m.id,m]));
+    const daSalvare = nuovoElenco.filter(m=>{
+      const prima = prevById.get(m.id);
+      return !prima || prima.sortOrder!==m.sortOrder;
+    });
+    const ts = new Date().toISOString();
+    await Promise.all(daSalvare.map(m =>
+      scriviConBackup({
+        tipo: "update",
+        table: "modelli",
+        payload: { sort_order: m.sortOrder },
+        matchObj: { id: m.id, user_id: userId },
+        contesto: "Salvataggio posizione modello",
+        ts,
+        opzioni: { soloLog: true },
+      })
+    ));
+  }
+
+  async function moveH24(id, dir, calIdFiltro){
+    // Tutto il calcolo avviene dentro il callback funzionale di setModelli,
+    // sempre sullo stato più recente anche con click ravvicinati.
+    let prevSnapshot = null, nuovoElenco = null;
+    setModelli(prev=>{
+      prevSnapshot = prev;
+      nuovoElenco = spostaModelloPuro(prev, id, dir, calIdFiltro);
+      return nuovoElenco;
+    });
+    if(prevSnapshot && nuovoElenco) await salvaModifichePosizioni(prevSnapshot, nuovoElenco);
+    segnalaModificaOrdineModelli();
+  }
+
+  async function reorderModelli(srcId, dstId, calIdFiltro){
+    let prevSnapshot = null, nuovoElenco = null;
+    setModelli(prev=>{
+      prevSnapshot = prev;
+      nuovoElenco = trascinaModelloPuro(prev, srcId, dstId, calIdFiltro);
+      return nuovoElenco;
+    });
+    if(prevSnapshot && nuovoElenco){
+      await salvaModifichePosizioni(prevSnapshot, nuovoElenco);
+    }
+    segnalaModificaOrdineModelli();
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // Spostamento e riordino per ROTAZIONI e COLORI — stessa logica di
+  // spostaModelloPuro/salvaModifichePosizioni sopra, ma senza il concetto
+  // di "calendario filtro" (rotazioni e colori non sono legati a un
+  // calendario specifico): qui si riordina semplicemente l'intero array.
+  // ═══════════════════════════════════════════════════════════════
+
+  function spostaRotazionePura(prev, id, dir){
+    const ordinato = [...prev].sort((a,b)=>{
+      const sa=a.sortOrder||0, sb=b.sortOrder||0;
+      if(sa!==sb) return sa-sb;
+      return String(a.id).localeCompare(String(b.id));
+    });
+    const idx = ordinato.findIndex(r=>r.id===id);
+    if(idx===-1) return prev;
+    const vicinoIdx = dir==="up" ? idx-1 : idx+1;
+    if(vicinoIdx<0 || vicinoIdx>=ordinato.length) return prev;
+    [ordinato[idx], ordinato[vicinoIdx]] = [ordinato[vicinoIdx], ordinato[idx]];
+    return ordinato.map((r,i)=>({...r, sortOrder:i}));
+  }
+
+  async function salvaModifichePosizioniRotazioni(prevElenco, nuovoElenco){
+    const prevById = new Map(prevElenco.map(r=>[r.id,r]));
+    const daSalvare = nuovoElenco.filter(r=>{
+      const prima = prevById.get(r.id);
+      return !prima || prima.sortOrder!==r.sortOrder;
+    });
+    const ts = new Date().toISOString();
+    await Promise.all(daSalvare.map(r =>
+      scriviConBackup({
+        tipo: "update", table: "rotazioni",
+        payload: { sort_order: r.sortOrder },
+        matchObj: { id: r.id, user_id: userId },
+        contesto: "Salvataggio posizione rotazione", ts,
+        opzioni: { soloLog: true },
+      })
+    ));
+  }
+
+  async function moveRotazione(id, dir){
+    let prevSnapshot = null, nuovoElenco = null;
+    setRotazioni(prev=>{
+      prevSnapshot = prev;
+      nuovoElenco = spostaRotazionePura(prev, id, dir);
+      return nuovoElenco;
+    });
+    if(prevSnapshot && nuovoElenco) await salvaModifichePosizioniRotazioni(prevSnapshot, nuovoElenco);
+  }
+
+  function spostaColoreExtraPuro(prev, hex, dir){
+    const ordinato = [...prev].sort((a,b)=>{
+      const sa=a.sortOrder||0, sb=b.sortOrder||0;
+      if(sa!==sb) return sa-sb;
+      return String(a.hex).localeCompare(String(b.hex));
+    });
+    const idx = ordinato.findIndex(c=>c.hex===hex);
+    if(idx===-1) return prev;
+    const vicinoIdx = dir==="up" ? idx-1 : idx+1;
+    if(vicinoIdx<0 || vicinoIdx>=ordinato.length) return prev;
+    [ordinato[idx], ordinato[vicinoIdx]] = [ordinato[vicinoIdx], ordinato[idx]];
+    return ordinato.map((c,i)=>({...c, sortOrder:i}));
+  }
+
+  async function salvaModifichePosizioniColori(prevElenco, nuovoElenco){
+    const prevByHex = new Map(prevElenco.map(c=>[c.hex,c]));
+    const daSalvare = nuovoElenco.filter(c=>{
+      const prima = prevByHex.get(c.hex);
+      return !prima || prima.sortOrder!==c.sortOrder;
+    });
+    const ts = new Date().toISOString();
+    await Promise.all(daSalvare.map(c =>
+      scriviConBackup({
+        tipo: "update", table: "colori",
+        payload: { sort_order: c.sortOrder },
+        matchObj: { hex: c.hex, user_id: userId },
+        contesto: "Salvataggio posizione colore", ts,
+        opzioni: { soloLog: true },
+      })
+    ));
+  }
+
+  async function moveColoreExtra(hex, dir){
+    let prevSnapshot = null, nuovoElenco = null;
+    setColoriExtra(prev=>{
+      prevSnapshot = prev;
+      nuovoElenco = spostaColoreExtraPuro(prev, hex, dir);
+      return nuovoElenco;
+    });
+    if(prevSnapshot && nuovoElenco) await salvaModifichePosizioniColori(prevSnapshot, nuovoElenco);
+  }
+
+  // ── Operazione UNA TANTUM: ricalcola il colore di ogni modello CON
+  // ORARIO (tempo !== "h24") in base alla fascia oraria corrente
+  // (fasceAutomatiche), forzando anche i modelli che avevano un colore
+  // scelto a mano (coloreCustom) a diventare "automatico per fascia".
+  // I modelli H24 non vengono toccati: restano col colore che avevano
+  // (custom o automatico H24), su richiesta esplicita.
+  //
+  // Non usa saveModello/saveModelloInterno (che ricalcolano anche ordine
+  // ed eventi collegati, effetti collaterali non voluti qui): aggiorna
+  // solo colore/colore_custom, subito in locale, poi in coda offline-friendly
+  // via scriviConBackup — stesso meccanismo di salvaModifichePosizioni.
+  async function ricoloraModelliPerFasciaOraria(){
+    let prevSnapshot = null, modelliDaSalvare = [];
+    setModelli(prev=>{
+      prevSnapshot = prev;
+      const aggiornati = prev.map(m=>{
+        if(m.tempo==="h24") return m; // esplicitamente esclusi
+        const nuovoColore = colByTime(m.inizio);
+        if(m.coloreCustom===null && m.colore===nuovoColore) return m; // già a posto
+        modelliDaSalvare.push({ ...m, colore:nuovoColore, coloreCustom:null });
+        return { ...m, colore:nuovoColore, coloreCustom:null };
+      });
+      return aggiornati;
+    });
+    const ts = new Date().toISOString();
+    await Promise.all(modelliDaSalvare.map(m =>
+      scriviConBackup({
+        tipo: "update", table: "modelli",
+        payload: { colore: m.colore, colore_custom: null },
+        matchObj: { id: m.id, user_id: userId },
+        contesto: "Ricolorazione modelli per fascia oraria (una tantum)", ts,
+        opzioni: { soloLog: true },
+      })
+    ));
+    return { totale: modelliDaSalvare.length };
+  }
+
+
+  // ── FIX: quando un modello riceve un coloreCustom, quel colore viene
+  // salvato subito nella tabella "colori" (se non già presente), così
+  // compare istantaneamente nella tab Modelli -> Colori senza dover
+  // ricaricare l'app, e può essere associato ad altri modelli da lì.
+  async function ensureColoreRegistrato(hex){
+    if(!userId || !hex) return;
+    if(coloriExtra.some(c=>c.hex===hex)) return;
+    // 1) SUBITO in locale: visibile in Modelli -> Colori all'istante.
+    setColoriExtra(prev=>prev.some(c=>c.hex===hex)?prev:[...prev, {hex, label:null, sortOrder:prev.length}]);
+    // 2) Backup su Supabase (con retry colonna) + Sheets in parallelo.
+    scriviConBackup({
+      tipo:"insert", table:"colori", payload:{ user_id:userId, hex }, matchObj:null,
+      contesto:"Registrazione nuovo colore", ts:new Date().toISOString(),
+      eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelli,
+    });
+  }
+
+  // ── Autocomplete: registra un valore nuovo in una delle 5 liste dedicate
+  // (titolo, nome_visualizzato, auto, luogo, collega), sincronizzata su
+  // Supabase e condivisa fra tutti i dispositivi dell'utente. Chiamata al
+  // salvataggio di eventi/modelli — mai durante la digitazione, solo a
+  // conferma, per non riempire la lista di valori a metà scritti.
+  async function registraValoreAutocomplete(campo, valore){
+    if(!userId || !valore) return;
+    const v = valore.trim();
+    if(!v) return;
+    if((autocompleteValori[campo]||[]).includes(v)) return;
+    try {
+      const { error } = await supabase.from("autocomplete_valori")
+        .insert({ user_id:userId, campo, valore:v });
+      // Violazione unique (valore già presente per un altro motivo, es. race
+      // condition fra dispositivi) non è un errore reale: il valore è comunque lì.
+      if(error && error.code!=="23505") { segnalaErroreSoloLog(error.message||String(error), `Registrazione valore autocomplete (${campo})`); return; }
+      setAutocompleteValori(prev=>({
+        ...prev,
+        [campo]: prev[campo].includes(v) ? prev[campo] : [...prev[campo], v].sort((a,b)=>a.localeCompare(b)),
+      }));
+    } catch(e){ segnalaErroreSoloLog(e?.message||String(e), `Registrazione valore autocomplete (${campo})`); }
+  }
+
+  // Registra più valori insieme (es. il campo collega, multi-riga: ogni riga
+  // è un nome a sé che deve entrare nella lista come voce indipendente).
+  async function registraValoriAutocomplete(campo, valori){
+    for(const v of (valori||[])) await registraValoreAutocomplete(campo, v);
+  }
+
+  // Rimuove un valore da una lista autocomplete — SOLO dalla lista dei
+  // suggerimenti: non tocca in alcun modo eventi o modelli già salvati con
+  // quel valore, che restano intatti. Serve a ripulire refusi o valori che
+  // non si vogliono più vedere proposti in digitazione.
+  async function rimuoviValoreAutocomplete(campo, valore){
+    if(!userId) return;
+    try {
+      const { error } = await supabase.from("autocomplete_valori")
+        .delete().eq("user_id", userId).eq("campo", campo).eq("valore", valore);
+      if(error){ segnalaErrore(error, `Rimozione valore autocomplete (${campo})`); return; }
+      setAutocompleteValori(prev=>({ ...prev, [campo]: prev[campo].filter(v=>v!==valore) }));
+    } catch(e){ segnalaErrore(e, `Rimozione valore autocomplete (${campo})`); }
+  }
+
+  // Prova a salvare; se Supabase segnala una colonna mancante nello schema,
+  // la rimuove dal payload e riprova, finché va a buon fine o non c'è più nulla da togliere.
+  // Così l'app resta funzionante anche se lo schema del DB non è ancora aggiornato.
+  async function supabaseUpsertConRetry(query, payloadIniziale, isInsert){
+    let payload = {...payloadIniziale};
+    for(let tentativi=0; tentativi<10; tentativi++){
+      const q = isInsert
+        ? supabase.from("modelli").insert(payload).select().maybeSingle()
+        : query(payload);
+      const { data, error } = await q;
+      if(!error) return { data, error:null, payloadUsato:payload };
+      const match = /Could not find the '([^']+)' column/.exec(error.message||"");
+      if(match && match[1] in payload){
+        segnalaErroreSoloLog(`Colonna '${match[1]}' assente su Supabase: omessa e riprovato automaticamente. Esegui l'ALTER TABLE per abilitarla stabilmente.`, "Salvataggio modello (schema database)");
+        const { [match[1]]: _omessa, ...resto } = payload;
+        payload = resto;
+        continue;
+      }
+      return { data:null, error, payloadUsato:payload };
+    }
+    return { data:null, error:{message:"Troppi tentativi di retry sullo schema"}, payloadUsato:payload };
+  }
+
+  async function saveModello(data){
+    try{
+      const esito = await saveModelloInterno(data);
+      segnalaModificaOrdineModelli();
+      return esito;
+    }catch(e){
+      segnalaErrore(e, "Salvataggio modello (errore imprevisto)");
+      return { ok:false, errore:{message:e?.message||String(e)} };
+    }
+  }
+  async function saveModelloInterno(data){
+    if(!userId) return;
+    const coloreEff=data.coloreCustom||(data.tempo==="h24"?"#64748b":colByTime(data.inizio));
+    const targetCalId = data.calendarId||calId||mainCalId;
+    // GUARDIA: senza un calendario di destinazione valido, il modello
+    // finirebbe "orfano" (calendar_id nullo o sbagliato) e sparirebbe dai
+    // filtri per calendario, dando l'impressione di "non essere stato
+    // salvato" anche se una riga sul DB in realtà esisteva. Meglio
+    // bloccare subito con un errore chiaro che salvare dati incompleti.
+    if(!targetCalId){
+      const erroreCalendario = { message: "Nessun calendario di destinazione valido: il modello non è stato salvato. Riprova selezionando prima un calendario (es. tocca 'M' e scegli un calendario, oppure apri il form da Modelli)." };
+      segnalaErrore(erroreCalendario, "Salvataggio modello (calendario mancante)");
+      return { ok:false, errore: erroreCalendario };
+    }
+    const payload={
+      user_id:userId, titolo:(data.titolo||"").toUpperCase(), label:(data.label||"").toUpperCase(), tempo:data.tempo,
+      inizio:data.inizio||null, fine:data.fine||null,
+      colore:coloreEff, colore_custom:data.coloreCustom||null,
+      sort_order:data.sortOrder||modelli.length,
+      calendar_id: targetCalId,
+      categoria: (data.categoria==="primo"||data.categoria==="secondo") ? data.categoria : null,
+      categoria_app_auto: (data.categoriaAppAuto==="app"||data.categoriaAppAuto==="auto") ? data.categoriaAppAuto : null,
+      categoria_turno_vuoto: !!data.turnoVuoto,
+      categoria_app_auto_vuoto: !!data.appAutoVuoto,
+    };
+    if(data.coloreCustom) ensureColoreRegistrato(data.coloreCustom); // non bloccante: colore già visibile localmente comunque
+    if(data.titolo) registraValoreAutocomplete("titolo", (data.titolo||"").toUpperCase());
+    if(data.label) registraValoreAutocomplete("nome_visualizzato", (data.label||"").toUpperCase());
+    const ts = new Date().toISOString();
+    if(data.id){
+      // UPDATE: subito in locale (propagazione agli eventi collegati inclusa),
+      // poi backup su Supabase+Sheets in parallelo.
+      const labelNuova = (data.label||data.titolo||"").toUpperCase();
+      const tInNuovo = data.tempo==="h24" ? "" : (data.inizio||"");
+      const tOutNuovo = calcFineModello(data);
+      const nuovoStore = JSON.parse(JSON.stringify(store));
+      Object.keys(nuovoStore.events||{}).forEach(dk=>{
+        Object.keys(nuovoStore.events[dk]||{}).forEach(cid=>{
+          nuovoStore.events[dk][cid] = (nuovoStore.events[dk][cid]||[]).map(e=>
+            e.modelloId===data.id
+              ? {...e, label:labelNuova, color:coloreEff, tIn:tInNuovo, tOut:tOutNuovo}
+              : e
+          );
+        });
+      });
+      const { silenzioso: _silenziosoUpd, ...datiUpdatePuliti } = data;
+      let modelloAggiornato;
+      let modelliAggiornati = modelli.map(m=>{
+        if(m.id!==data.id) return m;
+        const nuovo = {...m,...datiUpdatePuliti,colore:coloreEff,calendarId:targetCalId};
+        modelloAggiornato = nuovo;
+        return nuovo;
+      });
+      // Se orario o tipo (h24/personalizzato) sono cambiati, la posizione
+      // del modello nel suo calendario potrebbe non essere più quella
+      // giusta: si ricalcola l'ordine per orario e si rinumera TUTTO il
+      // calendario (1,2,3...), stessa logica usata in creazione.
+      const modelloPrimaModifica = modelli.find(m=>m.id===data.id);
+      const orarioCambiato = modelloPrimaModifica && (
+        modelloPrimaModifica.inizio!==modelloAggiornato.inizio ||
+        modelloPrimaModifica.tempo!==modelloAggiornato.tempo ||
+        (modelloPrimaModifica.calendarId||mainCalId)!==targetCalId
+      );
+      if(orarioCambiato){
+        const calendarioModelli = modelliAggiornati.filter(m=>(m.calendarId||mainCalId)===targetCalId);
+        const senzaQuesto = calcolaOrdineModelli(calendarioModelli.filter(m=>m.id!==data.id));
+        // Inserimento per FASCIA ORARIA (stessa logica di calcolaOrdinePerFasciaOraria):
+        // prima si trova il blocco corretto (NOTTE/MATTINA/POMERIGGIO/3°TURNO/altri),
+        // poi dentro il blocco si inserisce in ordine crescente di minuti.
+        // Un confronto a stringa sull'orario non basta perché non rispetta i confini
+        // di fascia: dopo un "Riordina posizione modelli" bastava modificare un
+        // modello per rimischiare tutto.
+        const fasciaNuovo = classificaFasciaOrariaModello(modelloAggiornato);
+        const etichettaNuovo = fasciaModelloEtichetta(modelloAggiornato)!=null;
+        const minutiNuovo = modelloAggiornato.tempo==="h24" ? 0 : (oraInMinuti(modelloAggiornato.inizio||"") ?? 0);
+        let idxInserimento = senzaQuesto.length;
+        for(let i=0;i<senzaQuesto.length;i++){
+          const m = senzaQuesto[i];
+          const fasciaM = classificaFasciaOrariaModello(m);
+          const etichettaM = fasciaModelloEtichetta(m)!=null;
+          const minutiM = m.tempo==="h24" ? 0 : (oraInMinuti(m.inizio||"") ?? 0);
+          if(fasciaM > fasciaNuovo){ idxInserimento = i; break; }
+          if(fasciaM === fasciaNuovo && etichettaM!==etichettaNuovo){
+            if(etichettaNuovo){ idxInserimento = i; break; } // il nuovo è l'etichetta: va prima di questo
+            // il nuovo non è l'etichetta ma m sì: m resta prima, si continua
+          } else if(fasciaM === fasciaNuovo && minutiM > minutiNuovo){ idxInserimento = i; break; }
+          idxInserimento = i+1;
+        }
+        const riordinato = [...senzaQuesto];
+        riordinato.splice(idxInserimento, 0, modelloAggiornato);
+        const calendarsOrdinati = nuovoStore.calendars.map(c=>c.id);
+        const ordiniPerCalendario = new Map([[targetCalId, riordinato]]);
+        modelliAggiornati = ricalcolaPosizioniGlobali(modelliAggiornati, calendarsOrdinati, ordiniPerCalendario, mainCalId);
+      }
+      saveToLocalStorage(nuovoStore.events, nuovoStore.calendars, modelliAggiornati);
+      setStore(nuovoStore);
+      setModelli(modelliAggiornati);
+
+      // Il form aspetta questa funzione per chiudersi (await saveModello in
+      // onSave): il locale è già scritto sopra, quindi da qui si ritorna
+      // SUBITO. Il backup su Supabase/Sheets parte in background (senza
+      // await) — se resta appeso per rete lenta o altro, non blocca più il
+      // form sulla schermata di salvataggio senza via d'uscita.
+      (async()=>{
+        const risModello = await scriviConBackup({
+          tipo:"update", table:"modelli", payload, matchObj:{id:data.id, user_id:userId},
+          contesto:"Salvataggio modello", ts,
+          eventsPerSheets: nuovoStore.events, calendarsPerSheets: nuovoStore.calendars, modelliPerSheets: modelliAggiornati,
+          opzioni:{soloLog:true},
+        });
+        // Propagazione agli eventi collegati: stessa logica, operazione separata
+        // (tabella diversa) ma stesso timestamp, così in coda mantiene l'ordine
+        // corretto rispetto all'update del modello.
+        const risEventi = await scriviConBackup({
+          tipo:"update", table:"events",
+          payload:{ label: labelNuova, color: coloreEff, time_in: tInNuovo, time_out: tOutNuovo },
+          matchObj:{modello_id:data.id, user_id:userId},
+          contesto:"Aggiornamento modello — propagazione agli eventi già in calendario", ts,
+          eventsPerSheets: nuovoStore.events, calendarsPerSheets: nuovoStore.calendars, modelliPerSheets: modelliAggiornati,
+          opzioni:{soloLog:true},
+        });
+        // Un solo popup per l'intero salvataggio invece di uno per ogni tabella
+        // toccata: il locale è comunque già scritto in entrambi i casi, quindi
+        // due modali di fila per la stessa azione utente erano solo fastidiosi,
+        // non un'informazione in più.
+        if(risModello?.errore || risEventi?.errore){
+          segnalaErroreDb(risModello?.errore || risEventi?.errore, "Salvataggio modello");
+        }
+      })();
+      return { ok:true, modello: modelloAggiornato };
+    } else {
+      // INSERT: il calcolo del posizionamento usa solo dati gia' in memoria
+      // (modelli, calcolaOrdineModelli) -- non serve aspettare Supabase per
+      // deciderlo. L'id e' generato qui, subito, come per gli eventi.
+      const idLocale = generaIdLocale();
+      const calendarioModelli = modelli.filter(m=>(m.calendarId||mainCalId)===targetCalId);
+      const tutti = calcolaOrdineModelli(calendarioModelli);
+
+      // Trova l'indice di inserimento in base all'orario, sempre in modo
+      // deterministico anche se i modelli con lo stesso orario non sono
+      // vicini tra loro in lista: si inserisce subito dopo l'ultimo modello
+      // che ha un orario "non successivo" al nuovo (stesso principio di un
+      // inserimento ordinato in un array). Regola: h24/senza orario sempre
+      // in fondo a tutti; gli altri per orario di inizio crescente.
+      // Inserimento per FASCIA ORARIA (stessa logica di calcolaOrdinePerFasciaOraria):
+      // prima si trova il blocco corretto (NOTTE/MATTINA/POMERIGGIO/3°TURNO/altri),
+      // poi dentro il blocco si inserisce in ordine crescente di minuti. Un
+      // confronto a stringa sull'orario non basta perché non rispetta i confini
+      // di fascia: dopo un "Riordina posizione modelli" bastava aggiungere un
+      // modello per rimischiare tutto (es. NOTTE 00:00 finiva scavalcato in cima
+      // solo perché la stringa "00:00" è la più piccola in assoluto).
+      const modelloTemp = { tempo:data.tempo, inizio:data.inizio||"", titolo:data.titolo||"" };
+      const fasciaNuovo = classificaFasciaOrariaModello(modelloTemp);
+      const etichettaNuovo = fasciaModelloEtichetta(modelloTemp)!=null;
+      const minutiNuovo = data.tempo==="h24" ? 0 : (oraInMinuti(data.inizio||"") ?? 0);
+      let idxInserimento = tutti.length;
+      for(let i=0;i<tutti.length;i++){
+        const m = tutti[i];
+        const fasciaM = classificaFasciaOrariaModello(m);
+        const etichettaM = fasciaModelloEtichetta(m)!=null;
+        const minutiM = m.tempo==="h24" ? 0 : (oraInMinuti(m.inizio||"") ?? 0);
+        if(fasciaM > fasciaNuovo){ idxInserimento = i; break; }
+        if(fasciaM === fasciaNuovo && etichettaM!==etichettaNuovo){
+          if(etichettaNuovo){ idxInserimento = i; break; } // il nuovo è l'etichetta: va prima di questo
+        } else if(fasciaM === fasciaNuovo && minutiM > minutiNuovo){ idxInserimento = i; break; }
+        idxInserimento = i+1;
+      }
+
+      const modelloCreato = {...(({silenzioso,...rest})=>rest)(data),id:idLocale,colore:coloreEff,sortOrder:0,calendarId:targetCalId};
+      const riordinato = [...tutti];
+      riordinato.splice(idxInserimento, 0, modelloCreato);
+
+      // Subito in locale: nuovo modello inserito + rinumerazione GLOBALE a
+      // blocchi contigui (il blocco di questo calendario resta ordinato,
+      // gli altri calendari restano invariati nella loro posizione relativa).
+      let modelliAggiornati;
+      setModelli(prev=>{
+        const updated=[...prev, modelloCreato];
+        const calendarsOrdinati = store.calendars.map(c=>c.id);
+        const ordiniPerCalendario = new Map([[targetCalId, riordinato]]);
+        const ricalcolato = ricalcolaPosizioniGlobali(updated, calendarsOrdinati, ordiniPerCalendario, mainCalId);
+        modelliAggiornati = ricalcolato;
+        return ricalcolato;
+      });
+      // FIX: a differenza del ramo UPDATE, qui la cache locale non veniva
+      // mai riscritta con il nuovo modello. Risultato: il modello compariva
+      // subito in UI (setModelli) e veniva salvato su Supabase, ma al
+      // refresh l'app ripartiva da loadFromLocalStorage() leggendo ancora
+      // la vecchia cache_modelli senza il nuovo modello, facendolo
+      // "sparire" finché Supabase non rispondeva (o restava invisibile se
+      // nel frattempo la risposta Supabase veniva considerata "uguale" alla
+      // cache). Ora la cache viene aggiornata subito, come per l'update.
+      saveToLocalStorage(store.events, store.calendars, modelliAggiornati, calId);
+
+      // Backup su Supabase + eventuali rinumerazioni: estratto in una
+      // funzione a parte perché, a differenza di prima, non SEMPRE deve
+      // partire "fire and forget" in background.
+      async function backupInsertModello(){
+        const risInsert = await scriviConBackup({
+          tipo:"insert", table:"modelli", payload:{...payload, id:idLocale}, matchObj:null,
+          contesto:"Creazione modello", ts,
+          eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelliAggiornati,
+          opzioni:{soloLog:true},
+        });
+        // Rinumerazioni: stesso timestamp, così restano in ordine in coda
+        // rispetto all'insert del nuovo modello se si finisce offline.
+        // Fonte dati: il diff di sortOrder tra lo stato prima dell'insert
+        // ("modelli") e dopo ricalcolaPosizioniGlobali ("modelliAggiornati")
+        // — stesso principio già usato in salvaModifichePosizioni per
+        // drag&drop e frecce. Si esclude il modello appena creato
+        // (idLocale), che ha già il proprio insert sopra: qui vanno solo le
+        // rinumerazioni degli ALTRI modelli del blocco.
+        const prevById = new Map(modelli.map(m=>[m.id,m]));
+        const rinumerazioniApplicate = modelliAggiornati
+          .filter(m=>m.id!==idLocale)
+          .filter(m=>{
+            const prima = prevById.get(m.id);
+            return prima && prima.sortOrder!==m.sortOrder;
+          })
+          .map(m=>({id:m.id, nuovoVal:m.sortOrder}));
+        for(const {id,nuovoVal} of rinumerazioniApplicate){
+          await scriviConBackup({
+            tipo:"update", table:"modelli", payload:{sort_order:nuovoVal}, matchObj:{id, user_id:userId},
+            contesto:"Creazione modello — rinumerazione posizioni esistenti", ts,
+            eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelliAggiornati,
+            opzioni:{soloLog:true},
+          });
+        }
+        return risInsert;
+      }
+
+      // Il modello locale (modelloCreato, con idLocale) è già pronto e
+      // usabile subito da chi lo ha chiesto (form Modelli, o
+      // trovaOCreaModelloProtrazione per gli eventi figli di protrazione):
+      // si parte sempre in background senza bloccare l'utente, così tutto
+      // funziona anche offline. Se il backup fallisce o è in coda,
+      // processaCodaSync lo ritenterà in automatico appena torna la rete.
+      if(data.attendiBackup){
+        const risInsert = await backupInsertModello();
+        if(risInsert?.errore){
+          return { ok:false, errore: risInsert.errore, modello: null };
+        }
+        return { ok:true, modello: modelloCreato };
+      }
+      backupInsertModello();
+      return { ok:true, modello: modelloCreato };
+    }
+  }
+
+  async function deleteModello(id){
+    try{
+      const esito = await deleteModelloInterno(id);
+      segnalaModificaOrdineModelli();
+      return esito;
+    }catch(e){
+      segnalaErrore(e, "Eliminazione modello (errore imprevisto)");
+      return { ok:false, errore:{message:e?.message||String(e)} };
+    }
+  }
+  async function deleteModelloInterno(id){
+    // 1) SUBITO in locale: rimozione + rinumerazione GLOBALE a blocchi
+    // contigui, per chiudere il buco lasciato dal modello eliminato nel
+    // suo blocco/calendario (gli altri calendari restano invariati).
+    let modelliAggiornati;
+    const modelloEliminato = modelli.find(m=>m.id===id);
+    const calDelModello = modelloEliminato ? (modelloEliminato.calendarId||mainCalId) : null;
+    setModelli(prev=>{
+      const updated=prev.filter(m=>m.id!==id);
+      if(!calDelModello){ modelliAggiornati = updated; return updated; }
+      const ordineCalendario = calcolaOrdineModelli(updated.filter(m=>(m.calendarId||mainCalId)===calDelModello));
+      const calendarsOrdinati = store.calendars.map(c=>c.id);
+      const ordiniPerCalendario = new Map([[calDelModello, ordineCalendario]]);
+      const ricalcolato = ricalcolaPosizioniGlobali(updated, calendarsOrdinati, ordiniPerCalendario, mainCalId);
+      modelliAggiornati = ricalcolato;
+      return ricalcolato;
+    });
+    // 2) Backup su Supabase (con retry colonna) + Sheets in parallelo,
+    // CON verifica post-scrittura (vedi scriviConBackup): se la riga
+    // risultasse ancora presente su Supabase dopo la cancellazione,
+    // viene segnalato invece di considerarsi "andata a buon fine" solo
+    // perché la chiamata non ha restituito errore.
+    const match = { id, user_id: userId };
+    const esito = await scriviConBackup({
+      tipo:"delete", table:"modelli", payload:null, matchObj:match,
+      contesto:"Eliminazione modello", ts:new Date().toISOString(),
+      eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelliAggiornati,
+    });
+    return esito;
+  }
+
+  // ── Riordino UNA TANTUM di TUTTI i calendari: dentro ogni calendario i
+  // modelli vengono ora raggruppati per FASCIA ORARIA D'INIZIO (NOTTE 00:00,
+  // MATTINA 06:00–11:45, POMERIGGIO 12:00–17:15, 3° TURNO 17:15–18:00, poi
+  // tutti gli altri/H24 in coda), ordinati per orario crescente dentro
+  // ciascun blocco — vedi calcolaOrdinePerFasciaOraria. I blocchi vengono
+  // poi disposti a blocchi contigui globali, nell'ordine dei calendari in
+  // Impostazioni, rinumerando tutto in sequenza pulita 1,2,3... senza buchi
+  // né duplicati. Dopo averla lanciata una volta, ogni creazione/modifica/
+  // eliminazione/spostamento futuro mantiene da solo l'ordine così ottenuto
+  // (le operazioni successive usano calcolaOrdineModelli, non questa).
+  async function ripulisciTutteLePosizioniModelli(){
+    const calendarsOrdinati = store.calendars.map(c=>c.id);
+    const ordiniPerCalendario = new Map();
+    for(const cId of calendarsOrdinati){
+      const delCalendario = calcolaOrdinePerFasciaOraria(modelli.filter(m=>(m.calendarId||mainCalId)===cId));
+      ordiniPerCalendario.set(cId, delCalendario);
+    }
+    const modelliRicalcolati = ricalcolaPosizioniGlobali(modelli, calendarsOrdinati, ordiniPerCalendario, mainCalId);
+    setModelli(modelliRicalcolati);
+    saveToLocalStorage(store.events, store.calendars, modelliRicalcolati);
+    await salvaModifichePosizioni(modelli, modelliRicalcolati);
+    return { ok:true, totaleModelli: modelliRicalcolati.length, totaleCalendari: calendarsOrdinati.length };
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // SNAPSHOT MANUALE DELL'ORDINE MODELLI (protezione dal bug di rimescolamento)
+  // ══════════════════════════════════════════════════════════════════════
+  // Tabella dedicata e completamente isolata da "modelli": salvataggio SOLO
+  // su azione esplicita della persona, mai automatico. Un upsert per riga
+  // (vincolo unique su user_id+modello_id) così ogni "Salva disposizione"
+  // sovrascrive pulito il backup precedente, senza accumulare storico.
+  async function salvaDisposizioneModelli(){
+    if(!userId) return { ok:false, errore:"Utente non autenticato" };
+    const righe = modelli.map(m=>({
+      user_id:userId, modello_id:m.id, sort_order:m.sortOrder||0, salvato_il:new Date().toISOString()
+    }));
+    try{
+      const { error } = await supabase.from("modelli_sortorder_backup")
+        .upsert(righe, { onConflict:"user_id,modello_id" });
+      if(error){
+        segnalaErroreDb(error, "Salvataggio disposizione modelli");
+        return { ok:false, errore:error.message };
+      }
+      // Snapshot anche in locale: un ripristino deve poter funzionare anche
+      // offline, senza dipendere dalla raggiungibilità di Supabase in quel
+      // momento (stesso principio usato per store.events/calendars).
+      try{
+        localStorage.setItem("disposizioneModelliBackup", JSON.stringify({
+          userId, salvato_il:new Date().toISOString(),
+          voci: modelli.map(m=>({modello_id:m.id, sort_order:m.sortOrder||0}))
+        }));
+      }catch{}
+      annullaTimerSalvaDisposizione();
+      return { ok:true, totale: righe.length };
+    }catch(e){
+      segnalaErroreDb(e, "Salvataggio disposizione modelli");
+      return { ok:false, errore:String(e) };
+    }
+  }
+
+  // ── Ripristina l'ultimo snapshot salvato: rilegge le posizioni salvate e
+  // le riscrive sui modelli CORRENTI. Un modello creato dopo l'ultimo
+  // salvataggio (non presente nello snapshot) mantiene semplicemente il suo
+  // sortOrder attuale; un modello nello snapshot ma nel frattempo eliminato
+  // viene ignorato senza errori.
+  async function ripristinaDisposizioneModelli(){
+    if(!userId) return { ok:false, errore:"Utente non autenticato" };
+    let vociBackup = null;
+    try{
+      const { data, error } = await supabase.from("modelli_sortorder_backup")
+        .select("modello_id, sort_order").eq("user_id", userId);
+      if(error) throw error;
+      if(data && data.length>0) vociBackup = data.map(r=>({modello_id:r.modello_id, sort_order:r.sort_order}));
+    }catch(e){
+      // Supabase irraggiungibile: fallback sull'ultimo snapshot locale,
+      // così il ripristino resta possibile anche offline.
+      try{
+        const raw = localStorage.getItem("disposizioneModelliBackup");
+        if(raw){
+          const parsed = JSON.parse(raw);
+          if(parsed?.userId===userId && Array.isArray(parsed.voci)) vociBackup = parsed.voci;
+        }
+      }catch{}
+    }
+    if(!vociBackup || vociBackup.length===0){
+      return { ok:false, errore:"Nessuna disposizione salvata trovata" };
+    }
+    const sortOrderById = new Map(vociBackup.map(v=>[v.modello_id, v.sort_order]));
+    let modelliRicalcolati;
+    setModelli(prev=>{
+      modelliRicalcolati = prev.map(m=>
+        sortOrderById.has(m.id) ? {...m, sortOrder:sortOrderById.get(m.id)} : m
+      );
+      return modelliRicalcolati;
+    });
+    saveToLocalStorage(store.events, store.calendars, modelliRicalcolati);
+    await salvaModifichePosizioni(modelli, modelliRicalcolati);
+    annullaTimerSalvaDisposizione();
+    return { ok:true, totale: vociBackup.length };
+  }
+
+  // ── Gestione del timer "modifiche non salvate": persistito su localStorage
+  // (non solo stato React) così l'avviso sopravvive alla chiusura dell'app.
+  function segnalaModificaOrdineModelli(){
+    try{ localStorage.setItem(ULTIMA_MODIFICA_MODELLI_KEY, String(Date.now())); }catch{}
+    if(timerSalvaDisposizioneRef.current) clearTimeout(timerSalvaDisposizioneRef.current);
+    timerSalvaDisposizioneRef.current = setTimeout(()=>{
+      setShowSalvaDisposizionePopup(true);
+    }, 30000);
+  }
+  function annullaTimerSalvaDisposizione(){
+    if(timerSalvaDisposizioneRef.current){ clearTimeout(timerSalvaDisposizioneRef.current); timerSalvaDisposizioneRef.current=null; }
+    try{ localStorage.removeItem(ULTIMA_MODIFICA_MODELLI_KEY); }catch{}
+    setShowSalvaDisposizionePopup(false);
+  }
+  // Al mount: se c'era una modifica pendente da prima che l'app si chiudesse
+  // (schermo spento, app terminata), ripristina il timer residuo — se sono
+  // già passati 30s o più, il popup esce subito; altrimenti riparte per il
+  // tempo restante, cosi' la persona ha comunque la finestra di 30s intera
+  // dal momento della modifica per salvare manualmente prima dell'avviso.
+  useEffect(()=>{
+    let raw;
+    try{ raw = localStorage.getItem(ULTIMA_MODIFICA_MODELLI_KEY); }catch{ raw=null; }
+    if(!raw) return;
+    const trascorso = Date.now() - Number(raw);
+    if(trascorso >= 30000){
+      setShowSalvaDisposizionePopup(true);
+    } else {
+      timerSalvaDisposizioneRef.current = setTimeout(()=>{
+        setShowSalvaDisposizionePopup(true);
+      }, 30000 - trascorso);
+    }
+    return ()=>{ if(timerSalvaDisposizioneRef.current) clearTimeout(timerSalvaDisposizioneRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── COLORI: aggiunta/rimozione dalla sezione + assegnazione esclusiva ai modelli
+  async function addColoreExtra(hex){
+    if(!userId || coloriExtra.some(c=>c.hex===hex)) return;
+    // 1) SUBITO in locale.
+    setColoriExtra(prev=>[...prev, {hex, label:null, sortOrder:prev.length}]);
+    // 2) Backup su Supabase (con retry colonna) + Sheets in parallelo.
+    scriviConBackup({
+      tipo:"insert", table:"colori", payload:{ user_id: userId, hex }, matchObj:null,
+      contesto:"Aggiunta colore", ts:new Date().toISOString(),
+      eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelli,
+    });
+  }
+
+  async function removeColoreExtra(hex){
+    if(!userId) return;
+    // 1) SUBITO in locale.
+    setColoriExtra(prev=>prev.filter(c=>c.hex!==hex));
+    const daResettare = modelli.filter(m=>m?.coloreCustom===hex);
+    for(const m of daResettare){
+      await saveModello({...m, coloreCustom:null});
+    }
+    // 2) Backup su Supabase (con retry colonna) + Sheets in parallelo.
+    scriviConBackup({
+      tipo:"delete", table:"colori", payload:null, matchObj:{user_id:userId, hex},
+      contesto:"Rimozione colore", ts:new Date().toISOString(),
+      eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelli,
+    });
+  }
+
+  // Salva/aggiorna il nome (label) di un colore extra. Prova ad aggiornare la
+  // colonna "label" su Supabase; se la colonna non esiste ancora sullo schema
+  // (serve un ALTER TABLE colori ADD COLUMN label text;), fallisce in modo
+  // silenzioso lato server ma aggiorna comunque lo stato locale, così l'app
+  // resta utilizzabile nel frattempo.
+  async function updateColoreExtraLabel(hex, label){
+    setColoriExtra(prev=>prev.map(c=>c.hex===hex?{...c,label}:c));
+    if(!userId) return;
+    scriviConBackup({
+      tipo:"update", table:"colori", payload:{label}, matchObj:{user_id:userId, hex},
+      contesto:"Aggiornamento etichetta colore", ts:new Date().toISOString(),
+      eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelli,
+    });
+  }
+
+  // ── FIX: sostituisce l'hex di un colore ovunque sia usato (modelli +
+  // registro colori), permettendo di editare liberamente anche i colori
+  // delle fasce automatiche (es. #F59E0B "mattina") con la palette
+  // condivisa, invece di lasciarli fissi.
+  async function replaceColoreEverywhere(oldHex, newHex){
+    if(!userId || !newHex || oldHex===newHex) return;
+    // 1) SUBITO in locale: modelli + registro colori aggiornati all'istante.
+    const daAggiornare = modelli.filter(m=>m?.coloreCustom===oldHex);
+    let modelliAggiornati;
+    setModelli(prev=>{
+      modelliAggiornati = prev.map(m=>m?.coloreCustom===oldHex?{...m,coloreCustom:newHex,colore:newHex}:m);
+      return modelliAggiornati;
+    });
+    const eraRegistrato = coloriExtra.some(c=>c.hex===oldHex);
+    const vecchiaLabel = eraRegistrato ? (coloriExtra.find(c=>c.hex===oldHex)?.label||null) : null;
+    const vecchioSortOrder = eraRegistrato ? (coloriExtra.find(c=>c.hex===oldHex)?.sortOrder||0) : 0;
+    if(eraRegistrato){
+      setColoriExtra(prev=>[...prev.filter(c=>c.hex!==oldHex), {hex:newHex, label:vecchiaLabel, sortOrder:vecchioSortOrder}]);
+    }
+    // 2) Backup su Supabase (con retry colonna) + Sheets, per ogni modello coinvolto.
+    for(const m of daAggiornare){
+      scriviConBackup({
+        tipo:"update", table:"modelli", payload:{ colore_custom:newHex, colore:newHex }, matchObj:{id:m.id, user_id:userId},
+        contesto:`Sostituzione colore su modello "${m.titolo||m.id}"`, ts:new Date().toISOString(),
+        eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelliAggiornati,
+      });
+    }
+    if(eraRegistrato){
+      scriviConBackup({
+        tipo:"delete", table:"colori", payload:null, matchObj:{user_id:userId, hex:oldHex},
+        contesto:"Sostituzione colore ovunque (rimozione vecchio)", ts:new Date().toISOString(),
+        eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelliAggiornati,
+      });
+      scriviConBackup({
+        tipo:"insert", table:"colori", payload:{ user_id:userId, hex:newHex, label:vecchiaLabel }, matchObj:null,
+        contesto:"Sostituzione colore ovunque (inserimento nuovo)", ts:new Date().toISOString(),
+        eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelliAggiornati,
+      });
+    } else {
+      await ensureColoreRegistrato(newHex);
+    }
+    // Se oldHex era il colore di una fascia automatica, aggiorna anche quella
+    const fasciaIdx = (store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT).findIndex(f=>f.color===oldHex);
+    if(fasciaIdx>-1){
+      const nuoveFasce = (store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT).map((f,i)=>i===fasciaIdx?{...f,color:newHex}:f);
+      setStore(s=>({...s, fasceAutomatiche:nuoveFasce}));
+      saveSettings({fasce_automatiche:nuoveFasce});
+    }
+    syncSeAttivo(store.events, store.calendars, modelli);
+  }
+
+  async function saveRotazione(data){
+    if(!userId) return;
+    // reperibilitaTurnoPartenza non ha una colonna dedicata su Supabase:
+    // lo teniamo dentro "griglia" (già un JSON libero) sotto una chiave
+    // riservata, così sopravvive al salvataggio/ricaricamento invece di
+    // sparire silenziosamente (prima si perdeva subito dopo il primo giro
+    // di sync, e la rotazione "reperibilità" tornava sempre al turno A
+    // di default).
+    // modelloG3Id/modelloG4Id (Giorno 3 e Giorno 4 del ciclo reperibilità)
+    // non hanno colonna dedicata: stesso trattamento di
+    // reperibilitaTurnoPartenza qui sopra, dentro "griglia".
+    const grigliaConMeta = data.tipo==="reperibilita"
+      ? {...(data.griglia||{}),
+          __reperibilitaTurnoPartenza: data.reperibilitaTurnoPartenza||"14-24",
+          __modelloG3Id: data.modelloG3Id||null,
+          __modelloG4Id: data.modelloG4Id||null,
+        }
+      : (data.griglia||{});
+    const payload={
+      user_id:userId, tipo:data.tipo, titolo:data.titolo||"",
+      data_inizio:data.dataInizio||null, n_settimane:data.nSettimane||52,
+      modello_lavoro_id:data.modellaLavoroId||null,
+      modello_nl_id:data.modelloNLId||null,
+      modello_rs_id:data.modelloRSId||null,
+      griglia:grigliaConMeta,
+    };
+    if(data.id){
+      // 1) SUBITO in locale.
+      setRotazioni(prev=>prev.map(r=>r.id===data.id?{...r,...data}:r));
+      // 2) Backup su Supabase (con retry colonna) + Sheets in parallelo.
+      await scriviConBackup({
+        tipo:"update", table:"rotazioni", payload, matchObj:{id:data.id, user_id:userId},
+        contesto:"Salvataggio rotazione", ts:new Date().toISOString(),
+        eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelli,
+      });
+    } else {
+      const idLocale = generaIdLocale();
+      // 1) SUBITO in locale.
+      setRotazioni(prev=>[...prev,{...data,id:idLocale,griglia:{}}]);
+      // 2) Backup su Supabase (con retry colonna) + Sheets in parallelo.
+      await scriviConBackup({
+        tipo:"insert", table:"rotazioni", payload:{...payload, id:idLocale}, matchObj:null,
+        contesto:"Creazione rotazione", ts:new Date().toISOString(),
+        eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelli,
+      });
+    }
+  }
+
+  async function deleteRotazione(id){
+    // 1) SUBITO in locale.
+    setRotazioni(prev=>prev.filter(r=>r.id!==id));
+    // 2) Backup su Supabase (con retry colonna) + Sheets in parallelo.
+    const match = {id, user_id:userId};
+    await scriviConBackup({
+      tipo:"delete", table:"rotazioni", payload:null, matchObj:match,
+      contesto:"Eliminazione rotazione", ts:new Date().toISOString(),
+      eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelli,
+    });
+  }
+
+  async function updateGrigliaRotazione(rotId, griglia){
+    // 1) SUBITO in locale.
+    setRotazioni(prev=>prev.map(r=>r.id===rotId?{...r,griglia}:r));
+    // 2) Backup su Supabase (con retry colonna) + Sheets in parallelo.
+    const match = {id:rotId, user_id:userId};
+    await scriviConBackup({
+      tipo:"update", table:"rotazioni", payload:{griglia}, matchObj:match,
+      contesto:"Aggiornamento griglia rotazione", ts:new Date().toISOString(),
+      eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelli,
+    });
+  }
+
+  async function inserisciEventoGenerico(mod, dataEv, rotazioneId, nuoviEventiLocali, labelOverride=null, extra={}){
+    if(!mod && !labelOverride) return;
+    const {
+      note="", collega="", auto="", importId=null, protPagFine=null, protRecFine=null,
+      oraInizioOverride=null, oraFineOverride=null,
+    } = extra;
+    const dateKey = dkey(dataEv.getFullYear(), dataEv.getMonth(), dataEv.getDate());
+    const color = mod ? (mod?.coloreCustom || (mod.tempo==="h24" ? "#64748b" : colByTime(mod.inizio))) : "#94a3b8";
+    const label = (labelOverride || mod?.label || mod?.titolo || "").toUpperCase();
+    const allDay = mod ? mod.tempo==="h24" : true;
+    // oraInizioOverride/oraFineOverride: usati per eventi come la
+    // protrazione, dove l'orario è specifico di quel giorno e non quello
+    // fisso del modello (il modello "PROTRAZIONE PAGAMENTO" è riusato
+    // sempre, ma l'orario cambia turno per turno).
+    const tIn = oraInizioOverride!=null ? oraInizioOverride : ((!mod || allDay) ? "" : (mod.inizio || ""));
+    const tOut = oraFineOverride!=null ? oraFineOverride : ((!mod || allDay) ? "" : calcFineModello(mod));
+
+    const { data, error } = await creaEventoSupabase({
+      userId, calId, dateKey, label, color, allDay,
+      tIn, tOut, modelloId: mod?.id || null, rotazioneId,
+      note, collega, auto, importId, protPagFine, protRecFine,
+    });
+
+    if(error) {
+      segnalaErroreDb(error, "Inserimento turno da modello");
+      return;
+    }
+
+    if(!nuoviEventiLocali[dateKey]) nuoviEventiLocali[dateKey] = {};
+    if(!nuoviEventiLocali[dateKey][calId]) nuoviEventiLocali[dateKey][calId] = [];
+    nuoviEventiLocali[dateKey][calId].push({
+      id: data.id,
+      color,
+      label,
+      allDay: data.all_day,
+      tIn: data.time_in || "",
+      tOut: data.time_out || "",
+      place: "",
+      map: "",
+      note: data.note || "",
+      modelloId: data.modello_id || null,
+      rotazioneId: data.rotazione_id || null,
+      collega: data.collega || "",
+      auto: data.auto || "",
+      importId: data.import_id || null,
+      protPagFine: data.prot_pag_fine || "",
+      protRecFine: data.prot_rec_fine || "",
+    });
+  }
+
+  function normOrarioImport(t){
+    return (t||"").trim();
+  }
+
+  function trovaModelloPerTitoloOrario(titoloRaw, oraInizioRaw, oraFineRaw){
+    const titolo = (titoloRaw||"").trim().toLowerCase();
+    if(!titolo) return { mod:null, esito:"vuoto" };
+    const oraInizioTxt = normOrarioImport(oraInizioRaw);
+    const oraFineTxt = normOrarioImport(oraFineRaw);
+    // FIX: solo modelli di QUESTO calendario. Prima si cercava fra i
+    // modelli di TUTTI i calendari (FURERIA, PROGRAMMAZIONE, COT, MARY
+    // inclusi): un modello omonimo H24 in un altro calendario vinceva il
+    // confronto su quello giusto in TURNI ogni volta che l'orario
+    // importato era vuoto (oraInizio/oraFine vuoti combaciano solo con un
+    // modello che ha anch'esso inizio/fine vuoti, cioè un H24).
+    const MAPPING_RADICI = [
+      { r: "prim", t: ["prim", "mattin"] },
+      { r: "second", t: ["second", "pomerigg"] },
+      { r: "terz", t: ["terz", "3°"] },
+      { r: "nott", t: ["nott"] },
+    ];
+    let candidati = modelli.filter(m=>{
+      if((m.calendarId||mainCalId)!==calId) return false;
+      const tm = (m.titolo||"").trim().toLowerCase();
+      const lm = (m.label||"").trim().toLowerCase();
+      return tm === titolo || lm === titolo;
+    });
+    if(candidati.length===0){
+      candidati = modelli.filter(m=>{
+        if((m.calendarId||mainCalId)!==calId) return false;
+        const tm = (m.titolo||"").trim().toLowerCase();
+        const lm = (m.label||"").trim().toLowerCase();
+        if(tm && (titolo.includes(tm) || tm.includes(titolo))) return true;
+        if(lm && (titolo.includes(lm) || lm.includes(titolo))) return true;
+        for(const mapItem of MAPPING_RADICI){
+          if(titolo.includes(mapItem.r) && mapItem.t.some(k => tm.includes(k) || lm.includes(k))) return true;
+        }
+        return false;
+      });
+    }
+    if(candidati.length===0) return { mod:null, esito:"assente" };
+
+    const orarioFornito = !!(oraInizioTxt || oraFineTxt);
+    if(orarioFornito){
+      // minsOf tollera "6:15"/"06:15"/"6.15" invece del confronto rigido su stringa.
+      const esatto = candidati.find(m=>minsOf(m.inizio)===minsOf(oraInizioRaw) && minsOf(m.fine)===minsOf(oraFineRaw));
+      if(esatto) return { mod:esatto, esito:"esatto" };
+      // Titolo trovato in questo calendario ma con un orario diverso da
+      // quello nel file importato: è una discordanza da segnalare, non un
+      // modello mancante.
+      return { mod:null, esito:"orario_diverso" };
+    }
+    // Il file non porta un orario per questa riga (tipico se il PDF di
+    // origine indicava solo il codice turno). Se il titolo individua UN
+    // SOLO modello in questo calendario ci fidiamo del titolo; se ne
+    // individua più di uno non possiamo scegliere da soli.
+    if(candidati.length===1) return { mod:candidati[0], esito:"solo_titolo" };
+    return { mod:null, esito:"ambiguo" };
+  }
+
+  // Una riga JSON è una "protrazione" (non un turno a sé) se il titolo
+  // contiene PROTAZIONE/PROTRAZIONE (copre anche il refuso comune) e porta
+  // sia ora_inizio che ora_fine: verrà agganciata al turno base dello
+  // stesso giorno il cui orario di uscita coincide con l'inizio di questa
+  // riga, invece di generare un evento "mancante" a sé stante.
+  function isRigaProtrazione(r){
+    const t = (r.titolo||"").toUpperCase();
+    return (t.includes("PROTAZIONE") || t.includes("PROTRAZIONE")) && !!(r.oraInizio && r.oraFine);
+  }
+  function tipoProtrazione(r){
+    const t = (r.titolo||"").toUpperCase() + " " + (r.note||"").toUpperCase();
+    if(t.includes("RECUPERO")) return "recupero";
+    if(t.includes("PAGAMENTO")) return "pagamento";
+    return "pagamento"; // default: le protrazioni straordinarie/elettuali sono tipicamente a pagamento
+  }
+
+  // Trova (o crea al volo) il modello dedicato "PROTRAZIONE PAGAMENTO" /
+  // "PROTRAZIONE RECUPERO" nel calendario indicato. Serve perché la
+  // protrazione, oltre a comparire come campo prot*Fine sull'evento del
+  // turno base, deve anche generare un evento reale agganciato a un
+  // modelloId: solo così entra nei report (che raggruppano tutto per
+  // e.modelloId, vedi computeConteggioForReport/computeTurnazioneForReport).
+  // Un solo modello per tipo, riusato sempre: l'orario resta specifico
+  // dell'evento (tIn/tOut), non del modello.
+  const modelloProtrazioneCacheRef = useRef({});
+  // Normalizza un titolo per il confronto "fuzzy" dei modelli PROTRAZIONE:
+  // maiuscolo, spazi collassati, così "PP ROTAZIONE PAGAMENTO", "PR
+  // PROTAZIONE RECUPERO" o qualunque altra variante con spazio spostato
+  // vengono trattate come lo stesso testo.
+  function normTitoloProtrazione(t){
+    return (t||"").trim().toUpperCase().replace(/\s+/g,"");
+  }
+  async function trovaOCreaModelloProtrazione(tipo, targetCalId){
+    const titolo = tipo==="recupero" ? "PROTRAZIONE RECUPERO"
+      : tipo==="meno_recupero" ? "-PROTRAZIONE A RECUPERO"
+      : "PROTRAZIONE PAGAMENTO";
+    // Nome breve mostrato nel calendario (riquadro stretto: senza questo,
+    // il CSS ellipsis tronca il titolo completo a metà parola, es.
+    // "PROTRA..."). Il titolo resta comunque quello per esteso ovunque
+    // altro (form Modelli, report); questo è solo il "nome da mostrare".
+    const labelBreve = tipo==="recupero" ? "PR RECUPERO"
+      : tipo==="meno_recupero" ? "-PR RECUPERO"
+      : "PR PAGAMENTO";
+    // Riconoscimento per PAROLE CHIAVE anziché lista fissa di refusi: un
+    // titolo storico è considerato lo stesso modello PROTRAZIONE se, una
+    // volta normalizzato (spazi collassati), contiene sia la radice
+    // "PROT(R)AZIONE" (copre anche il refuso comune) sia "PAGAMENTO" o
+    // "RECUPERO" a seconda del tipo. Così qualunque variante con spazio
+    // spostato o refuso di battitura viene riconosciuta come lo stesso
+    // modello, e non se ne crea mai un doppione.
+    // "meno_recupero" (consumo del credito, evento -PROTRAZIONE A RECUPERO)
+    // è riconosciuto SOLO dal titolo che inizia con "-": altrimenti
+    // coinciderebbe con la stessa radice/parola chiave di "recupero" e li
+    // farebbe considerare lo stesso modello (esattamente il bug già visto
+    // con l'unificazione "per somiglianza" dei titoli).
+    const parolaChiaveTipo = tipo==="pagamento" ? "PAGAMENTO" : "RECUPERO";
+    function eStessoModelloProtrazione(titoloModello){
+      const nRaw = (titoloModello||"").trim();
+      const eMenoRecupero = nRaw.startsWith("-");
+      if(tipo==="meno_recupero" && !eMenoRecupero) return false;
+      if(tipo!=="meno_recupero" && eMenoRecupero) return false;
+      const n = normTitoloProtrazione(titoloModello);
+      const haRadiceProtrazione = n.includes("PROTRAZIONE") || n.includes("PROTAZIONE");
+      return haRadiceProtrazione && n.includes(parolaChiaveTipo);
+    }
+    const cacheKey = `${targetCalId}::${titolo}`;
+
+    // IMPORTANTE: uso modelliRef.current, non la variabile "modelli" chiusa
+    // nella closure di questo render. Se questa funzione viene invocata da
+    // un callback async subito dopo un altro salvataggio (es. due protrazioni
+    // di seguito, o saveEvt+sincronizzaEventiProtrazione in rapida
+    // successione), "modelli" può ancora essere la fotografia di un render
+    // precedente e non contenere il modello appena creato/esistente:
+    // la find fallirebbe e ne creerebbe un doppione anche col titolo giusto.
+    // Se esistono più modelli storici duplicati per lo stesso tipo/calendario
+    // (retaggio del vecchio bug), si prende sempre il PRIMO trovato, così
+    // tutti i punti del codice convergono sullo stesso modello invece di
+    // sceglierne uno diverso ogni volta.
+    const candidatiEsistenti = modelliRef.current.filter(m=>
+      eStessoModelloProtrazione(m.titolo) && (m.calendarId||mainCalId)===targetCalId
+    );
+    const esistente = candidatiEsistenti[0] || null;
+    if(esistente){
+      // Aggiorno SEMPRE la cache con l'ultima versione letta da
+      // modelliRef.current (mai un vecchio snapshot): se il colore o il
+      // tempo del modello sono cambiati nel frattempo — es. per una
+      // modifica manuale dell'utente in Modelli, o per il fix automatico
+      // una-tantum che corregge tempo/colore all'avvio — la prossima
+      // protrazione creata/aggiornata userà subito il valore corrente,
+      // senza restare bloccata sul colore preso al primo utilizzo di
+      // questa sessione.
+      modelloProtrazioneCacheRef.current[cacheKey] = esistente;
+      return esistente;
+    }
+    if(modelloProtrazioneCacheRef.current[cacheKey]) return modelloProtrazioneCacheRef.current[cacheKey];
+
+    // Il modello viene creato SUBITO in locale (id locale valido, vedi
+    // sopra: setModelli/saveToLocalStorage avvengono prima di questo
+    // punto), esattamente come per eventi e rotazioni altrove nell'app.
+    // In precedenza qui si passava attendiBackup:true e si aspettava la
+    // vera conferma di Supabase prima di procedere, per evitare eventi
+    // figli "orfani" in caso di fallimento silenzioso dell'insert in
+    // background. Il prezzo di quell'attesa era però che, offline (o con
+    // rete lenta/instabile), la creazione dell'evento PROTRAZIONE non
+    // avveniva affatto o restava sospesa a lungo: l'app perdeva la
+    // garanzia "tutto funziona offline, il backup arriva quando può" che
+    // vale per il resto delle funzionalità.
+    // Il modello locale appena creato ha già un id stabile e valido (non
+    // cambia quando arriva la risposta di Supabase: l'insert usa lo
+    // stesso idLocale), quindi l'evento figlio può agganciarsi subito ad
+    // esso senza aspettare nulla: se il backup fallisce o è in coda,
+    // processaCodaSync lo ritenterà in automatico appena torna la rete,
+    // esattamente come già avviene per gli eventi normali.
+    const esito = await saveModello({
+      titolo, label: labelBreve, tempo:"h24",
+      coloreCustom: tipo==="recupero" ? "#f9a8d4" : "#ec4899",
+      calendarId: targetCalId,
+      silenzioso: true,
+    });
+    // saveModello ora ritorna direttamente l'oggetto appena creato: niente
+    // più bisogno di rileggere modelliRef.current dopo un setTimeout(0),
+    // che non garantiva l'ordine rispetto agli effect di React (race
+    // condition: il modello poteva risultare "non trovato" e la
+    // protrazione restava senza modello agganciato).
+    const creato = esito?.modello || null;
+    if(creato) modelloProtrazioneCacheRef.current[cacheKey] = creato;
+    else {
+      // Non solo log: se il modello non è stato davvero salvato su
+      // Supabase, meglio NON creare l'evento figlio (che risulterebbe
+      // orfano e sparirebbe al prossimo refresh) piuttosto che crearlo
+      // comunque senza modello agganciato. Il chiamante
+      // (sincronizzaEventiProtrazione) già gestisce "creato===null"
+      // saltando la creazione di questo evento figlio (continue).
+      segnalaErroreSoloLog(`Impossibile creare/recuperare il modello "${titolo}" per il calendario ${targetCalId}: ${esito?.errore?.message||"saveModello non ha ritornato l'oggetto atteso"}.`, "trovaOCreaModelloProtrazione");
+    }
+    return creato;
+  }
+
+  async function importaTurniPdfJson(righeJson){
+    const risultatoVuoto = { nAggiunti:0, nSostituiti:0, nInvariati:0, mancanti:[], sospetti:[], importId:null, sostituzioni:[] };
+    if(!userId || !calId || !righeJson?.length) return risultatoVuoto;
+
+    const importId = `imp_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+    const nuoviEventiLocali = {};
+    const idsDaCancellare = [];
+    const mancanti = [];
+    const sospetti = [];
+    let nAggiunti=0, nSostituiti=0, nInvariati=0;
+    const sostituzioni = [];
+
+    // Separo le righe di protrazione dalle righe di turno normali: le
+    // prime non generano un evento proprio, vengono agganciate al turno
+    // base con stesso giorno e orario di uscita coincidente.
+    const righeProtrazione = righeJson.filter(isRigaProtrazione);
+    const righeNormali = righeJson.filter(r=>!isRigaProtrazione(r));
+
+    function trovaProtrazionePerRigaBase(r){
+      const dateKey = (r.data||"").trim();
+      const idx = righeProtrazione.findIndex(p=>{
+        if((p.data||"").trim()!==dateKey) return false;
+        // L'orario di uscita del turno base deve coincidere con l'inizio
+        // della protrazione (tolleranza sul formato tramite minsOf).
+        return minsOf(r.oraFine)!==null && minsOf(p.oraInizio)!==null && minsOf(r.oraFine)===minsOf(p.oraInizio);
+      });
+      if(idx===-1) return null;
+      const [p] = righeProtrazione.splice(idx,1);
+      return p;
+    }
+
+    for(const r of righeNormali){
+      const dateKey = (r.data||"").trim();
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) continue;
+      const { mod, esito } = trovaModelloPerTitoloOrario(r.titolo, r.oraInizio, r.oraFine);
+      if(!mod){
+        const riga = { data: dateKey, titolo: r.titolo||"", oraInizio: r.oraInizio||"", oraFine: r.oraFine||"" };
+        if(esito==="orario_diverso" || esito==="ambiguo") sospetti.push({ ...riga, motivo:esito });
+        else mancanti.push(riga);
+        continue;
+      }
+      const note = (r.note||"").trim();
+      const collega = (r.collega||"").trim();
+      const auto = (r.auto||"").trim();
+
+      // Se esiste una riga di protrazione agganciata a questo turno base
+      // (stesso giorno, orario di inizio = orario di uscita del turno),
+      // la fondo qui invece di farla comparire come evento a sé o come
+      // riga "mancante".
+      const prot = trovaProtrazionePerRigaBase(r);
+      const protPagFine = prot && tipoProtrazione(prot)==="pagamento" ? prot.oraFine : null;
+      const protRecFine = prot && tipoProtrazione(prot)==="recupero" ? prot.oraFine : null;
+
+      const eventiEsistenti = store.events?.[dateKey]?.[calId] || [];
+      const esistente = eventiEsistenti.find(ev=>ev.modelloId===mod.id);
+
+      if(esistente){
+        const invariato = up(esistente.note)===up(note) && up(esistente.collega)===up(collega) && up(esistente.auto)===up(auto)
+          && up(esistente.protPagFine)===up(protPagFine||"") && up(esistente.protRecFine)===up(protRecFine||"");
+        if(invariato){ nInvariati++; continue; }
+        const [yy,mm,dd] = dateKey.split("-").map(Number);
+        const giornoSett = NOMI_GIORNI_IT[new Date(yy,mm-1,dd).getDay()];
+        // Niente più alert() per ogni singola riga: si accoda il dettaglio
+        // (titolo vecchio -> nuovo, e stesso per orario/auto/collega/note se
+        // cambiati) e si mostra tutto insieme nel riepilogo finale, un solo
+        // popup con l'elenco completo invece di un click per ogni turno.
+        sostituzioni.push({
+          data: dateKey, giornoSett,
+          vecchio: {
+            titolo: esistente.titolo || esistente.modelloTitolo || "",
+            oraInizio: esistente.oraInizio || "", oraFine: esistente.oraFine || "",
+            note: esistente.note || "", collega: esistente.collega || "", auto: esistente.auto || "",
+          },
+          nuovo: {
+            titolo: mod.titolo || "",
+            oraInizio: mod.inizio || "", oraFine: mod.fine || "",
+            note, collega, auto,
+          },
+        });
+        idsDaCancellare.push(esistente.id);
+        nSostituiti++;
+      } else {
+        nAggiunti++;
+      }
+
+      const [yy,mm,dd] = dateKey.split("-").map(Number);
+      const dataEv = new Date(yy, mm-1, dd);
+      await inserisciEventoGenerico(mod, dataEv, null, nuoviEventiLocali, null, { note, collega, auto, importId, protPagFine, protRecFine });
+
+      // Oltre al campo prot*Fine sull'evento del turno base (sopra), genero
+      // anche un evento reale agganciato al modello dedicato "PROTRAZIONE
+      // PAGAMENTO/RECUPERO": è l'unico modo perché la protrazione entri nei
+      // report, che contano tutto per e.modelloId.
+      if(prot){
+        const tipoProt = tipoProtrazione(prot);
+        const modProtrazione = await trovaOCreaModelloProtrazione(tipoProt, mod.calendarId||calId);
+        if(modProtrazione){
+          const oraInizioProt = r.oraFine; // uscita del turno base = inizio protrazione
+          const oraFineProt = tipoProt==="recupero" ? protRecFine : protPagFine;
+          await inserisciEventoGenerico(modProtrazione, dataEv, null, nuoviEventiLocali, null, {
+            note, collega, auto, importId,
+            oraInizioOverride: oraInizioProt, oraFineOverride: oraFineProt,
+          });
+        }
+      }
+    }
+
+    // Righe di protrazione che non hanno trovato un turno base con
+    // orario di uscita coincidente restano "mancanti" come prima,
+    // nessuna invenzione di eventi a sé stanti.
+    for(const p of righeProtrazione){
+      mancanti.push({ data:(p.data||"").trim(), titolo: p.titolo||"", oraInizio: p.oraInizio||"", oraFine: p.oraFine||"" });
+    }
+
+    // I turni base sostituiti (idsDaCancellare) possono avere figli
+    // "-PROTRAZIONE A RECUPERO" agganciati (marker
+    // "protrazione_di_<vecchioId>_meno_recupero", creati manualmente
+    // dall'utente compilando Entrata/Uscita effettiva): questi NON
+    // vengono mai toccati dalla logica sopra (che gestisce solo
+    // protPagFine/protRecFine letti dal PDF), quindi senza questa pulizia
+    // resterebbero orfani per sempre quando il turno base viene
+    // ricreato con un nuovo id, e il prossimo salvataggio manuale ne
+    // genererebbe un secondo agganciato al nuovo id: risultato, due
+    // eventi "-PROTRAZIONE" nello stesso giorno invece di uno solo.
+    if(idsDaCancellare.length){
+      const idSetBase = new Set(idsDaCancellare);
+      const idsFigliOrfani = [];
+      for(const calMap of Object.values(store.events||{})){
+        for(const evts of Object.values(calMap||{})){
+          for(const e of (evts||[])){
+            const decodifica = decodificaProtrazioneFiglio(e.importId);
+            if(decodifica && idSetBase.has(decodifica.idEventoBase)) idsFigliOrfani.push(e.id);
+          }
+        }
+      }
+      if(idsFigliOrfani.length) idsDaCancellare.push(...idsFigliOrfani);
+    }
+
+    if(idsDaCancellare.length){
+      const { error: delErr } = await supabase.from("events").delete().in("id", idsDaCancellare).eq("user_id", userId);
+      if(delErr) segnalaErroreDb(delErr, "Sostituzione turni import");
+    }
+
+    setStore(prev=>{
+      const ns = JSON.parse(JSON.stringify(prev));
+      if(idsDaCancellare.length){
+        const idSet = new Set(idsDaCancellare);
+        for(const dKey of Object.keys(ns.events||{})){
+          if(ns.events[dKey]?.[calId]){
+            ns.events[dKey][calId] = ns.events[dKey][calId].filter(e=>!idSet.has(e.id));
+          }
+        }
+      }
+      for(const [dateKey, calMap] of Object.entries(nuoviEventiLocali)){
+        if(!ns.events[dateKey]) ns.events[dateKey] = {};
+        for(const [cid, evts] of Object.entries(calMap)){
+          if(!ns.events[dateKey][cid]) ns.events[dateKey][cid] = [];
+          ns.events[dateKey][cid].push(...evts);
+        }
+      }
+      saveToLocalStorage(ns.events, ns.calendars, modelli);
+      syncSeAttivo(ns.events, ns.calendars);
+      return ns;
+    });
+
+    // Stesso bugfix del caso "Creazione turno": il calendario su cui è stato
+    // fatto l'import deve restare visibile dopo il refresh.
+    if((nAggiunti||0)>0 || (nSostituiti||0)>0) setSelectedCalIds(prev => prev.length===0 || prev.includes(calId) ? prev : [...prev, calId]);
+
+    registraProblemiImport(mancanti, sospetti);
+    return { nAggiunti, nSostituiti, nInvariati, mancanti, sospetti, importId, sostituzioni };
+  }
+
+  async function delTuttiEventiImport(importId, cId){
+    const { data: rows, error } = await supabase.from("events").select("id")
+      .eq("import_id", importId).eq("user_id", userId);
+    if(error){ segnalaErroreDb(error, "Eliminazione eventi importati"); return; }
+    if(!rows) return;
+    const ids = rows.map(r=>r.id);
+    if(ids.length===0) return;
+    const { error: delErr } = await supabase.from("events").delete().in("id", ids).eq("user_id", userId);
+    if(delErr){ segnalaErroreDb(delErr, "Eliminazione eventi importati"); return; }
+    setStore(prev=>{
+      const ns=JSON.parse(JSON.stringify(prev));
+      const idSet = new Set(ids);
+      for(const dKey of Object.keys(ns.events||{})){
+        if(ns.events[dKey]?.[cId]){
+          ns.events[dKey][cId] = ns.events[dKey][cId].filter(e=>!idSet.has(e.id));
+        }
+      }
+      saveToLocalStorage(ns.events, ns.calendars, modelli);
+      syncSeAttivo(ns.events, ns.calendars);
+      return ns;
+    });
+  }
+
+  async function importaEventiSingoli(righe){
+    // righe: [{ dateKey, modelloId }] -- righe senza modelloId vengono ignorate
+    // Restituisce il numero di righe EFFETTIVAMENTE scritte (esclude modelloId
+    // mancante, modello inesistente, e duplicati già presenti sullo stesso giorno).
+    if(!userId || !calId || !righe?.length) return 0;
+    const nuoviEventiLocali = {};
+    let nScritte = 0;
+    for(const r of righe){
+      if(!r.modelloId) continue;
+      const mod = modelli.find(m=>m.id===r.modelloId);
+      if(!mod) continue;
+      // Se il giorno ha già un evento con lo stesso modello, non duplicare.
+      // Se ha eventi con modelli diversi, aggiungi sotto (non sovrascrivere).
+      // Se non ha eventi, aggiungi normalmente.
+      const eventiEsistenti = store.events?.[r.dateKey]?.[calId] || [];
+      const giaPresente = eventiEsistenti.some(ev => ev.modelloId === r.modelloId);
+      if(giaPresente) continue;
+      const [y,m,d] = r.dateKey.split("-").map(Number);
+      const dataEv = new Date(y, m-1, d);
+      await inserisciEventoGenerico(mod, dataEv, null, nuoviEventiLocali);
+      nScritte++;
+    }
+    setStore(prev => {
+      const ns = JSON.parse(JSON.stringify(prev));
+      for(const [dateKey, calMap] of Object.entries(nuoviEventiLocali)) {
+        if(!ns.events[dateKey]) ns.events[dateKey] = {};
+        for(const [cid, evts] of Object.entries(calMap)) {
+          if(!ns.events[dateKey][cid]) ns.events[dateKey][cid] = [];
+          ns.events[dateKey][cid].push(...evts);
+        }
+      }
+      saveToLocalStorage(ns.events, ns.calendars, modelli);
+      syncSeAttivo(ns.events, ns.calendars);
+      return ns;
+    });
+    // Stesso bugfix del caso "Creazione turno": il calendario su cui è stato
+    // fatto l'import deve restare visibile dopo il refresh.
+    if(nScritte>0) setSelectedCalIds(prev => prev.length===0 || prev.includes(calId) ? prev : [...prev, calId]);
+    return nScritte;
+  }
+
+  async function applyRotazione(rotId, startDayKey, numRipetizioni, modPartenza="RS", giornoPartenza=0) {
+    if(!userId || !calId || !startDayKey || !numRipetizioni) return;
+    const rot = rotazioni.find(r=>r.id===rotId);
+    if(!rot) return;
+
+    const { error } = await dbUpdate("rotazioni", {data_inizio:startDayKey, n_settimane:numRipetizioni}, {id:rotId, user_id:userId}, "Applicazione rotazione", {soloLog:true});
+    if(error) segnalaErrore("La rotazione è stata applicata al calendario ma il salvataggio della configurazione potrebbe non essere andato a buon fine.", "Applicazione rotazione");
+    setRotazioni(prev=>prev.map(r=>r.id===rotId?{...r,dataInizio:startDayKey,nSettimane:numRipetizioni}:r));
+
+    const nuoviEventiLocali = {};
+
+    async function inserisciEvento(mod, dataEv){
+      if(!mod) return;
+      await inserisciEventoGenerico(mod, dataEv, rot.id, nuoviEventiLocali);
+    }
+
+    if(rot.tipo === "nlrs_scalante") {
+      const modRS = modelli.find(m=>m.id===rot.modelloRSId);
+      const modNL = modelli.find(m=>m.id===rot.modelloNLId);
+      const rotDomeniche = rotazioni.find(r=>r.tipo==="domeniche");
+      const modQuartina = modelli.find(m=>m.id===rotDomeniche?.modellaLavoroId);
+      const primoModello = modPartenza==="NL" ? modNL : modRS;
+      const secondoModello = modPartenza==="NL" ? modRS : modNL;
+      // Sequenza dei giorni RS che scala ad ogni quartina: Ven, Gio, Mer,
+      // Mar, Lun, Sab (salta Domenica), poi ricomincia da Ven. Valori come
+      // da Date.getDay(): Dom=0, Lun=1, Mar=2, Mer=3, Gio=4, Ven=5, Sab=6.
+      const SEQ_GIORNI_RS = [5, 4, 3, 2, 1, 6];
+
+      if(modQuartina){
+        // Le quartine sono lette dagli eventi già presenti a calendario con
+        // il modello Quartina, in ordine cronologico a partire da
+        // startDayKey — qualunque sia la cadenza tra una e l'altra (4, 3, 5,
+        // 8 settimane...), senza nessun passo fisso calcolato qui. Una volta
+        // inseriti, RS e NL restano fissi anche se in futuro si sposta la
+        // quartina: questa funzione li scrive una sola volta, non li tiene
+        // agganciati "in diretta".
+        const dateQuartine = [];
+        for(const [dateKey, calMap] of Object.entries(store.events||{})){
+          if(dateKey < startDayKey) continue;
+          const evts = calMap?.[calId] || [];
+          if(evts.some(ev => ev.modelloId === modQuartina.id)) dateQuartine.push(dateKey);
+        }
+        dateQuartine.sort();
+
+        const [y0, m0, d0] = startDayKey.split("-").map(Number);
+        const primoRS = new Date(y0, m0-1, d0);
+        let idx = SEQ_GIORNI_RS.indexOf(primoRS.getDay());
+        if(idx === -1) idx = 0;
+
+        for(let i=0; i<numRipetizioni && i<dateQuartine.length; i++){
+          const [qy, qm, qd] = dateQuartine[i].split("-").map(Number);
+          const quartina = new Date(qy, qm-1, qd);
+          const lunediSettimana = new Date(quartina);
+          lunediSettimana.setDate(lunediSettimana.getDate() - 6);
+
+          const giornoAtteso = SEQ_GIORNI_RS[idx];
+          const offset = giornoAtteso === 0 ? 6 : giornoAtteso - 1; // giorni dopo il Lunedì
+          const dataRS = new Date(lunediSettimana);
+          dataRS.setDate(dataRS.getDate() + offset);
+          const dataNL = new Date(dataRS);
+          dataNL.setDate(dataNL.getDate() + 7);
+
+          await inserisciEvento(primoModello, dataRS);
+          await inserisciEvento(secondoModello, dataNL);
+
+          idx = (idx + 1) % SEQ_GIORNI_RS.length;
+        }
+      }
+    } else if(rot.tipo === "reperibilita") {
+      // Ciclo di 4 giorni. La catena dei passi, a partire dal Giorno 1, è:
+      //   Giorno 1 -> Giorno 2 : +1
+      //   Giorno 2 -> Giorno 3 : +7
+      //   Giorno 3 -> Giorno 4 : +1
+      //   Giorno 4 -> Giorno 1 del ciclo successivo : +7
+      // In assoluto rispetto al Giorno 1: +0, +1, +8, +9, poi il ciclo dopo
+      // riparte a +16. I passi quindi si alternano SEMPRE +1/+7: dopo un
+      // giorno di indice pari (Giorno 1, Giorno 3) si aggiunge 1, dopo uno
+      // di indice dispari (Giorno 2, Giorno 4) si aggiunge 7. Generando la
+      // sequenza in questo modo — un passo alla volta invece che a blocchi
+      // — la rotazione può partire da un giorno QUALSIASI del ciclo
+      // (giornoPartenza 0..3), cosa impossibile con il calcolo a blocchi
+      // fissi ancorato al Giorno 1.
+      const MODELLI_CICLO = [
+        modelli.find(m=>m.id===rot.modelloRSId),
+        modelli.find(m=>m.id===rot.modelloNLId),
+        modelli.find(m=>m.id===rot.modelloG3Id),
+        modelli.find(m=>m.id===rot.modelloG4Id),
+      ];
+
+      const [y0, m0, d0] = startDayKey.split("-").map(Number);
+      const cursore = new Date(y0, m0-1, d0);
+      // numRipetizioni = numero di cicli da 4 giorni: ogni ciclo scrive
+      // esattamente 4 eventi, quindi in totale numRipetizioni*4 eventi.
+      const nEventi = numRipetizioni * 4;
+      let idx = ((giornoPartenza % 4) + 4) % 4;
+
+      for(let k=0; k<nEventi; k++){
+        const mod = MODELLI_CICLO[idx];
+        if(mod) await inserisciEvento(mod, new Date(cursore));
+        // Passo verso l'evento successivo: +1 dopo Giorno 1/Giorno 3,
+        // +7 dopo Giorno 2/Giorno 4.
+        cursore.setDate(cursore.getDate() + (idx % 2 === 0 ? 1 : 7));
+        idx = (idx + 1) % 4;
+      }
+    } else if(rot.tipo === "domeniche") {
+      const modLav = modelli.find(m=>m.id===rot.modellaLavoroId);
+      const modRip = modelli.find(m=>m.id===rot.modelloNLId);
+      const totalWeeks = numRipetizioni * 4;
+
+      const [y0, m0, d0] = startDayKey.split("-").map(Number);
+      const start = new Date(y0, m0-1, d0);
+
+      for(let i=0; i<totalWeeks; i++) {
+        const d = new Date(start);
+        d.setDate(d.getDate() + i * 7);
+        const isLavoro = (i % 4) === 0;
+        const mod = isLavoro ? modLav : modRip;
+        if(mod) await inserisciEvento(mod, d);
+      }
+    } else if(rot.tipo === "personalizzata") {
+      const griglia = rot.griglia || {};
+      const [y0, m0, d0] = startDayKey.split("-").map(Number);
+      const rotInizio = rot.dataInizio ? new Date(rot.dataInizio) : new Date(y0, m0-1, d0);
+      const diffDays = Math.floor((new Date(y0, m0-1, d0).getTime() - rotInizio.getTime()) / (1000 * 3600 * 24));
+      const nDays = (rot.nSettimane || 52) * 7;
+
+      for(let rep=0; rep<numRipetizioni; rep++) {
+        for(const [dateKey, modId] of Object.entries(griglia)) {
+          if(!modId) continue;
+          const mod = modelli.find(m=>m.id===modId);
+          if(!mod) continue;
+          const [gy, gm, gd] = dateKey.split("-").map(Number);
+          const targetDate = new Date(gy, gm-1, gd);
+          targetDate.setDate(targetDate.getDate() + diffDays + rep * nDays);
+          await inserisciEvento(mod, targetDate);
+        }
+      }
+    }
+
+    setStore(prev => {
+      const ns = JSON.parse(JSON.stringify(prev));
+      for(const [dateKey, calMap] of Object.entries(nuoviEventiLocali)) {
+        if(!ns.events[dateKey]) ns.events[dateKey] = {};
+        for(const [cid, evts] of Object.entries(calMap)) {
+          if(!ns.events[dateKey][cid]) ns.events[dateKey][cid] = [];
+          ns.events[dateKey][cid].push(...evts);
+        }
+      }
+      saveToLocalStorage(ns.events, ns.calendars, modelli);
+      syncSeAttivo(ns.events, ns.calendars);
+      return ns;
+    });
+    // Stesso bugfix del caso "Creazione turno": il calendario su cui è stata
+    // applicata la rotazione deve restare visibile dopo il refresh.
+    setSelectedCalIds(prev => prev.length===0 || prev.includes(calId) ? prev : [...prev, calId]);
+  }
+// #endregion
+
+// #region SEZIONE 14: REPORT HELPERS
+// ═══════════════════════════════════════════════════════════════
+  function getReportRange(){
+    if(reportInterval==="mese"){
+      const y=reportMeseSel.anno, mIdx=reportMeseSel.mese-1; // mIdx 0-based per daysInMonth/MONTHS
+      const from=`${y}-${String(mIdx+1).padStart(2,"0")}-01`;
+      const to=`${y}-${String(mIdx+1).padStart(2,"0")}-${String(daysInMonth(y,mIdx)).padStart(2,"0")}`;
+      return {from, to, label: MONTHS[mIdx]+" "+y};
+    }
+    if(reportInterval==="anno"){
+      return {from:`${reportMeseSel.anno}-01-01`, to:`${reportMeseSel.anno}-12-31`, label: reportMeseSel.anno.toString()};
+    }
+    return {from:reportDateFrom, to:reportDateTo, label:reportDateFrom+" - "+reportDateTo};
+  }
+
+  // Splitta il campo libero "collega" (testo multilinea, spesso con
+  // "NOME1, NOME2" sulla stessa riga) in singoli nomi puliti.
+  function splitColleghi(testo){
+    if(!testo) return [];
+    return testo.split(/\r?\n|,/).map(s=>s.trim()).filter(Boolean);
+  }
+
+  function computeConteggioForReport(cfg, reportId){
+    const {from, to} = getReportRange();
+    const result = { totale:0 };
+    const perModello = {};
+    const perCollega = {};
+    const modelliInclusi = cfg?.modelliInclusi || [];
+    const filtraCollega = (cfg?.filtraCollega||"").trim().toUpperCase();
+    const sottomenu = cfg?.sottomenu || [];
+    // perSottomenu[sottomenuId][gruppoKey][modelloId] = {count, dates}
+    const perSottomenu = {};
+    sottomenu.forEach(sm=>{ perSottomenu[sm.id] = {}; });
+
+    for(const [dateKey, calMap] of Object.entries(store.events)){
+      if(dateKey < from || dateKey > to) continue;
+      for(const [cid, evts] of Object.entries(calMap)){
+        if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
+        for(const e of evts){
+          // Override "solo questo evento" su CATEGORIA REPORT: priorità massima,
+          // sopra la whitelist modelliInclusi decisa a livello di modello.
+          const overrideReportRaw = reportId ? (e.reportOverrides||{})[reportId] : null;
+          const overrideReportEvento = overrideReportRaw?.stato || null;
+          if(overrideReportEvento==="escluso") continue;
+          if(overrideReportEvento!=="incluso" && modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
+          const collegList = splitColleghi(e.collega);
+          if(filtraCollega && !collegList.some(c=>c.toUpperCase().includes(filtraCollega))) continue;
+
+          result.totale++;
+          if(e.modelloId){
+            if(!perModello[e.modelloId]) perModello[e.modelloId] = { count:0, dates:[] };
+            perModello[e.modelloId].count++;
+            perModello[e.modelloId].dates.push(dateKey);
+          }
+          collegList.forEach(c=>{
+            if(!perCollega[c]) perCollega[c] = { count:0, dates:[] };
+            perCollega[c].count++;
+            perCollega[c].dates.push(dateKey);
+          });
+
+          // Ogni sottomenu libero è un asse indipendente: raggruppa i modelli
+          // secondo l'assegnazione manuale salvata su quel sottomenu
+          // (cfg.sottomenu[i].assegnazioni: {modelloId: gruppoKey}), a meno
+          // che questo SINGOLO EVENTO non abbia un override esplicito per
+          // quel sottomenu (priorità massima, stessa logica di stato/escluso
+          // qui sopra). Un modello senza assegnazione in quel sottomenu
+          // semplicemente non compare in nessun gruppo di quell'asse
+          // (comportamento identico a "escluso" nei report esistenti: niente
+          // auto-classificazione).
+          sottomenu.forEach(sm=>{
+            if(sm.tipo!=="libero") return;
+            const gruppoKeyEvento = (overrideReportRaw?.sottomenu||{})[sm.id];
+            const gruppoKey = gruppoKeyEvento || (e.modelloId ? (sm.assegnazioni||{})[e.modelloId] : null);
+            if(!gruppoKey) return;
+            if(!perSottomenu[sm.id][gruppoKey]) perSottomenu[sm.id][gruppoKey] = {};
+            if(!perSottomenu[sm.id][gruppoKey][e.modelloId]) perSottomenu[sm.id][gruppoKey][e.modelloId] = { count:0, dates:[] };
+            perSottomenu[sm.id][gruppoKey][e.modelloId].count++;
+            perSottomenu[sm.id][gruppoKey][e.modelloId].dates.push(dateKey);
+          });
+        }
+      }
+    }
+    Object.values(perModello).forEach(v=>v.dates.sort());
+    Object.values(perCollega).forEach(v=>v.dates.sort());
+    Object.values(perSottomenu).forEach(gruppi=>
+      Object.values(gruppi).forEach(perMod=>
+        Object.values(perMod).forEach(v=>v.dates.sort())));
+    return {...result, perModello, perCollega, perSottomenu};
+  }
+
+  // Gemella di computeConteggioForReport, stessa struttura (stesso cfg,
+  // stessi filtri, stessi sottomenu liberi/per collega/per modello), ma
+  // invece di CONTARE quanti eventi ci sono (result.totale++, count++) SOMMA
+  // i minuti reali di ciascun evento (ingresso/uscita). Usata dal report
+  // "Ore per turno" riscritto: prima quella vista assumeva sempre 6h15 fisse
+  // per ogni turno classificato 1°/2°, sbagliato per modelli come le
+  // protrazioni la cui durata varia evento per evento. Qui la durata di ogni
+  // singolo evento viene letta così com'è (e.tIn/e.tOut, già calcolati a
+  // monte quando l'evento è stato creato/salvato) e sommata: non viene
+  // ricalcolata "quanto dura la giornata di lavoro", solo sommati i minuti
+  // che risultano già sull'evento.
+  function computeMinutiForReport(cfg){
+    const {from, to} = getReportRange();
+    const result = { totaleMin:0 };
+    const perModello = {};
+    const perCollega = {};
+    const modelliInclusi = cfg?.modelliInclusi || [];
+    const filtraCollega = (cfg?.filtraCollega||"").trim().toUpperCase();
+    const sottomenu = cfg?.sottomenu || [];
+    const perSottomenu = {};
+    sottomenu.forEach(sm=>{ perSottomenu[sm.id] = {}; });
+
+    function minutiEvento(e){
+      if(e.allDay) return 24*60; // H24: durata fissa, non ha senso/tIn/tOut
+      return calcMinuti(e.tIn||"", e.tOut||"");
+    }
+
+    for(const [dateKey, calMap] of Object.entries(store.events)){
+      if(dateKey < from || dateKey > to) continue;
+      for(const [cid, evts] of Object.entries(calMap)){
+        if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
+        for(const e of evts){
+          if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
+          const collegList = splitColleghi(e.collega);
+          if(filtraCollega && !collegList.some(c=>c.toUpperCase().includes(filtraCollega))) continue;
+
+          let mins = minutiEvento(e);
+          if(mins<=0) continue; // niente da sommare (evento senza orario valido)
+          // "-PROTRAZIONE A RECUPERO" è un CONSUMO di credito, non un altro
+          // turno lavorato: nel totale ore va sottratto, non sommato.
+          if(tipoModelloProtrazione(e.modelloId)==="meno_recupero") mins = -mins;
+
+          result.totaleMin += mins;
+          if(e.modelloId){
+            if(!perModello[e.modelloId]) perModello[e.modelloId] = { minuti:0, dates:[] };
+            perModello[e.modelloId].minuti += mins;
+            perModello[e.modelloId].dates.push(dateKey);
+          }
+          collegList.forEach(c=>{
+            if(!perCollega[c]) perCollega[c] = { minuti:0, dates:[] };
+            perCollega[c].minuti += mins;
+            perCollega[c].dates.push(dateKey);
+          });
+
+          sottomenu.forEach(sm=>{
+            if(sm.tipo!=="libero" || !e.modelloId) return;
+            const gruppoKey = (sm.assegnazioni||{})[e.modelloId];
+            if(!gruppoKey) return;
+            if(!perSottomenu[sm.id][gruppoKey]) perSottomenu[sm.id][gruppoKey] = {};
+            if(!perSottomenu[sm.id][gruppoKey][e.modelloId]) perSottomenu[sm.id][gruppoKey][e.modelloId] = { minuti:0, dates:[] };
+            perSottomenu[sm.id][gruppoKey][e.modelloId].minuti += mins;
+            perSottomenu[sm.id][gruppoKey][e.modelloId].dates.push(dateKey);
+          });
+        }
+      }
+    }
+    Object.values(perModello).forEach(v=>v.dates.sort());
+    Object.values(perCollega).forEach(v=>v.dates.sort());
+    Object.values(perSottomenu).forEach(gruppi=>
+      Object.values(gruppi).forEach(perMod=>
+        Object.values(perMod).forEach(v=>v.dates.sort())));
+    return {...result, perModello, perCollega, perSottomenu};
+  }
+
+
+  // Calcola, su TUTTA la storia degli eventi (non solo il periodo del
+  // report corrente: uno storno puo' collegare date lontane fra loro), come
+  // i minuti di ogni evento -PROTRAZIONE A RECUPERO (consumo) vengono
+  // stornati dal credito accumulato dagli eventi PROTRAZIONE RECUPERO
+  // (guadagno), in ordine cronologico e a partire dal credito piu' vecchio
+  // (FIFO), esattamente come nell'esempio: 10/11/12 agosto +20m ciascuno,
+  // 13 agosto -30m consuma tutti i 20m del 10 e 10m dei 20m dell'11,
+  // lasciando 10m residui sull'11 e i 20m del 12 intatti.
+  //
+  // è un calcolo dinamico (non salvato da nessuna parte): va rifatto ogni
+  // volta che cambia un evento recupero/meno_recupero, così resta sempre
+  // coerente con lo stato attuale del calendario.
+  //
+  // Ritorna { perEvento, creditoResiduoTotale } dove perEvento[eventId] =
+  // { tipo: "recupero"|"meno_recupero", minutiTotali, minutiStornati,
+  //   minutiResidui, storni: [{dateKey, altroEventId, minuti}] }
+  // - per un evento "recupero": minutiResidui = credito non ancora
+  //   consumato; storni = elenco di chi (che data, quanti minuti) ha
+  //   consumato parte del suo credito.
+  // - per un evento "meno_recupero": minutiResidui = consumo non ancora
+  //   coperto da credito disponibile (dovrebbe restare 0 se c'e' sempre
+  //   credito a sufficienza); storni = elenco di quali date/eventi
+  //   "recupero" hanno coperto il suo consumo.
+  function computeStornoRecupero(){
+    const eventiRecupero = []; // { id, dateKey, calId, minuti }
+    const eventiConsumo = [];  // { id, dateKey, calId, minuti }
+    for(const [dateKey, calMap] of Object.entries(store.events)){
+      for(const [calId, evts] of Object.entries(calMap)){
+        for(const e of evts){
+          const tipo = tipoModelloProtrazione(e.modelloId);
+          if(tipo==="recupero"){
+            const mins = e.allDay ? 0 : calcMinuti(e.tIn||"", e.tOut||"");
+            if(mins>0) eventiRecupero.push({ id:e.id, dateKey, calId, minuti:mins });
+          } else if(tipo==="meno_recupero"){
+            const mins = e.allDay ? 0 : calcMinuti(e.tIn||"", e.tOut||"");
+            if(mins>0) eventiConsumo.push({ id:e.id, dateKey, calId, minuti:mins });
+          }
+        }
+      }
+    }
+    // Ordine cronologico: prima per data, poi per id (stabile) a parità di
+    // data, così il risultato non dipende dall'ordine di iterazione di
+    // store.events (che non è garantito).
+    function cmp(a,b){
+      if(a.dateKey!==b.dateKey) return a.dateKey<b.dateKey?-1:1;
+      return a.id<b.id?-1:(a.id>b.id?1:0);
+    }
+    eventiRecupero.sort(cmp);
+    eventiConsumo.sort(cmp);
+
+    const perEvento = {};
+    eventiRecupero.forEach(ev=>{ perEvento[ev.id] = { tipo:"recupero", minutiTotali:ev.minuti, minutiStornati:0, minutiResidui:ev.minuti, storni:[] }; });
+    eventiConsumo.forEach(ev=>{ perEvento[ev.id] = { tipo:"meno_recupero", minutiTotali:ev.minuti, minutiStornati:0, minutiResidui:ev.minuti, storni:[] }; });
+
+    // Puntatore FIFO sul credito: scorro i consumi in ordine cronologico e,
+    // per ciascuno, consumo il credito più vecchio ancora disponibile
+    // (indipendentemente da quando il credito è stato generato rispetto al
+    // consumo: anche credito futuro rispetto al consumo può coprirlo, così
+    // come nell'esempio le date sono tutte consecutive ma l'algoritmo non
+    // richiede che il credito preceda il consumo).
+    let idxCredito = 0;
+    for(const consumo of eventiConsumo){
+      let daConsumare = consumo.minuti;
+      while(daConsumare>0 && idxCredito<eventiRecupero.length){
+        const credito = eventiRecupero[idxCredito];
+        const infoCredito = perEvento[credito.id];
+        if(infoCredito.minutiResidui<=0){ idxCredito++; continue; }
+        const preso = Math.min(daConsumare, infoCredito.minutiResidui);
+        infoCredito.minutiResidui -= preso;
+        infoCredito.minutiStornati += preso;
+        infoCredito.storni.push({ dateKey:consumo.dateKey, altroEventId:consumo.id, minuti:preso });
+        const infoConsumo = perEvento[consumo.id];
+        infoConsumo.minutiStornati += preso;
+        infoConsumo.minutiResidui -= preso;
+        infoConsumo.storni.push({ dateKey:credito.dateKey, altroEventId:credito.id, minuti:preso });
+        daConsumare -= preso;
+        if(infoCredito.minutiResidui<=0) idxCredito++;
+      }
+      // Se daConsumare>0 qui, non c'era abbastanza credito accumulato: il
+      // consumo resta parzialmente "scoperto" (minutiResidui>0 sul
+      // consumo), che segnala uno squilibrio da mostrare all'utente
+      // piuttosto che nasconderlo.
+    }
+
+    const creditoResiduoTotale = eventiRecupero.reduce((s,ev)=>s+perEvento[ev.id].minutiResidui, 0);
+    return { perEvento, creditoResiduoTotale };
+  }
+
+  function computeTurnazioneForReport(cfg, reportId){
+    const {from, to} = getReportRange();
+    const esclusi = cfg?.modelliEsclusi || [];
+    const aggiunti = cfg?.modelliAggiunti || [];
+    const default6h15 = modelli.filter(m=>isModelloTurnazioneDefault(m) && !esclusi.includes(m.id)).map(m=>m.id);
+    const modelliInclusi = [...new Set([...default6h15, ...aggiunti])];
+    const gruppiManuali = cfg?.gruppiManuali || {}; // { modelloId: "primo"|"secondo", "modelloId_appauto": "app"|"auto" }
+    const filtraCollega = (cfg?.filtraCollega||"").trim().toUpperCase();
+    const result = { totale:0, primo:0, secondo:0, app:0, auto:0 };
+    const perModello = {};
+    const perCollega = {};
+    const perGruppo = { primo:{}, secondo:{}, app:{}, auto:{} };
+    for(const [dateKey, calMap] of Object.entries(store.events)){
+      if(dateKey < from || dateKey > to) continue;
+      for(const [cid, evts] of Object.entries(calMap)){
+        if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
+        for(const e of evts){
+          // Override "solo questo evento" su CATEGORIA REPORT: priorità massima,
+          // sopra l'inclusione/esclusione decisa a livello di modello.
+          const overrideReportEvento = (reportId ? (e.reportOverrides||{})[reportId] : null)?.stato || null;
+          if(overrideReportEvento==="escluso") continue;
+          if(overrideReportEvento!=="incluso" && modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
+          const collegList = splitColleghi(e.collega);
+          if(filtraCollega && !collegList.some(c=>c.toUpperCase().includes(filtraCollega))) continue;
+          result.totale++;
+          const modelloEvt = e.modelloId ? modelli.find(mm=>mm.id===e.modelloId) : null;
+          const overrideTurnoRaw = e.modelloId ? gruppiManuali[e.modelloId] : null;
+          const escludiTurno = overrideTurnoRaw==="escluso";
+          const overrideTurno = (overrideTurnoRaw==="primo"||overrideTurnoRaw==="secondo") ? overrideTurnoRaw : null;
+          const overrideAppAutoRaw = e.modelloId ? gruppiManuali[e.modelloId+"_appauto"] : null;
+          const escludiAppAuto = overrideAppAutoRaw==="escluso";
+          const overrideAppAuto = (overrideAppAutoRaw==="app"||overrideAppAutoRaw==="auto") ? overrideAppAutoRaw : null;
+          // Override a livello di SINGOLO EVENTO (scelto dall'utente nel form
+          // di modifica evento, opzione "solo questo evento"): ha PRIORITÀ
+          // MASSIMA, sopra la categoria del modello e sopra l'override del
+          // report, perché è la scelta più specifica possibile.
+          const overrideEventoTurno = (e.categoriaTurno==="primo"||e.categoriaTurno==="secondo") ? e.categoriaTurno : null;
+          const overrideEventoAppAuto = (e.categoriaAppAuto==="app"||e.categoriaAppAuto==="auto") ? e.categoriaAppAuto : null;
+          // "Nessuna categoria" scelto esplicitamente sul singolo evento: come
+          // sopra, priorità massima — nessun asse anche se modello/report
+          // avrebbero altrimenti un automatismo.
+          const eventoTurnoVuoto = !!e.turnoVuoto;
+          const eventoAppAutoVuoto = !!e.appAutoVuoto;
+
+          // ── Asse 1: TURNO (1°/2°) — indipendente, decide su override evento,
+          // poi categoria manuale del modello, poi override di questo
+          // report, poi automatico per orario.
+          // Se l'utente ha esplicitamente deselezionato questo asse (modello o report), niente auto: nessun gruppo.
+          const gruppoTurno = eventoTurnoVuoto ? null : (overrideEventoTurno || ((modelloEvt?.turnoVuoto || escludiTurno)
+            ? null
+            : ((modelloEvt?.categoria==="primo"||modelloEvt?.categoria==="secondo")
+              ? modelloEvt.categoria
+              : (overrideTurno || categoriaTurnoAutomatica(modelloEvt)))));
+
+          // ── Asse 2: APP/AUTO — indipendente, stessa priorità ma decide su titolo.
+          // Se l'utente ha esplicitamente deselezionato questo asse (modello o report), niente auto: nessun gruppo.
+          const gruppoAppAuto = eventoAppAutoVuoto ? null : (overrideEventoAppAuto || ((modelloEvt?.appAutoVuoto || escludiAppAuto)
+            ? null
+            : ((modelloEvt?.categoriaAppAuto==="app"||modelloEvt?.categoriaAppAuto==="auto")
+              ? modelloEvt.categoriaAppAuto
+              : (overrideAppAuto || categoriaAppAutoAutomatica(modelloEvt) || "auto"))));
+
+          if(e.modelloId){
+            if(!perModello[e.modelloId]) perModello[e.modelloId] = { count:0, dates:[] };
+            perModello[e.modelloId].count++;
+            perModello[e.modelloId].dates.push(dateKey);
+          }
+          collegList.forEach(c=>{
+            if(!perCollega[c]) perCollega[c] = { count:0, dates:[] };
+            perCollega[c].count++;
+            perCollega[c].dates.push(dateKey);
+          });
+          if(gruppoTurno){
+            result[gruppoTurno] = (result[gruppoTurno]||0)+1;
+            if(e.modelloId){
+              if(!perGruppo[gruppoTurno][e.modelloId]) perGruppo[gruppoTurno][e.modelloId] = { count:0, dates:[] };
+              perGruppo[gruppoTurno][e.modelloId].count++;
+              perGruppo[gruppoTurno][e.modelloId].dates.push(dateKey);
+            }
+          }
+          if(gruppoAppAuto){
+            result[gruppoAppAuto] = (result[gruppoAppAuto]||0)+1;
+            if(e.modelloId){
+              if(!perGruppo[gruppoAppAuto][e.modelloId]) perGruppo[gruppoAppAuto][e.modelloId] = { count:0, dates:[] };
+              perGruppo[gruppoAppAuto][e.modelloId].count++;
+              perGruppo[gruppoAppAuto][e.modelloId].dates.push(dateKey);
+            }
+          }
+        }
+      }
+    }
+    Object.values(perModello).forEach(v=>v.dates.sort());
+    Object.values(perCollega).forEach(v=>v.dates.sort());
+    Object.values(perGruppo).forEach(g=>Object.values(g).forEach(v=>v.dates.sort()));
+    return {...result, perModello, perCollega, perGruppo, modelliInclusiEffettivi:modelliInclusi};
+  }
+
+  function computeConteggio(){
+    return computeConteggioForReport({fasceFiltro:[]});
+  }
+
+  // Spezza un intervallo [tIn,tOut) (in minuti dalla mezzanotte, tOut può
+  // essere "il giorno dopo" cioè < tIn) in due quantità: minuti che cadono
+  // in fascia diurna (06:00-22:00) e minuti che cadono in fascia notturna
+  // (22:00-06:00). Gestisce anche i turni che attraversano la mezzanotte.
+  function spezzaDiurnoNotturno(tIn, tOut){
+    const m1 = oraInMinuti(tIn), m2raw = oraInMinuti(tOut);
+    if(m1===null||m2raw===null) return {diurno:0, notturno:0};
+    let m2 = m2raw;
+    if(m2<=m1) m2 += 24*60; // turno che passa la mezzanotte
+    let diurno=0, notturno=0;
+    for(let t=m1; t<m2; t++){
+      const h = Math.floor((t%(24*60))/60);
+      if(h>=6 && h<22) diurno++; else notturno++;
+    }
+    return {diurno, notturno};
+  }
+
+  // Indennità di servizio: ore effettive (non turni interi) per ciascuna
+  // delle 4 fasce, spezzando ogni turno tra diurno e notturno quando
+  // attraversa le 06:00 o le 22:00. "Festivo" e "Festivo notturno" sono le
+  // stesse fasce orarie ma applicate nei giorni festivi (isFestivo).
+  function computeIndennita(modelliInclusi=[], reportId=null){
+    const {from, to} = getReportRange();
+    const totaliMin = { diurno:0, notturno:0, festivo:0, notturno_festivo:0 };
+    for(const [dateKey, calMap] of Object.entries(store.events)){
+      if(dateKey < from || dateKey > to) continue;
+      const fest = isFestivo(dateKey, store.nationalHolsEnabled, store.extraHols);
+      for(const [cid, evts] of Object.entries(calMap)){
+        if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
+        for(const e of evts){
+          // Override "solo questo evento" su CATEGORIA REPORT: priorità massima.
+          const overrideReportEvento = (reportId ? (e.reportOverrides||{})[reportId] : null)?.stato || null;
+          if(overrideReportEvento==="escluso") continue;
+          if(overrideReportEvento!=="incluso" && modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
+          if(e.allDay) continue;
+          if(!e.tIn||!e.tOut) continue;
+          const {diurno, notturno} = spezzaDiurnoNotturno(e.tIn, e.tOut);
+          if(fest){ totaliMin.festivo += diurno; totaliMin.notturno_festivo += notturno; }
+          else    { totaliMin.diurno  += diurno; totaliMin.notturno         += notturno; }
+        }
+      }
+    }
+    // Restituite in ORE (decimali), non in minuti: chi consuma questo
+    // oggetto (IndennitaConfig) moltiplica direttamente ore*tariffa_oraria.
+    return {
+      diurno: totaliMin.diurno/60,
+      notturno: totaliMin.notturno/60,
+      festivo: totaliMin.festivo/60,
+      notturno_festivo: totaliMin.notturno_festivo/60,
+    };
+  }
+
+  // Durata PREVISTA di un evento in minuti, basata sul modello collegato
+  // (6h15=375, 6h30=390, personalizzato=differenza inizio/fine del modello).
+  // Se non c'è modello, usa la durata dell'evento stesso come previsione
+  // (nessuno scostamento calcolabile in quel caso).
+  function minutiPrevistiEvento(e){
+    const mod = e.modelloId ? modelli.find(m=>m.id===e.modelloId) : null;
+    if(mod){
+      if(mod.tempo==="6h15") return 375;
+      if(mod.tempo==="6h30") return 390;
+      if(mod.tempo==="personalizzato" && mod.inizio && mod.fine) return calcMinuti(mod.inizio, mod.fine);
+    }
+    if(e.tIn&&e.tOut) return calcMinuti(e.tIn, e.tOut);
+    return 0;
+  }
+
+  // Minuti EFFETTIVAMENTE lavorati in un evento: parte dalla durata
+  // prevista e applica gli scostamenti reali già tracciati altrove nel
+  // progetto (stessi campi usati da sincronizzaEventiProtrazione):
+  //  - Entrata/Uscita effettiva (protMenoRecIn/protMenoRecOut): ritardo in
+  //    entrata + anticipo in uscita, sottratti dalla durata prevista;
+  //  - PROTRAZIONE A PAGAMENTO / A RECUPERO (protPagFine/protRecFine): ore
+  //    lavorate IN PIÙ oltre l'uscita prevista, sommate.
+  function minutiEffettiviEvento(e){
+    const previsti = minutiPrevistiEvento(e);
+    let effettivi = previsti;
+    if(e.protMenoRecIn||e.protMenoRecOut){
+      const previstoIn = oraInMinuti(e.tIn||""), effettivoIn = oraInMinuti(e.protMenoRecIn||"");
+      const previstoOut = oraInMinuti(e.tOut||""), effettivoOut = oraInMinuti(e.protMenoRecOut||"");
+      let ritardoEntrata=0, anticipoUscita=0;
+      if(previstoIn!==null&&effettivoIn!==null){ let d=effettivoIn-previstoIn; if(d<0) d+=24*60; ritardoEntrata=Math.max(0,d); }
+      if(previstoOut!==null&&effettivoOut!==null){ let d=previstoOut-effettivoOut; if(d<0) d+=24*60; anticipoUscita=Math.max(0,d); }
+      effettivi -= (ritardoEntrata+anticipoUscita);
+    }
+    if(e.protPagFine){
+      const uscitaPrevista = oraInMinuti(e.tOut||""), finePag = oraInMinuti(e.protPagFine||"");
+      if(uscitaPrevista!==null&&finePag!==null){ let d=finePag-uscitaPrevista; if(d<0) d+=24*60; effettivi += Math.max(0,d); }
+    }
+    if(e.protRecFine){
+      const uscitaPrevista = oraInMinuti(e.tOut||""), fineRec = oraInMinuti(e.protRecFine||"");
+      if(uscitaPrevista!==null&&fineRec!==null){ let d=fineRec-uscitaPrevista; if(d<0) d+=24*60; effettivi += Math.max(0,d); }
+    }
+    return Math.max(0, effettivi);
+  }
+
+  // Un evento "conta" per viabilità/ticket solo se collegato a un modello
+  // di durata 6h15, 6h30, oppure personalizzato impostato esattamente a
+  // 6h01 (361 minuti) — come richiesto: sono le tre durate-turno valide.
+  function eModelloViabile(e){
+    const mod = e.modelloId ? modelli.find(m=>m.id===e.modelloId) : null;
+    if(!mod) return false;
+    if(mod.tempo==="6h15"||mod.tempo==="6h30") return true;
+    if(mod.tempo==="personalizzato"&&mod.inizio&&mod.fine){
+      return calcMinuti(mod.inizio, mod.fine)===361; // 6h01
+    }
+    return false;
+  }
+
+  // Viabilità: 15€ per ogni giorno con un turno valido (6h15/6h30/6h01),
+  // scalata di 2,4€ per ogni ora (proporzionale) di lavoro effettivo IN
+  // MENO rispetto alle ore previste dal modello di quel turno.
+  const TARIFFA_VIABILITA = 15;
+  const PENALE_VIABILITA_ORA = 2.4;
+  function computeViabilita(modelliInclusi=[]){
+    const {from, to} = getReportRange();
+    let giorni=0, totale=0, oreMancantiTot=0;
+    for(const [dateKey, calMap] of Object.entries(store.events)){
+      if(dateKey < from || dateKey > to) continue;
+      for(const [cid, evts] of Object.entries(calMap)){
+        if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
+        for(const e of evts){
+          if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
+          if(e.allDay) continue;
+          if(!eModelloViabile(e)) continue;
+          const previsti = minutiPrevistiEvento(e);
+          const effettivi = minutiEffettiviEvento(e);
+          const minutiMancanti = Math.max(0, previsti-effettivi);
+          const oreMancanti = minutiMancanti/60;
+          const importo = Math.max(0, TARIFFA_VIABILITA - oreMancanti*PENALE_VIABILITA_ORA);
+          giorni++;
+          totale += importo;
+          oreMancantiTot += oreMancanti;
+        }
+      }
+    }
+    return { giorni, totale, oreMancanti:oreMancantiTot };
+  }
+
+  // Ticket: un ticket per ogni GIORNO in cui le ore effettivamente
+  // lavorate (sommando tutti i turni validi di quel giorno) raggiungono
+  // almeno 6h15 (375 minuti).
+  const SOGLIA_TICKET_MIN = 375; // 6h15
+  function computeTicket(modelliInclusi=[], valoreTicket=0){
+    const {from, to} = getReportRange();
+    let giorniConDiritto=0;
+    for(const [dateKey, calMap] of Object.entries(store.events)){
+      if(dateKey < from || dateKey > to) continue;
+      let minutiGiorno = 0;
+      for(const [cid, evts] of Object.entries(calMap)){
+        if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
+        for(const e of evts){
+          if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
+          if(e.allDay) continue;
+          if(!eModelloViabile(e)) continue;
+          minutiGiorno += minutiEffettiviEvento(e);
+        }
+      }
+      if(minutiGiorno>=SOGLIA_TICKET_MIN) giorniConDiritto++;
+    }
+    return { giorni:giorniConDiritto, totale:giorniConDiritto*(parseFloat(valoreTicket)||0) };
+  }
+
+  const activeReports = (store.reports||[]).filter(r=>r.active);
+  const inactiveTypes = REPORT_TEMPLATES;
+
+  function addReport(type){
+    const tmpl = REPORT_TEMPLATES.find(t=>t.type===type);
+    if(!tmpl) return;
+    const newReport = {
+      id: uid(),
+      type,
+      label: tmpl.label,
+      active: true,
+    };
+    const newRep = [...(store.reports||[]), newReport];
+    setStore(s=>({...s, reports:newRep}));
+    saveSettings({reports:newRep});
+    if(type==="turnazione"){
+      const default6h15 = modelli.filter(m=>isModelloTurnazioneDefault(m)).map(m=>m.id);
+      if(default6h15.length>0){
+        const newCfg = {...conteggioConfigs, [newReport.id]: {fasceFiltro:[], modelliInclusi:default6h15}};
+        setConteggioConfigs(newCfg);
+        saveSettings({conteggio_configs: newCfg});
+      }
+    }
+  }
+
+  function removeReport(id){
+    const newRep = (store.reports||[]).filter(r=>r.id!==id);
+    setStore(s=>({...s, reports:newRep}));
+    saveSettings({reports:newRep});
+  }
+
+  function renameReport(id, label){
+    const newRep = (store.reports||[]).map(r=>r.id===id?{...r,label}:r);
+    setStore(s=>({...s, reports:newRep}));
+    saveSettings({reports:newRep});
+  }
+
+  function moveReport(id, dir){
+    const reps = [...(store.reports||[])];
+    const idx = reps.findIndex(r=>r.id===id);
+    if(idx===-1) return;
+    const newIdx = dir==="up" ? idx-1 : idx+1;
+    if(newIdx<0||newIdx>=reps.length) return;
+    const [moved] = reps.splice(idx,1);
+    reps.splice(newIdx,0,moved);
+    setStore(s=>({...s, reports:reps}));
+    saveSettings({reports:reps});
+  }
+
+  function getConteggioConfig(reportId, reportType){
+    const saved = conteggioConfigs[reportId];
+    if(saved) return saved;
+    if(reportType==="turnazione"){
+      return { fasceFiltro:[], modelliEsclusi:[], modelliAggiunti:[] };
+    }
+    return { fasceFiltro:[], modelliInclusi:[], sottomenu:[] };
+  }
+
+  function updateConteggioConfig(reportId, cfg){
+    const newCfg = {...conteggioConfigs, [reportId]: cfg};
+    setConteggioConfigs(newCfg);
+    saveSettings({conteggio_configs: newCfg});
+  }
+
+  const totaleTurni = computeConteggio().totale;
+  const totaleMinTurni = computeMinutiForReport({fasceFiltro:[]}).totaleMin;
+// #endregion
+
+
+  // ── Manutenzione: ricollega gli eventi "orfani" (modello_id nullo) ai
+  // modelli esistenti, quando testo e orari combaciano esattamente.
+  // Richiamabile da un pulsante in Impostazioni. Match rigoroso (stesso
+  // calendario, stesso titolo/label, stessi orari): quello che non trova
+  // un match sicuro resta orfano e va controllato a mano, elencato nel
+  // riepilogo restituito.
+  async function ripristinaModelliMancanti(){
+    const orfani = [];
+    for(const dayKey in store.events){
+      for(const cId in store.events[dayKey]){
+        for(const e of store.events[dayKey][cId]){
+          if(!e.modelloId) orfani.push({ dayKey, calId:cId, evt:e });
+        }
+      }
+    }
+    const risolti = [];
+    const nonRisolti = [];
+    for(const { dayKey, calId:cId, evt } of orfani){
+      const match = trovaModelloCorrispondente(cId, evt.label, evt.tIn, evt.tOut);
+      if(match){
+        const { error } = await scriviConBackup({
+          tipo:"update", table:"events",
+          payload:{ modello_id: match.id },
+          matchObj:{ id: evt.id },
+          contesto:"Ripristino automatico modello mancante",
+          ts:new Date().toISOString(),
+          opzioni:{ soloLog:true },
+        });
+        if(!error){
+          const nuovoStore = withEventoAggiornato(store, dayKey, cId, evt.id, { modelloId: match.id });
+          setStore(nuovoStore);
+          storeRef.current = nuovoStore;
+          risolti.push({ dayKey, label: evt.label, modello: match.titolo||match.label });
+        } else {
+          nonRisolti.push({ dayKey, label: evt.label, motivo: "errore di scrittura" });
+        }
+      } else {
+        nonRisolti.push({ dayKey, label: evt.label, motivo: "nessun modello corrispondente trovato" });
+      }
+    }
+    return { totale: orfani.length, risolti, nonRisolti };
+  }
+
+  // ─── "Tutti gli eventi di stesso nome+orario" per CATEGORIA TURNO /
+  // CATEGORIA APP-AUTO / CATEGORIA REPORT del singolo evento ───
+  // Richiesta esplicita: il "match" per capire quali eventi coinvolgere in
+  // un aggiornamento di massa è nome (label) + orario (tIn/tOut) identici,
+  // non semplicemente "stesso modello collegato" — due eventi con lo stesso
+  // modello ma orario diverso NON devono essere toccati, e viceversa un
+  // evento con lo stesso nome+orario ma senza modello collegato (o con un
+  // modello diverso per qualche motivo storico) DEVE esserlo. Aggiorna:
+  //  1) subito lo stato locale (store), su tutte le date/calendari;
+  //  2) Supabase in blocco (un unico UPDATE con .in("id", [...])).
+  // patchEvento: oggetto di patch in formato "locale" (es. {categoriaTurno,
+  // turnoVuoto,...}), fuso sopra ai campi esistenti di ogni evento trovato;
+  // oppure una FUNZIONE (eventoEsistente => patchParziale) quando la patch
+  // dipende da cosa l'evento aveva già (es. rimuovere solo la chiave di UN
+  // report da reportOverrides senza cancellare gli override degli altri
+  // report già presenti su quell'evento). patchDb: stesso concetto, in
+  // nomi colonna Supabase — se è una funzione riceve lo stesso evento
+  // "nuovo" (già con patchEvento applicata) per costruire il payload.
+  async function applicaReportOverrideATuttiGliEventi(nomeLabel, tInMatch, tOutMatch, patchEvento, patchDb){
+    if(!userId) return { idsAggiornati: [] };
+    const idsAggiornati = [];
+    const dbPayloadPerId = {};
+    setStore(prev=>{
+      const eventsBase = prev?.events||{};
+      const nextEvents = {};
+      for(const [dk, calMap] of Object.entries(eventsBase)){
+        const nextCalMap = {};
+        for(const [cid, evts] of Object.entries(calMap)){
+          nextCalMap[cid] = evts.map(e=>{
+            if(e.label===nomeLabel && (e.tIn||"")===(tInMatch||"") && (e.tOut||"")===(tOutMatch||"")){
+              idsAggiornati.push(e.id);
+              const patch = typeof patchEvento==="function" ? patchEvento(e) : patchEvento;
+              const nuovoEvt = {...e, ...patch};
+              dbPayloadPerId[e.id] = typeof patchDb==="function" ? patchDb(nuovoEvt) : patchDb;
+              return nuovoEvt;
+            }
+            return e;
+          });
+        }
+        nextEvents[dk] = nextCalMap;
+      }
+      const ns = {...prev, events: nextEvents};
+      saveToLocalStorage(ns.events, ns.calendars, modelli);
+      return ns;
+    });
+    if(idsAggiornati.length>0){
+      if(typeof patchDb==="function"){
+        // Payload diverso per evento (dipende da cosa l'evento aveva già):
+        // un update separato per ciascuno, tutti in parallelo.
+        const risultati = await Promise.all(idsAggiornati.map(id=>
+          supabase.from("events").update(dbPayloadPerId[id]).eq("id", id).eq("user_id", userId)
+        ));
+        const conErrore = risultati.find(r=>r.error);
+        if(conErrore) segnalaErrore(conErrore.error, `Aggiornamento di massa (${idsAggiornati.length} eventi "${nomeLabel}" ${tInMatch}-${tOutMatch})`);
+      } else {
+        // Stesso payload per tutti: un unico UPDATE in blocco.
+        const { error } = await supabase.from("events").update(patchDb).in("id", idsAggiornati).eq("user_id", userId);
+        if(error) segnalaErrore(error, `Aggiornamento di massa (${idsAggiornati.length} eventi "${nomeLabel}" ${tInMatch}-${tOutMatch})`);
+      }
+    }
+    return { idsAggiornati };
+  }
+
+  return {
+    today,
+    tipoModelloProtrazione,
+    store,
+    setStore,
+    ripristinaModelliMancanti,
+    ripristinoInCorso, setRipristinoInCorso,
+    ripristinoEsito, setRipristinoEsito,
+    loading,
+    setLoading,
+    year,
+    setYear,
+    month,
+    setMonth,
+    calId,
+    setCalId,
+    editMode,
+    setEditMode,
+    selectedCalIds,
+    setSelectedCalIds,
+    reportCalIds,
+    setReportCalIds,
+    setReportCalIdsPersistito,
+    selectedModelloIds,
+    setSelectedModelloIds,
+    screen,
+    setScreen,
+    dayKey,
+    setDayKey,
+    form,
+    setForm,
+    pal,
+    setPal,
+    ncName,
+    setNcName,
+    ncColor,
+    setNcColor,
+    nsName,
+    setNsName,
+    nsColor,
+    setNsColor,
+    exCal,
+    setExCal,
+    nhName,
+    setNhName,
+    patronoCittaSel,
+    setPatronoCittaSel,
+    syncMsg,
+    setSyncMsg,
+    backupsList,
+    setBackupsList,
+    showBackupsModal,
+    setShowBackupsModal,
+    showLocalDataModal,
+    setShowLocalDataModal,
+    esitoBackupLocale,
+    setEsitoBackupLocale,
+    confermaImportLocale,
+    setConfermaImportLocale,
+    backupPeriodoDa,
+    setBackupPeriodoDa,
+    backupPeriodoA,
+    setBackupPeriodoA,
+    syncing,
+    setSyncing,
+    nhD,
+    setNhD,
+    nhM,
+    setNhY,
+    nhY,
+    setNhM,
+    bgSyncing,
+    setBgSyncing,
+    dbError,
+    setDbError,
+    isWideScreen,
+    setIsWideScreen,
+    evtFontSize,
+    dbErrorTimer,
+    codaErrori,
+    setCodaErrori,
+    logErroriVisibile,
+    setLogErroriVisibile,
+    erroriSilenziatiVisibile,
+    setErroriSilenziatiVisibile,
+    segnalaErroreDb,
+    dbUpdate,
+    dbDelete,
+    dbInsert,
+    scriviConBackup,
+    up,
+    creaEventoSupabase,
+    sheetsUrl,
+    setSheetsUrl,
+    sheetsSecret,
+    setSheetsSecret,
+    stats,
+    setStats,
+    showDbModal,
+    setShowDbModal,
+    showModelloEditor,
+    setShowModelloEditor,
+    isOnline,
+    setIsOnline,
+    banner,
+    setBanner,
+    syncMode,
+    setSyncMode,
+    dbRawData,
+    setDbRawData,
+    dbCalsCount,
+    setDbCalsCount,
+    dbEvtsCount,
+    setDbEvtsCount,
+    modelliTab,
+    setModelliTab,
+    modelli,
+    setModelli,
+    modelliSort,
+    setModelliSort,
+    showSortMenu,
+    setShowSortMenu,
+    showModelForm,
+    setShowModelForm,
+    origineModelForm,
+    setOrigineModelForm,
+    editModello,
+    setEditModello,
+    modelForm,
+    setModelForm,
+    showColorAssignPicker,
+    setShowColorAssignPicker,
+    colorAssignCalFiltro,
+    setColorAssignCalFiltro,
+    showAddColorPicker,
+    setShowAddColorPicker,
+    coloriExtra,
+    setColoriExtra,
+    autocompleteValori,
+    setAutocompleteValori,
+    showEditFasciaColor,
+    setShowEditFasciaColor,
+    rotazioni,
+    setRotazioni,
+    showRotForm,
+    setShowRotForm,
+    editRotazione,
+    setEditRotazione,
+    rotForm,
+    setRotForm,
+    showRotDetail,
+    setShowRotDetail,
+    showApplyRotDialog,
+    setShowApplyRotDialog,
+    showDeleteRotEvtDialog,
+    setShowDeleteRotEvtDialog,
+    showImportaFotoDialog,
+    setShowImportaFotoDialog,
+    showImportaTurniJsonDialog,
+    setShowImportaTurniJsonDialog,
+    showModelloPicker,
+    setShowModelloPicker,
+    quickModeModello,
+    setQuickModeModello,
+    showRotazionePicker,
+    setShowRotazionePicker,
+    dragSrcId,
+    dragTargetId,
+    touchSrcId,
+    touchTargetId,
+    touchStartX,
+    touchStartY,
+    prevGrid,
+    modelliScrollRef,
+    autoScrollRAF,
+    autoScrollSpeed,
+    dragOverId,
+    setDragOverId,
+    draggingId,
+    setDraggingId,
+    modalitaSpostamento,
+    setModalitaSpostamento,
+    updateAutoScroll,
+    stopAutoScroll,
+    reportInterval,
+    setReportInterval,
+    setReportIntervalPersistito,
+    reportMeseSel,
+    setReportMeseSel,
+    selezionaReportMese,
+    showMeseReportPicker,
+    setShowMeseReportPicker,
+    reportDateFrom,
+    setReportDateFrom,
+    setReportDateFromPersistito,
+    reportDateTo,
+    setReportDateTo,
+    setReportDateToPersistito,
+    intervalliSalvati,
+    salvaIntervalloCorrente,
+    applicaIntervalloSalvato,
+    rimuoviIntervalloSalvato,
+    openReportConfig,
+    setOpenReportConfig,
+    showIntervalPicker,
+    setShowIntervalPicker,
+    indennita,
+    setIndennita,
+    valoreTicket,
+    setValoreTicket,
+    conteggioConfigs,
+    setConteggioConfigs,
+    showReportModelliPicker,
+    setShowReportModelliPicker,
+    editFascia,
+    setEditFascia,
+    showFasciaColorPicker,
+    setShowFasciaColorPicker,
+    userId,
+    isInitialized,
+    processaCodaSync,
+    sysDark,
+    dark,
+    T,
+    activeCal,
+    mainCal,
+    mainCalId,
+    accent,
+    accentText,
+    hols,
+    fasceAutomatiche,
+    colByTime,
+    colLabel,
+    isRed,
+    sundayColor,
+    holidayColor,
+    redBg,
+    getEvts,
+    allEvts,
+    dots,
+    saveSettings,
+    addCalendar,
+    updateCalendar,
+    deleteCalendar,
+    computeEventFields,
+    saveEvt,
+    updateEvt,
+    delEvt,
+    delEvtiRotazioneDaData,
+    delTutteEvtiRotazione,
+    cancellaTuttiEventiMese,
+    calcMinuti,
+    saveToSheets,
+    syncSeAttivo,
+    loadFromSheets,
+    syncFromSheets,
+    handleSave,
+    handleLoad,
+    handleSaveSheetsConfig,
+    handleViewDbData,
+    buildBackupPayload,
+    handleExportSupabase,
+    handleOpenImportSupabase,
+    handleRestoreBackup,
+    handleEsportaBackupLocale,
+    handleFileSelezionatoImportLocale,
+    confermaEsegueImportBackupLocale,
+    handleLogout,
+    eseguiNormalizzazione,
+    normalizzaModelliTempo,
+    normalizzaEventiTempo,
+    modelliOrdinati,
+    importsRecenti,
+    modelliDelCalendario,
+    spostaModelloPuro,
+    moveRotazione, moveColoreExtra, ricoloraModelliPerFasciaOraria,
+    trascinaModelloPuro,
+    salvaModifichePosizioni,
+    moveH24,
+    reorderModelli,
+    ensureColoreRegistrato,
+    registraValoreAutocomplete,
+    registraValoriAutocomplete,
+    rimuoviValoreAutocomplete,
+    supabaseUpsertConRetry,
+    saveModello,
+    deleteModello,
+    ripulisciTutteLePosizioniModelli,
+    salvaDisposizioneModelli,
+    ripristinaDisposizioneModelli,
+    showSalvaDisposizionePopup,
+    setShowSalvaDisposizionePopup,
+    annullaTimerSalvaDisposizione,
+    addColoreExtra,
+    removeColoreExtra,
+    updateColoreExtraLabel,
+    replaceColoreEverywhere,
+    saveRotazione,
+    deleteRotazione,
+    updateGrigliaRotazione,
+    inserisciEventoGenerico,
+    normOrarioImport,
+    trovaModelloPerTitoloOrario,
+    isRigaProtrazione,
+    tipoProtrazione,
+    sincronizzaEventiProtrazione,
+    importaTurniPdfJson,
+    delTuttiEventiImport,
+    importaEventiSingoli,
+    applyRotazione,
+    getReportRange,
+    splitColleghi,
+    computeConteggioForReport,
+    computeMinutiForReport,
+    computeStornoRecupero,
+    computeStornoPI,
+    tipoModelloPI,
+    computeTurnazioneForReport,
+    computeConteggio,
+    computeIndennita,
+    computeViabilita,
+    computeTicket,
+    activeReports,
+    inactiveTypes,
+    addReport,
+    removeReport,
+    renameReport,
+    moveReport,
+    getConteggioConfig,
+    updateConteggioConfig,
+    applicaReportOverrideATuttiGliEventi,
+    totaleTurni,
+    totaleMinTurni,
+    setPrevGrid,
+    REPORT_TEMPLATES,
+    calcolaOrdineModelli,
+    updateFascia,
+    session
+  };
+}
+    
