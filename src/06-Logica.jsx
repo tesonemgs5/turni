@@ -839,12 +839,23 @@ export function useAppCore(session){
 
         // Ordino i calendari secondo sort_order (posizione scelta in Impostazioni con <-‘<-“),
         // così l'ordine con cui vengono mostrati gli eventi resta coerente anche dopo un refresh.
+        // Come per i modelli poco sotto, la query non garantisce un ordine
+        // stabile quando più calendari hanno lo stesso sort_order (inclusi
+        // due o più con sort_order null): senza uno spareggio esplicito per
+        // id, l'ordine relativo tra loro poteva cambiare da un caricamento
+        // all'altro. Dato che ricalcolaPosizioniGlobali assegna a ogni
+        // calendario un intero blocco di 1000 posizioni in base alla sua
+        // posizione qui, un calendario che "scambiava posto" con un altro
+        // tra due caricamenti si vedeva spostare TUTTI i propri modelli in
+        // un blocco di sortOrder completamente diverso — la causa, mai
+        // isolata prima, del sortOrder dei modelli che "impazzisce da solo".
         const calsOrdinati = [...cals].sort((a,b)=>{
           const sa = a.sort_order, sb = b.sort_order;
-          if(sa==null && sb==null) return 0;
+          if(sa==null && sb==null) return String(a.id).localeCompare(String(b.id));
           if(sa==null) return 1;
           if(sb==null) return -1;
-          return sa-sb;
+          if(sa!==sb) return sa-sb;
+          return String(a.id).localeCompare(String(b.id));
         });
         const calendars = calsOrdinati.map(c=>({
           id: c.id, name: c.name, color: c.color, isMain: c.is_main, shifts: c.shifts||[],
