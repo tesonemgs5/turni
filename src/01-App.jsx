@@ -449,6 +449,22 @@ function AppInterno({ session }){
               reports={store.reports||[]} getConteggioConfig={getConteggioConfig} updateConteggioConfig={updateConteggioConfig}
               suggerimentiTitolo={autocompleteValori.titolo} suggerimentiNomeVis={autocompleteValori.nome_visualizzato}
               onRimuoviSuggerimento={rimuoviValoreAutocomplete}
+              calendari={store.calendars}
+              onCopia={async(calIdsDestinazione)=>{
+                // Crea una copia indipendente del modello in ciascun calendario scelto,
+                // riusando saveModello (che gestisce ordinamento, colori e sync).
+                // Il modello originale non viene toccato.
+                const { id:_idOriginale, ...datiSenzaId } = modelForm;
+                const ok = [], errori = [];
+                for(const cid of calIdsDestinazione){
+                  const nomeCal = store.calendars.find(c=>c.id===cid)?.name || cid;
+                  try{
+                    const esito = await saveModello({...datiSenzaId, calendarId:cid, silenzioso:true});
+                    if(esito?.ok) ok.push(nomeCal); else errori.push(nomeCal);
+                  }catch(e){ errori.push(nomeCal); }
+                }
+                return (ok.length?`✅ Copiato in: ${ok.join(", ")}. `:"")+(errori.length?`❌ Errore in: ${errori.join(", ")}.`:"");
+              }}
               onSave={async()=>{
                 // try/catch qui: un ErrorBoundary React NON intercetta le
                 // eccezioni dentro handler async come questo (sono fuori dal

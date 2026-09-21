@@ -380,6 +380,7 @@ export default function VistaModelli({ C }){
               {modelliVisibili.map((m,i,arr)=>(
                 <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                   <ModelloCard modello={m} T={T} accent={accent} fasceAutomatiche={fasceAutomatiche}
+                    nomeCalendario={store.calendars.find(c=>c.id===(m.calendarId||mainCalId))?.name||""}
                     // La modalità selezione multipla (checkbox) resta legata a editMode
                     // (serve per azioni di gruppo, es. eliminazione multipla). Le frecce
                     // ▲▼ e il drag & drop per il riordino sono invece condizionate a
