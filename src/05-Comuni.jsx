@@ -402,7 +402,7 @@ export function FasceExpand({data, pct1, pct2, T, modelli, accent, cfg}){
   );
 }
 
-export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, accent, fasceAutomatiche, onRename, onUpdateCfg, onGoToModelli}){
+export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, modelliOrdinati, accent, fasceAutomatiche, onRename, onUpdateCfg, onGoToModelli}){
   const [editingName, setEditingName] = useState(false);
   const [tmpName, setTmpName] = useState(r.label);
   const pct = totaleTurni>0 ? Math.round((data.totale/totaleTurni)*100) : 0;
@@ -551,7 +551,7 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, acce
                     !data.perModello||Object.keys(data.perModello).length===0 ? (
                       <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"10px 0"}}>Nessun turno nel periodo</div>
                     ) : Object.entries(data.perModello).sort(([a],[b])=>{
-                      const ia=modelli.findIndex(m=>m.id===a), ib=modelli.findIndex(m=>m.id===b);
+                      const _ord=modelliOrdinati||modelli; const ia=_ord.findIndex(m=>m.id===a), ib=_ord.findIndex(m=>m.id===b);
                       return (ia<0?9999:ia)-(ib<0?9999:ib);
                     }).map(([mid,info])=>{
                       const m=modelli.find(x=>x.id===mid);
@@ -738,7 +738,7 @@ export function fmtOreMin(mins){
 // vecchia "Ore per turno" (OrePerTurnoView), che era fissa su 1Â°/2Â° Turno a
 // 6h15 ciascuno, non rinominabile, senza sottomenu e senza modo di togliere
 // le due righe 1Â°/2Â° Turno che non servono per tutti i report.
-export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, accent, fasceAutomatiche, onRename, onUpdateCfg}){
+export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, modelliOrdinati, accent, fasceAutomatiche, onRename, onUpdateCfg}){
   const [editingName, setEditingName] = useState(false);
   const [tmpName, setTmpName] = useState(r.label);
   const pct = totaleMinPeriodo>0 ? Math.max(0, Math.min(100, Math.round((data.totaleMin/totaleMinPeriodo)*100))) : 0;
@@ -878,7 +878,7 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
                     !data.perModello||Object.keys(data.perModello).length===0 ? (
                       <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"10px 0"}}>Nessun turno nel periodo</div>
                     ) : Object.entries(data.perModello).sort(([a],[b])=>{
-                      const ia=modelli.findIndex(m=>m.id===a), ib=modelli.findIndex(m=>m.id===b);
+                      const _ord=modelliOrdinati||modelli; const ia=_ord.findIndex(m=>m.id===a), ib=_ord.findIndex(m=>m.id===b);
                       return (ia<0?9999:ia)-(ib<0?9999:ib);
                     }).map(([mid,info])=>{
                       const m=modelli.find(x=>x.id===mid);
@@ -1171,7 +1171,7 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
         <div style={{background:T.surface,borderRadius:10,padding:12}}>
           <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:8}}>PER MODELLO</div>
           {Object.entries(data.perModello).sort(([a],[b])=>{
-                      const ia=modelli.findIndex(m=>m.id===a), ib=modelli.findIndex(m=>m.id===b);
+                      const _ord=modelliOrdinati||modelli; const ia=_ord.findIndex(m=>m.id===a), ib=_ord.findIndex(m=>m.id===b);
                       return (ia<0?9999:ia)-(ib<0?9999:ib);
                     }).map(([mid,info])=>{
             const m=modelli.find(x=>x.id===mid);
