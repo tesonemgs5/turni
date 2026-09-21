@@ -1904,12 +1904,12 @@ export default function VistaModelli({ C }){
           Le festività nazionali e i patroni delle città stanno nel menu qui sopra.
           Lasciando vuoto l'anno la data si ripete ogni anno.
         </div>
-        {(store.extraHols||[]).length===0&&(
+        {(store.extraHols||[]).filter(h=>!h.importante).length===0&&(
           <div style={{textAlign:"center",color:T.sub,fontSize:12,padding:"10px 0"}}>
             Nessuna data personale inserita.
           </div>
         )}
-        {(store.extraHols||[]).map((h,i)=>(
+        {(store.extraHols||[]).map((h,i)=>h.importante?null:(
           <div key={i} style={{display:"flex",alignItems:"center",gap:8,
             background:T.s2,borderRadius:8,padding:"6px 10px",marginBottom:6}}>
             <span style={{flex:1,fontSize:12,color:T.text}}>
@@ -1965,6 +1965,33 @@ export default function VistaModelli({ C }){
   // del calendario attivo per la modifica).
   const soloConsultazione = false;
   const curEvts = dayKey ? (selectedCalIds.length>1 ? allEvts(dayKey).filter(e=>selectedCalIds.includes(e._cid)) : getEvts(dayKey,calId)) : [];
+  // ── GIORNO IMPORTANTE (⭐) ─────────────────────────────────────────
+  // Salvato in store.extraHols come voce {importante:true, y, m, d, nota}
+  // (stesso salvataggio dei festivi locali, quindi si sincronizza da solo).
+  // Le voci con importante:true sono escluse dalla logica dei festivi
+  // (isFestivo / isRed) e dall'elenco "Festivi personalizzati".
+  const [yImp,mImp,dImp] = dayKey ? dayKey.split("-").map(Number) : [0,0,0];
+  const voceImportante = dayKey
+    ? (store.extraHols||[]).find(h=>h.importante&&+h.y===yImp&&+h.m===mImp&&+h.d===dImp)
+    : null;
+  function salvaExtraHolsImportanti(newH){
+    setStore(s=>({...s,extraHols:newH}));
+    saveSettings({theme:store.theme,extra_hols:newH});
+  }
+  function toggleGiornoImportante(){
+    const attuali = store.extraHols||[];
+    if(voceImportante){
+      salvaExtraHolsImportanti(attuali.filter(h=>h!==voceImportante));
+    }else{
+      salvaExtraHolsImportanti([...attuali,{importante:true,name:"Giorno importante",y:yImp,m:mImp,d:dImp,nota:""}]);
+    }
+  }
+  function aggiornaNotaGiornoImportante(nota){
+    if(!voceImportante) return;
+    const testo=(nota||"").trim();
+    if(testo===(voceImportante.nota||"")) return;
+    salvaExtraHolsImportanti((store.extraHols||[]).map(h=>h===voceImportante?{...h,nota:testo}:h));
+  }
   const dayModal = dayKey&&(
     <div style={{position:"fixed",top:0,left:0,right:0,bottom:NAV_HEIGHT_CSS,background:"rgba(0,0,0,0.75)",zIndex:200,
       display:"flex",alignItems:"center"}}
@@ -1984,7 +2011,7 @@ export default function VistaModelli({ C }){
                 style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
                   color:T.text,width:28,height:28,cursor:"pointer",fontSize:15,
                   display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>‹</button>
-              <div style={{fontSize:19,fontWeight:900,color:T.text}}>{fmtDataIT(dayKey)}</div>
+              <div style={{fontSize:19,fontWeight:900,color:T.text}}>{voceImportante?"⭐ ":""}{fmtDataIT(dayKey)}</div>
               <button onClick={()=>{
                   const [y,m,d]=dayKey.split("-").map(Number);
                   const next=new Date(y,m-1,d+1);
@@ -2016,6 +2043,22 @@ export default function VistaModelli({ C }){
               style={{background:T.s2,border:"none",borderRadius:8,
                 color:T.sub,width:38,height:38,cursor:"pointer",fontSize:22}}>×</button>
           </div>
+        </div>
+        <div style={{marginBottom:12}}>
+          <button onClick={toggleGiornoImportante}
+            style={{width:"100%",cursor:"pointer",fontSize:14,fontWeight:800,borderRadius:10,padding:"9px 12px",
+              background:voceImportante?"#fef3c7":T.s2,
+              color:voceImportante?"#92400e":T.text,
+              border:`1.5px solid ${voceImportante?"#f59e0b":T.border}`}}>
+            {voceImportante?"⭐ Giorno importante — tocca per togliere":"☆ Segna come importante"}
+          </button>
+          {voceImportante&&(
+            <input key={dayKey} defaultValue={voceImportante.nota||""}
+              onBlur={e=>aggiornaNotaGiornoImportante(e.target.value)}
+              placeholder="Nota (es. visita medica, scadenza...)" maxLength={80}
+              style={{width:"100%",boxSizing:"border-box",marginTop:8,background:T.s2,border:`1px solid ${T.border}`,
+                borderRadius:8,padding:"9px 10px",color:T.text,fontSize:14,outline:"none"}}/>
+          )}
         </div>
         <div style={{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap"}}>
           {store.calendars.map(c=>{

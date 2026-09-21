@@ -1647,7 +1647,7 @@ export function useAppCore(session){
   function isRed(d,m){
     const meseUmano = m+1;
     return hols.some(h=>h.m===meseUmano&&h.d===d) ||
-      (store.extraHols||[]).some(h=>+h.m===meseUmano&&+h.d===d&&(h.y==null||+h.y===year));
+      (store.extraHols||[]).some(h=>!h.importante&&+h.m===meseUmano&&+h.d===d&&(h.y==null||+h.y===year));
   }
   const sundayColor = store.sundayColor || (dark?"#2d0a0a":"#fff5f5");
   const holidayColor = store.holidayColor || (dark?"#2d0a0a":"#fff5f5");

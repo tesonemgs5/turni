@@ -445,6 +445,7 @@ export default function VistaCalendario({ C }){
           const isSun=(i%7)===6;
           const isH=isRed(d,month);
           const red=isSun||isH;
+          const giornoImportante=(store.extraHols||[]).find(h=>h.importante&&+h.y===year&&+h.m===month+1&&+h.d===d);
           return (
             <div key={i} onClick={()=>{
                 if(!editMode && selectedCalIds.length>1){ setDayKey(key); setForm(null); setPal(null); return; } // sola consultazione, niente form
@@ -458,6 +459,7 @@ export default function VistaCalendario({ C }){
                 <span style={{fontSize:20,fontWeight:isT?900:500,lineHeight:1,
                   color:isT?accent:red?"#ef4444":T.sub}}>{d}</span>
                 <div style={{display:"flex",alignItems:"center",gap:3,flexShrink:0}}>
+                  {giornoImportante&&<span title={giornoImportante.nota||"Giorno importante"} style={{fontSize:14,lineHeight:1}}>⭐</span>}
                   {evts.length>maxEvtSlots&&<span style={{fontSize:11,fontWeight:800,color:T.sub}}>+{evts.length-maxEvtSlots}</span>}
                 </div>
               </div>
