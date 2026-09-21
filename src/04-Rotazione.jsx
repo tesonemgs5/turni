@@ -568,8 +568,9 @@ export function isFestivo(dateKey, nationalHolsEnabled = true, extraHols = []) {
     const attive = resolveFestivitaCatalogo(y).filter(f => keys.includes(f.key));
     if (attive.some(h => h.m === m && h.d === d)) return true;
   }
+  // Le voci con importante:true sono i "giorni importanti" (⭐): non sono festivi.
   return (extraHols || []).some(h =>
-    +h.m === m && +h.d === d && (h.y == null || +h.y === y));
+    !h.importante && +h.m === m && +h.d === d && (h.y == null || +h.y === y));
 }
 
 
