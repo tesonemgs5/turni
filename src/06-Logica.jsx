@@ -5121,7 +5121,7 @@ const importsRecenti = useMemo(()=>{
   // monte quando l'evento è stato creato/salvato) e sommata: non viene
   // ricalcolata "quanto dura la giornata di lavoro", solo sommati i minuti
   // che risultano già sull'evento.
-  function computeMinutiForReport(cfg){
+  function computeMinutiForReport(cfg, reportId){
     const {from, to} = getReportRange();
     const result = { totaleMin:0 };
     const perModello = {};
@@ -5142,7 +5142,12 @@ const importsRecenti = useMemo(()=>{
       for(const [cid, evts] of Object.entries(calMap)){
         if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
         for(const e of evts){
-          if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
+          // Override "solo questo evento" su CATEGORIA REPORT: priorità massima,
+          // stessa logica di computeConteggioForReport.
+          const overrideReportRaw = reportId ? (e.reportOverrides||{})[reportId] : null;
+          const overrideReportEvento = overrideReportRaw?.stato || null;
+          if(overrideReportEvento==="escluso") continue;
+          if(overrideReportEvento!=="incluso" && modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
           const collegList = splitColleghi(e.collega);
           if(filtraCollega && !collegList.some(c=>c.toUpperCase().includes(filtraCollega))) continue;
 
@@ -5166,7 +5171,8 @@ const importsRecenti = useMemo(()=>{
 
           sottomenu.forEach(sm=>{
             if(sm.tipo!=="libero" || !e.modelloId) return;
-            const gruppoKey = (sm.assegnazioni||{})[e.modelloId];
+            const gruppoKeyEvento = (overrideReportRaw?.sottomenu||{})[sm.id];
+            const gruppoKey = gruppoKeyEvento || (sm.assegnazioni||{})[e.modelloId];
             if(!gruppoKey) return;
             if(!perSottomenu[sm.id][gruppoKey]) perSottomenu[sm.id][gruppoKey] = {};
             if(!perSottomenu[sm.id][gruppoKey][e.modelloId]) perSottomenu[sm.id][gruppoKey][e.modelloId] = { minuti:0, dates:[] };

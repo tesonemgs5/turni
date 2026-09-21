@@ -484,7 +484,7 @@ export default function VistaCalendario({ C }){
     const cfg = getConteggioConfig(r.id, r.type);
     // "ore_turno" somma minuti (computeMinutiForReport), tutti gli altri
     // tipi contano eventi (computeConteggioForReport) come prima.
-    const data = r.type==="ore_turno" ? computeMinutiForReport(cfg) : computeConteggioForReport(cfg, r.id);
+    const data = r.type==="ore_turno" ? computeMinutiForReport(cfg, r.id) : computeConteggioForReport(cfg, r.id);
     const pct = totaleTurni>0 ? Math.round((data.totale/totaleTurni)*100) : 0;
 
     return (
@@ -542,7 +542,7 @@ export default function VistaCalendario({ C }){
             </div>
             {r.type==="conteggio_turni" && (
               <ConteggioConfigCard T={T} r={r} cfg={cfg} data={data} totaleTurni={totaleTurni}
-                modelli={modelli} accent={accent} fasceAutomatiche={fasceAutomatiche}
+                modelli={modelli} modelliOrdinati={modelliOrdinati} accent={accent} fasceAutomatiche={fasceAutomatiche}
                 onRename={label=>renameReport(r.id, label)}
                 onUpdateCfg={newCfg=>updateConteggioConfig(r.id, newCfg)}
                 onGoToModelli={()=>setScreen("modelli")}/>
@@ -573,7 +573,7 @@ export default function VistaCalendario({ C }){
             )}
             {r.type==="ore_turno" && (
               <OreTurnoConfigCard T={T} r={r} cfg={cfg} data={data} totaleMinPeriodo={totaleMinTurni}
-                modelli={modelli} accent={accent} fasceAutomatiche={fasceAutomatiche}
+                modelli={modelli} modelliOrdinati={modelliOrdinati} accent={accent} fasceAutomatiche={fasceAutomatiche}
                 onRename={label=>renameReport(r.id, label)}
                 onUpdateCfg={newCfg=>updateConteggioConfig(r.id, newCfg)}/>
             )}
