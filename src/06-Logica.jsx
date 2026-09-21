@@ -2644,28 +2644,35 @@ export function useAppCore(session){
     });
   }
 
-  async function cancellaEventiMeseDiModello(y, m, cId, modelloId){
-    // Cancella SOLO gli eventi di un dato modello nel mese (y=anno, m=mese 0-based)
-    // sul calendario cId. Gli altri eventi del mese restano intatti.
-    if(!modelloId) return;
+  async function cancellaEventiMeseSelezione(y, m, calIds, modelloIds){
+    // Cancella nel mese (y=anno, m=mese 0-based) gli eventi dei modelli scelti
+    // sui calendari scelti (selezione multipla). "__nessuno__" indica gli
+    // eventi senza modello. Tutto il resto del mese resta intatto.
+    if(!calIds?.length || !modelloIds?.length) return;
+    const VUOTO = "__nessuno__";
+    const scelti = new Set(modelloIds);
     const mm = String(m+1).padStart(2,"0");
     const ultimoGiorno = new Date(y, m+1, 0).getDate();
     const fromKey = `${y}-${mm}-01`;
     const toKey = `${y}-${mm}-${String(ultimoGiorno).padStart(2,"0")}`;
-    const { data: rows, error } = await supabase.from("events").select("id")
-      .eq("user_id", userId).eq("calendar_id", cId).eq("modello_id", modelloId)
+    const { data: rows, error } = await supabase.from("events").select("id, modello_id")
+      .eq("user_id", userId).in("calendar_id", calIds)
       .gte("date_key", fromKey).lte("date_key", toKey);
-    if(error){ segnalaErroreDb(error, "Eliminazione eventi del modello nel mese"); return; }
-    if(!rows) return;
-    const ids = rows.map(r=>r.id);
+    if(error){ segnalaErroreDb(error, "Eliminazione eventi selezionati del mese"); return; }
+    const ids = (rows||[]).filter(r=>scelti.has(r.modello_id||VUOTO)).map(r=>r.id);
     if(ids.length===0) return;
-    const { error: delErr } = await supabase.from("events").delete().in("id", ids).eq("user_id", userId);
-    if(delErr){ segnalaErroreDb(delErr, "Eliminazione eventi del modello nel mese"); return; }
+    for(let k=0; k<ids.length; k+=100){
+      const { error: delErr } = await supabase.from("events").delete()
+        .in("id", ids.slice(k,k+100)).eq("user_id", userId);
+      if(delErr){ segnalaErroreDb(delErr, "Eliminazione eventi selezionati del mese"); return; }
+    }
     setStore(prev=>{
       const ns=JSON.parse(JSON.stringify(prev));
       for(const dKey of Object.keys(ns.events||{})){
-        if(dKey>=fromKey && dKey<=toKey && ns.events[dKey]?.[cId]){
-          ns.events[dKey][cId] = ns.events[dKey][cId].filter(e=>e.modelloId!==modelloId);
+        if(dKey<fromKey || dKey>toKey) continue;
+        for(const cId of calIds){
+          if(!ns.events[dKey]?.[cId]) continue;
+          ns.events[dKey][cId] = ns.events[dKey][cId].filter(e=>!scelti.has(e.modelloId||VUOTO));
           if(ns.events[dKey][cId].length===0) delete ns.events[dKey][cId];
         }
       }
@@ -6032,7 +6039,7 @@ const importsRecenti = useMemo(()=>{
     delEvtiRotazioneDaData,
     delTutteEvtiRotazione,
     cancellaTuttiEventiMese,
-    cancellaEventiMeseDiModello,
+    cancellaEventiMeseSelezione,
     calcMinuti,
     saveToSheets,
     syncSeAttivo,
