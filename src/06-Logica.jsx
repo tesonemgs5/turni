@@ -1,7 +1,7 @@
     import { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "./11-supabase";
 import {
-  FASCE_AUTOMATICHE_DEFAULT, FESTIVITA_DEFAULT_ATTIVE, MONTHS, NOMI_GIORNI_IT, PALETTE,
+  FASCE_AUTOMATICHE_DEFAULT, FESTIVITA_DEFAULT_ATTIVE, MONTHS, NOMI_GIORNI_IT, PALETTE, COLORE_H24,
   calcFine6h15, calcFine6h30, calcFineModello, categoriaAppAutoAutomatica, categoriaTurnoAutomatica,
   daysInMonth, dkey, generaIdLocale, getColorByTime, getColorLabel,
   getContrastTextColor, getShiftBand, isFestivo, isModelloTurnazioneDefault, italianHols,
@@ -4031,6 +4031,74 @@ const importsRecenti = useMemo(()=>{
   }
 
   // ══════════════════════════════════════════════════════════════════════
+  // NORMALIZZAZIONE COLORI "CONGELATI" (drift fascia oraria / coloreCustom)
+  // ══════════════════════════════════════════════════════════════════════
+  // Un modello poteva, in passato, scegliere come coloreCustom proprio il
+  // colore allora in uso da una fascia automatica (es. cliccando la pillola
+  // "3° TURNO" nella palette). Se in seguito quella fascia viene ricolorata
+  // da Impostazioni, il coloreCustom del modello NON si aggiorna da solo
+  // (è un valore indipendente, per design): resta congelato al vecchio hex,
+  // mostrando una sfumatura diversa da tutti gli altri modelli della stessa
+  // fascia pur dovendo apparire identico. Da quando sceltaColore() salva
+  // coloreCustom:null per i click futuri su una pillola-fascia (vedi
+  // ModelForm in 04-Rotazione.jsx), il problema non si crea più per le
+  // nuove scelte; questa funzione ripara una tantum i modelli già congelati
+  // prima di quella correzione.
+  //
+  // Un colore è considerato "orfano" (candidato alla normalizzazione) se:
+  //  - non coincide con l'hex di NESSUNA fascia automatica attuale né con H24
+  //    (altrimenti sceltaColore lo avrebbe già salvato come null)
+  //  - non ha un nome proprio assegnato nella schermata Colori (coloriExtra
+  //    con label non vuota): un colore rinominato è quasi certamente una
+  //    scelta consapevole dell'utente, non un residuo dimenticato
+  //  - il modello ha un orario (o è H24) che permette comunque di calcolare
+  //    una fascia valida da assegnargli al posto del colore orfano
+  // Ritorna un riepilogo SENZA applicare nulla: la conferma e l'esecuzione
+  // vera sono un secondo passo esplicito (applicaNormalizzazioneColori),
+  // così l'utente vede sempre cosa sta per cambiare prima che avvenga.
+  function analizzaColoriDaNormalizzare(){
+    const fasce = store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT;
+    const hexFasceAttuali = new Set([...fasce.map(f=>f.color), COLORE_H24]);
+    const hexConNomeProprio = new Set((coloriExtra||[]).filter(c=>c.label).map(c=>c.hex));
+    const candidati = modelli.filter(m=>{
+      if(!m.coloreCustom) return false;
+      if(hexFasceAttuali.has(m.coloreCustom)) return false;
+      if(hexConNomeProprio.has(m.coloreCustom)) return false;
+      // Deve poter calcolare una fascia valida da riassegnare: H24 sempre,
+      // altrimenti serve un orario di inizio leggibile.
+      return m.tempo==="h24" || !!m.inizio;
+    });
+    return {
+      totale: candidati.length,
+      modelli: candidati.map(m=>({
+        id:m.id, titolo:m.titolo, coloreVecchio:m.coloreCustom,
+        coloreNuovo: m.tempo==="h24" ? COLORE_H24 : getColorByTime(m.inizio, fasce),
+      })),
+    };
+  }
+
+  async function applicaNormalizzazioneColori(){
+    const { modelli: candidati } = analizzaColoriDaNormalizzare();
+    if(candidati.length===0) return { ok:true, totale:0 };
+    const idsDaNormalizzare = new Set(candidati.map(c=>c.id));
+    let modelliAggiornati;
+    setModelli(prev=>{
+      modelliAggiornati = prev.map(m=>idsDaNormalizzare.has(m.id) ? {...m, coloreCustom:null} : m);
+      return modelliAggiornati;
+    });
+    for(const m of modelli.filter(m=>idsDaNormalizzare.has(m.id))){
+      scriviConBackup({
+        tipo:"update", table:"modelli", payload:{ colore_custom:null }, matchObj:{id:m.id, user_id:userId},
+        contesto:`Normalizzazione colore su modello "${m.titolo||m.id}"`, ts:new Date().toISOString(),
+        eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelliAggiornati,
+      });
+    }
+    saveToLocalStorage(store.events, store.calendars, modelliAggiornati);
+    syncSeAttivo(store.events, store.calendars, modelliAggiornati);
+    return { ok:true, totale: candidati.length };
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
   // SNAPSHOT MANUALE DELL'ORDINE MODELLI (protezione dal bug di rimescolamento)
   // ══════════════════════════════════════════════════════════════════════
   // Tabella dedicata e completamente isolata da "modelli": salvataggio SOLO
@@ -5932,6 +6000,7 @@ const importsRecenti = useMemo(()=>{
     saveModello,
     deleteModello,
     ripulisciTutteLePosizioniModelli,
+    analizzaColoriDaNormalizzare, applicaNormalizzazioneColori,
     salvaDisposizioneModelli,
     ripristinaDisposizioneModelli,
     showSalvaDisposizionePopup,
