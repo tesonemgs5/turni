@@ -116,6 +116,7 @@ function AppInterno({ session }){
   const { calView, reportView, goPrevMonth, goNextMonth } = VistaCalendario({ C });
   const { modelliView, settingsView, dayModal, dbModal, salvaDisposizionePopup } = VistaModelli({ C });
   const [confermaCancellaEventiMese, setConfermaCancellaEventiMese] = useState(false);
+  const [modelloCancellaMese, setModelloCancellaMese] = useState(""); // "" = tutti gli eventi del mese
   const [confermaEliminaEventiRotazione, setConfermaEliminaEventiRotazione] = useState(false);
   const [confermaCancellaLogErrori, setConfermaCancellaLogErrori] = useState(false);
 
@@ -163,7 +164,7 @@ function AppInterno({ session }){
     colByTime, colLabel, isRed, sundayColor, holidayColor, redBg,
     getEvts, allEvts, dots, saveSettings, addCalendar, updateCalendar,
     deleteCalendar, computeEventFields, saveEvt, updateEvt, delEvt, delEvtiRotazioneDaData,
-    delTutteEvtiRotazione, cancellaTuttiEventiMese, calcMinuti, saveToSheets, syncSeAttivo, loadFromSheets,
+    delTutteEvtiRotazione, cancellaTuttiEventiMese, cancellaEventiMeseDiModello, calcMinuti, saveToSheets, syncSeAttivo, loadFromSheets,
     syncFromSheets, handleSave, handleLoad, handleSaveSheetsConfig, handleViewDbData, buildBackupPayload,
     handleExportSupabase, handleOpenImportSupabase, handleRestoreBackup, handleLogout, eseguiNormalizzazione, normalizzaModelliTempo,
     normalizzaEventiTempo, modelliOrdinati, importsRecenti, modelliDelCalendario, rinumeraSottoinsieme, spostaModelloPuro,
@@ -326,11 +327,60 @@ function AppInterno({ session }){
       {banner&&<div style={{position:"fixed",bottom:`calc(${NAV_HEIGHT_CSS} + 12px)`,left:"50%",transform:"translateX(-50%)",
         background:"rgba(0,0,0,0.75)",color:"#fff",padding:"6px 16px",
         borderRadius:20,fontSize:12,zIndex:9999,pointerEvents:"none"}}>{banner}</div>}
-      {confermaCancellaEventiMese&&(
-        <ConfermaEliminazione T={T} testo={`Cancellare TUTTI gli eventi di ${NOMI_MESI_IT[month]} ${year} su questo calendario?`}
-          onConferma={()=>{setConfermaCancellaEventiMese(false);cancellaTuttiEventiMese(year, month, calId);}}
-          onAnnulla={()=>setConfermaCancellaEventiMese(false)}/>
-      )}
+      {confermaCancellaEventiMese&&(()=>{
+        // Modelli realmente presenti in questo mese su questo calendario, con
+        // quanti eventi hanno: permette di eliminare solo quelli di un modello.
+        const prefissoMese = `${year}-${String(month+1).padStart(2,"0")}-`;
+        const conteggi = {};
+        Object.entries(store.events||{}).forEach(([dk,calMap])=>{
+          if(!dk.startsWith(prefissoMese)) return;
+          (calMap?.[calId]||[]).forEach(e=>{ if(e.modelloId) conteggi[e.modelloId]=(conteggi[e.modelloId]||0)+1; });
+        });
+        const opzioni = Object.keys(conteggi)
+          .map(id=>({id, titolo: modelli.find(m=>m.id===id)?.titolo || "(modello eliminato)", n: conteggi[id]}))
+          .sort((a,b)=>a.titolo.localeCompare(b.titolo));
+        const chiudi = ()=>{ setConfermaCancellaEventiMese(false); setModelloCancellaMese(""); };
+        const soloModello = modelloCancellaMese && opzioni.find(o=>o.id===modelloCancellaMese);
+        return (
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:100001,
+            display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
+            onClick={e=>{e.stopPropagation();chiudi();}}>
+            <div style={{background:T.surface,borderRadius:16,width:"100%",maxWidth:320,padding:20}}
+              onClick={e=>e.stopPropagation()}>
+              <div style={{fontSize:15,fontWeight:800,color:T.text,marginBottom:12,textAlign:"center"}}>
+                {soloModello
+                  ? `Cancellare gli eventi "${soloModello.titolo}" di ${NOMI_MESI_IT[month]} ${year} su questo calendario?`
+                  : `Cancellare TUTTI gli eventi di ${NOMI_MESI_IT[month]} ${year} su questo calendario?`}
+              </div>
+              <select value={modelloCancellaMese} onChange={e=>setModelloCancellaMese(e.target.value)}
+                style={{width:"100%",marginBottom:16,padding:"10px 8px",borderRadius:10,fontSize:13,fontWeight:700,
+                  background:T.s2,color:T.text,border:`1px solid ${T.border}`}}>
+                <option value="">Tutti gli eventi del mese</option>
+                {opzioni.map(o=>(
+                  <option key={o.id} value={o.id}>Solo: {o.titolo} ({o.n})</option>
+                ))}
+              </select>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={chiudi}
+                  style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
+                    color:T.text,padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:13}}>
+                  Annulla
+                </button>
+                <button onClick={()=>{
+                    const scelto = modelloCancellaMese;
+                    chiudi();
+                    if(scelto) cancellaEventiMeseDiModello(year, month, calId, scelto);
+                    else cancellaTuttiEventiMese(year, month, calId);
+                  }}
+                  style={{flex:1,background:"#ef4444",border:"none",borderRadius:10,
+                    color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:13}}>
+                  Elimina
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       {dayModal}
       {dbModal}
       {salvaDisposizionePopup}
