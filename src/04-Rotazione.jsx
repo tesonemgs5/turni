@@ -1770,7 +1770,7 @@ export function ModelloCard({
         cursor: selectMode ? "pointer" : (inSpostamento ? "grab" : "default"),
       }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0, flex: 1 }}>
-        <div style={{ width: 20, height: 20, borderRadius: 5, background: colore, flexShrink: 0 }} />
+        <div style={{ width: 30, height: 30, borderRadius: 7, background: colore, flexShrink: 0, marginRight: -10 }} />
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 18, fontWeight: 700, color: T.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {modello.titolo}
