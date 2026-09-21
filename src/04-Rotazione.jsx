@@ -1261,7 +1261,7 @@ export function ModelloSelector({ T, modelli = [], value, onChange, fasceAutomat
       </button>
       {modelli.map(m => {
         const attivo = value === m.id;
-        const colore = m.coloreCustom || m.colore || (m.tempo === "h24" ? COLORE_H24 : getColorByTime(m.inizio, fasceAutomatiche));
+        const colore = m.coloreCustom || (m.tempo === "h24" ? COLORE_H24 : getColorByTime(m.inizio, fasceAutomatiche));
         const orario = m.tempo === "h24" ? "H24" : `${m.inizio || "—"} – ${calcFineModello(m) || m.fine || "—"}`;
         return (
           <button key={m.id} type="button" onClick={() => onChange(m.id)}
@@ -1382,6 +1382,21 @@ export function ModelForm({
   }
   const nomeColoreAnteprima = nomeDelColore(coloreAnteprima);
 
+  // Se l'hex cliccato coincide ESATTAMENTE con quello attuale di una fascia
+  // automatica (o con H24), salva coloreCustom=null invece dell'hex: il
+  // modello segue sempre quella fascia dinamicamente, così se in futuro
+  // l'utente cambia il colore della fascia in Impostazioni, questo modello
+  // si aggiorna insieme a tutti gli altri della stessa fascia invece di
+  // restare "congelato" al vecchio hex (il drift che causava, ad esempio,
+  // un modello 3° TURNO rimasto con un blu ormai superato dagli altri).
+  // Un hex realmente personalizzato (che non coincide con nessuna fascia
+  // né con H24 nel momento della scelta) resta invece salvato come tale.
+  function sceltaColore(hexCliccato) {
+    const eUnaFascia = (fasceAutomatiche || FASCE_AUTOMATICHE_DEFAULT).some(f => f.color === hexCliccato);
+    const eH24 = hexCliccato === COLORE_H24;
+    setForm(prev => ({ ...prev, coloreCustom: (eUnaFascia || eH24) ? null : hexCliccato }));
+  }
+
   function campo(label, node) {
     return (
       <div style={{ marginBottom: 14 }}>
@@ -1483,7 +1498,7 @@ export function ModelForm({
         <div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
             {paletteDaMostrare.map(c => (
-              <div key={c} onClick={() => setForm(prev => ({ ...prev, coloreCustom: c }))}
+              <div key={c} onClick={() => sceltaColore(c)}
                 style={{
                   width: 26, height: 26, borderRadius: "50%", background: c, cursor: "pointer",
                   border: form.coloreCustom === c ? `2px solid ${T.text}` : "2px solid transparent",
@@ -1515,7 +1530,7 @@ export function ModelForm({
             <ColorPickerModal T={T} cur={coloreAnteprima} title="Colore modello"
               coloriUsati={coloriUsati}
               getNomeColore={nomeDelColore}
-              onPick={c => setForm(prev => ({ ...prev, coloreCustom: c }))}
+              onPick={c => sceltaColore(c)}
               onClose={() => setShowColorPicker(false)} />
           )}
         </div>
@@ -1722,11 +1737,17 @@ export function ModelloCard({
   isDragging, isDropTarget,
   onTouchStart, onTouchMove, onTouchEnd,
   onDragStart, onDragOver, onDrop, onDragEnd,
+  fasceAutomatiche,
 }) {
-  // Priorità: colore scelto a mano (coloreCustom) > colore già calcolato e
-  // salvato sul modello (automatico per fascia oraria, o H24) > grigio di
-  // fallback solo se manca proprio tutto (dato mai popolato).
-  const colore = modello.coloreCustom || modello.colore || COLORE_H24;
+  // Priorità: colore scelto a mano (coloreCustom) > H24 se il modello è
+  // H24 > colore per fascia oraria, SEMPRE ricalcolato al volo con
+  // getColorByTime (mai letto da modello.colore, un valore "congelato" al
+  // momento del salvataggio che può divergere dall'hex attuale della
+  // fascia — es. se la fascia è stata modificata dopo, o per un
+  // arrotondamento diverso salvato in passato — causando la stessa fascia
+  // oraria a mostrare sfumature leggermente diverse tra un modello e
+  // l'altro nella lista).
+  const colore = modello.coloreCustom || (modello.tempo === "h24" ? COLORE_H24 : getColorByTime(modello.inizio, fasceAutomatiche));
   const inSpostamento = !!(onMoveUp || onMoveDown || onDragStart);
   const [confermaVisibile, setConfermaVisibile] = useState(false);
   return (

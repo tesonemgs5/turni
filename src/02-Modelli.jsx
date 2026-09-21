@@ -158,6 +158,7 @@ export default function VistaModelli({ C }){
     trascinaModelloPuro, salvaModifichePosizioni, moveH24, reorderModelli, moveRotazione, moveColoreExtra, ricoloraModelliPerFasciaOraria, ensureColoreRegistrato, registraValoreAutocomplete,
     registraValoriAutocomplete, rimuoviValoreAutocomplete, supabaseUpsertConRetry, saveModello, deleteModello, addColoreExtra,
     ripulisciTutteLePosizioniModelli,
+    analizzaColoriDaNormalizzare, applicaNormalizzazioneColori,
     salvaDisposizioneModelli, ripristinaDisposizioneModelli,
     showSalvaDisposizionePopup, setShowSalvaDisposizionePopup, annullaTimerSalvaDisposizione,
     removeColoreExtra, updateColoreExtraLabel, replaceColoreEverywhere, saveRotazione, deleteRotazione, updateGrigliaRotazione,
@@ -770,7 +771,9 @@ export default function VistaModelli({ C }){
                             return (
                               <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                                 <div onClick={()=>{
-                                  saveModello({...m, coloreCustom: selezionato ? null : hex});
+                                  if(selezionato){ saveModello({...m, coloreCustom: null}); return; }
+                                  const eUnaFascia = fasceAutomatiche.some(f=>f.color===hex) || hex===COLORE_H24;
+                                  saveModello({...m, coloreCustom: eUnaFascia ? null : hex});
                                 }} style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}>
                                   <div style={{width:20,height:20,borderRadius:6,marginRight:12,flexShrink:0,
                                     border:`2px solid ${selezionato?hex:T.border}`,
@@ -992,6 +995,40 @@ export default function VistaModelli({ C }){
           style={{width:"100%",background:"none",border:"1px solid #3b82f6",borderRadius:10,color:"#3b82f6",
             padding:"10px 0",fontWeight:800,fontSize:12,cursor:"pointer"}}>
           📐 Riordina posizione modelli
+        </button>
+
+        <div style={{fontSize:11,color:T.sub,margin:"14px 0 10px"}}>
+          Se qualche modello mostra un colore leggermente diverso dagli altri
+          della stessa fascia oraria (es. un vecchio blu invece del "3° TURNO"
+          attuale), è perché quel modello aveva scelto il colore della fascia
+          come "personalizzato" prima che tu la ricolorassi da Impostazioni —
+          e da allora è rimasto congelato a quel vecchio colore. Questo
+          pulsante trova quei modelli e li riporta a seguire sempre la fascia
+          oraria in automatico, senza toccare i colori davvero personalizzati
+          (quelli con un nome proprio nella scheda Colori).
+        </div>
+        <button onClick={async()=>{
+            const analisi = analizzaColoriDaNormalizzare();
+            if(analisi.totale===0){
+              setBanner("✅ Nessun colore da normalizzare: tutto già coerente con le fasce attuali.");
+              setTimeout(()=>setBanner(null), 5000);
+              return;
+            }
+            const elenco = analisi.modelli.map(m=>`• ${m.titolo||"Senza nome"}`).join("\n");
+            if(!confirm(`Trovati ${analisi.totale} modelli con un colore "congelato" da riportare all'automatico:\n\n${elenco}\n\nProcedere?`)) return;
+            setBanner("⏳ Normalizzazione colori in corso...");
+            try {
+              const esito = await applicaNormalizzazioneColori();
+              setBanner(`✅ ${esito.totale} modelli riportati al colore automatico della loro fascia.`);
+            } catch(e){
+              segnalaErrore(e, "Normalizzazione colori modelli");
+              setBanner("❌ Errore durante la normalizzazione. Controlla il Log.");
+            }
+            setTimeout(()=>setBanner(null), 5000);
+          }}
+          style={{width:"100%",background:"none",border:"1px solid #3b82f6",borderRadius:10,color:"#3b82f6",
+            padding:"10px 0",fontWeight:800,fontSize:12,cursor:"pointer"}}>
+          🎨 Normalizza colori automatici
         </button>
 
         <div style={{fontSize:11,color:T.sub,margin:"14px 0 10px"}}>
