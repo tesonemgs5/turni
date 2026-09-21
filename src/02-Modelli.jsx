@@ -2011,7 +2011,14 @@ export default function VistaModelli({ C }){
                 style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
                   color:T.text,width:28,height:28,cursor:"pointer",fontSize:15,
                   display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>‹</button>
-              <div style={{fontSize:19,fontWeight:900,color:T.text}}>{voceImportante?"⭐ ":""}{fmtDataIT(dayKey)}</div>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                {voceImportante&&(
+                  <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",
+                    width:26,height:26,borderRadius:"50%",background:"#ef4444",color:"#ffffff",
+                    fontSize:13,fontWeight:900,flexShrink:0}}>{dImp}</span>
+                )}
+                <div style={{fontSize:19,fontWeight:900,color:T.text}}>{fmtDataIT(dayKey)}</div>
+              </div>
               <button onClick={()=>{
                   const [y,m,d]=dayKey.split("-").map(Number);
                   const next=new Date(y,m-1,d+1);
@@ -2050,7 +2057,7 @@ export default function VistaModelli({ C }){
               background:voceImportante?"#fef3c7":T.s2,
               color:voceImportante?"#92400e":T.text,
               border:`1.5px solid ${voceImportante?"#f59e0b":T.border}`}}>
-            {voceImportante?"⭐ Giorno importante — tocca per togliere":"☆ Segna come importante"}
+            {voceImportante?"● Giorno importante — tocca per togliere":"○ Segna come importante"}
           </button>
           {voceImportante&&(
             <input key={dayKey} defaultValue={voceImportante.nota||""}
