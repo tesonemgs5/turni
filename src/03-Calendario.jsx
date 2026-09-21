@@ -456,10 +456,16 @@ export default function VistaCalendario({ C }){
                 cursor:"pointer",display:"flex",flexDirection:"column",overflow:"hidden",
                 borderTop:"none"}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:2,padding:"2px 3px 0",flexShrink:0}}>
-                <span style={{fontSize:20,fontWeight:isT?900:500,lineHeight:1,
-                  color:isT?accent:red?"#ef4444":T.sub}}>{d}</span>
+                {giornoImportante?(
+                  <span title={giornoImportante.nota||"Giorno importante"}
+                    style={{display:"inline-flex",alignItems:"center",justifyContent:"center",
+                      width:22,height:22,borderRadius:"50%",background:"#ef4444",
+                      fontSize:13,fontWeight:900,lineHeight:1,color:"#ffffff",flexShrink:0}}>{d}</span>
+                ):(
+                  <span style={{fontSize:20,fontWeight:isT?900:500,lineHeight:1,
+                    color:isT?accent:red?"#ef4444":T.sub}}>{d}</span>
+                )}
                 <div style={{display:"flex",alignItems:"center",gap:3,flexShrink:0}}>
-                  {giornoImportante&&<span title={giornoImportante.nota||"Giorno importante"} style={{fontSize:14,lineHeight:1}}>⭐</span>}
                   {evts.length>maxEvtSlots&&<span style={{fontSize:11,fontWeight:800,color:T.sub}}>+{evts.length-maxEvtSlots}</span>}
                 </div>
               </div>
