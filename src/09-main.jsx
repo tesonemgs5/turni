@@ -19,7 +19,23 @@ import { registerSW } from 'virtual:pwa-register'
 // contesti è lo user agent, che Electron include sempre nella propria
 // stringa.
 const staGirandoInElectron = typeof navigator!=="undefined" && /electron/i.test(navigator.userAgent||"");
-if(!staGirandoInElectron){
+// Dentro l'APK (Capacitor) i file dell'app sono GIA' sul telefono: il service
+// worker e' superfluo e, peggio, dopo un aggiornamento dell'APK continua a
+// servire il codice VECCHIO messo in cache (versione vecchia in Impostazioni
+// finche' non si preme "Svuota cache"). Qui non lo si registra e si
+// eliminano quelli e le cache gia' presenti da installazioni precedenti.
+const staGirandoInCapacitor = typeof window!=="undefined" && !!(window.Capacitor
+  && typeof window.Capacitor.isNativePlatform==="function" && window.Capacitor.isNativePlatform());
+if(staGirandoInCapacitor){
+  try {
+    if("serviceWorker" in navigator){
+      navigator.serviceWorker.getRegistrations().then(regs=>regs.forEach(r=>r.unregister())).catch(()=>{});
+    }
+    if("caches" in window){
+      caches.keys().then(nomi=>nomi.forEach(n=>caches.delete(n))).catch(()=>{});
+    }
+  } catch { /* non bloccante */ }
+} else if(!staGirandoInElectron){
   // Registra il service worker generato da vite-plugin-pwa: senza questa
   // chiamata il plugin produce comunque sw.js in fase di build, ma nessuno
   // lo installa mai nel browser — quindi l'app (HTML/JS/CSS) non finisce
