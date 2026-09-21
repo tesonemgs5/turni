@@ -1352,8 +1352,13 @@ export function ModelForm({
   reports = [], getConteggioConfig, updateConteggioConfig,
   suggerimentiTitolo = [], suggerimentiNomeVis = [], onRimuoviSuggerimento,
   onSave,
+  calendari = [], onCopia,
 }) {
   const [mostraSuggTitolo, setMostraSuggTitolo] = useState(false);
+  const [mostraCopia, setMostraCopia] = useState(false);
+  const [calDestinazione, setCalDestinazione] = useState([]);
+  const [copiaInCorso, setCopiaInCorso] = useState(false);
+  const [esitoCopia, setEsitoCopia] = useState("");
   const [reportListaAperta, setReportListaAperta] = useState(false);
   const [reportEspanso, setReportEspanso] = useState(null);
   const [sottomenuEspanso, setSottomenuEspanso] = useState({});
@@ -1720,11 +1725,92 @@ export function ModelForm({
         );
       })()}
 
-      <button onClick={onSave}
-        style={{ width: "100%", background: accent, color: accentText, border: "none", borderRadius: 10,
-          padding: "13px 0", fontWeight: 800, fontSize: 14, cursor: "pointer", marginTop: 6 }}>
-        💾 Salva modello
-      </button>
+      {(() => {
+        const calCorrente = (calendari || []).find(c => c.id === form.calendarId);
+        // Calendari in cui esiste già un modello con lo stesso titolo e orario di inizio
+        // (le copie fatte in precedenza): utile per non creare duplicati per errore.
+        const titoloNorm = (form.titolo || "").trim().toUpperCase();
+        const giaPresentiIn = (calendari || []).filter(c =>
+          (modelli || []).some(m =>
+            (m.calendarId || null) === c.id && m.id !== form.id &&
+            (m.titolo || "").trim().toUpperCase() === titoloNorm &&
+            (m.inizio || "") === (form.inizio || "") && (m.tempo || "") === (form.tempo || "")
+          )
+        );
+        const altriCalendari = (calendari || []).filter(c => c.id !== form.calendarId);
+        return (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 12, color: T.sub, marginBottom: 8 }}>
+              📅 Presente in: <b style={{ color: T.text }}>{calCorrente ? calCorrente.name : "—"}</b>
+              {giaPresentiIn.length > 0 && (
+                <span> · copia già presente anche in: <b style={{ color: T.text }}>{giaPresentiIn.map(c => c.name).join(", ")}</b></span>
+              )}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={onSave}
+                style={{ flex: 1, background: accent, color: accentText, border: "none", borderRadius: 10,
+                  padding: "9px 0", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
+                💾 Salva
+              </button>
+              {onCopia && (
+                <button type="button" onClick={() => { setEsitoCopia(""); setCalDestinazione([]); setMostraCopia(v => !v); }}
+                  style={{ flex: 1, background: T.s2, color: T.text, border: `1px solid ${T.border}`, borderRadius: 10,
+                    padding: "9px 0", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
+                  📋 Copia
+                </button>
+              )}
+            </div>
+            {mostraCopia && onCopia && (
+              <div style={{ marginTop: 10, background: T.s2, border: `1px solid ${T.border}`, borderRadius: 10, padding: 10 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: T.text, marginBottom: 8 }}>
+                  Copia questo modello in:
+                </div>
+                {altriCalendari.length === 0 ? (
+                  <div style={{ fontSize: 12, color: T.sub }}>Non ci sono altri calendari.</div>
+                ) : altriCalendari.map(c => {
+                  const scelto = calDestinazione.includes(c.id);
+                  const gia = giaPresentiIn.some(g => g.id === c.id);
+                  return (
+                    <button key={c.id} type="button"
+                      onClick={() => setCalDestinazione(prev => prev.includes(c.id) ? prev.filter(x => x !== c.id) : [...prev, c.id])}
+                      style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left",
+                        background: scelto ? `${accent}22` : "transparent",
+                        border: `1px solid ${scelto ? accent : T.border}`, borderRadius: 8,
+                        padding: "8px 10px", marginBottom: 6, cursor: "pointer", color: T.text, fontSize: 13, fontWeight: 700 }}>
+                      <span>{scelto ? "☑" : "☐"}</span>
+                      <span style={{ flex: 1 }}>{c.name}</span>
+                      {gia && <span style={{ fontSize: 10, color: "#f59e0b", fontWeight: 800 }}>già presente</span>}
+                    </button>
+                  );
+                })}
+                {esitoCopia && (
+                  <div style={{ fontSize: 12, color: T.text, margin: "4px 0 8px" }}>{esitoCopia}</div>
+                )}
+                {altriCalendari.length > 0 && (
+                  <button type="button" disabled={calDestinazione.length === 0 || copiaInCorso}
+                    onClick={async () => {
+                      setCopiaInCorso(true); setEsitoCopia("");
+                      try {
+                        const esito = await onCopia(calDestinazione);
+                        setEsitoCopia(esito || "");
+                        setCalDestinazione([]);
+                      } catch (e) {
+                        setEsitoCopia("❌ Errore durante la copia: " + (e?.message || e));
+                      }
+                      setCopiaInCorso(false);
+                    }}
+                    style={{ width: "100%", background: calDestinazione.length === 0 || copiaInCorso ? T.border : accent,
+                      color: calDestinazione.length === 0 || copiaInCorso ? T.sub : accentText,
+                      border: "none", borderRadius: 8, padding: "9px 0", fontWeight: 800, fontSize: 13,
+                      cursor: calDestinazione.length === 0 || copiaInCorso ? "not-allowed" : "pointer" }}>
+                    {copiaInCorso ? "⏳ Copia in corso…" : (calDestinazione.length === 0 ? "Copia" : `Copia in ${calDestinazione.length} ${calDestinazione.length === 1 ? "calendario" : "calendari"}`)}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -1737,7 +1823,7 @@ export function ModelloCard({
   isDragging, isDropTarget,
   onTouchStart, onTouchMove, onTouchEnd,
   onDragStart, onDragOver, onDrop, onDragEnd,
-  fasceAutomatiche,
+  fasceAutomatiche, nomeCalendario = "",
 }) {
   // Priorità: colore scelto a mano (coloreCustom) > H24 se il modello è
   // H24 > colore per fascia oraria, SEMPRE ricalcolato al volo con
@@ -1785,6 +1871,9 @@ export function ModelloCard({
               return testoDurata ? `${testoOrario} • ${testoDurata}` : testoOrario;
             })()}
           </div>
+          {nomeCalendario && (
+            <div style={{ fontSize: 11, color: T.sub, marginTop: 1 }}>📅 {nomeCalendario}</div>
+          )}
         </div>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
