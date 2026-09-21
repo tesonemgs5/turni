@@ -5,7 +5,7 @@ import {
   calcFine6h15, calcFine6h30, calcFineModello, categoriaAppAutoAutomatica, categoriaTurnoAutomatica,
   daysInMonth, dkey, generaIdLocale, getColorByTime, getColorLabel,
   getContrastTextColor, getShiftBand, isFestivo, isModelloTurnazioneDefault, italianHols,
-  leggiCodaSync, leggiErroriSilenziati, leggiLogErrori, loadFromLocalStorage, minsOf,
+  leggiCodaSync, leggiErroriSilenziati, leggiLogErrori, loadFromLocalStorage, clearLocalStorageCache, minsOf,
   minutiTurnoModello, normalizzaOraHHMM, oraInMinuti, registraListenerCodaErrori, registraProblemiImport,
   sameData, saveDatiSessioneLocale, saveToLocalStorage, scriviCodaSync, segnalaErrore, segnalaErroreSoloLog,
   uid, withEventoAggiornato, withEventoAggiunto, withEventoRimosso,
@@ -743,6 +743,38 @@ export function useAppCore(session){
         // visive (colori, tema, fasce): senza queste, il calendario partiva
         // con i colori di default e "scattava" al colore vero dopo che
         // Supabase rispondeva — il flash visibile ad ogni apertura dell'app.
+        // NUOVA VERSIONE INSTALLATA (APK o web): svuota UNA sola volta la cache
+        // locale, come farebbe "Svuota cache e ricarica tutto" in Impostazioni,
+        // cosi' non serve piu' premere il pulsante a mano dopo ogni installazione.
+        // La versione corrente e' salvata solo a operazione riuscita: se non c'e'
+        // linea, o ci sono modifiche in coda non ancora inviate, o l'app e' in
+        // modalita' solo-locale (syncMode "off", es. dopo import backup), NON si
+        // tocca nulla e si riprova al prossimo avvio, per non perdere dati.
+        try {
+          const versioneCorrente = typeof __APP_VERSION__!=="undefined" ? __APP_VERSION__ : null;
+          const versioneSalvata = localStorage.getItem("turnipm_app_version");
+          if(versioneCorrente && versioneSalvata!==versioneCorrente){
+            const codaPendente = (leggiCodaSync()||[]).length>0;
+            const soloLocale = localStorage.getItem("syncMode")==="off";
+            if(navigator.onLine && !codaPendente && !soloLocale){
+              clearLocalStorageCache();
+              try {
+                if("caches" in window){
+                  const nomiCache = await caches.keys();
+                  await Promise.all(nomiCache.map(n=>caches.delete(n)));
+                }
+              } catch(e){ segnalaErroreSoloLog(e, "Svuotamento cache dopo aggiornamento versione"); }
+              try {
+                if("serviceWorker" in navigator){
+                  const regs = await navigator.serviceWorker.getRegistrations();
+                  await Promise.all(regs.map(r=>r.unregister()));
+                }
+              } catch(e){ segnalaErroreSoloLog(e, "Disattivazione Service Worker dopo aggiornamento versione"); }
+              localStorage.setItem("turnipm_app_version", versioneCorrente);
+            }
+          }
+        } catch(e){ segnalaErroreSoloLog(e, "Controllo versione app all'avvio"); }
+
         const cached = loadFromLocalStorage();
         if(cached && cached.calendars.length > 0){
           // Le impostazioni (tema, colori, fasce, festività attive...) NON
