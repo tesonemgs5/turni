@@ -430,6 +430,7 @@ export function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClos
   const [confidenzaRaggiunta, setConfidenzaRaggiunta] = useState(null); // ultima confidenza OCR calcolata (0-100)
   const [nessunTurnoRilevato, setNessunTurnoRilevato] = useState(false); // true se l'OCR non ha trovato nessuna parola simile a un turno noto
   const [testoJsonIncollato, setTestoJsonIncollato] = useState("");
+  const [promptCopiato, setPromptCopiato] = useState(false);
   const [nRigheAggiunte, setNRigheAggiunte] = useState(0);
   // Dettaglio {mancanti, sospetti} dell'ultima importazione (OCR o JSON
   // incollato), mostrato nello step "riepilogo" con lo stesso stile già
@@ -848,6 +849,34 @@ export function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClos
   }
 
 
+  // Testo del prompt da incollare in Claude (insieme al PDF/foto del mese),
+  // diverso a seconda del tipo di tabella scelto all'inizio.
+  function costruisciPromptClaude(){
+    const meseNome = NOMI_MESI_IT[month];
+    if(tipoTabella==="stella"){
+      return `Dal PDF allegato (prospetto pattuglie autoradio COT) estrai SOLO le occorrenze di "Stella" in ognuna delle 5 fasce orarie (00.00, 06.00, 12.00, 14.30, 17.45). Rispondi solo con questo JSON, senza altro testo:
+
+{"turni_stella":{"00.00_06.30":[...],"06.00_12.30":[...],"12.00_18.30":[...],"14.30_21.00":[...],"17.30_24.00":[...]}}
+
+Le date nel formato "3 ${meseNome.toLowerCase()} ${year}". Leggi riga per riga e colonna per colonna, senza saltare celle. Se una cella e' illeggibile o vuota (trattino), ignorala.`;
+    }
+    return `Dalla tabella allegata (foto o PDF dei miei turni personali di ${meseNome} ${year}) estrai per ogni giorno il turno (Primo, Secondo, Terzo o Notte). Rispondi solo con questo JSON, senza altro testo:
+
+[{"data":"${year}-${String(month+1).padStart(2,"0")}-01","turno":"Primo"},{"data":"${year}-${String(month+1).padStart(2,"0")}-02","turno":"Notte"}]
+
+Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo "turno" usa solo una di queste parole: Primo, Secondo, Terzo, Notte. Leggi riga per riga senza saltare giorni. Ignora riposi, ferie e giorni senza turno.`;
+  }
+
+  async function copiaPromptClaude(){
+    try{
+      await navigator.clipboard.writeText(costruisciPromptClaude());
+      setPromptCopiato(true);
+      setTimeout(()=>setPromptCopiato(false), 2500);
+    }catch(e){
+      setErrore("Non sono riuscito a copiare il prompt negli appunti.");
+    }
+  }
+
   async function handleImportaJsonIncollato(){
     if(importando) return; // guardia esplicita: ignora click ripetuti mentre un'importazione è già in corso
     setImportando(true);
@@ -1195,6 +1224,12 @@ export function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClos
                   {errore}
                 </div>
               )}
+              <button onClick={copiaPromptClaude}
+                style={{display:"block",width:"100%",marginBottom:12,border:`2px dashed ${accent}`,borderRadius:10,
+                  padding:"10px 0",textAlign:"center",cursor:"pointer",color:"#1a1a1a",fontSize:12,fontWeight:700,
+                  background:"#ffffff"}}>
+                {promptCopiato ? "✅ Prompt copiato!" : (tipoTabella==="stella" ? "⭐ Copia prompt per Claude (Turni Stella)" : "👤 Copia prompt per Claude (Turni personali)")}
+              </button>
               <div style={{fontSize:12,color:"#444444",marginBottom:8}}>
                 Incolla qui l'array JSON con i turni, es: <code>[{"{"}"data":"2026-07-01","turno":"Primo"{"}"}]</code>
               </div>
