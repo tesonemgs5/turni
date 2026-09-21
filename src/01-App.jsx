@@ -116,7 +116,8 @@ function AppInterno({ session }){
   const { calView, reportView, goPrevMonth, goNextMonth } = VistaCalendario({ C });
   const { modelliView, settingsView, dayModal, dbModal, salvaDisposizionePopup } = VistaModelli({ C });
   const [confermaCancellaEventiMese, setConfermaCancellaEventiMese] = useState(false);
-  const [modelloCancellaMese, setModelloCancellaMese] = useState(""); // "" = tutti gli eventi del mese
+  const [selCalCancella, setSelCalCancella] = useState(null);   // null = solo il calendario aperto
+  const [selTurniCancella, setSelTurniCancella] = useState([]); // modelli scelti da eliminare nel mese
   const [confermaEliminaEventiRotazione, setConfermaEliminaEventiRotazione] = useState(false);
   const [confermaCancellaLogErrori, setConfermaCancellaLogErrori] = useState(false);
 
@@ -164,7 +165,7 @@ function AppInterno({ session }){
     colByTime, colLabel, isRed, sundayColor, holidayColor, redBg,
     getEvts, allEvts, dots, saveSettings, addCalendar, updateCalendar,
     deleteCalendar, computeEventFields, saveEvt, updateEvt, delEvt, delEvtiRotazioneDaData,
-    delTutteEvtiRotazione, cancellaTuttiEventiMese, cancellaEventiMeseDiModello, calcMinuti, saveToSheets, syncSeAttivo, loadFromSheets,
+    delTutteEvtiRotazione, cancellaTuttiEventiMese, cancellaEventiMeseSelezione, calcMinuti, saveToSheets, syncSeAttivo, loadFromSheets,
     syncFromSheets, handleSave, handleLoad, handleSaveSheetsConfig, handleViewDbData, buildBackupPayload,
     handleExportSupabase, handleOpenImportSupabase, handleRestoreBackup, handleLogout, eseguiNormalizzazione, normalizzaModelliTempo,
     normalizzaEventiTempo, modelliOrdinati, importsRecenti, modelliDelCalendario, rinumeraSottoinsieme, spostaModelloPuro,
@@ -328,53 +329,97 @@ function AppInterno({ session }){
         background:"rgba(0,0,0,0.75)",color:"#fff",padding:"6px 16px",
         borderRadius:20,fontSize:12,zIndex:9999,pointerEvents:"none"}}>{banner}</div>}
       {confermaCancellaEventiMese&&(()=>{
-        // Modelli realmente presenti in questo mese su questo calendario, con
-        // quanti eventi hanno: permette di eliminare solo quelli di un modello.
+        // Scelta multipla di CALENDARI e TURNI (modelli) da eliminare nel mese
+        // aperto. I turni elencati sono quelli realmente presenti nei calendari
+        // selezionati, col numero di eventi. Nulla e' selezionato di default
+        // tra i turni: bisogna sceglierli esplicitamente.
+        const VUOTO = "__nessuno__";
         const prefissoMese = `${year}-${String(month+1).padStart(2,"0")}-`;
+        const calSel = selCalCancella ?? [calId];
         const conteggi = {};
         Object.entries(store.events||{}).forEach(([dk,calMap])=>{
           if(!dk.startsWith(prefissoMese)) return;
-          (calMap?.[calId]||[]).forEach(e=>{ if(e.modelloId) conteggi[e.modelloId]=(conteggi[e.modelloId]||0)+1; });
+          calSel.forEach(cid=>{
+            (calMap?.[cid]||[]).forEach(e=>{ const k=e.modelloId||VUOTO; conteggi[k]=(conteggi[k]||0)+1; });
+          });
         });
         const opzioni = Object.keys(conteggi)
-          .map(id=>({id, titolo: modelli.find(m=>m.id===id)?.titolo || "(modello eliminato)", n: conteggi[id]}))
-          .sort((a,b)=>a.titolo.localeCompare(b.titolo));
-        const chiudi = ()=>{ setConfermaCancellaEventiMese(false); setModelloCancellaMese(""); };
-        const soloModello = modelloCancellaMese && opzioni.find(o=>o.id===modelloCancellaMese);
+          .map(id=>({id, titolo: id===VUOTO ? "(senza modello)" : (modelli.find(m=>m.id===id)?.titolo || "(modello eliminato)"), n: conteggi[id]}))
+          .sort((x,y2)=>x.titolo.localeCompare(y2.titolo));
+        const turniSel = selTurniCancella.filter(id=>conteggi[id]);
+        const totale = turniSel.reduce((t,id)=>t+conteggi[id],0);
+        const tuttiSel = opzioni.length>0 && turniSel.length===opzioni.length;
+        const chiudi = ()=>{ setConfermaCancellaEventiMese(false); setSelCalCancella(null); setSelTurniCancella([]); };
+        const toggleCal = cid=>setSelCalCancella(calSel.includes(cid) ? calSel.filter(x=>x!==cid) : [...calSel,cid]);
+        const toggleTurno = id=>setSelTurniCancella(turniSel.includes(id) ? turniSel.filter(x=>x!==id) : [...turniSel,id]);
+        const riga = (key, attivo, onClick, contenuto)=>(
+          <div key={key} onClick={onClick}
+            style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:10,cursor:"pointer",
+              marginBottom:6,background:attivo?T.s2:"transparent",border:`1px solid ${attivo?"#ef4444":T.border}`}}>
+            <div style={{width:20,height:20,borderRadius:6,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
+              border:`2px solid ${attivo?"#ef4444":T.border}`,background:attivo?"#ef4444":"transparent"}}>
+              {attivo&&<span style={{color:"#fff",fontSize:13,fontWeight:900}}>✓</span>}
+            </div>
+            {contenuto}
+          </div>
+        );
+        const etichetta = {fontSize:11,fontWeight:800,color:T.sub,margin:"4px 0 6px"};
+        const puoEliminare = calSel.length>0 && totale>0;
         return (
           <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:100001,
             display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
             onClick={e=>{e.stopPropagation();chiudi();}}>
-            <div style={{background:T.surface,borderRadius:16,width:"100%",maxWidth:320,padding:20}}
+            <div style={{background:T.surface,borderRadius:16,width:"100%",maxWidth:340,padding:20,
+              maxHeight:"85vh",overflowY:"auto"}}
               onClick={e=>e.stopPropagation()}>
-              <div style={{fontSize:15,fontWeight:800,color:T.text,marginBottom:12,textAlign:"center"}}>
-                {soloModello
-                  ? `Cancellare gli eventi "${soloModello.titolo}" di ${NOMI_MESI_IT[month]} ${year} su questo calendario?`
-                  : `Cancellare TUTTI gli eventi di ${NOMI_MESI_IT[month]} ${year} su questo calendario?`}
+              <div style={{fontSize:15,fontWeight:800,color:T.text,marginBottom:14,textAlign:"center"}}>
+                Elimina eventi di {NOMI_MESI_IT[month]} {year}
               </div>
-              <select value={modelloCancellaMese} onChange={e=>setModelloCancellaMese(e.target.value)}
-                style={{width:"100%",marginBottom:16,padding:"10px 8px",borderRadius:10,fontSize:13,fontWeight:700,
-                  background:T.s2,color:T.text,border:`1px solid ${T.border}`}}>
-                <option value="">Tutti gli eventi del mese</option>
-                {opzioni.map(o=>(
-                  <option key={o.id} value={o.id}>Solo: {o.titolo} ({o.n})</option>
-                ))}
-              </select>
-              <div style={{display:"flex",gap:8}}>
+
+              <div style={etichetta}>CALENDARI</div>
+              {store.calendars.map(c=>riga(c.id, calSel.includes(c.id), ()=>toggleCal(c.id),
+                <>
+                  <div style={{width:10,height:10,borderRadius:"50%",background:c.color,flexShrink:0}}/>
+                  <span style={{fontSize:13,fontWeight:700,color:T.text}}>{c.name}</span>
+                </>
+              ))}
+
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:10}}>
+                <div style={etichetta}>TURNI</div>
+                {opzioni.length>0&&(
+                  <button onClick={()=>setSelTurniCancella(tuttiSel?[]:opzioni.map(o=>o.id))}
+                    style={{background:"none",border:"none",color:accent,fontSize:12,fontWeight:800,cursor:"pointer"}}>
+                    {tuttiSel?"Deseleziona tutti":"Seleziona tutti"}
+                  </button>
+                )}
+              </div>
+              {opzioni.length===0&&(
+                <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"10px 0"}}>Nessun evento nel mese sui calendari scelti</div>
+              )}
+              {opzioni.map(o=>riga(o.id, turniSel.includes(o.id), ()=>toggleTurno(o.id),
+                <>
+                  <span style={{flex:1,fontSize:13,fontWeight:700,color:T.text}}>{o.titolo}</span>
+                  <span style={{fontSize:12,fontWeight:800,color:T.sub}}>{o.n}</span>
+                </>
+              ))}
+
+              <div style={{display:"flex",gap:8,marginTop:14}}>
                 <button onClick={chiudi}
                   style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
                     color:T.text,padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:13}}>
                   Annulla
                 </button>
-                <button onClick={()=>{
-                    const scelto = modelloCancellaMese;
+                <button disabled={!puoEliminare}
+                  onClick={()=>{
+                    if(!puoEliminare) return;
+                    const cals = calSel, turni = turniSel;
                     chiudi();
-                    if(scelto) cancellaEventiMeseDiModello(year, month, calId, scelto);
-                    else cancellaTuttiEventiMese(year, month, calId);
+                    cancellaEventiMeseSelezione(year, month, cals, turni);
                   }}
-                  style={{flex:1,background:"#ef4444",border:"none",borderRadius:10,
-                    color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:13}}>
-                  Elimina
+                  style={{flex:1,background:"#ef4444",border:"none",borderRadius:10,color:"#fff",
+                    padding:"11px 0",fontWeight:800,fontSize:13,
+                    cursor:puoEliminare?"pointer":"default",opacity:puoEliminare?1:0.4}}>
+                  Elimina{puoEliminare?` (${totale})`:""}
                 </button>
               </div>
             </div>
