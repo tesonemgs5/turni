@@ -2644,6 +2644,37 @@ export function useAppCore(session){
     });
   }
 
+  async function cancellaEventiMeseDiModello(y, m, cId, modelloId){
+    // Cancella SOLO gli eventi di un dato modello nel mese (y=anno, m=mese 0-based)
+    // sul calendario cId. Gli altri eventi del mese restano intatti.
+    if(!modelloId) return;
+    const mm = String(m+1).padStart(2,"0");
+    const ultimoGiorno = new Date(y, m+1, 0).getDate();
+    const fromKey = `${y}-${mm}-01`;
+    const toKey = `${y}-${mm}-${String(ultimoGiorno).padStart(2,"0")}`;
+    const { data: rows, error } = await supabase.from("events").select("id")
+      .eq("user_id", userId).eq("calendar_id", cId).eq("modello_id", modelloId)
+      .gte("date_key", fromKey).lte("date_key", toKey);
+    if(error){ segnalaErroreDb(error, "Eliminazione eventi del modello nel mese"); return; }
+    if(!rows) return;
+    const ids = rows.map(r=>r.id);
+    if(ids.length===0) return;
+    const { error: delErr } = await supabase.from("events").delete().in("id", ids).eq("user_id", userId);
+    if(delErr){ segnalaErroreDb(delErr, "Eliminazione eventi del modello nel mese"); return; }
+    setStore(prev=>{
+      const ns=JSON.parse(JSON.stringify(prev));
+      for(const dKey of Object.keys(ns.events||{})){
+        if(dKey>=fromKey && dKey<=toKey && ns.events[dKey]?.[cId]){
+          ns.events[dKey][cId] = ns.events[dKey][cId].filter(e=>e.modelloId!==modelloId);
+          if(ns.events[dKey][cId].length===0) delete ns.events[dKey][cId];
+        }
+      }
+      saveToLocalStorage(ns.events, ns.calendars, modelli);
+      syncSeAttivo(ns.events, ns.calendars);
+      return ns;
+    });
+  }
+
   function calcMinuti(tIn, tOut){
     const m1=oraInMinuti(tIn), m2=oraInMinuti(tOut);
     if(m1===null||m2===null) return 0;
@@ -6001,6 +6032,7 @@ const importsRecenti = useMemo(()=>{
     delEvtiRotazioneDaData,
     delTutteEvtiRotazione,
     cancellaTuttiEventiMese,
+    cancellaEventiMeseDiModello,
     calcMinuti,
     saveToSheets,
     syncSeAttivo,
