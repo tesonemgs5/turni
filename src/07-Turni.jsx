@@ -26,6 +26,29 @@ export function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, m
   const [confermaCancellaRegistro, setConfermaCancellaRegistro] = useState(false);
   const fileInputRef = useRef(null);
   const testoJsonRef = useRef(null);
+  const [promptCopiatoJson, setPromptCopiatoJson] = useState(false);
+
+  // Prompt da incollare in Claude (insieme a foto/PDF della tabella) per
+  // ottenere il JSON nel formato canonico accettato da questo dialog.
+  function costruisciPromptJson(){
+    const meseNome = NOMI_MESI_IT[month];
+    const mm = String(month+1).padStart(2,"0");
+    return `Dalla tabella allegata (foto o PDF dei turni di ${meseNome} ${year}) estrai tutti i turni. Rispondi solo con un array JSON, senza altro testo, in questo formato:
+
+[{"data":"${year}-${mm}-01","titolo":"NOME TURNO","oraInizio":"07:45","oraFine":"14:00","auto":"","collega":"","note":""}]
+
+Regole: una riga per ogni turno. "data" in formato YYYY-MM-DD. "titolo" esattamente come scritto nella tabella (es. Primo, Secondo, Terzo, Notte, RS). "oraInizio" e "oraFine" in formato HH:MM se presenti, altrimenti stringa vuota. "auto", "collega", "note" se presenti, altrimenti stringa vuota. Leggi riga per riga senza saltare giorni. Ignora giorni senza turno.`;
+  }
+
+  async function copiaPromptJson(){
+    try{
+      await navigator.clipboard.writeText(costruisciPromptJson());
+      setPromptCopiatoJson(true);
+      setTimeout(()=>setPromptCopiatoJson(false), 2500);
+    }catch(e){
+      setErrore("Non sono riuscito a copiare il prompt negli appunti.");
+    }
+  }
   const syncTimeoutRef = useRef(null);
 
   async function elabora(testo){
@@ -116,6 +139,11 @@ export function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, m
                 padding:"12px 0",fontWeight:800,fontSize:14,cursor:"pointer",marginBottom:16}}>
               📋 Incolla testo (JSON o turni)
             </button>
+            <button onClick={copiaPromptJson}
+              style={{width:"100%",background:"#ffffff",border:`2px dashed ${accent}`,borderRadius:10,color:"#1a1a1a",
+                padding:"12px 0",fontWeight:800,fontSize:13,cursor:"pointer",marginBottom:16,marginTop:-6}}>
+              {promptCopiatoJson ? "✅ Prompt copiato!" : "🤖 Copia prompt per Claude"}
+            </button>
 
             {errore && <div style={{color:"#ef4444",fontSize:12,marginBottom:14}}>{errore}</div>}
 
@@ -163,6 +191,11 @@ export function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, m
         {step==="incolla" && (
           <div style={{padding:20}}>
             <div style={{fontSize:16,fontWeight:900,color:T.text,marginBottom:14}}>Incolla JSON o testo turni</div>
+            <button onClick={copiaPromptJson}
+              style={{width:"100%",background:"#ffffff",border:`2px dashed ${accent}`,borderRadius:10,color:"#1a1a1a",
+                padding:"10px 0",fontWeight:800,fontSize:12,cursor:"pointer",marginBottom:12}}>
+              {promptCopiatoJson ? "✅ Prompt copiato!" : "🤖 Copia prompt per Claude"}
+            </button>
             <div style={{fontSize:11,color:T.sub,marginBottom:8}}>
               Va bene anche l'output "grezzo" di un OCR/AI esterno, o un testo semplice tipo:
               "Giovedi 01/01/2026" seguito da righe "Turno:", "Orario:", "Auto:", "Collega:", "Note:".
