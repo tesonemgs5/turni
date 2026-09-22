@@ -24,8 +24,12 @@ const staGirandoInElectron = typeof navigator!=="undefined" && /electron/i.test(
 // servire il codice VECCHIO messo in cache (versione vecchia in Impostazioni
 // finche' non si preme "Svuota cache"). Qui non lo si registra e si
 // eliminano quelli e le cache gia' presenti da installazioni precedenti.
-const staGirandoInCapacitor = typeof window!=="undefined" && !!(window.Capacitor
-  && typeof window.Capacitor.isNativePlatform==="function" && window.Capacitor.isNativePlatform());
+const staGirandoInCapacitor = typeof window!=="undefined" && (
+  !!(window.Capacitor && typeof window.Capacitor.isNativePlatform==="function" && window.Capacitor.isNativePlatform()) ||
+  window.location.hostname === 'localhost' ||
+  window.location.protocol === 'capacitor:' ||
+  /capacitor/i.test(navigator.userAgent||"")
+);
 if(staGirandoInCapacitor){
   try {
     if("serviceWorker" in navigator){
@@ -36,13 +40,6 @@ if(staGirandoInCapacitor){
     }
   } catch { /* non bloccante */ }
 } else if(!staGirandoInElectron){
-  // Registra il service worker generato da vite-plugin-pwa: senza questa
-  // chiamata il plugin produce comunque sw.js in fase di build, ma nessuno
-  // lo installa mai nel browser — quindi l'app (HTML/JS/CSS) non finisce
-  // mai in cache e, aprendo/ricaricando la pagina senza connessione, il
-  // browser mostra la sua pagina di errore invece dell'app. Con questa
-  // chiamata, dopo la prima visita con linea l'app resta disponibile anche
-  // a freddo, senza connessione.
   registerSW({ immediate: true });
 }
 
@@ -70,6 +67,11 @@ function Root() {
 
   useEffect(() => {
     let risolto = false;
+
+    if (sessioneLocale || (typeof navigator !== 'undefined' && navigator.onLine === false)) {
+      risolto = true;
+      setLoading(false);
+    }
 
     const timeoutId = setTimeout(() => {
       if (risolto) return;

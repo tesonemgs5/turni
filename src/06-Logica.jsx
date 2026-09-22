@@ -754,24 +754,10 @@ export function useAppCore(session){
           const versioneCorrente = typeof __APP_VERSION__!=="undefined" ? __APP_VERSION__ : null;
           const versioneSalvata = localStorage.getItem("turnipm_app_version");
           if(versioneCorrente && versioneSalvata!==versioneCorrente){
-            const codaPendente = (leggiCodaSync()||[]).length>0;
-            const soloLocale = localStorage.getItem("syncMode")==="off";
-            if(navigator.onLine && !codaPendente && !soloLocale){
-              clearLocalStorageCache();
-              try {
-                if("caches" in window){
-                  const nomiCache = await caches.keys();
-                  await Promise.all(nomiCache.map(n=>caches.delete(n)));
-                }
-              } catch(e){ segnalaErroreSoloLog(e, "Svuotamento cache dopo aggiornamento versione"); }
-              try {
-                if("serviceWorker" in navigator){
-                  const regs = await navigator.serviceWorker.getRegistrations();
-                  await Promise.all(regs.map(r=>r.unregister()));
-                }
-              } catch(e){ segnalaErroreSoloLog(e, "Disattivazione Service Worker dopo aggiornamento versione"); }
-              localStorage.setItem("turnipm_app_version", versioneCorrente);
-            }
+            // Non cancellare MAI la cache locale al cambio versione APK:
+            // la cache locale garantisce il funzionamento offline dell'app.
+            // Aggiorna semplicemente il marcatore di versione.
+            localStorage.setItem("turnipm_app_version", versioneCorrente);
           }
         } catch(e){ segnalaErroreSoloLog(e, "Controllo versione app all'avvio"); }
 
@@ -947,9 +933,15 @@ export function useAppCore(session){
         // sempre per sortOrder (poi per id come spareggio stabile) così
         // il risultato è deterministico ad ogni caricamento.
         })).sort((a,b)=>{
-          const sa = a.sortOrder, sb = b.sortOrder;
+          const sa = a.sortOrder || 0, sb = b.sortOrder || 0;
           if(sa!==sb) return sa-sb;
-          return String(a.id).localeCompare(String(b.id));
+          const fa = classificaFasciaOrariaModello(a);
+          const fb = classificaFasciaOrariaModello(b);
+          if(fa!==fb) return fa-fb;
+          const ma = a.tempo==="h24" ? 99999 : (oraInMinuti(a.inizio||"") ?? 99999);
+          const mb = b.tempo==="h24" ? 99999 : (oraInMinuti(b.inizio||"") ?? 99999);
+          if(ma!==mb) return ma-mb;
+          return (a.titolo||"").localeCompare(b.titolo||"");
         });
 
         const rotazioniMappate = (rotazioniDb||[]).map(r=>({
@@ -1484,11 +1476,25 @@ export function useAppCore(session){
     // periodico più sotto) — la linea assente non è un errore, è uno
     // stato normale di attesa.
     if(typeof navigator!=="undefined" && navigator.onLine===false) return;
+
+    // Deduplica le operazioni di inserimento eventi in coda per evitare di
+    // inserire duplicati se l'utente ha premuto più volte import o sync offline.
+    const chiaviViste = new Set();
+    const codaDeduplicata = [];
+    for(const op of coda){
+      if(op.tipo === "insert" && op.table === "events" && op.payload){
+        const key = `${op.payload.calendar_id}_${op.payload.date_key}_${op.payload.label}_${op.payload.time_in}_${op.payload.time_out}`;
+        if(chiaviViste.has(key)) continue;
+        chiaviViste.add(key);
+      }
+      codaDeduplicata.push(op);
+    }
+
     // Le operazioni più vecchie (ts più basso) vanno riprovate per prime:
     // se due dispositivi hanno modificato la stessa riga mentre uno era
     // offline, applicarle in ordine cronologico fa sì che l'ultima
     // scrittura (quella con ts più recente) sia quella che resta valida.
-    const ordinata = [...coda].sort((a,b)=>(a.ts||"").localeCompare(b.ts||""));
+    const ordinata = [...codaDeduplicata].sort((a,b)=>(a.ts||"").localeCompare(b.ts||""));
     const rimasti = [];
     for(const op of ordinata){
       async function provaSupabase(payloadCorrente, tentativi=0){
@@ -3294,7 +3300,17 @@ export function useAppCore(session){
 // blocco di un altro), ma il numero assoluto risultante riflette lo shift
 // globale se necessario.
 function calcolaOrdineModelli(sottoinsieme){
-  return [...(sottoinsieme||[])].filter(Boolean).sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
+  return [...(sottoinsieme||[])].filter(Boolean).sort((a,b)=>{
+    const sa = a.sortOrder || 0, sb = b.sortOrder || 0;
+    if(sa!==sb) return sa-sb;
+    const fa = classificaFasciaOrariaModello(a);
+    const fb = classificaFasciaOrariaModello(b);
+    if(fa!==fb) return fa-fb;
+    const ma = a.tempo==="h24" ? 99999 : (oraInMinuti(a.inizio||"") ?? 99999);
+    const mb = b.tempo==="h24" ? 99999 : (oraInMinuti(b.inizio||"") ?? 99999);
+    if(ma!==mb) return ma-mb;
+    return (a.titolo||"").localeCompare(b.titolo||"");
+  });
 }
 
 // ── Ordinamento per FASCIA ORARIA D'INIZIO, usato SOLO dal pulsante
