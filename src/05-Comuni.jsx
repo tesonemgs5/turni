@@ -451,7 +451,7 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
         <div style={{fontSize:12,color:"#0f172a",marginBottom:4}}>NOME REPORT</div>
         {editingName?(
           <div style={{display:"flex",gap:6}}>
-            <input value={tmpName} onChange={e=>setTmpName(e.target.value)}
+            <input value={tmpName} onChange={e=>setTmpName(e.target.value.toUpperCase())}
               style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"6px 10px",color:T.text,fontSize:13,outline:"none"}}/>
             <button onClick={()=>{onRename(tmpName);setEditingName(false);}}
@@ -508,7 +508,7 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
                 <div style={{padding:"0 12px 12px"}}>
                   {sm.tipo==="libero" && (
                     <div style={{marginBottom:8,display:"flex",gap:6}}>
-                      <input value={sm.nome} onChange={e=>aggiornaSottomenu(sm.id,{nome:e.target.value})}
+                      <input value={sm.nome} onChange={e=>aggiornaSottomenu(sm.id,{nome:e.target.value.toUpperCase()})}
                         style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
                           borderRadius:8,padding:"6px 10px",color:T.text,fontSize:12,outline:"none"}}/>
                     </div>
@@ -626,7 +626,7 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
                               <div style={{display:"flex",alignItems:"center",gap:6,
                                 padding:"8px 10px",background:g.color+"22",borderRadius:isOpenG?"8px 8px 0 0":8,
                                 border:`1px solid ${g.color}44`}}>
-                                <input value={g.label} onChange={e=>rinominaGruppo(g.key,e.target.value)}
+                                <input value={g.label} onChange={e=>rinominaGruppo(g.key,e.target.value.toUpperCase())}
                                   style={{flex:1,background:"transparent",border:"none",outline:"none",
                                     fontSize:13,fontWeight:800,color:"#0f172a"}}/>
                                 <span style={{fontSize:14,fontWeight:900,color:"#0f172a"}}>{count}</span>
@@ -785,7 +785,7 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
         <div style={{fontSize:12,color:"#0f172a",marginBottom:4}}>NOME REPORT</div>
         {editingName?(
           <div style={{display:"flex",gap:6}}>
-            <input value={tmpName} onChange={e=>setTmpName(e.target.value)}
+            <input value={tmpName} onChange={e=>setTmpName(e.target.value.toUpperCase())}
               style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"6px 10px",color:T.text,fontSize:13,outline:"none"}}/>
             <button onClick={()=>{onRename(tmpName);setEditingName(false);}}
@@ -837,7 +837,7 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
                 <div style={{padding:"0 12px 12px"}}>
                   {sm.tipo==="libero" && (
                     <div style={{marginBottom:8,display:"flex",gap:6}}>
-                      <input value={sm.nome} onChange={e=>aggiornaSottomenu(sm.id,{nome:e.target.value})}
+                      <input value={sm.nome} onChange={e=>aggiornaSottomenu(sm.id,{nome:e.target.value.toUpperCase()})}
                         style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
                           borderRadius:8,padding:"6px 10px",color:T.text,fontSize:12,outline:"none"}}/>
                     </div>
@@ -949,7 +949,7 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
                               <div style={{display:"flex",alignItems:"center",gap:6,
                                 padding:"8px 10px",background:g.color+"22",borderRadius:isOpenG?"8px 8px 0 0":8,
                                 border:`1px solid ${g.color}44`}}>
-                                <input value={g.label} onChange={e=>rinominaGruppo(g.key,e.target.value)}
+                                <input value={g.label} onChange={e=>rinominaGruppo(g.key,e.target.value.toUpperCase())}
                                   style={{flex:1,background:"transparent",border:"none",outline:"none",
                                     fontSize:13,fontWeight:800,color:"#0f172a"}}/>
                                 <span style={{fontSize:14,fontWeight:900,color:"#0f172a"}}>{fmtOreMin(minutiGruppo)}</span>
@@ -1077,7 +1077,7 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
         <div style={{fontSize:12,color:"#0f172a",marginBottom:4}}>NOME REPORT</div>
         {editingName?(
           <div style={{display:"flex",gap:6}}>
-            <input value={tmpName} onChange={e=>setTmpName(e.target.value)}
+            <input value={tmpName} onChange={e=>setTmpName(e.target.value.toUpperCase())}
               style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"6px 10px",color:T.text,fontSize:13,outline:"none"}}/>
             <button onClick={()=>{onRename(tmpName);setEditingName(false);}}
@@ -1304,7 +1304,7 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
           <div style={{fontSize:12,color:"#0f172a",marginBottom:4}}>NOME REPORT</div>
           {editingName?(
             <div style={{display:"flex",gap:6}}>
-              <input value={tmpName} onChange={e=>setTmpName(e.target.value)}
+              <input value={tmpName} onChange={e=>setTmpName(e.target.value.toUpperCase())}
                 style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
                   borderRadius:8,padding:"6px 10px",color:T.text,fontSize:13,outline:"none"}}/>
               <button onClick={()=>{onRename(tmpName);setEditingName(false);}}
