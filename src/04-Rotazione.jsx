@@ -1851,8 +1851,10 @@ export function ModelloCard({
       style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
         background: selectMode && selected ? `${accent}22` : T.surface,
-        border: isDropTarget ? `2px dashed ${accent}` : (selectMode && selected ? `2px solid ${accent}` : `1px solid ${T.border}`),
+        border: selectMode && selected ? `2px solid ${accent}` : `1px solid ${T.border}`,
+        borderTop: isDropTarget ? `3px solid ${accent}` : undefined,
         borderRadius: 12, padding: "12px 14px", marginBottom: 8,
+        marginTop: isDropTarget ? -2 : 0,
         opacity: isDragging ? 0.5 : 1,
         cursor: selectMode ? "pointer" : (inSpostamento ? "grab" : "default"),
       }}>
