@@ -3516,7 +3516,15 @@ const importsRecenti = useMemo(()=>{
     }
     const riordinato = [...ordinato];
     const [tolto] = riordinato.splice(srcIdx,1);
-    riordinato.splice(dstIdx,0,tolto);
+    // Quando la riga azzurra è sopra la card bersaglio (dstId), l'utente
+    // intende inserire il modello PRIMA di dstId.
+    // Se stiamo trascinando verso il basso (srcIdx < dstIdx), la rimozione di
+    // srcIdx ha già fatto scalare l'indice di dstId di -1. Quindi l'indice di
+    // inserimento per trovarsi prima di dstId diventa (dstIdx - 1).
+    // Se stiamo trascinando verso l'alto (srcIdx > dstIdx), l'indice di
+    // dstId non è cambiato, quindi l'inserimento avviene a dstIdx.
+    const targetIdx = srcIdx < dstIdx ? dstIdx - 1 : dstIdx;
+    riordinato.splice(targetIdx, 0, tolto);
     const calendarsOrdinati = store.calendars.map(c=>c.id);
     const ordiniPerCalendario = new Map([[calIdFiltro, riordinato]]);
     return ricalcolaPosizioniGlobali(prev, calendarsOrdinati, ordiniPerCalendario, mainCalId);
