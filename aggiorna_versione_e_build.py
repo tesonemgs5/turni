@@ -288,8 +288,8 @@ def run_gradle_task(android_dir, task):
         print(f"ERRORE: non trovo '{gradlew_p}'.")
         sys.exit(1)
 
-    print(f"\nEseguo: {os.path.basename(gradlew_p)} {task} (puo' richiedere qualche minuto)...\n")
-    result = subprocess.run([gradlew_p, task], cwd=android_dir, shell=is_windows)
+    print(f"\nEseguo: {os.path.basename(gradlew_p)} {task} --parallel (build ultra-veloce)...\n")
+    result = subprocess.run([gradlew_p, task, "--parallel"], cwd=android_dir, shell=is_windows)
     if result.returncode != 0:
         print(f"\nERRORE: '{task}' e' fallito (BUILD FAILED). Controlla l'output sopra.")
         print("Se l'errore e' un TimeoutException senza messaggio, prova a rilanciare")
@@ -344,33 +344,20 @@ def main():
     #    codice aggiornato (01-App.jsx, 06-Logica.jsx, ecc.).
     run_npm_o_npx(project_root, "npm run build", "ricompilo il codice web in dist/")
 
-    # 3. Sincronizza il risultato dentro il progetto Android: senza questo
-    #    passaggio, android/app/src/main/assets/public resta quello
-    #    dell'ultima sincronizzazione manuale, e la build Android
-    #    impacchetterebbe di nuovo il contenuto vecchio.
-    run_npm_o_npx(project_root, "npx cap sync android", "sincronizzo dist/ dentro il progetto Android")
+    # 3. Copia ultra-veloce dei file dist/ dentro Android (npx cap copy)
+    run_npm_o_npx(project_root, "npx cap copy android", "copio dist/ nelle risorse Android (versione veloce)")
 
-    # 4. Calcola la versione col nuovo formato (per il numero mostrato
-    #    nel gradle/versionName). Basata sulla data dell'ULTIMO COMMIT
-    #    git, non su questo istante: coincide sempre con quella che ha
-    #    gia' calcolato "npm run build" qui sopra (stessa logica lato
-    #    JS in vite.config.js) e con quella che calcolera' Vercel al
-    #    prossimo deploy dello stesso commit — anche a giorni di
-    #    distanza da questo lancio.
+    # 4. Calcola la versione col nuovo formato (dall'ultimo commit git)
     nuova_versione = calcola_versione(project_root)
     print(f"\nNuova versione calcolata (dall'ultimo commit git): {nuova_versione}\n")
 
     # 5. Aggiorna build.gradle
     new_code = bump_version_gradle(app_gradle_path, nuova_versione)
 
-    # 6. Ferma eventuali demoni Gradle incastrati da un tentativo precedente
-    ferma_demoni_gradle(android_dir)
-
-    # 7. Build AAB + APK
-    run_gradle_task(android_dir, "bundleRelease")
+    # 6. Build APK velocizzata (usa demone caldo Gradle + build parallela)
     run_gradle_task(android_dir, "assembleRelease")
 
-    # 8. Percorsi sorgente
+    # 7. Percorsi sorgente
     aab_src = os.path.join(android_dir, "app", "build", "outputs", "bundle", "release", "app-release.aab")
     apk_src = os.path.join(android_dir, "app", "build", "outputs", "apk", "release", "app-release.apk")
     apk_unsigned_src = os.path.join(android_dir, "app", "build", "outputs", "apk", "release", "app-release-unsigned.apk")
