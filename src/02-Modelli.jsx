@@ -345,7 +345,7 @@ export default function VistaModelli({ C }){
 
       {modelliTab==="turni"&&(
         <div style={{margin:"0 12px 10px"}}>
-          <input value={ricercaModelli} onChange={e=>setRicercaModelli(e.target.value)}
+          <input value={ricercaModelli} onChange={e=>setRicercaModelli(e.target.value.toUpperCase())}
             placeholder="🔎 Cerca modello per nome o orario..."
             style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
               borderRadius:10,padding:"10px 12px",color:T.text,fontSize:13,
@@ -1180,8 +1180,8 @@ export default function VistaModelli({ C }){
                   onClose={()=>setPal(null)}/>}
               </div>
               <input value={f.label}
-                onChange={e=>updateFascia(f.key,{label:e.target.value})}
-                onBlur={e=>saveSettings({fasce_automatiche:fasceAutomatiche.map(ff=>ff.key===f.key?{...ff,label:e.target.value}:ff)})}
+                onChange={e=>updateFascia(f.key,{label:e.target.value.toUpperCase()})}
+                onBlur={e=>saveSettings({fasce_automatiche:fasceAutomatiche.map(ff=>ff.key===f.key?{...ff,label:e.target.value.toUpperCase()}:ff)})}
                 style={{flex:1,background:"transparent",border:"none",outline:"none",color:T.text,fontSize:13,fontWeight:700}}/>
             </div>
             <div style={{display:"flex",gap:8,alignItems:"center"}}>
@@ -1357,8 +1357,8 @@ export default function VistaModelli({ C }){
                   onClose={()=>setPal(null)}/>}
               </div>
               <input value={c.name}
-                onChange={e=>{const newCals=JSON.parse(JSON.stringify(store.calendars));newCals[ci].name=e.target.value;setStore(s=>({...s,calendars:newCals}));}}
-                onBlur={e=>updateCalendar(c.id,{name:e.target.value})}
+                onChange={e=>{const v=e.target.value.toUpperCase();const newCals=JSON.parse(JSON.stringify(store.calendars));newCals[ci].name=v;setStore(s=>({...s,calendars:newCals}));}}
+                onBlur={e=>updateCalendar(c.id,{name:e.target.value.toUpperCase()})}
                 style={{flex:1,background:"transparent",border:"none",outline:"none",color:T.text,fontSize:13,fontWeight:700}}/>
               <button onClick={async()=>{
                 const newCals=store.calendars.map((x,j)=>({...x,isMain:j===ci}));
@@ -1415,7 +1415,7 @@ export default function VistaModelli({ C }){
                         onClose={()=>setPal(null)}/>}
                     </div>
                     <input value={sh.label}
-                      onChange={e=>{const newCals=JSON.parse(JSON.stringify(store.calendars));newCals[ci].shifts[si].label=e.target.value;setStore(s=>({...s,calendars:newCals}));}}
+                      onChange={e=>{const v=e.target.value.toUpperCase();const newCals=JSON.parse(JSON.stringify(store.calendars));newCals[ci].shifts[si].label=v;setStore(s=>({...s,calendars:newCals}));}}
                       onBlur={()=>updateCalendar(c.id,{shifts:store.calendars[ci].shifts})}
                       style={{flex:1,background:"transparent",border:"none",outline:"none",color:T.text,fontSize:12}}/>
                     <button onClick={()=>{
@@ -1436,7 +1436,7 @@ export default function VistaModelli({ C }){
                       onPick={p=>setNsColor(p)}
                       onClose={()=>setPal(null)}/>}
                   </div>
-                  <input value={nsName} onChange={e=>setNsName(e.target.value)} placeholder="Nome turno..."
+                  <input value={nsName} onChange={e=>setNsName(e.target.value.toUpperCase())} placeholder="Nome turno..."
                     style={{flex:1,background:T.surface,border:`1px solid ${T.border}`,
                       borderRadius:8,padding:"7px 10px",color:T.text,fontSize:12,outline:"none"}}/>
                   <button onClick={()=>{
@@ -1463,7 +1463,7 @@ export default function VistaModelli({ C }){
               onPick={p=>setNcColor(p)}
               onClose={()=>setPal(null)}/>}
           </div>
-          <input value={ncName} onChange={e=>setNcName(e.target.value)} placeholder="Nome calendario..."
+          <input value={ncName} onChange={e=>setNcName(e.target.value.toUpperCase())} placeholder="Nome calendario..."
             style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
               borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,outline:"none"}}/>
           <button onClick={async()=>{
@@ -1815,7 +1815,7 @@ export default function VistaModelli({ C }){
                 automaticamente ogni anno</b> (riferimento: {year}).
               </div>
               <div style={{display:"flex",gap:6,marginBottom:10}}>
-                <input value={patronoCittaSel} onChange={e=>setPatronoCittaSel(e.target.value)}
+                <input value={patronoCittaSel} onChange={e=>setPatronoCittaSel(e.target.value.toUpperCase())}
                   placeholder="🔍 Cerca festività, santo o città…"
                   style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
                     padding:"8px 10px",color:T.text,fontSize:12,outline:"none"}}/>
@@ -1927,7 +1927,7 @@ export default function VistaModelli({ C }){
           AGGIUNGI UNA DATA
         </div>
         <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-          <input value={nhName} onChange={e=>setNhName(e.target.value)} placeholder="Nome..."
+          <input value={nhName} onChange={e=>setNhName(e.target.value.toUpperCase())} placeholder="Nome..."
             style={{flex:2,minWidth:100,background:T.s2,border:`1px solid ${T.border}`,
               borderRadius:8,padding:"7px 10px",color:T.text,fontSize:12,outline:"none"}}/>
           <input value={nhD} onChange={e=>setNhD(e.target.value)} placeholder="GG" type="number"
@@ -2061,6 +2061,7 @@ export default function VistaModelli({ C }){
           </button>
           {voceImportante&&(
             <input key={dayKey} defaultValue={voceImportante.nota||""}
+              onInput={e=>{const p=e.target.selectionStart;e.target.value=e.target.value.toUpperCase();e.target.setSelectionRange(p,p);}}
               onBlur={e=>aggiornaNotaGiornoImportante(e.target.value)}
               placeholder="Nota (es. visita medica, scadenza...)" maxLength={80}
               style={{width:"100%",boxSizing:"border-box",marginTop:8,background:T.s2,border:`1px solid ${T.border}`,
@@ -3040,7 +3041,7 @@ export default function VistaModelli({ C }){
                   borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
                   marginBottom:6,boxSizing:"border-box",outline:"none"}}/>
             )}
-            <input value={form.note||""} onChange={e=>setForm(f=>({...f,note:e.target.value}))}
+            <input value={form.note||""} onChange={e=>setForm(f=>({...f,note:e.target.value.toUpperCase()}))}
               placeholder="Note..."
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,

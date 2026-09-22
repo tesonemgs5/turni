@@ -1424,7 +1424,7 @@ export function ModelForm({
           <input value={form.titolo || ""} placeholder="es. MATTINA"
             onFocus={() => setMostraSuggTitolo(true)}
             onBlur={() => setTimeout(() => setMostraSuggTitolo(false), 150)}
-            onChange={e => setForm(prev => ({ ...prev, titolo: e.target.value }))}
+            onChange={e => setForm(prev => ({ ...prev, titolo: e.target.value.toUpperCase() }))}
             style={inputStyle} />
           {mostraSuggTitolo && suggerimentiTitolo.length > 0 && (
             <div style={{
@@ -1453,7 +1453,7 @@ export function ModelForm({
       {campo("NOME VISUALIZZATO (opzionale)", (
         <input value={form.label || ""} placeholder="es. M"
           list="suggerimenti-nome-vis"
-          onChange={e => setForm(prev => ({ ...prev, label: e.target.value }))}
+          onChange={e => setForm(prev => ({ ...prev, label: e.target.value.toUpperCase() }))}
           style={inputStyle} />
       ))}
       {suggerimentiNomeVis.length > 0 && (
@@ -2423,7 +2423,7 @@ export function RotazioneForm({ T, form, setForm, accent, modelli, sortedModelli
       <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, marginBottom: 6 }}>
         TITOLO ROTAZIONE
       </div>
-      <input value={form.titolo || ""} onChange={e => setForm(prev => ({ ...prev, titolo: e.target.value }))}
+      <input value={form.titolo || ""} onChange={e => setForm(prev => ({ ...prev, titolo: e.target.value.toUpperCase() }))}
         placeholder="es. Reperibilità Team A"
         style={{ width: "100%", boxSizing: "border-box", background: T.s2, border: `1px solid ${T.border}`,
           borderRadius: 8, padding: "10px 12px", color: T.text, fontSize: 14, marginBottom: 16 }} />
