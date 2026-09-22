@@ -3041,11 +3041,22 @@ export default function VistaModelli({ C }){
                   borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
                   marginBottom:6,boxSizing:"border-box",outline:"none"}}/>
             )}
-            <input value={form.note||""} onChange={e=>setForm(f=>({...f,note:e.target.value.toUpperCase()}))}
+            <input value={form.note||""} onChange={e=>{
+                const input = e.target;
+                const start = input ? input.selectionStart : null;
+                const end = input ? input.selectionEnd : null;
+                const upper = input.value.toUpperCase();
+                setForm(f=>({...f,note:upper}));
+                if(start !== null && end !== null){
+                  requestAnimationFrame(()=>{
+                    try { input.setSelectionRange(start, end); } catch(_){}
+                  });
+                }
+              }}
               placeholder="Note..."
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
-                marginBottom:12,boxSizing:"border-box",outline:"none"}}/>
+                marginBottom:12,boxSizing:"border-box",outline:"none",textTransform:"uppercase"}}/>
             <div style={{display:"flex",gap:4}}>
               <button onClick={()=>{setForm(null);setPal(null);}}
                 style={{flex:1,background:T.surface,border:`1px solid ${T.border}`,

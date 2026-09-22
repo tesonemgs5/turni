@@ -1424,8 +1424,19 @@ export function ModelForm({
           <input value={form.titolo || ""} placeholder="es. MATTINA"
             onFocus={() => setMostraSuggTitolo(true)}
             onBlur={() => setTimeout(() => setMostraSuggTitolo(false), 150)}
-            onChange={e => setForm(prev => ({ ...prev, titolo: e.target.value.toUpperCase() }))}
-            style={inputStyle} />
+            onChange={e => {
+              const input = e.target;
+              const start = input ? input.selectionStart : null;
+              const end = input ? input.selectionEnd : null;
+              const upper = input.value.toUpperCase();
+              setForm(prev => ({ ...prev, titolo: upper }));
+              if (start !== null && end !== null) {
+                requestAnimationFrame(() => {
+                  try { input.setSelectionRange(start, end); } catch (_) {}
+                });
+              }
+            }}
+            style={{ textTransform: "uppercase", ...inputStyle }} />
           {mostraSuggTitolo && suggerimentiTitolo.length > 0 && (
             <div style={{
               position: "absolute", top: "100%", left: 0, right: 0, zIndex: 20,
@@ -1453,8 +1464,19 @@ export function ModelForm({
       {campo("NOME VISUALIZZATO (opzionale)", (
         <input value={form.label || ""} placeholder="es. M"
           list="suggerimenti-nome-vis"
-          onChange={e => setForm(prev => ({ ...prev, label: e.target.value.toUpperCase() }))}
-          style={inputStyle} />
+          onChange={e => {
+            const input = e.target;
+            const start = input ? input.selectionStart : null;
+            const end = input ? input.selectionEnd : null;
+            const upper = input.value.toUpperCase();
+            setForm(prev => ({ ...prev, label: upper }));
+            if (start !== null && end !== null) {
+              requestAnimationFrame(() => {
+                try { input.setSelectionRange(start, end); } catch (_) {}
+              });
+            }
+          }}
+          style={{ textTransform: "uppercase", ...inputStyle }} />
       ))}
       {suggerimentiNomeVis.length > 0 && (
         <datalist id="suggerimenti-nome-vis">
