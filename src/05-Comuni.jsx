@@ -291,9 +291,21 @@ export function AutocompleteInput({ as="input", value, onChange, suggestions=[],
       <Tag
         ref={fieldRef}
         value={value}
-        onChange={e=>{ onChange(e); setOpen(true); requestAnimationFrame(aggiornaPosizione); }}
+        onChange={e=>{
+          const input = e.target;
+          const start = input && typeof input.selectionStart === "number" ? input.selectionStart : null;
+          const end = input && typeof input.selectionEnd === "number" ? input.selectionEnd : null;
+          onChange(e);
+          setOpen(true);
+          requestAnimationFrame(()=>{
+            aggiornaPosizione();
+            if(input && start !== null && end !== null && document.activeElement === input){
+              try { input.setSelectionRange(start, end); } catch(_){}
+            }
+          });
+        }}
         onFocus={()=>{ setOpen(true); requestAnimationFrame(aggiornaPosizione); }}
-        style={style}
+        style={{ textTransform: "uppercase", ...style }}
         {...(as==="textarea" ? textareaProps : {})}
         {...rest}
       />
