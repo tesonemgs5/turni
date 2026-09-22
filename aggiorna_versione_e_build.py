@@ -371,17 +371,13 @@ def main():
         else:
             print(f"ATTENZIONE: non trovo nessun APK in {os.path.dirname(apk_src)}")
 
-    # 9. Copia in cartella di output
+    # 8. Copia in cartella di output (SOLO l'APK per installazione diretta)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
     out_dir_name = f"{timestamp}_v{nuova_versione}"
     out_dir = os.path.join(project_root, "release-builds", out_dir_name)
     os.makedirs(out_dir, exist_ok=True)
 
     copied = []
-    if os.path.isfile(aab_src):
-        dest = os.path.join(out_dir, "app-release.aab")
-        shutil.copyfile(aab_src, dest)
-        copied.append(dest)
     if os.path.isfile(apk_src):
         dest = os.path.join(out_dir, "app-release.apk")
         shutil.copyfile(apk_src, dest)
