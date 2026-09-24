@@ -1889,9 +1889,20 @@ export function ModelloCard({
   const colore = modello.coloreCustom || (modello.tempo === "h24" ? COLORE_H24 : getColorByTime(modello.inizio, fasceAutomatiche));
   const inSpostamento = !!(onMoveUp || onMoveDown || onDragStart);
   const [confermaVisibile, setConfermaVisibile] = useState(false);
+  // BUGFIX drag&drop su mobile: l'attributo HTML5 draggable="true" (usato
+  // per il drag col mouse su desktop) entra in conflitto con gli handler
+  // onTouchStart/onTouchMove/onTouchEnd su touchscreen — il browser mobile
+  // tenta di avviare il drag HTML5 nativo (che su touch è inaffidabile o
+  // per nulla supportato a seconda del browser) invece di lasciar gestire
+  // il gesto ai listener touch custom, bloccando di fatto il trascinamento
+  // col dito. Rilevando un dispositivo touch e disattivando draggable in
+  // quel caso, il drag&drop passa interamente (e correttamente) alla
+  // logica onTouch* già implementata sotto, mentre desktop/mouse continua
+  // a usare il drag HTML5 nativo come prima.
+  const isTouchDevice = typeof window !== "undefined" && ("ontouchstart" in window || navigator.maxTouchPoints > 0);
   return (
     <div data-modello-id={modello.id}
-      draggable={!!onDragStart}
+      draggable={!!onDragStart && !isTouchDevice}
       onTouchStart={onTouchStart || undefined}
       onTouchMove={onTouchMove || undefined}
       onTouchEnd={onTouchEnd || undefined}
@@ -1909,6 +1920,13 @@ export function ModelloCard({
         marginTop: isDropTarget ? -2 : 0,
         opacity: isDragging ? 0.5 : 1,
         cursor: selectMode ? "pointer" : (inSpostamento ? "grab" : "default"),
+        // Impedisce al browser mobile di intercettare il gesto come scroll
+        // verticale della pagina quando si trascina la card col dito: senza
+        // questo, su alcuni browser/OS il preventDefault() dentro
+        // onTouchMove può essere ignorato (listener trattato come
+        // "passive"), e il drag col dito non parte mai o si interrompe
+        // subito, pur funzionando regolarmente col mouse su desktop.
+        touchAction: (onTouchStart || onTouchMove) ? "none" : undefined,
       }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0, flex: 1 }}>
         <div style={{ width: 28, height: 28, borderRadius: 6, background: colore, flexShrink: 0, alignSelf: "center", marginLeft: 2, marginRight: 2 }} />
