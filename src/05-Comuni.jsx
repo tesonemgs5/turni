@@ -11,6 +11,30 @@
 export const NAV_HEIGHT = 56;
 export const NAV_HEIGHT_CSS = `${NAV_HEIGHT}px`;
 
+// Regola generale per TUTTI i campi di inserimento testo dell'app: il
+// cursore deve restare esattamente a destra dell'ultimo carattere digitato,
+// come in qualunque campo di testo normale — mai saltare a inizio o fine
+// testo. Questo vale anche quando l'onChange trasforma il valore in
+// maiuscolo (.toUpperCase()): la trasformazione non cambia la lunghezza del
+// testo né la posizione dei caratteri, quindi la posizione del cursore letta
+// PRIMA della trasformazione resta valida anche dopo.
+// Da usare così dentro l'onChange di un <input>/<textarea> controllato:
+//   onChange={e=>{ const fix=preparaFixCursore(e); setValore(e.target.value.toUpperCase()); fix(); }}
+// NON usare per campi che riscrivono il testo con prefissi/formattazioni
+// fisse (es. "CH "+numero): in quei casi la posizione va ricalcolata in base
+// alla nuova struttura del testo, non solo ripristinata.
+export function preparaFixCursore(e){
+  const el = e.target;
+  const start = el && typeof el.selectionStart === "number" ? el.selectionStart : null;
+  const end = el && typeof el.selectionEnd === "number" ? el.selectionEnd : null;
+  return function applicaFixCursore(){
+    if(!el || start===null || end===null) return;
+    requestAnimationFrame(()=>{
+      try{ el.setSelectionRange(start, end); }catch(err){}
+    });
+  };
+}
+
 const COLORE_H24 = "#64748b";
 const FASCE_AUTOMATICHE_DEFAULT_LOCALE = [
   { key:"mattina",     label:"PRIMO",       color:"#f59e0b", from:360,  to:705  },
@@ -292,20 +316,14 @@ export function AutocompleteInput({ as="input", value, onChange, suggestions=[],
         ref={fieldRef}
         value={value}
         onChange={e=>{
-          const input = e.target;
-          const start = input && typeof input.selectionStart === "number" ? input.selectionStart : null;
-          const end = input && typeof input.selectionEnd === "number" ? input.selectionEnd : null;
+          const fix = preparaFixCursore(e);
           onChange(e);
           setOpen(true);
-          requestAnimationFrame(()=>{
-            aggiornaPosizione();
-            if(input && start !== null && end !== null && document.activeElement === input){
-              try { input.setSelectionRange(start, end); } catch(_){}
-            }
-          });
+          fix();
+          requestAnimationFrame(aggiornaPosizione);
         }}
         onFocus={()=>{ setOpen(true); requestAnimationFrame(aggiornaPosizione); }}
-        style={{ textTransform: "uppercase", ...style }}
+        style={style}
         {...(as==="textarea" ? textareaProps : {})}
         {...rest}
       />
@@ -463,7 +481,7 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
         <div style={{fontSize:12,color:"#0f172a",marginBottom:4}}>NOME REPORT</div>
         {editingName?(
           <div style={{display:"flex",gap:6}}>
-            <input value={tmpName} onChange={e=>setTmpName(e.target.value.toUpperCase())}
+            <input value={tmpName} onChange={e=>{const fix=preparaFixCursore(e);setTmpName(e.target.value.toUpperCase());fix();}}
               style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"6px 10px",color:T.text,fontSize:13,outline:"none"}}/>
             <button onClick={()=>{onRename(tmpName);setEditingName(false);}}
@@ -520,7 +538,7 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
                 <div style={{padding:"0 12px 12px"}}>
                   {sm.tipo==="libero" && (
                     <div style={{marginBottom:8,display:"flex",gap:6}}>
-                      <input value={sm.nome} onChange={e=>aggiornaSottomenu(sm.id,{nome:e.target.value.toUpperCase()})}
+                      <input value={sm.nome} onChange={e=>{const fix=preparaFixCursore(e);aggiornaSottomenu(sm.id,{nome:e.target.value.toUpperCase()});fix();}}
                         style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
                           borderRadius:8,padding:"6px 10px",color:T.text,fontSize:12,outline:"none"}}/>
                     </div>
@@ -638,7 +656,7 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
                               <div style={{display:"flex",alignItems:"center",gap:6,
                                 padding:"8px 10px",background:g.color+"22",borderRadius:isOpenG?"8px 8px 0 0":8,
                                 border:`1px solid ${g.color}44`}}>
-                                <input value={g.label} onChange={e=>rinominaGruppo(g.key,e.target.value.toUpperCase())}
+                                <input value={g.label} onChange={e=>{const fix=preparaFixCursore(e);rinominaGruppo(g.key,e.target.value.toUpperCase());fix();}}
                                   style={{flex:1,background:"transparent",border:"none",outline:"none",
                                     fontSize:13,fontWeight:800,color:"#0f172a"}}/>
                                 <span style={{fontSize:14,fontWeight:900,color:"#0f172a"}}>{count}</span>
@@ -797,7 +815,7 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
         <div style={{fontSize:12,color:"#0f172a",marginBottom:4}}>NOME REPORT</div>
         {editingName?(
           <div style={{display:"flex",gap:6}}>
-            <input value={tmpName} onChange={e=>setTmpName(e.target.value.toUpperCase())}
+            <input value={tmpName} onChange={e=>{const fix=preparaFixCursore(e);setTmpName(e.target.value.toUpperCase());fix();}}
               style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"6px 10px",color:T.text,fontSize:13,outline:"none"}}/>
             <button onClick={()=>{onRename(tmpName);setEditingName(false);}}
@@ -849,7 +867,7 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
                 <div style={{padding:"0 12px 12px"}}>
                   {sm.tipo==="libero" && (
                     <div style={{marginBottom:8,display:"flex",gap:6}}>
-                      <input value={sm.nome} onChange={e=>aggiornaSottomenu(sm.id,{nome:e.target.value.toUpperCase()})}
+                      <input value={sm.nome} onChange={e=>{const fix=preparaFixCursore(e);aggiornaSottomenu(sm.id,{nome:e.target.value.toUpperCase()});fix();}}
                         style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
                           borderRadius:8,padding:"6px 10px",color:T.text,fontSize:12,outline:"none"}}/>
                     </div>
@@ -961,7 +979,7 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
                               <div style={{display:"flex",alignItems:"center",gap:6,
                                 padding:"8px 10px",background:g.color+"22",borderRadius:isOpenG?"8px 8px 0 0":8,
                                 border:`1px solid ${g.color}44`}}>
-                                <input value={g.label} onChange={e=>rinominaGruppo(g.key,e.target.value.toUpperCase())}
+                                <input value={g.label} onChange={e=>{const fix=preparaFixCursore(e);rinominaGruppo(g.key,e.target.value.toUpperCase());fix();}}
                                   style={{flex:1,background:"transparent",border:"none",outline:"none",
                                     fontSize:13,fontWeight:800,color:"#0f172a"}}/>
                                 <span style={{fontSize:14,fontWeight:900,color:"#0f172a"}}>{fmtOreMin(minutiGruppo)}</span>
@@ -1089,7 +1107,7 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
         <div style={{fontSize:12,color:"#0f172a",marginBottom:4}}>NOME REPORT</div>
         {editingName?(
           <div style={{display:"flex",gap:6}}>
-            <input value={tmpName} onChange={e=>setTmpName(e.target.value.toUpperCase())}
+            <input value={tmpName} onChange={e=>{const fix=preparaFixCursore(e);setTmpName(e.target.value.toUpperCase());fix();}}
               style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"6px 10px",color:T.text,fontSize:13,outline:"none"}}/>
             <button onClick={()=>{onRename(tmpName);setEditingName(false);}}
@@ -1316,7 +1334,7 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
           <div style={{fontSize:12,color:"#0f172a",marginBottom:4}}>NOME REPORT</div>
           {editingName?(
             <div style={{display:"flex",gap:6}}>
-              <input value={tmpName} onChange={e=>setTmpName(e.target.value.toUpperCase())}
+              <input value={tmpName} onChange={e=>{const fix=preparaFixCursore(e);setTmpName(e.target.value.toUpperCase());fix();}}
                 style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
                   borderRadius:8,padding:"6px 10px",color:T.text,fontSize:13,outline:"none"}}/>
               <button onClick={()=>{onRename(tmpName);setEditingName(false);}}
@@ -1822,7 +1840,7 @@ export function HexColorPicker({T, value, onChange}){
           background:rgbToHex(rgbNow.r,rgbNow.g,rgbNow.b),
           border:`2px solid ${T.border}`}}/>
         <input value={hexInput}
-          onChange={e=>setHexInput(e.target.value.toUpperCase())}
+          onChange={e=>{const fix=preparaFixCursore(e);setHexInput(e.target.value.toUpperCase());fix();}}
           onBlur={e=>commitHexInput(e.target.value)}
           onKeyDown={e=>{ if(e.key==="Enter") commitHexInput(e.target.value); }}
           placeholder="#RRGGBB"

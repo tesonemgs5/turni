@@ -12,7 +12,7 @@ import {
 import { CalBadge, SmartTimeInput, AutocompleteInput, ColorPickerModal,
   ModaleErroriMultipli, FasceExpand, ConteggioConfigCard, TurnazioneConfigCard,
   IndennitaConfig, OrePerTurnoView, StraordinariView, GuadagniView, Sec, SecCollapsible,
-  NAV_HEIGHT_CSS, nomeDelColore, ConfermaEliminazione } from "./05-Comuni";
+  NAV_HEIGHT_CSS, nomeDelColore, ConfermaEliminazione, preparaFixCursore } from "./05-Comuni";
 import { ModelloCard, ModelForm, RotazioneCard, RotazioneForm, ModelloSelector,
   GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView, ReperibilitaView } from "./04-Rotazione";
 import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
@@ -345,7 +345,7 @@ export default function VistaModelli({ C }){
 
       {modelliTab==="turni"&&(
         <div style={{margin:"0 12px 10px"}}>
-          <input value={ricercaModelli} onChange={e=>setRicercaModelli(e.target.value.toUpperCase())}
+          <input value={ricercaModelli} onChange={e=>{const fix=preparaFixCursore(e);setRicercaModelli(e.target.value.toUpperCase());fix();}}
             placeholder="🔎 Cerca modello per nome o orario..."
             style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
               borderRadius:10,padding:"10px 12px",color:T.text,fontSize:13,
@@ -1180,7 +1180,7 @@ export default function VistaModelli({ C }){
                   onClose={()=>setPal(null)}/>}
               </div>
               <input value={f.label}
-                onChange={e=>updateFascia(f.key,{label:e.target.value.toUpperCase()})}
+                onChange={e=>{const fix=preparaFixCursore(e);updateFascia(f.key,{label:e.target.value.toUpperCase()});fix();}}
                 onBlur={e=>saveSettings({fasce_automatiche:fasceAutomatiche.map(ff=>ff.key===f.key?{...ff,label:e.target.value.toUpperCase()}:ff)})}
                 style={{flex:1,background:"transparent",border:"none",outline:"none",color:T.text,fontSize:13,fontWeight:700}}/>
             </div>
@@ -1357,7 +1357,7 @@ export default function VistaModelli({ C }){
                   onClose={()=>setPal(null)}/>}
               </div>
               <input value={c.name}
-                onChange={e=>{const v=e.target.value.toUpperCase();const newCals=JSON.parse(JSON.stringify(store.calendars));newCals[ci].name=v;setStore(s=>({...s,calendars:newCals}));}}
+                onChange={e=>{const fix=preparaFixCursore(e);const v=e.target.value.toUpperCase();const newCals=JSON.parse(JSON.stringify(store.calendars));newCals[ci].name=v;setStore(s=>({...s,calendars:newCals}));fix();}}
                 onBlur={e=>updateCalendar(c.id,{name:e.target.value.toUpperCase()})}
                 style={{flex:1,background:"transparent",border:"none",outline:"none",color:T.text,fontSize:13,fontWeight:700}}/>
               <button onClick={async()=>{
@@ -1415,7 +1415,7 @@ export default function VistaModelli({ C }){
                         onClose={()=>setPal(null)}/>}
                     </div>
                     <input value={sh.label}
-                      onChange={e=>{const v=e.target.value.toUpperCase();const newCals=JSON.parse(JSON.stringify(store.calendars));newCals[ci].shifts[si].label=v;setStore(s=>({...s,calendars:newCals}));}}
+                      onChange={e=>{const fix=preparaFixCursore(e);const v=e.target.value.toUpperCase();const newCals=JSON.parse(JSON.stringify(store.calendars));newCals[ci].shifts[si].label=v;setStore(s=>({...s,calendars:newCals}));fix();}}
                       onBlur={()=>updateCalendar(c.id,{shifts:store.calendars[ci].shifts})}
                       style={{flex:1,background:"transparent",border:"none",outline:"none",color:T.text,fontSize:12}}/>
                     <button onClick={()=>{
@@ -1436,7 +1436,7 @@ export default function VistaModelli({ C }){
                       onPick={p=>setNsColor(p)}
                       onClose={()=>setPal(null)}/>}
                   </div>
-                  <input value={nsName} onChange={e=>setNsName(e.target.value.toUpperCase())} placeholder="Nome turno..."
+                  <input value={nsName} onChange={e=>{const fix=preparaFixCursore(e);setNsName(e.target.value.toUpperCase());fix();}} placeholder="Nome turno..."
                     style={{flex:1,background:T.surface,border:`1px solid ${T.border}`,
                       borderRadius:8,padding:"7px 10px",color:T.text,fontSize:12,outline:"none"}}/>
                   <button onClick={()=>{
@@ -1463,7 +1463,7 @@ export default function VistaModelli({ C }){
               onPick={p=>setNcColor(p)}
               onClose={()=>setPal(null)}/>}
           </div>
-          <input value={ncName} onChange={e=>setNcName(e.target.value.toUpperCase())} placeholder="Nome calendario..."
+          <input value={ncName} onChange={e=>{const fix=preparaFixCursore(e);setNcName(e.target.value.toUpperCase());fix();}} placeholder="Nome calendario..."
             style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
               borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,outline:"none"}}/>
           <button onClick={async()=>{
@@ -1815,7 +1815,7 @@ export default function VistaModelli({ C }){
                 automaticamente ogni anno</b> (riferimento: {year}).
               </div>
               <div style={{display:"flex",gap:6,marginBottom:10}}>
-                <input value={patronoCittaSel} onChange={e=>setPatronoCittaSel(e.target.value.toUpperCase())}
+                <input value={patronoCittaSel} onChange={e=>{const fix=preparaFixCursore(e);setPatronoCittaSel(e.target.value.toUpperCase());fix();}}
                   placeholder="🔍 Cerca festività, santo o città…"
                   style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
                     padding:"8px 10px",color:T.text,fontSize:12,outline:"none"}}/>
@@ -1927,7 +1927,7 @@ export default function VistaModelli({ C }){
           AGGIUNGI UNA DATA
         </div>
         <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-          <input value={nhName} onChange={e=>setNhName(e.target.value.toUpperCase())} placeholder="Nome..."
+          <input value={nhName} onChange={e=>{const fix=preparaFixCursore(e);setNhName(e.target.value.toUpperCase());fix();}} placeholder="Nome..."
             style={{flex:2,minWidth:100,background:T.s2,border:`1px solid ${T.border}`,
               borderRadius:8,padding:"7px 10px",color:T.text,fontSize:12,outline:"none"}}/>
           <input value={nhD} onChange={e=>setNhD(e.target.value)} placeholder="GG" type="number"
@@ -2999,9 +2999,23 @@ export default function VistaModelli({ C }){
 })()}
 
             <AutocompleteInput value={form.auto||""} onChange={e=>{
+                const input = e.target;
                 const raw=e.target.value.toUpperCase();
                 const stripped=raw.replace(/^(CH\s*)+/i,"").trim();
-                setForm(f=>({...f,auto:stripped?"CH "+stripped:""}));
+                const nuovoValore = stripped?"CH "+stripped:"";
+                setForm(f=>({...f,auto:nuovoValore}));
+                // Questo campo riscrive il testo con un prefisso fisso
+                // ("CH "), quindi la posizione del cursore nel valore
+                // digitato non corrisponde a quella nel valore ricostruito:
+                // va sempre rimessa in fondo al testo finale, così scrivere
+                // un numero dopo "CH " si comporta come un normale campo di
+                // inserimento (cursore subito dopo l'ultimo carattere).
+                if(input){
+                  const pos = nuovoValore.length;
+                  requestAnimationFrame(()=>{
+                    try { input.setSelectionRange(pos, pos); } catch(_){}
+                  });
+                }
               }}
               suggestions={autocompleteValori.auto}
               onRemoveSuggestion={s=>rimuoviValoreAutocomplete("auto", s)}
@@ -3009,7 +3023,7 @@ export default function VistaModelli({ C }){
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
                 marginBottom:6,boxSizing:"border-box",outline:"none"}}/>
-            <AutocompleteInput as="textarea" value={form.collega||""} onChange={e=>{setForm(f=>({...f,collega:e.target.value.toUpperCase()}));
+            <AutocompleteInput as="textarea" value={form.collega||""} onChange={e=>{const fix=preparaFixCursore(e);setForm(f=>({...f,collega:e.target.value.toUpperCase()}));fix();
               // Quando si sceglie un suggerimento dal menu (un "nome in
               // memoria"), AutocompleteInput.scegli() richiama onChange con
               // un evento SINTETICO ({target:{value:...}}), non con il vero
@@ -3027,7 +3041,7 @@ export default function VistaModelli({ C }){
                 borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
                 marginBottom:6,boxSizing:"border-box",outline:"none",resize:"none",fontFamily:"inherit",
                 overflow:"hidden",minHeight:36}}/>
-            <AutocompleteInput value={form.place||""} onChange={e=>setForm(f=>({...f,place:e.target.value.toUpperCase()}))}
+            <AutocompleteInput value={form.place||""} onChange={e=>{const fix=preparaFixCursore(e);setForm(f=>({...f,place:e.target.value.toUpperCase()}));fix();}}
               suggestions={autocompleteValori.luogo}
               onRemoveSuggestion={s=>rimuoviValoreAutocomplete("luogo", s)}
               placeholder="LUOGO (OPZIONALE)..."
@@ -3042,16 +3056,9 @@ export default function VistaModelli({ C }){
                   marginBottom:6,boxSizing:"border-box",outline:"none"}}/>
             )}
             <input value={form.note||""} onChange={e=>{
-                const input = e.target;
-                const start = input ? input.selectionStart : null;
-                const end = input ? input.selectionEnd : null;
-                const upper = input.value.toUpperCase();
-                setForm(f=>({...f,note:upper}));
-                if(start !== null && end !== null){
-                  requestAnimationFrame(()=>{
-                    try { input.setSelectionRange(start, end); } catch(_){}
-                  });
-                }
+                const fix = preparaFixCursore(e);
+                setForm(f=>({...f,note:e.target.value.toUpperCase()}));
+                fix();
               }}
               placeholder="Note..."
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,

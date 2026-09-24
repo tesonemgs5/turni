@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { ColorPickerModal, nomeDelColore as nomeDelColoreShared, ConfermaEliminazione } from "./05-Comuni";
+import { ColorPickerModal, nomeDelColore as nomeDelColoreShared, ConfermaEliminazione, preparaFixCursore } from "./05-Comuni";
 
 // ═══════════════════════════════════════════════════════════════════════
 // 04-Rotazione.jsx — RICOSTRUITO
@@ -1425,18 +1425,11 @@ export function ModelForm({
             onFocus={() => setMostraSuggTitolo(true)}
             onBlur={() => setTimeout(() => setMostraSuggTitolo(false), 150)}
             onChange={e => {
-              const input = e.target;
-              const start = input ? input.selectionStart : null;
-              const end = input ? input.selectionEnd : null;
-              const upper = input.value.toUpperCase();
-              setForm(prev => ({ ...prev, titolo: upper }));
-              if (start !== null && end !== null) {
-                requestAnimationFrame(() => {
-                  try { input.setSelectionRange(start, end); } catch (_) {}
-                });
-              }
+              const fix = preparaFixCursore(e);
+              setForm(prev => ({ ...prev, titolo: e.target.value.toUpperCase() }));
+              fix();
             }}
-            style={{ textTransform: "uppercase", ...inputStyle }} />
+            style={inputStyle} />
           {mostraSuggTitolo && suggerimentiTitolo.length > 0 && (
             <div style={{
               position: "absolute", top: "100%", left: 0, right: 0, zIndex: 20,
@@ -1465,18 +1458,11 @@ export function ModelForm({
         <input value={form.label || ""} placeholder="es. M"
           list="suggerimenti-nome-vis"
           onChange={e => {
-            const input = e.target;
-            const start = input ? input.selectionStart : null;
-            const end = input ? input.selectionEnd : null;
-            const upper = input.value.toUpperCase();
-            setForm(prev => ({ ...prev, label: upper }));
-            if (start !== null && end !== null) {
-              requestAnimationFrame(() => {
-                try { input.setSelectionRange(start, end); } catch (_) {}
-              });
-            }
+            const fix = preparaFixCursore(e);
+            setForm(prev => ({ ...prev, label: e.target.value.toUpperCase() }));
+            fix();
           }}
-          style={{ textTransform: "uppercase", ...inputStyle }} />
+          style={inputStyle} />
       ))}
       {suggerimentiNomeVis.length > 0 && (
         <datalist id="suggerimenti-nome-vis">
@@ -2447,7 +2433,11 @@ export function RotazioneForm({ T, form, setForm, accent, modelli, sortedModelli
       <div style={{ fontSize: 11, fontWeight: 700, color: T.sub, marginBottom: 6 }}>
         TITOLO ROTAZIONE
       </div>
-      <input value={form.titolo || ""} onChange={e => setForm(prev => ({ ...prev, titolo: e.target.value.toUpperCase() }))}
+      <input value={form.titolo || ""} onChange={e => {
+          const fix = preparaFixCursore(e);
+          setForm(prev => ({ ...prev, titolo: e.target.value.toUpperCase() }));
+          fix();
+        }}
         placeholder="es. Reperibilità Team A"
         style={{ width: "100%", boxSizing: "border-box", background: T.s2, border: `1px solid ${T.border}`,
           borderRadius: 8, padding: "10px 12px", color: T.text, fontSize: 14, marginBottom: 16 }} />
