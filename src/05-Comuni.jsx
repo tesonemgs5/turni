@@ -11,6 +11,25 @@
 export const NAV_HEIGHT = 56;
 export const NAV_HEIGHT_CSS = `${NAV_HEIGHT}px`;
 
+// Un modello/evento è "visibile" in un calendario se quel calendario È il
+// suo proprietario (calendarId, con fallback a mainCalId per i modelli
+// storici senza calendarId esplicito) OPPURE se il calendario compare
+// nell'array visibileAncheIn impostato dal pulsante "Visualizza". A
+// differenza di "Copia" (che duplica fisicamente l'elemento su altri
+// calendari, ciascuna copia indipendente), qui resta UN SOLO
+// modello/evento, con un'unica fonte di verità (stesso colore/nome
+// ovunque) semplicemente "taggato" come visibile anche altrove. Usare
+// SOLO nei punti di VISUALIZZAZIONE (liste, filtri per calendario aperto);
+// per riordino/spostamento/drag&drop resta corretto usare il confronto
+// rigido sul solo proprietario, perché un elemento "vive" (si ordina, si
+// sposta) in UN SOLO calendario, quello di appartenenza.
+export function modelloVisibileInCalendario(m, calId, mainCalId){
+  if(!m || !calId) return false;
+  const proprietario = m.calendarId || mainCalId;
+  if(proprietario === calId) return true;
+  return Array.isArray(m.visibileAncheIn) && m.visibileAncheIn.includes(calId);
+}
+
 // Regola generale per TUTTI i campi di inserimento testo dell'app: il
 // cursore deve restare esattamente a destra dell'ultimo carattere digitato,
 // come in qualunque campo di testo normale — mai saltare a inizio o fine

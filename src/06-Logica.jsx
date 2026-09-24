@@ -895,6 +895,7 @@ export function useAppCore(session){
             turnoVuoto: !!e.categoria_turno_vuoto, appAutoVuoto: !!e.categoria_app_auto_vuoto,
             reportOverrides: e.report_overrides||{},
             importId: e.import_id||null,
+            visibileAncheIn: e.visibile_anche_in||[],
           });
         });
 
@@ -925,6 +926,7 @@ export function useAppCore(session){
           categoriaAppAuto:(m.categoria_app_auto==="app"||m.categoria_app_auto==="auto")?m.categoria_app_auto:((m.categoria==="app"||m.categoria==="auto")?m.categoria:""),
           turnoVuoto: !!m.categoria_turno_vuoto,
           appAutoVuoto: !!m.categoria_app_auto_vuoto,
+          visibileAncheIn: m.visibile_anche_in||[],
         // La RPC get_user_data non garantisce l'ordine delle righe (nessun
         // ORDER BY lato server): senza un sort esplicito qui, l'ordine
         // visualizzato dipende dall'ordine fisico di Postgres, che può
@@ -1661,7 +1663,26 @@ export function useAppCore(session){
     if(isSun&&isH) return `linear-gradient(to bottom, ${sundayColor} 50%, ${holidayColor} 50%)`;
     return isSun?sundayColor:isH?holidayColor:null;
   }
-  function getEvts(key,cid){ return store.events?.[key]?.[cid]||[]; }
+  function getEvts(key,cid){
+    const propri = store.events?.[key]?.[cid]||[];
+    // Eventi "specchiati": appartengono ad ALTRI calendari ma sono stati
+    // marcati (tramite il pulsante "Visualizza" nel form) come visibili
+    // anche su questo calendario `cid`. Restano un'unica fonte di verità
+    // (stesso colore/dati ovunque) — qui vengono solo aggiunti in lettura,
+    // non duplicati come entità separate come fa invece "Copia".
+    const giorno = store.events?.[key]||{};
+    const specchiati = [];
+    for(const altroCalId in giorno){
+      if(altroCalId===cid) continue;
+      const lista = giorno[altroCalId]||[];
+      for(const e of lista){
+        if(Array.isArray(e.visibileAncheIn) && e.visibileAncheIn.includes(cid)){
+          specchiati.push(e);
+        }
+      }
+    }
+    return specchiati.length>0 ? [...propri, ...specchiati] : propri;
+  }
   // Riconosce se un modelloId punta a un modello "PROTRAZIONE
   // PAGAMENTO"/"PROTRAZIONE RECUPERO" (in qualunque variante/refuso di
   // scrittura storica), guardando il titolo del modello stesso. Usata per
@@ -2278,6 +2299,10 @@ export function useAppCore(session){
       // rimostrato nel form al riapertura, non incide su report/conteggi.
       time_in_note: formEffettivo.modelloId||formEffettivo.evtModelloId ? (formEffettivo.tIn||null) : null,
       time_out_note: formEffettivo.modelloId||formEffettivo.evtModelloId ? (formEffettivo.tOut||null) : null,
+      // Calendari aggiuntivi (oltre a quello di appartenenza calendar_id) su
+      // cui questo evento deve comparire anche in sola visualizzazione,
+      // impostati dal pulsante "Visualizza" nel form.
+      visibile_anche_in: (formEffettivo.visibileAncheIn && formEffettivo.visibileAncheIn.length>0) ? formEffettivo.visibileAncheIn : null,
     };
 
     // 1) SUBITO in locale: l'utente vede il turno all'istante, online o offline.
@@ -2294,6 +2319,7 @@ export function useAppCore(session){
       categoriaTurno: payload.categoria_turno||"", categoriaAppAuto: payload.categoria_app_auto||"",
       turnoVuoto: !!payload.categoria_turno_vuoto, appAutoVuoto: !!payload.categoria_app_auto_vuoto,
       reportOverrides: payload.report_overrides||{},
+      visibileAncheIn: payload.visibile_anche_in||[],
     };
     if(!formEffettivo.modelloId && formEffettivo.label) registraValoreAutocomplete("titolo", label);
     if(formEffettivo.auto) registraValoreAutocomplete("auto", formEffettivo.auto);
@@ -2433,6 +2459,9 @@ export function useAppCore(session){
       // ufficiali, per sopravvivere al refresh senza alterare il turno.
       time_in_note: formEffettivo.modelloId||formEffettivo.evtModelloId ? (formEffettivo.tIn||null) : null,
       time_out_note: formEffettivo.modelloId||formEffettivo.evtModelloId ? (formEffettivo.tOut||null) : null,
+      // Vedi commento gemello in saveEvt: calendari aggiuntivi dove l'evento
+      // è visibile in sola lettura tramite "Visualizza".
+      visibile_anche_in: (formEffettivo.visibileAncheIn && formEffettivo.visibileAncheIn.length>0) ? formEffettivo.visibileAncheIn : null,
     };
     const match = { id: formEffettivo.editId, user_id: userId };
 
@@ -2454,6 +2483,7 @@ export function useAppCore(session){
       categoriaTurno: formEffettivo.categoriaTurno||"", categoriaAppAuto: formEffettivo.categoriaAppAuto||"",
       turnoVuoto: !!formEffettivo.turnoVuoto, appAutoVuoto: !!formEffettivo.appAutoVuoto,
       reportOverrides: formEffettivo.reportOverrides||{},
+      visibileAncheIn: formEffettivo.visibileAncheIn||[],
     };
     const nuovoStore = withEventoAggiornato(store, dayKey, editCalId, formEffettivo.editId, patch);
     saveToLocalStorage(nuovoStore.events, nuovoStore.calendars, modelli);
@@ -3057,6 +3087,7 @@ export function useAppCore(session){
           user_id:userId, titolo:m.titolo, tempo:m.tempo, inizio:m.inizio, fine:m.fine,
           colore:m.colore, colore_custom:m.colore_custom, posizione:m.posizione||"", // flag "manuale"/vuoto, non un id: nessun rimapping necessario
           sort_order:m.sort_order, calendar_id: calIdMap[m.calendar_id]||null,
+          visibile_anche_in:m.visibile_anche_in||null,
         }, `Ripristino backup — modello "${m.titolo}"`, {soloLog:true});
         if(errM) erroriRiscontrati++;
         if(data?.[0]) modIdMap[m.id] = data[0].id;
@@ -3106,6 +3137,7 @@ export function useAppCore(session){
           categoria_turno:e.categoria_turno, categoria_app_auto:e.categoria_app_auto,
           categoria_turno_vuoto:e.categoria_turno_vuoto, categoria_app_auto_vuoto:e.categoria_app_auto_vuoto,
           report_overrides:e.report_overrides||{}, import_id:e.import_id||null,
+          visibile_anche_in:e.visibile_anche_in||null,
         }, `Ripristino backup — evento "${e.label}" (${e.date_key})`, {soloLog:true});
         if(errE) erroriRiscontrati++;
         if(data?.[0] && e.id) idEvtMap[e.id] = data[0].id;
@@ -3834,6 +3866,10 @@ const importsRecenti = useMemo(()=>{
       categoria_app_auto: (data.categoriaAppAuto==="app"||data.categoriaAppAuto==="auto") ? data.categoriaAppAuto : null,
       categoria_turno_vuoto: !!data.turnoVuoto,
       categoria_app_auto_vuoto: !!data.appAutoVuoto,
+      // Calendari aggiuntivi dove il modello è visibile in sola lettura
+      // (pulsante "Visualizza"): unica fonte di verità, stesso colore/nome
+      // ovunque, a differenza di "Copia" che duplica fisicamente il modello.
+      visibile_anche_in: (data.visibileAncheIn && data.visibileAncheIn.length>0) ? data.visibileAncheIn : null,
     };
     if(data.coloreCustom) ensureColoreRegistrato(data.coloreCustom); // non bloccante: colore già visibile localmente comunque
     if(data.titolo) registraValoreAutocomplete("titolo", (data.titolo||"").toUpperCase());

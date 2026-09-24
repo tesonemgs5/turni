@@ -453,8 +453,10 @@ function AppInterno({ session }){
               onCopia={async(calIdsDestinazione)=>{
                 // Crea una copia indipendente del modello in ciascun calendario scelto,
                 // riusando saveModello (che gestisce ordinamento, colori e sync).
-                // Il modello originale non viene toccato.
-                const { id:_idOriginale, ...datiSenzaId } = modelForm;
+                // Il modello originale non viene toccato. visibileAncheIn ESCLUSO
+                // apposta: una copia è un modello nuovo e indipendente, non deve
+                // ereditare i calendari di sola-visualizzazione dell'originale.
+                const { id:_idOriginale, visibileAncheIn:_visAnchInOriginale, ...datiSenzaId } = modelForm;
                 const ok = [], errori = [];
                 for(const cid of calIdsDestinazione){
                   const nomeCal = store.calendars.find(c=>c.id===cid)?.name || cid;
