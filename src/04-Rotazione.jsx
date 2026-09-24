@@ -1901,7 +1901,7 @@ export function ModelloCard({
   // a usare il drag HTML5 nativo come prima.
   const isTouchDevice = typeof window !== "undefined" && ("ontouchstart" in window || navigator.maxTouchPoints > 0);
 
-  // ── LONG-PRESS 500ms per avviare il drag col dito (Android) ──────────
+  // ── LONG-PRESS 250ms per avviare il drag col dito (Android) ──────────
   // Prima il drag partiva al primo tocco (touchAction:"none" sempre attivo +
   // draggingId impostato subito in onTouchStart), quindi non si poteva più
   // scorrere la lista col dito e il drag scattava "sempre". Ora:
@@ -1909,7 +1909,7 @@ export function ModelloCard({
   //                     e il browser può ancora scorrere la lista normalmente.
   //   2. se il dito si muove oltre MOVE_TOLERANCE px PRIMA dello scadere del
   //      timer -> è uno scroll: il timer viene annullato, nessun drag.
-  //   3. allo scadere del timer (dito fermo) -> drag attivo: vibrazione breve
+  //   3. allo scadere del timer (250ms, dito fermo) -> drag attivo: vibrazione breve
   //      di feedback, si chiama il vero onTouchStart del genitore e da qui in
   //      poi i touchmove vengono passati al genitore e lo scroll è bloccato.
   //   4. touchend/touchcancel -> se il drag era attivo si chiude, altrimenti
@@ -1918,7 +1918,7 @@ export function ModelloCard({
   // touchmove come passive, quindi e.preventDefault() dentro onTouchMove di
   // React viene ignorato su Android/Chrome e la lista continuerebbe a scorrere
   // mentre si trascina. Per questo il listener è agganciato a mano via ref.
-  const LONG_PRESS_MS = 500;
+  const LONG_PRESS_MS = 250; // dimezzato rispetto ai 500ms iniziali
   const MOVE_TOLERANCE = 10; // px di tolleranza durante l'attesa dei 500ms
   const cardRef = useRef(null);
   const lpTimer = useRef(null);
@@ -1999,7 +1999,7 @@ export function ModelloCard({
       draggable={!!onDragStart && !isTouchDevice}
       // Menu contestuale di Android (pressione lunga = "copia/condividi")
       // disattivato in modalità spostamento, altrimenti compare proprio
-      // allo scadere dei 500ms e disturba il drag.
+      // allo scadere del long-press e disturba il drag.
       onContextMenu={touchAbilitato ? (e => e.preventDefault()) : undefined}
       onDragStart={onDragStart || undefined}
       onDragOver={onDragOver || undefined}
@@ -2013,7 +2013,11 @@ export function ModelloCard({
         borderTop: isDropTarget ? `3px solid ${accent}` : undefined,
         borderRadius: 12, padding: "12px 14px", marginBottom: 8,
         marginTop: isDropTarget ? -2 : 0,
-        opacity: isDragging ? 0.5 : 1,
+        // Modello in trascinamento: 35% di opacità (cioè 65% di trasparenza
+        // sul contenuto), ben visibile ma chiaramente "sollevato" rispetto
+        // alle altre card. Il bordo accent lo rende riconoscibile anche
+        // sopra sfondi chiari/scuri.
+        opacity: isDragging ? 0.35 : 1,
         cursor: selectMode ? "pointer" : (inSpostamento ? "grab" : "default"),
         // Impedisce al browser mobile di intercettare il gesto come scroll
         // verticale della pagina quando si trascina la card col dito: senza
@@ -2023,7 +2027,7 @@ export function ModelloCard({
         // subito, pur funzionando regolarmente col mouse su desktop.
         // NON più "none" fisso: con "none" il browser non scorreva mai e il
         // long-press non serviva. Ora il blocco dello scroll avviene solo
-        // dopo i 500ms, via preventDefault nel listener nativo non-passive
+        // dopo il long-press, via preventDefault nel listener nativo non-passive
         // (vedi useEffect sopra); "pan-y" lascia lo scroll libero prima.
         touchAction: touchAbilitato ? "pan-y" : undefined,
         // Evita selezione del testo e callout di Android durante il long-press.
