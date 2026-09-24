@@ -238,7 +238,7 @@ export function SmartTimeInput({ value, onChange, style }) {
 // stesso value/onChange che avrebbe un <input>/<textarea> normale, e si
 // limita ad aggiungere la tendina sopra. Cliccando un suggerimento, invoca
 // onChange con l'intero valore scelto (come se l'utente lo avesse digitato).
-export function AutocompleteInput({ as="input", value, onChange, suggestions=[], style, textareaProps={}, onRemoveSuggestion, ...rest }){
+export function AutocompleteInput({ as="input", value, onChange, suggestions=[], style, textareaProps={}, onRemoveSuggestion, gestisceCursorePropria=false, ...rest }){
   const [open, setOpen] = useState(false);
   const [rect, setRect] = useState(null);
   const wrapRef = useRef(null);
@@ -316,10 +316,15 @@ export function AutocompleteInput({ as="input", value, onChange, suggestions=[],
         ref={fieldRef}
         value={value}
         onChange={e=>{
-          const fix = preparaFixCursore(e);
+          // Se il chiamante ricostruisce il testo da sé (es. aggiunge un
+          // prefisso fisso) gestisce già lui il cursore: non dobbiamo
+          // sovrascriverlo con una posizione calcolata sul vecchio valore,
+          // altrimenti vince l'ultimo requestAnimationFrame schedulato e il
+          // cursore finisce nel punto sbagliato.
+          const fix = gestisceCursorePropria ? null : preparaFixCursore(e);
           onChange(e);
           setOpen(true);
-          fix();
+          if(fix) fix();
           requestAnimationFrame(aggiornaPosizione);
         }}
         onFocus={()=>{ setOpen(true); requestAnimationFrame(aggiornaPosizione); }}

@@ -2998,7 +2998,7 @@ export default function VistaModelli({ C }){
   );
 })()}
 
-            <AutocompleteInput value={form.auto||""} onChange={e=>{
+            <AutocompleteInput value={form.auto||""} gestisceCursorePropria onChange={e=>{
                 const input = e.target;
                 const raw=e.target.value.toUpperCase();
                 const stripped=raw.replace(/^(CH\s*)+/i,"").trim();
