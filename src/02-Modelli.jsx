@@ -3239,7 +3239,12 @@ export default function VistaModelli({ C }){
   // frattempo non è stato premuto "Salva disposizione" a mano. Sì salva lo
   // snapshot; No annulla solo il timer corrente, in attesa della prossima
   // modifica — in nessun caso il salvataggio avviene da solo.
-  const salvaDisposizionePopup = showSalvaDisposizionePopup && (
+  // Il popup NON deve comparire mentre si sta trascinando un modello
+  // (draggingId attivo): l'overlay a schermo intero interromperebbe il gesto.
+  // Se il timer da 30s scade durante il drag, lo stato showSalvaDisposizionePopup
+  // resta true e il popup compare appena il modello viene rilasciato
+  // (draggingId torna null), senza perdere l'avviso.
+  const salvaDisposizionePopup = showSalvaDisposizionePopup && !draggingId && (
     <div style={{position:"fixed",top:0,left:0,right:0,bottom:NAV_HEIGHT_CSS,background:"rgba(0,0,0,0.75)",zIndex:700,
       display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
       <div style={{background:T.surface,borderRadius:16,width:"100%",maxWidth:380,padding:20}}>
