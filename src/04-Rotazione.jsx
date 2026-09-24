@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { ColorPickerModal, nomeDelColore as nomeDelColoreShared, ConfermaEliminazione, preparaFixCursore } from "./05-Comuni";
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1900,12 +1900,107 @@ export function ModelloCard({
   // logica onTouch* già implementata sotto, mentre desktop/mouse continua
   // a usare il drag HTML5 nativo come prima.
   const isTouchDevice = typeof window !== "undefined" && ("ontouchstart" in window || navigator.maxTouchPoints > 0);
+
+  // ── LONG-PRESS 500ms per avviare il drag col dito (Android) ──────────
+  // Prima il drag partiva al primo tocco (touchAction:"none" sempre attivo +
+  // draggingId impostato subito in onTouchStart), quindi non si poteva più
+  // scorrere la lista col dito e il drag scattava "sempre". Ora:
+  //   1. touchstart  -> parte un timer da LONG_PRESS_MS, il drag NON è attivo
+  //                     e il browser può ancora scorrere la lista normalmente.
+  //   2. se il dito si muove oltre MOVE_TOLERANCE px PRIMA dello scadere del
+  //      timer -> è uno scroll: il timer viene annullato, nessun drag.
+  //   3. allo scadere del timer (dito fermo) -> drag attivo: vibrazione breve
+  //      di feedback, si chiama il vero onTouchStart del genitore e da qui in
+  //      poi i touchmove vengono passati al genitore e lo scroll è bloccato.
+  //   4. touchend/touchcancel -> se il drag era attivo si chiude, altrimenti
+  //      si annulla solo il timer.
+  // Lo scroll va bloccato con un listener NATIVO non-passive: React registra
+  // touchmove come passive, quindi e.preventDefault() dentro onTouchMove di
+  // React viene ignorato su Android/Chrome e la lista continuerebbe a scorrere
+  // mentre si trascina. Per questo il listener è agganciato a mano via ref.
+  const LONG_PRESS_MS = 500;
+  const MOVE_TOLERANCE = 10; // px di tolleranza durante l'attesa dei 500ms
+  const cardRef = useRef(null);
+  const lpTimer = useRef(null);
+  const lpAttivo = useRef(false);        // true = long-press scaduto, drag in corso
+  const lpStart = useRef({ x: 0, y: 0 });
+  // Ultimi handler in un ref: il listener nativo è registrato una volta sola
+  // ma deve sempre chiamare le versioni più recenti (chiudono su dragOverId ecc.).
+  const lpHandlers = useRef({});
+  lpHandlers.current = { onTouchStart, onTouchMove, onTouchEnd };
+  const touchAbilitato = !!(onTouchStart || onTouchMove);
+
+  function lpAnnullaTimer() {
+    if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null; }
+  }
+
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el || !touchAbilitato) return;
+
+    const onStart = (e) => {
+      if (e.touches.length !== 1) return;
+      // Non avviare il drag se si tocca un pulsante (▲ ▼ 🗑)
+      if (e.target.closest && e.target.closest("button")) return;
+      lpAttivo.current = false;
+      const t = e.touches[0];
+      lpStart.current = { x: t.clientX, y: t.clientY };
+      lpAnnullaTimer();
+      lpTimer.current = setTimeout(() => {
+        lpTimer.current = null;
+        lpAttivo.current = true;
+        try { if (navigator.vibrate) navigator.vibrate(30); } catch (_) {}
+        const h = lpHandlers.current;
+        if (h.onTouchStart) h.onTouchStart(e);
+      }, LONG_PRESS_MS);
+    };
+
+    const onMove = (e) => {
+      const t = e.touches[0];
+      if (!lpAttivo.current) {
+        // Ancora in attesa dei 500ms: se il dito si sposta è uno scroll.
+        if (lpTimer.current) {
+          const dx = Math.abs(t.clientX - lpStart.current.x);
+          const dy = Math.abs(t.clientY - lpStart.current.y);
+          if (dx > MOVE_TOLERANCE || dy > MOVE_TOLERANCE) lpAnnullaTimer();
+        }
+        return; // nessun preventDefault -> lo scroll nativo funziona
+      }
+      // Drag attivo: blocca lo scroll della pagina e passa il gesto al genitore.
+      if (e.cancelable) e.preventDefault();
+      const h = lpHandlers.current;
+      if (h.onTouchMove) h.onTouchMove(e);
+    };
+
+    const onEnd = (e) => {
+      lpAnnullaTimer();
+      if (!lpAttivo.current) return; // tap o scroll normale: nulla da chiudere
+      lpAttivo.current = false;
+      const h = lpHandlers.current;
+      if (h.onTouchEnd) h.onTouchEnd(e);
+    };
+
+    el.addEventListener("touchstart", onStart, { passive: true });
+    el.addEventListener("touchmove", onMove, { passive: false });
+    el.addEventListener("touchend", onEnd, { passive: true });
+    el.addEventListener("touchcancel", onEnd, { passive: true });
+    return () => {
+      lpAnnullaTimer();
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchmove", onMove);
+      el.removeEventListener("touchend", onEnd);
+      el.removeEventListener("touchcancel", onEnd);
+    };
+  }, [touchAbilitato]);
+
   return (
     <div data-modello-id={modello.id}
+      ref={cardRef}
       draggable={!!onDragStart && !isTouchDevice}
-      onTouchStart={onTouchStart || undefined}
-      onTouchMove={onTouchMove || undefined}
-      onTouchEnd={onTouchEnd || undefined}
+      // Menu contestuale di Android (pressione lunga = "copia/condividi")
+      // disattivato in modalità spostamento, altrimenti compare proprio
+      // allo scadere dei 500ms e disturba il drag.
+      onContextMenu={touchAbilitato ? (e => e.preventDefault()) : undefined}
       onDragStart={onDragStart || undefined}
       onDragOver={onDragOver || undefined}
       onDrop={onDrop || undefined}
@@ -1926,7 +2021,15 @@ export function ModelloCard({
         // onTouchMove può essere ignorato (listener trattato come
         // "passive"), e il drag col dito non parte mai o si interrompe
         // subito, pur funzionando regolarmente col mouse su desktop.
-        touchAction: (onTouchStart || onTouchMove) ? "none" : undefined,
+        // NON più "none" fisso: con "none" il browser non scorreva mai e il
+        // long-press non serviva. Ora il blocco dello scroll avviene solo
+        // dopo i 500ms, via preventDefault nel listener nativo non-passive
+        // (vedi useEffect sopra); "pan-y" lascia lo scroll libero prima.
+        touchAction: touchAbilitato ? "pan-y" : undefined,
+        // Evita selezione del testo e callout di Android durante il long-press.
+        WebkitUserSelect: touchAbilitato ? "none" : undefined,
+        userSelect: touchAbilitato ? "none" : undefined,
+        WebkitTouchCallout: touchAbilitato ? "none" : undefined,
       }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0, flex: 1 }}>
         <div style={{ width: 28, height: 28, borderRadius: 6, background: colore, flexShrink: 0, alignSelf: "center", marginLeft: 2, marginRight: 2 }} />

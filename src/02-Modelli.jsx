@@ -434,9 +434,14 @@ export default function VistaModelli({ C }){
                     // spostamenti più ampi rispetto alle frecce ▲▼.
                     isDragging={draggingId===m.id}
                     isDropTarget={dragOverId===m.id && draggingId!==m.id}
-                    onTouchStart={modalitaSpostamento&&(m.calendarId||mainCalId)===calId?()=>{ touchSrcId.current=m.id; setDraggingId(m.id); }:null}
+                    // Su touch questi tre handler NON scattano più al primo tocco:
+                    // ModelloCard (04-Rotazione.jsx) li chiama solo dopo un
+                    // long-press di 500ms. Prima dei 500ms il dito scorre la lista
+                    // normalmente. Lo scroll durante il drag è bloccato da
+                    // ModelloCard con un listener nativo non-passive, quindi qui
+                    // non serve più e.preventDefault().
+                    onTouchStart={modalitaSpostamento&&(m.calendarId||mainCalId)===calId?()=>{ touchSrcId.current=m.id; touchTargetId.current=m.id; setDraggingId(m.id); }:null}
                     onTouchMove={modalitaSpostamento?(e)=>{
-                      e.preventDefault();
                       const t=e.touches[0];
                       updateAutoScroll(t.clientY);
                       const el=document.elementFromPoint(t.clientX,t.clientY);
@@ -449,6 +454,7 @@ export default function VistaModelli({ C }){
                     }:null}
                     onTouchEnd={modalitaSpostamento?async()=>{
                       stopAutoScroll();
+                      if(!touchSrcId.current){ setDraggingId(null); setDragOverId(null); return; }
                       await reorderModelli(touchSrcId.current, touchTargetId.current, calId);
                       touchSrcId.current=null; touchTargetId.current=null;
                       setDraggingId(null); setDragOverId(null);
