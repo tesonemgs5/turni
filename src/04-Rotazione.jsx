@@ -1360,6 +1360,7 @@ export function ModelForm({
   const [calDestinazione, setCalDestinazione] = useState([]);
   const [copiaInCorso, setCopiaInCorso] = useState(false);
   const [esitoCopia, setEsitoCopia] = useState("");
+  const [mostraVisualizza, setMostraVisualizza] = useState(false);
   const [reportListaAperta, setReportListaAperta] = useState(false);
   const [reportEspanso, setReportEspanso] = useState(null);
   const [sottomenuEspanso, setSottomenuEspanso] = useState({});
@@ -1747,10 +1748,18 @@ export function ModelForm({
           )
         );
         const altriCalendari = (calendari || []).filter(c => c.id !== form.calendarId);
+        // Calendari su cui questo modello è visibile anche in sola lettura
+        // tramite "Visualizza" (unica fonte di verità, stesso colore/nome
+        // ovunque — diverso da "Copia" che duplica fisicamente il modello).
+        const visibileAncheInIds = form.visibileAncheIn || [];
+        const calendariVisibiliExtra = (calendari || []).filter(c => visibileAncheInIds.includes(c.id));
+        const altriCalendariPerVisualizza = (calendari || []).filter(c => c.id !== form.calendarId);
         return (
           <div style={{ marginTop: 10 }}>
             <div style={{ fontSize: 12, color: T.sub, marginBottom: 8 }}>
-              📅 Presente in: <b style={{ color: T.text }}>{calCorrente ? calCorrente.name : "—"}</b>
+              📅 Presente in: <b style={{ color: T.text }}>
+                {[calCorrente?.name, ...calendariVisibiliExtra.map(c => c.name)].filter(Boolean).join(", ") || "—"}
+              </b>
               {giaPresentiIn.length > 0 && (
                 <span> · copia già presente anche in: <b style={{ color: T.text }}>{giaPresentiIn.map(c => c.name).join(", ")}</b></span>
               )}
@@ -1761,6 +1770,11 @@ export function ModelForm({
                   padding: "9px 0", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
                 💾 Salva
               </button>
+              <button type="button" onClick={() => setMostraVisualizza(v => !v)}
+                style={{ flex: 1, background: T.s2, color: T.text, border: `1px solid ${T.border}`, borderRadius: 10,
+                  padding: "9px 0", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
+                👁️ Visualizza
+              </button>
               {onCopia && (
                 <button type="button" onClick={() => { setEsitoCopia(""); setCalDestinazione([]); setMostraCopia(v => !v); }}
                   style={{ flex: 1, background: T.s2, color: T.text, border: `1px solid ${T.border}`, borderRadius: 10,
@@ -1769,6 +1783,36 @@ export function ModelForm({
                 </button>
               )}
             </div>
+            {mostraVisualizza && (
+              <div style={{ marginTop: 10, background: T.s2, border: `1px solid ${T.border}`, borderRadius: 10, padding: 10 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: T.text, marginBottom: 8 }}>
+                  Rendi visibile anche in (sola visualizzazione):
+                </div>
+                {altriCalendariPerVisualizza.length === 0 ? (
+                  <div style={{ fontSize: 12, color: T.sub }}>Non ci sono altri calendari.</div>
+                ) : altriCalendariPerVisualizza.map(c => {
+                  const scelto = visibileAncheInIds.includes(c.id);
+                  return (
+                    <button key={c.id} type="button"
+                      onClick={() => setForm(f => {
+                        const attuale = f.visibileAncheIn || [];
+                        const nuovo = attuale.includes(c.id) ? attuale.filter(x => x !== c.id) : [...attuale, c.id];
+                        return { ...f, visibileAncheIn: nuovo };
+                      })}
+                      style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left",
+                        background: scelto ? `${accent}22` : "transparent",
+                        border: `1px solid ${scelto ? accent : T.border}`, borderRadius: 8,
+                        padding: "8px 10px", marginBottom: 6, cursor: "pointer", color: T.text, fontSize: 13, fontWeight: 700 }}>
+                      <span>{scelto ? "☑" : "☐"}</span>
+                      <span style={{ flex: 1 }}>{c.name}</span>
+                    </button>
+                  );
+                })}
+                <div style={{ fontSize: 11, color: T.sub, marginTop: 4 }}>
+                  La selezione si applica al salvataggio (💾 Salva).
+                </div>
+              </div>
+            )}
             {mostraCopia && onCopia && (
               <div style={{ marginTop: 10, background: T.s2, border: `1px solid ${T.border}`, borderRadius: 10, padding: 10 }}>
                 <div style={{ fontSize: 12, fontWeight: 800, color: T.text, marginBottom: 8 }}>

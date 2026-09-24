@@ -12,7 +12,8 @@ import {
 import { CalBadge, SmartTimeInput, AutocompleteInput, ColorPickerModal,
   ModaleErroriMultipli, FasceExpand, ConteggioConfigCard, TurnazioneConfigCard,
   IndennitaConfig, OrePerTurnoView, StraordinariView, GuadagniView, Sec, SecCollapsible,
-  NAV_HEIGHT_CSS, nomeDelColore, ConfermaEliminazione, preparaFixCursore } from "./05-Comuni";
+  NAV_HEIGHT_CSS, nomeDelColore, ConfermaEliminazione, preparaFixCursore,
+  modelloVisibileInCalendario } from "./05-Comuni";
 import { ModelloCard, ModelForm, RotazioneCard, RotazioneForm, ModelloSelector,
   GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView, ReperibilitaView } from "./04-Rotazione";
 import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
@@ -109,6 +110,10 @@ export default function VistaModelli({ C }){
   // per mostrare i suoi gruppi (es. Piano Incentivante -> "1 turno"/"2
   // turni"): { [reportId]: sottomenuId }, livello 3 della tendina annidata.
   const [sottomenuEspansoEvento, setSottomenuEspansoEvento] = useState({});
+  // Menu a scomparsa "👁️ Visualizza" del form evento: elenco calendari su
+  // cui rendere visibile anche questo evento (sola visualizzazione, stessa
+  // fonte di verità — vedi modelloVisibileInCalendario in 05-Comuni.jsx).
+  const [mostraVisualizzaEvento, setMostraVisualizzaEvento] = useState(false);
   const {
     today, tipoModelloProtrazione, computeStornoRecupero, computeStornoPI, tipoModelloPI, store, setStore, loading, setLoading, year,
     ripristinaModelliMancanti, ripristinoInCorso, setRipristinoInCorso, ripristinoEsito, setRipristinoEsito,
@@ -359,7 +364,16 @@ export default function VistaModelli({ C }){
             : calcolaOrdineModelli(modelli.filter(m=>{
                 const mcid = m.calendarId||mainCalId;
                 return mcid===calId;
-              }));
+              })).concat(
+                // Modelli "specchiati" da altri calendari tramite il
+                // pulsante "Visualizza": mostrati in coda, in sola
+                // visualizzazione (niente riordino/drag, appartengono
+                // all'ordine del loro calendario proprietario).
+                modelli.filter(m=>{
+                  const mcid = m.calendarId||mainCalId;
+                  return mcid!==calId && Array.isArray(m.visibileAncheIn) && m.visibileAncheIn.includes(calId);
+                })
+              );
           const q = ricercaModelli.trim().toLowerCase();
           const modelliVisibili = q
             ? modelliDelCal.filter(m=>
@@ -414,13 +428,13 @@ export default function VistaModelli({ C }){
                     // non corrisponde più alla posizione reale tra i modelli del
                     // calendario, quindi uno spostamento sposterebbe il modello
                     // nel posto sbagliato.
-                    onMoveUp={modalitaSpostamento&&!q&&i>0?()=>moveH24(m.id,"up",calId):null}
-                    onMoveDown={modalitaSpostamento&&!q&&i<arr.length-1?()=>moveH24(m.id,"down",calId):null}
+                    onMoveUp={modalitaSpostamento&&!q&&i>0&&(m.calendarId||mainCalId)===calId?()=>moveH24(m.id,"up",calId):null}
+                    onMoveDown={modalitaSpostamento&&!q&&i<arr.length-1&&(m.calendarId||mainCalId)===calId?()=>moveH24(m.id,"down",calId):null}
                     // Drag & drop: disponibile solo in modalitaSpostamento, per
                     // spostamenti più ampi rispetto alle frecce ▲▼.
                     isDragging={draggingId===m.id}
                     isDropTarget={dragOverId===m.id && draggingId!==m.id}
-                    onTouchStart={modalitaSpostamento?()=>{ touchSrcId.current=m.id; setDraggingId(m.id); }:null}
+                    onTouchStart={modalitaSpostamento&&(m.calendarId||mainCalId)===calId?()=>{ touchSrcId.current=m.id; setDraggingId(m.id); }:null}
                     onTouchMove={modalitaSpostamento?(e)=>{
                       e.preventDefault();
                       const t=e.touches[0];
@@ -454,7 +468,7 @@ export default function VistaModelli({ C }){
                     // ModelloCard imposta draggable={!!(onDragStart)}, quindi passare
                     // null qui disattiva anche l'attributo HTML draggable, non solo la
                     // logica — fuori da modalitaSpostamento la card non è più afferrabile.
-                    onDragStart={modalitaSpostamento?(e)=>{
+                    onDragStart={modalitaSpostamento&&(m.calendarId||mainCalId)===calId?(e)=>{
                       dragSrcId.current=m.id;
                       dragTargetId.current=m.id;
                       setDraggingId(m.id);
@@ -565,7 +579,7 @@ export default function VistaModelli({ C }){
                 }).map((r,i,arr)=>(
                   <div key={r.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                     <RotazioneCard rot={r} T={T} accent={accent} modelli={
-                        modelliOrdinati.filter(m=>(m.calendarId||mainCalId)===calId)
+                        modelliOrdinati.filter(m=>modelloVisibileInCalendario(m, calId, mainCalId))
                       }
                       onOpen={()=>setShowRotDetail(r.id)}
                       onEdit={()=>{ setEditRotazione(r); setRotForm({
@@ -750,7 +764,7 @@ export default function VistaModelli({ C }){
                   .filter(c=>calSelezionati.includes(c.id))
                   .map(c=>({
                     cal: c,
-                    modelli: modelliOrdinati.filter(m=>(m.calendarId||mainCalId)===c.id),
+                    modelli: modelliOrdinati.filter(m=>modelloVisibileInCalendario(m, c.id, mainCalId)),
                   }))
                   .filter(g=>g.modelli.length>0);
                 return (
@@ -839,10 +853,10 @@ export default function VistaModelli({ C }){
               <div style={{width:32}}/>
             </div>
             <RotazioneForm T={T} form={rotForm} setForm={setRotForm} accent={accent} fasceAutomatiche={fasceAutomatiche} modelli={
-                modelli.filter(m=>(m.calendarId||mainCalId)===calId)
+                modelli.filter(m=>modelloVisibileInCalendario(m, calId, mainCalId))
               }
               sortedModelli={
-                modelliOrdinati.filter(m=>(m.calendarId||mainCalId)===calId)
+                modelliOrdinati.filter(m=>modelloVisibileInCalendario(m, calId, mainCalId))
               }
               onSave={()=>{ saveRotazione({...rotForm,id:editRotazione?.id}); setShowRotForm(false); }}/>
           </div>
@@ -889,7 +903,7 @@ export default function VistaModelli({ C }){
             </div>
             <div style={{flex:1,minHeight:0,display:"flex",flexDirection:"column",paddingBottom:64}}>
               {(()=>{
-                const modelliDelCalRot = modelliOrdinati.filter(m=>(m.calendarId||mainCalId)===calId);
+                const modelliDelCalRot = modelliOrdinati.filter(m=>modelloVisibileInCalendario(m, calId, mainCalId));
                 return (<>
               {rot.tipo==="personalizzata"&&(
                 <GrigliaRotazione rot={rot} T={T} accent={accent} modelli={modelliDelCalRot} fasceAutomatiche={fasceAutomatiche} sundayColor={sundayColor}
@@ -2102,7 +2116,8 @@ export default function VistaModelli({ C }){
                 place:e.place||"", map:e.map||"", note:e.note||"", collega:e.collega||"", auto:e.auto||"",
                 protPagFine:e.protPagFine||"", protRecFine:e.protRecFine||"",
                 protMenoRecIn:e.protMenoRecIn||"", protMenoRecOut:e.protMenoRecOut||"",
-                categoriaTurno:e.categoriaTurno||"", categoriaAppAuto:e.categoriaAppAuto||"" });
+                categoriaTurno:e.categoriaTurno||"", categoriaAppAuto:e.categoriaAppAuto||"",
+                visibileAncheIn:e.visibileAncheIn||[] });
             }}
             style={{background:e.color,borderRadius:10,padding:"10px 12px",marginBottom:8,cursor:"pointer",
               display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
@@ -2230,6 +2245,7 @@ export default function VistaModelli({ C }){
                 protPagFine:e.protPagFine||"",protRecFine:e.protRecFine||"",
                 protMenoRecIn:e.protMenoRecIn||"",protMenoRecOut:e.protMenoRecOut||"",
                 categoriaTurno:e.categoriaTurno||"",categoriaAppAuto:e.categoriaAppAuto||"",
+                visibileAncheIn:e.visibileAncheIn||[],
               });}}
               style={{background:cardTextColor==="#ffffff"?"rgba(0,0,0,0.2)":"rgba(255,255,255,0.35)",border:"none",borderRadius:6,
                 color:cardTextColor,width:26,height:26,cursor:"pointer",fontSize:14,marginLeft:4,flexShrink:0,
@@ -2273,8 +2289,7 @@ export default function VistaModelli({ C }){
             {modelli.length>0&&form.editId&&form._showModPicker&&(()=>{
               const modelliDelCal = modelliOrdinati.filter(m=>{
                 if(!calId) return true;
-                const mcid = m.calendarId||mainCalId;
-                return mcid===calId;
+                return modelloVisibileInCalendario(m, calId, mainCalId);
               });
               if(modelliDelCal.length===0) return null;
               return (
@@ -2314,8 +2329,7 @@ export default function VistaModelli({ C }){
             {modelli.length>0&&!form.editId&&(()=>{
               const modelliDelCal = modelliOrdinati.filter(m=>{
                 if(!calId) return true;
-                const mcid = m.calendarId||mainCalId;
-                return mcid===calId;
+                return modelloVisibileInCalendario(m, calId, mainCalId);
               });
               if(modelliDelCal.length===0) return null;
               return (
@@ -3064,6 +3078,56 @@ export default function VistaModelli({ C }){
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
                 marginBottom:12,boxSizing:"border-box",outline:"none",textTransform:"uppercase"}}/>
+            {form.editId&&(()=>{
+              const calCorrenteEvt = store.calendars.find(c=>c.id===(form.editCid||calId));
+              const visibileAncheInEvt = form.visibileAncheIn || [];
+              const calendariVisibiliExtraEvt = store.calendars.filter(c=>visibileAncheInEvt.includes(c.id));
+              const altriCalendariEvt = store.calendars.filter(c=>c.id!==(form.editCid||calId));
+              return (
+                <div style={{marginBottom:12}}>
+                  <div style={{fontSize:11,color:T.sub,marginBottom:6}}>
+                    📅 Presente in: <b style={{color:T.text}}>
+                      {[calCorrenteEvt?.name, ...calendariVisibiliExtraEvt.map(c=>c.name)].filter(Boolean).join(", ") || "—"}
+                    </b>
+                  </div>
+                  <button type="button" onClick={()=>setMostraVisualizzaEvento(v=>!v)}
+                    style={{width:"100%",background:T.s2,color:T.text,border:`1px solid ${T.border}`,borderRadius:8,
+                      padding:"8px 0",fontWeight:800,fontSize:12,cursor:"pointer",marginBottom:mostraVisualizzaEvento?8:0}}>
+                    👁️ Visualizza
+                  </button>
+                  {mostraVisualizzaEvento&&(
+                    <div style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,padding:10}}>
+                      <div style={{fontSize:12,fontWeight:800,color:T.text,marginBottom:8}}>
+                        Rendi visibile anche in (sola visualizzazione):
+                      </div>
+                      {altriCalendariEvt.length===0?(
+                        <div style={{fontSize:12,color:T.sub}}>Non ci sono altri calendari.</div>
+                      ):altriCalendariEvt.map(c=>{
+                        const scelto = visibileAncheInEvt.includes(c.id);
+                        return (
+                          <button key={c.id} type="button"
+                            onClick={()=>setForm(f=>{
+                              const attuale = f.visibileAncheIn || [];
+                              const nuovo = attuale.includes(c.id) ? attuale.filter(x=>x!==c.id) : [...attuale, c.id];
+                              return {...f, visibileAncheIn: nuovo};
+                            })}
+                            style={{display:"flex",alignItems:"center",gap:8,width:"100%",textAlign:"left",
+                              background:scelto?`${accent}22`:"transparent",
+                              border:`1px solid ${scelto?accent:T.border}`,borderRadius:8,
+                              padding:"8px 10px",marginBottom:6,cursor:"pointer",color:T.text,fontSize:13,fontWeight:700}}>
+                            <span>{scelto?"☑":"☐"}</span>
+                            <span style={{flex:1}}>{c.name}</span>
+                          </button>
+                        );
+                      })}
+                      <div style={{fontSize:11,color:T.sub,marginTop:4}}>
+                        La selezione si applica al salvataggio (💾 Salva).
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             <div style={{display:"flex",gap:4}}>
               <button onClick={()=>{setForm(null);setPal(null);}}
                 style={{flex:1,background:T.surface,border:`1px solid ${T.border}`,
