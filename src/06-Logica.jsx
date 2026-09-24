@@ -3536,16 +3536,21 @@ const importsRecenti = useMemo(()=>{
     if(!srcId || !dstId || srcId===dstId){
       return prev;
     }
+    // dstId speciale "__FONDO__": la zona "sposta in fondo" sotto l'ultima
+    // card. Senza questo caso l'ultimo posto era irraggiungibile, perche' il
+    // modello viene sempre inserito PRIMA della card di destinazione.
+    const inFondo = dstId==="__FONDO__";
     const sottoinsiemeIds = new Set(modelliDelCalendario(prev, calIdFiltro).map(m=>m.id));
-    if(!sottoinsiemeIds.has(srcId) || !sottoinsiemeIds.has(dstId)){
+    if(!sottoinsiemeIds.has(srcId) || (!inFondo && !sottoinsiemeIds.has(dstId))){
       return prev;
     }
     const ordinato = calcolaOrdineModelli(modelliDelCalendario(prev, calIdFiltro));
     const srcIdx = ordinato.findIndex(m=>m.id===srcId);
-    const dstIdx = ordinato.findIndex(m=>m.id===dstId);
+    const dstIdx = inFondo ? ordinato.length : ordinato.findIndex(m=>m.id===dstId);
     if(srcIdx===-1 || dstIdx===-1){
       return prev;
     }
+    if(inFondo && srcIdx===ordinato.length-1) return prev; // gia' ultimo
     const riordinato = [...ordinato];
     const [tolto] = riordinato.splice(srcIdx,1);
     // Quando la riga azzurra è sopra la card bersaglio (dstId), l'utente
