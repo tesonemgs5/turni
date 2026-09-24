@@ -1775,9 +1775,24 @@ export function useAppCore(session){
   function allEvts(key){
     if(!selectedCalIds || selectedCalIds.length===0) return [];
     const res=[];
-    if(mainCal && selectedCalIds.includes(mainCal.id)) getEvts(key,mainCal.id).forEach(e=>res.push({...e,_cid:mainCal.id}));
+    // Un evento "specchiato" (visibileAncheIn) resta UN SOLO evento: quando
+    // più calendari che lo vedono sono selezionati insieme (es. TURNI + FU +
+    // PR), getEvts lo restituisce una volta per ciascun calendario e prima
+    // finiva in `res` più volte, mostrando la stessa card ripetuta nella
+    // cella del giorno. Qui si tiene solo la prima occorrenza per id,
+    // assegnata al calendario "proprietario" (quello dove l'evento è stato
+    // creato) quando è fra i selezionati, altrimenti al primo calendario
+    // specchio incontrato — così l'evento compare una volta sola, coerente
+    // con "non è una copia, è lo stesso evento visto da più calendari".
+    const vistiIds = new Set();
+    function pushUnico(e, cid){
+      if(vistiIds.has(e.id)) return;
+      vistiIds.add(e.id);
+      res.push({...e,_cid:cid});
+    }
+    if(mainCal && selectedCalIds.includes(mainCal.id)) getEvts(key,mainCal.id).forEach(e=>pushUnico(e,mainCal.id));
     store.calendars.filter(c=>!c.isMain && selectedCalIds.includes(c.id)).forEach(c=>
-      getEvts(key,c.id).forEach(e=>res.push({...e,_cid:c.id})));
+      getEvts(key,c.id).forEach(e=>pushUnico(e,c.id)));
     // Ordine calendario: posizione dell'evento nell'elenco calendari configurato in Impostazioni
     const calOrderIdx = new Map(store.calendars.map((c,i)=>[c.id,i]));
     // Ordine modello: posizione del modello nella schermata Modelli
