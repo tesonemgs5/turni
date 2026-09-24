@@ -1921,6 +1921,11 @@ export function ModelloCard({
   const LONG_PRESS_MS = 250; // dimezzato rispetto ai 500ms iniziali
   const MOVE_TOLERANCE = 10; // px di tolleranza durante l'attesa dei 500ms
   const cardRef = useRef(null);
+  // Copia "fantasma" della card, a opacita' piena, che segue il dito mentre
+  // si trascina: l'originale resta al suo posto semitrasparente come
+  // segnaposto, quindi sul telefono si vede sempre cosa si sta spostando.
+  const [ghost, setGhost] = useState(null); // {x,y,w,h} oppure null
+  const ghostOffset = useRef({ dx: 0, dy: 0, w: 0, h: 0 });
   const lpTimer = useRef(null);
   const lpAttivo = useRef(false);        // true = long-press scaduto, drag in corso
   const lpStart = useRef({ x: 0, y: 0 });
@@ -1950,6 +1955,11 @@ export function ModelloCard({
         lpTimer.current = null;
         lpAttivo.current = true;
         try { if (navigator.vibrate) navigator.vibrate(30); } catch (_) {}
+        // Fantasma: parte esattamente sopra la card, poi segue il dito
+        // mantenendo lo stesso punto di presa (offset dito-card).
+        const r = el.getBoundingClientRect();
+        ghostOffset.current = { dx: lpStart.current.x - r.left, dy: lpStart.current.y - r.top, w: r.width, h: r.height };
+        setGhost({ x: r.left, y: r.top, w: r.width, h: r.height });
         const h = lpHandlers.current;
         if (h.onTouchStart) h.onTouchStart(e);
       }, LONG_PRESS_MS);
@@ -1968,6 +1978,8 @@ export function ModelloCard({
       }
       // Drag attivo: blocca lo scroll della pagina e passa il gesto al genitore.
       if (e.cancelable) e.preventDefault();
+      const o = ghostOffset.current;
+      setGhost({ x: t.clientX - o.dx, y: t.clientY - o.dy, w: o.w, h: o.h });
       const h = lpHandlers.current;
       if (h.onTouchMove) h.onTouchMove(e);
     };
@@ -1976,6 +1988,7 @@ export function ModelloCard({
       lpAnnullaTimer();
       if (!lpAttivo.current) return; // tap o scroll normale: nulla da chiudere
       lpAttivo.current = false;
+      setGhost(null);
       const h = lpHandlers.current;
       if (h.onTouchEnd) h.onTouchEnd(e);
     };
@@ -1986,6 +1999,7 @@ export function ModelloCard({
     el.addEventListener("touchcancel", onEnd, { passive: true });
     return () => {
       lpAnnullaTimer();
+      setGhost(null);
       el.removeEventListener("touchstart", onStart);
       el.removeEventListener("touchmove", onMove);
       el.removeEventListener("touchend", onEnd);
@@ -2072,6 +2086,26 @@ export function ModelloCard({
         {onDelete && <button onClick={e => { e.stopPropagation(); setConfermaVisibile(true); }}
           style={{ ...NB, background: "none", color: "#ef4444", padding: 8, fontSize: 20, lineHeight: 1 }}>🗑</button>}
       </div>
+      {ghost && (
+        <div style={{
+          position: "fixed", left: ghost.x, top: ghost.y, width: ghost.w, height: ghost.h,
+          zIndex: 9999, pointerEvents: "none", boxSizing: "border-box",
+          display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
+          background: T.surface, border: `2px solid ${accent}`, borderRadius: 12,
+          boxShadow: "0 10px 28px rgba(0,0,0,0.35)", transform: "scale(1.03)",
+          opacity: 1,
+        }}>
+          <div style={{ width: 28, height: 28, borderRadius: 6, background: colore, flexShrink: 0, marginLeft: 2, marginRight: 2 }} />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 18, fontWeight: 700, color: T.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {modello.titolo}
+            </div>
+            <div style={{ fontSize: 18, color: T.sub }}>
+              {modello.tempo === "h24" ? "H24" : `${modello.inizio || "—"} – ${calcFineModello(modello) || modello.fine || "—"}`}
+            </div>
+          </div>
+        </div>
+      )}
       {confermaVisibile && (
         <ConfermaEliminazione T={T} testo={`Vuoi eliminare "${modello.titolo}"?`}
           onConferma={() => { setConfermaVisibile(false); onDelete(modello); }}

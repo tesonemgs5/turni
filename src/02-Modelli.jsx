@@ -445,9 +445,10 @@ export default function VistaModelli({ C }){
                       const t=e.touches[0];
                       updateAutoScroll(t.clientY);
                       const el=document.elementFromPoint(t.clientX,t.clientY);
-                      const card=el?.closest("[data-modello-id]");
+                      // La zona "in fondo" ha id speciale "__FONDO__" (data-fondo).
+                      const card=el?.closest("[data-modello-id]") || el?.closest("[data-fondo]");
                       if(card){
-                        const id=card.getAttribute("data-modello-id");
+                        const id=card.getAttribute("data-modello-id") || "__FONDO__";
                         touchTargetId.current=id;
                         if(dragOverId!==id) setDragOverId(id);
                       }
@@ -484,8 +485,8 @@ export default function VistaModelli({ C }){
                       e.preventDefault();
                       updateAutoScroll(e.clientY);
                       const el=document.elementFromPoint(e.clientX,e.clientY);
-                      const card=el?.closest("[data-modello-id]");
-                      const id=card?card.getAttribute("data-modello-id"):m.id;
+                      const card=el?.closest("[data-modello-id]") || el?.closest("[data-fondo]");
+                      const id=card?(card.getAttribute("data-modello-id") || "__FONDO__"):m.id;
                       dragTargetId.current=id;
                       if(dragOverId!==id) setDragOverId(id);
                     }:null}
@@ -508,6 +509,26 @@ export default function VistaModelli({ C }){
                     }:null}/>
                 </div>
               ))}
+              {/* Zona "in fondo": visibile solo mentre si trascina. Senza di essa
+                  l'ultimo posto era irraggiungibile (il modello viene sempre
+                  inserito PRIMA della card su cui si rilascia). */}
+              {draggingId&&calId!==null&&(
+                <div data-fondo="1"
+                  onDragOver={(e)=>{ e.preventDefault(); dragTargetId.current="__FONDO__"; if(dragOverId!=="__FONDO__") setDragOverId("__FONDO__"); }}
+                  onDrop={async()=>{
+                    stopAutoScroll();
+                    await reorderModelli(dragSrcId.current, "__FONDO__", calId);
+                    dragSrcId.current=null; dragTargetId.current=null;
+                    setDraggingId(null); setDragOverId(null);
+                  }}
+                  style={{
+                    padding:"18px 14px", textAlign:"center", fontSize:13, fontWeight:800,
+                    color:dragOverId==="__FONDO__"?accent:T.sub,
+                    borderTop:dragOverId==="__FONDO__"?`3px solid ${accent}`:`1px dashed ${T.border}`,
+                    background:dragOverId==="__FONDO__"?`${accent}14`:"transparent"}}>
+                  ⬇ Rilascia qui per mettere in fondo
+                </div>
+              )}
             </div>
           );
         })()}
