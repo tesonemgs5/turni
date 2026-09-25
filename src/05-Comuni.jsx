@@ -1919,7 +1919,7 @@ export function HexColorPicker({T, value, onChange}){
 // centrare un punto esatto: basta toccare la cella.
 const GRID_ROWS = 30; // 30 tonalità, passo 12°
 const GRID_HUES = Array.from({length:GRID_ROWS}, (_,i)=>Math.round(i*360/GRID_ROWS));
-const GRID_COLS = 11;
+const GRID_COLS = 12;
 function calcolaColonnaGriglia(col){
   // colonna 0 = pastello chiarissimo (s bassa, v alta), colonna finale =
   // colore pieno e saturo (s alta, v resta alta): stessa luminosità per
@@ -1927,11 +1927,13 @@ function calcolaColonnaGriglia(col){
   const k = col/(GRID_COLS-1); // 0..1
   return { s: 8+k*92, v: 100-k*15 };
 }
-// Riga dei grigi (s=0): da bianco a nero, stessa lunghezza delle altre righe.
-// Tenuta separata da GRID_HUES perché non è una tonalità ma solo luminosità.
-const RIGA_GRIGI = Array.from({length:GRID_COLS}, (_,ci)=>{
-  const k = ci/(GRID_COLS-1); // 0..1
-  const v = Math.round(100 - k*100); // 100 (bianco) -> 0 (nero)
+// Riga dei grigi (s=0): da grigio chiaro a nero. La prima colonna (bianco
+// puro, identico su ogni riga) viene omessa qui: resta solo una scala di
+// grigi realmente distinguibile, sulle restanti GRID_COLS-1 celle allineate
+// a destra come le altre righe.
+const RIGA_GRIGI = Array.from({length:GRID_COLS-1}, (_,ci)=>{
+  const k = ci/(GRID_COLS-2); // 0..1
+  const v = Math.round(96 - k*96); // grigio molto chiaro -> nero
   const rgb = hsvToRgb(0,0,v);
   return rgbToHex(rgb.r,rgb.g,rgb.b);
 });
@@ -1959,12 +1961,13 @@ function trovaCellaPiuVicina(hex){
   const rgb = hexToRgbObj(hex);
   const hsv = rgbToHsv(rgb.r, rgb.g, rgb.b);
   let migliore = null, distMin = Infinity;
-  // Riga dei grigi: stessa metrica ma s fissa a 0, confrontata sulle 12
-  // colonne di luminosità. Va valutata insieme alle righe di tonalità
-  // così un colore quasi desaturato finisce davvero tra i grigi.
+  // Riga dei grigi: stessa metrica ma s fissa a 0, confrontata sulle
+  // GRID_COLS-1 colonne di luminosità (colonna 0 bianco omessa). Va
+  // valutata insieme alle righe di tonalità così un colore quasi
+  // desaturato finisce davvero tra i grigi.
   RIGA_GRIGI.forEach((_,ci)=>{
-    const k = ci/(GRID_COLS-1);
-    const v = 100-k*100;
+    const k = ci/(GRID_COLS-2);
+    const v = 96-k*96;
     const ds = 0-hsv.s, dv = v-hsv.v;
     const dist = ds*ds + dv*dv;
     if(dist<distMin){ distMin=dist; migliore={ri:"grigi",ci}; }
@@ -2035,7 +2038,7 @@ function GridColorPicker({T, value, onChange, coloriUsati=[]}){
     })
   );
   const rigaGrigi = RIGA_GRIGI.map((hex,ci)=> overrides[`grigi-${ci}`] || hex);
-  const righe = [rigaGrigi, ...righeTonalita];
+  const righe = [[null, ...rigaGrigi], ...righeTonalita]; // null = cella vuota (colonna bianco omessa)
 
   function luminosaPercepita(hex){
     const rgb = hexToRgbObj(hex);
@@ -2072,7 +2075,7 @@ function GridColorPicker({T, value, onChange, coloriUsati=[]}){
       <div style={{maxHeight:300,overflowY:"auto",paddingRight:2}}>
         {righe.map((riga,ri)=>(
           <div key={ri} style={{display:"grid",gridTemplateColumns:`repeat(${GRID_COLS},1fr)`,gap:5,marginBottom:5}}>
-            {riga.map(hex=>coloreCella(hex))}
+            {riga.map((hex,ci)=> hex===null ? <div key={ci}/> : coloreCella(hex))}
           </div>
         ))}
       </div>
