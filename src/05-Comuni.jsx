@@ -1927,6 +1927,14 @@ function calcolaColonnaGriglia(col){
   const k = col/(GRID_COLS-1); // 0..1
   return { s: 8+k*92, v: 100-k*15 };
 }
+// Riga dei grigi (s=0): da bianco a nero, stessa lunghezza delle altre righe.
+// Tenuta separata da GRID_HUES perché non è una tonalità ma solo luminosità.
+const RIGA_GRIGI = Array.from({length:GRID_COLS}, (_,ci)=>{
+  const k = ci/(GRID_COLS-1); // 0..1
+  const v = Math.round(100 - k*100); // 100 (bianco) -> 0 (nero)
+  const rgb = hsvToRgb(0,0,v);
+  return rgbToHex(rgb.r,rgb.g,rgb.b);
+});
 
 // Le sostituzioni della griglia (pallino normalizzato -> colore reale che
 // rappresenta) sono PERSISTENTI e GLOBALI in localStorage, condivise da ogni
@@ -1951,6 +1959,16 @@ function trovaCellaPiuVicina(hex){
   const rgb = hexToRgbObj(hex);
   const hsv = rgbToHsv(rgb.r, rgb.g, rgb.b);
   let migliore = null, distMin = Infinity;
+  // Riga dei grigi: stessa metrica ma s fissa a 0, confrontata sulle 12
+  // colonne di luminosità. Va valutata insieme alle righe di tonalità
+  // così un colore quasi desaturato finisce davvero tra i grigi.
+  RIGA_GRIGI.forEach((_,ci)=>{
+    const k = ci/(GRID_COLS-1);
+    const v = 100-k*100;
+    const ds = 0-hsv.s, dv = v-hsv.v;
+    const dist = ds*ds + dv*dv;
+    if(dist<distMin){ distMin=dist; migliore={ri:"grigi",ci}; }
+  });
   for(let ri=0; ri<GRID_ROWS; ri++){
     const h = GRID_HUES[ri];
     let dh = Math.abs(h - hsv.h);
@@ -2007,7 +2025,7 @@ function GridColorPicker({T, value, onChange, coloriUsati=[]}){
 
   const setUsati = new Set((coloriUsati||[]).filter(Boolean).map(c=>c.toUpperCase()));
 
-  const righe = GRID_HUES.map((h,ri)=>
+  const righeTonalita = GRID_HUES.map((h,ri)=>
     Array.from({length:GRID_COLS}, (_,ci)=>{
       const override = overrides[`${ri}-${ci}`];
       if(override) return override;
@@ -2016,6 +2034,8 @@ function GridColorPicker({T, value, onChange, coloriUsati=[]}){
       return rgbToHex(rgb.r,rgb.g,rgb.b);
     })
   );
+  const rigaGrigi = RIGA_GRIGI.map((hex,ci)=> overrides[`grigi-${ci}`] || hex);
+  const righe = [rigaGrigi, ...righeTonalita];
 
   function luminosaPercepita(hex){
     const rgb = hexToRgbObj(hex);
@@ -2041,7 +2061,7 @@ function GridColorPicker({T, value, onChange, coloriUsati=[]}){
   return (
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-        <div style={{fontSize:10,color:T.sub}}>{GRID_ROWS} tonalità × {GRID_COLS} sfumature</div>
+        <div style={{fontSize:10,color:T.sub}}>{GRID_ROWS} tonalità + grigi × {GRID_COLS} sfumature</div>
         <button type="button" onClick={handleNormalizza}
           title="Porta tutti i colori usati nei pallini più vicini della griglia"
           style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
