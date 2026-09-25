@@ -1918,7 +1918,13 @@ export function HexColorPicker({T, value, onChange}){
 // al gradiente continuo del riquadro 2D sopra, perché non richiede di
 // centrare un punto esatto: basta toccare la cella.
 const GRID_ROWS = 30; // 30 tonalità, passo 12°
-const GRID_HUES = Array.from({length:GRID_ROWS}, (_,i)=>Math.round(i*360/GRID_ROWS));
+// Le tonalità partono da 180° (ciano) invece che da 0° (rosso): così il
+// rosso, che altrimenti finirebbe spezzato tra la prima e l'ultima riga
+// (0° e 348° sono quasi lo stesso colore), cade come UNICA riga piena a
+// centro griglia. Risultato: la ruota cromatica è la stessa, cambia solo
+// il punto in cui viene "tagliata" per diventare una lista verticale.
+const GRID_HUE_START = 180;
+const GRID_HUES = Array.from({length:GRID_ROWS}, (_,i)=>(GRID_HUE_START + Math.round(i*360/GRID_ROWS))%360);
 const GRID_COLS = 12;
 function calcolaColonnaGriglia(col){
   // colonna 0 = pastello chiarissimo (s bassa, v alta), colonna finale =
