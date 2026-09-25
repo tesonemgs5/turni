@@ -1813,12 +1813,31 @@ export function HexColorPicker({T, value, onChange}){
           cursor:"pointer",
         }}/>
 
-      {/* Saturazione e Luminosità: sono le due dimensioni del riquadro 2D
-          sopra (asse orizzontale = saturazione, verticale = luminosità),
-          il punto più impreciso da toccare col dito su schermo piccolo.
-          Aggiungiamo qui campi numerici diretti (0-100) con pulsanti −/+
-          per uno step preciso di 1 unità, per chi preferisce digitare o
-          affinare invece di trascinare. */}
+      <div style={{marginBottom:10}}>
+        <div style={{fontSize:9,color:T.sub,fontWeight:700,marginBottom:3,textAlign:"center"}}>Tonalità (H)</div>
+        <div style={{display:"flex",alignItems:"center",gap:4}}>
+          <button type="button"
+            onClick={()=>{ const next=(Math.round(hue)-1+360)%360; setHue(next); emit(next, sv.s, sv.v); }}
+            style={{width:26,height:30,flexShrink:0,background:T.s2,border:`1px solid ${T.border}`,
+              borderRadius:6,color:T.text,fontSize:16,fontWeight:700,cursor:"pointer",
+              display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>−</button>
+          <input type="number" min="0" max="360"
+            value={Math.round(hue)}
+            onChange={e=>{
+              const n = Math.max(0, Math.min(360, parseInt(e.target.value)||0));
+              setHue(n); emit(n, sv.s, sv.v);
+            }}
+            style={{width:"100%",background:T.s2,border:`1px solid ${T.border}`,borderRadius:6,
+              padding:"6px 2px",color:T.text,fontSize:13,textAlign:"center",
+              outline:"none",boxSizing:"border-box"}}/>
+          <button type="button"
+            onClick={()=>{ const next=(Math.round(hue)+1)%360; setHue(next); emit(next, sv.s, sv.v); }}
+            style={{width:26,height:30,flexShrink:0,background:T.s2,border:`1px solid ${T.border}`,
+              borderRadius:6,color:T.text,fontSize:16,fontWeight:700,cursor:"pointer",
+              display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>+</button>
+        </div>
+      </div>
+
       <div style={{display:"flex",gap:8,marginBottom:10}}>
         {[["s","Saturazione"],["v","Luminosità"]].map(([field,label])=>(
           <div key={field} style={{flex:1}}>
@@ -1898,39 +1917,145 @@ export function HexColorPicker({T, value, onChange}){
 // costante. Il tocco su un pallino intero è più preciso col dito rispetto
 // al gradiente continuo del riquadro 2D sopra, perché non richiede di
 // centrare un punto esatto: basta toccare la cella.
-const GRID_HUES = Array.from({length:20}, (_,i)=>Math.round(i*360/20)); // 20 tonalità, passo 18°
-const GRID_COLS = 10;
+const GRID_ROWS = 30; // 30 tonalità, passo 12°
+const GRID_HUES = Array.from({length:GRID_ROWS}, (_,i)=>Math.round(i*360/GRID_ROWS));
+const GRID_COLS = 12;
 function calcolaColonnaGriglia(col){
   // colonna 0 = pastello chiarissimo (s bassa, v alta), colonna finale =
   // colore pieno e saturo (s alta, v resta alta): stessa luminosità per
-  // tutta la riga, solo la saturazione cresce da sinistra a destra, come
-  // nelle immagini di riferimento.
+  // tutta la riga, solo la saturazione cresce da sinistra a destra.
   const k = col/(GRID_COLS-1); // 0..1
   return { s: 8+k*92, v: 100-k*15 };
 }
-function GridColorPicker({T, value, onChange}){
-  const coloreCella = (hex)=>(
-    <button key={hex} type="button" onClick={()=>onChange(hex)}
-      title={hex}
-      style={{aspectRatio:"1",borderRadius:"50%",background:hex,cursor:"pointer",padding:0,
-        minWidth:28,minHeight:28,
-        border:value?.toUpperCase()===hex.toUpperCase()?`2.5px solid ${T.text}`:`1px solid ${T.border}`,
-        outline:"none"}}/>
-  );
-  const righe = GRID_HUES.map(h=>
-    Array.from({length:GRID_COLS}, (_,c)=>{
-      const {s,v} = calcolaColonnaGriglia(c);
+
+// Le sostituzioni della griglia (pallino normalizzato -> colore reale che
+// rappresenta) sono PERSISTENTI e GLOBALI in localStorage, condivise da ogni
+// GridColorPicker dell'app: un colore scelto/importato dal pannello Preciso
+// "prende casa" in un pallino preciso e ci resta finché non si preme
+// Normalizza. Struttura salvata: { "rowIdx-colIdx": "#HEXCOLORE", ... }
+function leggiSostituzioniGriglia(){
+  try{
+    const raw = localStorage.getItem('gridColorOverrides');
+    return raw ? JSON.parse(raw) : {};
+  }catch(e){ return {}; }
+}
+function scriviSostituzioniGriglia(obj){
+  try{ localStorage.setItem('gridColorOverrides', JSON.stringify(obj)); }catch(e){}
+}
+
+// Trova la cella (riga/colonna) della griglia matematica il cui colore è più
+// vicino a "hex", confrontando in spazio HSV (differenza circolare su H,
+// lineare su S e V). Usata sia per "porta un colore da Preciso a Griglia"
+// sia per la Normalizzazione dei colori già usati.
+function trovaCellaPiuVicina(hex){
+  const rgb = hexToRgbObj(hex);
+  const hsv = rgbToHsv(rgb.r, rgb.g, rgb.b);
+  let migliore = null, distMin = Infinity;
+  for(let ri=0; ri<GRID_ROWS; ri++){
+    const h = GRID_HUES[ri];
+    let dh = Math.abs(h - hsv.h);
+    if(dh>180) dh = 360-dh;
+    for(let ci=0; ci<GRID_COLS; ci++){
+      const {s,v} = calcolaColonnaGriglia(ci);
+      const ds = s-hsv.s, dv = v-hsv.v;
+      const dist = dh*dh*0.5 + ds*ds + dv*dv; // H pesato meno di S/V, resta comunque decisivo
+      if(dist<distMin){ distMin=dist; migliore={ri,ci}; }
+    }
+  }
+  return migliore;
+}
+
+// Applica al colore hex il colore di sostituzione nel pallino più vicino:
+// usata quando un colore arriva dal pannello Preciso e "si deposita" in
+// griglia. Ritorna le nuove sostituzioni (da salvare).
+export function depositaColoreInGriglia(hex){
+  const cella = trovaCellaPiuVicina(hex);
+  if(!cella) return leggiSostituzioniGriglia();
+  const attuali = leggiSostituzioniGriglia();
+  const next = {...attuali, [`${cella.ri}-${cella.ci}`]: hex};
+  scriviSostituzioniGriglia(next);
+  return next;
+}
+
+// Normalizza: prende tutta la lista di colori attualmente usati nell'app
+// (calendari/modelli/fasce) e deposita ognuno nel pallino più vicino,
+// sovrascrivendo le sostituzioni precedenti (si riparte puliti da questa
+// lista). Così i colori "storici" fuori griglia trovano casa una volta sola.
+export function normalizzaColoriInGriglia(coloriUsati){
+  const next = {};
+  (coloriUsati||[]).filter(Boolean).forEach(hex=>{
+    const cella = trovaCellaPiuVicina(hex);
+    if(cella) next[`${cella.ri}-${cella.ci}`] = hex;
+  });
+  scriviSostituzioniGriglia(next);
+  return next;
+}
+
+function GridColorPicker({T, value, onChange, coloriUsati=[]}){
+  const [overrides, setOverrides] = useState(()=>leggiSostituzioniGriglia());
+
+  useEffect(()=>{
+    // Rilegge le sostituzioni ad ogni apertura (potrebbero essere cambiate
+    // da un altro ColorPickerModal aperto altrove nell'app).
+    setOverrides(leggiSostituzioniGriglia());
+  }, []);
+
+  function handleNormalizza(){
+    const next = normalizzaColoriInGriglia(coloriUsati);
+    setOverrides(next);
+  }
+
+  const setUsati = new Set((coloriUsati||[]).filter(Boolean).map(c=>c.toUpperCase()));
+
+  const righe = GRID_HUES.map((h,ri)=>
+    Array.from({length:GRID_COLS}, (_,ci)=>{
+      const override = overrides[`${ri}-${ci}`];
+      if(override) return override;
+      const {s,v} = calcolaColonnaGriglia(ci);
       const rgb = hsvToRgb(h,s,v);
       return rgbToHex(rgb.r,rgb.g,rgb.b);
     })
   );
+
+  function luminosaPercepita(hex){
+    const rgb = hexToRgbObj(hex);
+    return (rgb.r*299 + rgb.g*587 + rgb.b*114) / 1000; // 0-255
+  }
+
+  const coloreCella = (hex)=>{
+    const selezionato = value?.toUpperCase()===hex.toUpperCase();
+    const usato = setUsati.has(hex.toUpperCase());
+    const chiaro = luminosaPercepita(hex) > 150;
+    const bordoBase = chiaro ? "#0f172a" : "#f8fafc"; // scuro su chiari, chiaro su scuri
+    return (
+      <button key={hex} type="button" onClick={()=>onChange(hex)}
+        title={hex}
+        style={{position:"relative",aspectRatio:"1",borderRadius:"50%",background:hex,cursor:"pointer",padding:0,
+          minWidth:24,minHeight:24,
+          border:selezionato?`2.5px solid ${T.text}`:`1px solid ${bordoBase}`,
+          outline:selezionato?`2px solid ${T.surface}`:"none",outlineOffset:selezionato?1:0,
+          boxShadow:usato?`0 0 0 2px ${bordoBase}`:"none"}}/>
+    );
+  };
+
   return (
-    <div style={{maxHeight:340,overflowY:"auto",paddingRight:2}}>
-      {righe.map((riga,ri)=>(
-        <div key={ri} style={{display:"grid",gridTemplateColumns:`repeat(${GRID_COLS},1fr)`,gap:6,marginBottom:6}}>
-          {riga.map(hex=>coloreCella(hex))}
-        </div>
-      ))}
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+        <div style={{fontSize:10,color:T.sub}}>{GRID_ROWS} tonalità × {GRID_COLS} sfumature</div>
+        <button type="button" onClick={handleNormalizza}
+          title="Porta tutti i colori usati nei pallini più vicini della griglia"
+          style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
+            padding:"5px 10px",color:T.text,fontSize:11,fontWeight:700,cursor:"pointer"}}>
+          Normalizza
+        </button>
+      </div>
+      <div style={{maxHeight:300,overflowY:"auto",paddingRight:2}}>
+        {righe.map((riga,ri)=>(
+          <div key={ri} style={{display:"grid",gridTemplateColumns:`repeat(${GRID_COLS},1fr)`,gap:5,marginBottom:5}}>
+            {riga.map(hex=>coloreCella(hex))}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -2065,7 +2190,7 @@ export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, tit
           </>
         ):(
           <div data-hex-picker>
-            <GridColorPicker T={T} value={previewColor} onChange={setPreviewColor}/>
+            <GridColorPicker T={T} value={previewColor} onChange={setPreviewColor} coloriUsati={coloriUsati||[]}/>
           </div>
         )}
 
@@ -2075,7 +2200,14 @@ export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, tit
               color:T.text,padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:13}}>
             Annulla
           </button>
-          <button onClick={()=>{onPick(previewColor);onClose();}}
+          <button onClick={()=>{
+              // Se il colore è stato scelto/affinato nel pannello Preciso, lo
+              // depositiamo anche nel pallino più vicino della Griglia: così
+              // la prossima volta che si apre Griglia questo colore ha già
+              // una casa precisa, invece di dover essere ricercato a mano.
+              if(modalitaPicker==='preciso'){ depositaColoreInGriglia(previewColor); }
+              onPick(previewColor);onClose();
+            }}
             style={{flex:1,background:previewColor,border:"none",borderRadius:10,
               color:getContrastTextColor(previewColor),padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:13}}>
             OK
