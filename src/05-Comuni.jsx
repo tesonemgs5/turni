@@ -1919,7 +1919,7 @@ export function HexColorPicker({T, value, onChange}){
 // centrare un punto esatto: basta toccare la cella.
 const GRID_ROWS = 30; // 30 tonalità, passo 12°
 const GRID_HUES = Array.from({length:GRID_ROWS}, (_,i)=>Math.round(i*360/GRID_ROWS));
-const GRID_COLS = 12;
+const GRID_COLS = 11;
 function calcolaColonnaGriglia(col){
   // colonna 0 = pastello chiarissimo (s bassa, v alta), colonna finale =
   // colore pieno e saturo (s alta, v resta alta): stessa luminosità per
