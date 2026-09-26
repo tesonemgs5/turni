@@ -1927,6 +1927,7 @@ export function HexColorPicker({T, value, onChange}){
 const GRID_PALETTE = [
   ["#F5F5F5","#D9D9D9","#BFBFBF","#A3A3A3","#878787","#6E6E6E","#525252","#363636","#1C1C1C","#000000"], // Neutri
   ["#FFEBEB","#FBCDCD","#F6B0B0","#F29595","#EE7A7A","#EA6060","#E64646","#E12E2E","#DD1717","#D90000"], // Rosso
+  ["#FFEBEB","#FFD1D1","#FFB6B6","#FF9C9C","#FF8282","#FF6868","#FF4E4E","#FF3434","#FF1A1A","#FF0000"], // Rosso assoluto
   ["#FFEFEB","#FBD6CD","#F6BEB0","#F2A795","#EE917A","#EA7B60","#E66646","#E1522E","#DD3E17","#D92B00"], // Rosso-arancio
   ["#FFF3EB","#FBDFCD","#F6CCB0","#F2BA95","#EEA87A","#EA9760","#E68646","#E1762E","#DD6617","#D95700"], // Arancio
   ["#FFF7EB","#FBE8CD","#F6DAB0","#F2CD95","#EEBF7A","#EAB260","#E6A646","#E19A2E","#DD8E17","#D98200"], // Arancio-ocra
