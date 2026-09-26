@@ -1915,11 +1915,15 @@ export function HexColorPicker({T, value, onChange}){
 // cromatica, passo 18°), e scorre in 10 COLONNE da chiaro/pastello a
 // sinistra fino a colore pieno/saturo a destra, a luminosità alta e
 // costante. Il tocco su un pallino intero è più preciso col dito rispetto
-// GRIGLIA STATICA E FISSA: stessa tavolozza approvata (30 tonalità + riga
-// neutri, 10 colonne), copiata a valori esatti invece che ricalcolata con
-// HSV — così l'ordine e i colori non possono più "spostarsi" da soli.
-// Riga 0 = Neutri (bianco->nero), righe 1-30 = tonalità in ordine di ruota
+// GRIGLIA STATICA E FISSA: tavolozza approvata (31 tonalità + riga neutri,
+// 10 colonne), copiata a valori esatti invece che ricalcolata con HSV — così
+// l'ordine e i colori non possono più "spostarsi" da soli.
+// Riga 0 = Neutri (bianco->nero), righe 1-31 = tonalità in ordine di ruota
 // cromatica (rosso, arancio, giallo, verde, ciano, blu, viola, magenta, rosa).
+// Note sulle correzioni rispetto alla sequenza matematica pura a passo 12°:
+// - "Giallo-oro" (hue 54°) inserita tra Ocra e Giallo per coprire #FFEB3C.
+// - "Rosa" spostata da hue 348° a 344° e "Rosa-magenta" da 336° a 334°, per
+//   allontanare Rosa dal Rosso (hue 0°/360°): erano troppo simili a fine giro.
 const GRID_PALETTE = [
   ["#F5F5F5","#D9D9D9","#BFBFBF","#A3A3A3","#878787","#6E6E6E","#525252","#363636","#1C1C1C","#000000"], // Neutri
   ["#FFEBEB","#FBCDCD","#F6B0B0","#F29595","#EE7A7A","#EA6060","#E64646","#E12E2E","#DD1717","#D90000"], // Rosso
@@ -1927,6 +1931,7 @@ const GRID_PALETTE = [
   ["#FFF3EB","#FBDFCD","#F6CCB0","#F2BA95","#EEA87A","#EA9760","#E68646","#E1762E","#DD6617","#D95700"], // Arancio
   ["#FFF7EB","#FBE8CD","#F6DAB0","#F2CD95","#EEBF7A","#EAB260","#E6A646","#E19A2E","#DD8E17","#D98200"], // Arancio-ocra
   ["#FFFBEB","#FBF2CD","#F6E8B0","#F2E095","#EED77A","#EACE60","#E6C646","#E1BD2E","#DDB517","#D9AD00"], // Ocra
+  ["#FFFDEB","#FBF6CD","#F6EFB0","#F2E995","#EEE27A","#EADC60","#E6D646","#E1CF2E","#DDC917","#D9C300"], // Giallo-oro
   ["#FFFFEB","#FBFBCD","#F6F6B0","#F2F295","#EEEE7A","#EAEA60","#E6E646","#E1E12E","#DDDD17","#D9D900"], // Giallo
   ["#FBFFEB","#F2FBCD","#E8F6B0","#E0F295","#D7EE7A","#CEEA60","#C6E646","#BDE12E","#B5DD17","#ADD900"], // Giallo-verde
   ["#F7FFEB","#E8FBCD","#DAF6B0","#CDF295","#BFEE7A","#B2EA60","#A6E646","#9AE12E","#8EDD17","#82D900"], // Verde-lime
@@ -1950,8 +1955,8 @@ const GRID_PALETTE = [
   ["#FFEBFF","#FBCDFB","#F6B0F6","#F295F2","#EE7AEE","#EA60EA","#E646E6","#E12EE1","#DD17DD","#D900D9"], // Viola-magenta
   ["#FFEBFB","#FBCDF2","#F6B0E8","#F295E0","#EE7AD7","#EA60CE","#E646C6","#E12EBD","#DD17B5","#D900AD"], // Magenta
   ["#FFEBF7","#FBCDE8","#F6B0DA","#F295CD","#EE7ABF","#EA60B2","#E646A6","#E12E9A","#DD178E","#D90082"], // Fucsia
-  ["#FFEBF3","#FBCDDF","#F6B0CC","#F295BA","#EE7AA8","#EA6097","#E64686","#E12E76","#DD1766","#D90057"], // Rosa-magenta
-  ["#FFEBEF","#FBCDD6","#F6B0BE","#F295A7","#EE7A91","#EA607B","#E64666","#E12E52","#DD173E","#D9002B"], // Rosa
+  ["#FFEBF3","#FBCDE1","#F6B0CF","#F295BD","#EE7AAC","#EA609B","#E6468B","#E12E7C","#DD176D","#D9005E"], // Rosa-magenta
+  ["#FFEBF0","#FBCDD9","#F6B0C3","#F295AE","#EE7A99","#EA6084","#E64671","#E12E5E","#DD174C","#D9003A"], // Rosa
 ];
 const GRID_COLS = GRID_PALETTE[0].length;
 
