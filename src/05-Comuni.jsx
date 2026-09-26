@@ -2054,16 +2054,15 @@ function GridColorPicker({T, value, onChange, coloriUsati=[]}){
   const coloreCella = (hex)=>{
     const selezionato = value?.toUpperCase()===hex.toUpperCase();
     const usato = setUsati.has(hex.toUpperCase());
-    const chiaro = luminosaPercepita(hex) > 150;
-    const bordoBase = chiaro ? "#0f172a" : "#f8fafc"; // scuro su chiari, chiaro su scuri
+    const bianco = hex.toUpperCase()==="#FFFFFF";
     return (
       <button key={hex} type="button" onClick={()=>onChange(hex)}
         title={hex}
         style={{position:"relative",aspectRatio:"1",borderRadius:"50%",background:hex,cursor:"pointer",padding:0,
           minWidth:24,minHeight:24,
-          border:selezionato?`2.5px solid ${T.text}`:`1px solid ${bordoBase}`,
+          border:selezionato?`2.5px solid ${T.text}`:(bianco?"1px solid #d1d5db":"none"),
           outline:selezionato?`2px solid ${T.surface}`:"none",outlineOffset:selezionato?1:0,
-          boxShadow:usato?`0 0 0 2px ${bordoBase}`:"none"}}/>
+          boxShadow:usato?`0 0 0 2px rgba(15,23,42,0.35)`:"none"}}/>
     );
   };
 
