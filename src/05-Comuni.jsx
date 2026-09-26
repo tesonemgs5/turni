@@ -1915,40 +1915,50 @@ export function HexColorPicker({T, value, onChange}){
 // cromatica, passo 18°), e scorre in 10 COLONNE da chiaro/pastello a
 // sinistra fino a colore pieno/saturo a destra, a luminosità alta e
 // costante. Il tocco su un pallino intero è più preciso col dito rispetto
-// al gradiente continuo del riquadro 2D sopra, perché non richiede di
-// centrare un punto esatto: basta toccare la cella.
-const GRID_ROWS = 30; // 30 tonalità, passo 12°
-// Le tonalità partono da 180° (ciano) invece che da 0° (rosso): così il
-// rosso, che altrimenti finirebbe spezzato tra la prima e l'ultima riga
-// (0° e 348° sono quasi lo stesso colore), cade come UNICA riga piena a
-// centro griglia. Risultato: la ruota cromatica è la stessa, cambia solo
-// il punto in cui viene "tagliata" per diventare una lista verticale.
-const GRID_HUE_START = 180;
-const GRID_HUES = Array.from({length:GRID_ROWS}, (_,i)=>(GRID_HUE_START + Math.round(i*360/GRID_ROWS))%360);
-const GRID_COLS = 12;
-function calcolaColonnaGriglia(col){
-  // colonna 0 = pastello chiarissimo (s bassa, v alta), colonna finale =
-  // colore pieno e saturo (s alta, v resta alta): stessa luminosità per
-  // tutta la riga, solo la saturazione cresce da sinistra a destra.
-  const k = col/(GRID_COLS-1); // 0..1
-  return { s: 8+k*92, v: 100-k*15 };
-}
-// Riga dei grigi (s=0): da grigio chiaro a nero. La prima colonna (bianco
-// puro, identico su ogni riga) viene omessa qui: resta solo una scala di
-// grigi realmente distinguibile, sulle restanti GRID_COLS-1 celle allineate
-// a destra come le altre righe.
-const RIGA_GRIGI = Array.from({length:GRID_COLS-1}, (_,ci)=>{
-  const k = ci/(GRID_COLS-2); // 0..1
-  const v = Math.round(96 - k*96); // grigio molto chiaro -> nero
-  const rgb = hsvToRgb(0,0,v);
-  return rgbToHex(rgb.r,rgb.g,rgb.b);
-});
+// GRIGLIA STATICA E FISSA: stessa tavolozza approvata (30 tonalità + riga
+// neutri, 10 colonne), copiata a valori esatti invece che ricalcolata con
+// HSV — così l'ordine e i colori non possono più "spostarsi" da soli.
+// Riga 0 = Neutri (bianco->nero), righe 1-30 = tonalità in ordine di ruota
+// cromatica (rosso, arancio, giallo, verde, ciano, blu, viola, magenta, rosa).
+const GRID_PALETTE = [
+  ["#F5F5F5","#D9D9D9","#BFBFBF","#A3A3A3","#878787","#6E6E6E","#525252","#363636","#1C1C1C","#000000"], // Neutri
+  ["#FFEBEB","#FBCDCD","#F6B0B0","#F29595","#EE7A7A","#EA6060","#E64646","#E12E2E","#DD1717","#D90000"], // Rosso
+  ["#FFEFEB","#FBD6CD","#F6BEB0","#F2A795","#EE917A","#EA7B60","#E66646","#E1522E","#DD3E17","#D92B00"], // Rosso-arancio
+  ["#FFF3EB","#FBDFCD","#F6CCB0","#F2BA95","#EEA87A","#EA9760","#E68646","#E1762E","#DD6617","#D95700"], // Arancio
+  ["#FFF7EB","#FBE8CD","#F6DAB0","#F2CD95","#EEBF7A","#EAB260","#E6A646","#E19A2E","#DD8E17","#D98200"], // Arancio-ocra
+  ["#FFFBEB","#FBF2CD","#F6E8B0","#F2E095","#EED77A","#EACE60","#E6C646","#E1BD2E","#DDB517","#D9AD00"], // Ocra
+  ["#FFFFEB","#FBFBCD","#F6F6B0","#F2F295","#EEEE7A","#EAEA60","#E6E646","#E1E12E","#DDDD17","#D9D900"], // Giallo
+  ["#FBFFEB","#F2FBCD","#E8F6B0","#E0F295","#D7EE7A","#CEEA60","#C6E646","#BDE12E","#B5DD17","#ADD900"], // Giallo-verde
+  ["#F7FFEB","#E8FBCD","#DAF6B0","#CDF295","#BFEE7A","#B2EA60","#A6E646","#9AE12E","#8EDD17","#82D900"], // Verde-lime
+  ["#F3FFEB","#DFFBCD","#CCF6B0","#BAF295","#A8EE7A","#97EA60","#86E646","#76E12E","#66DD17","#57D900"], // Lime
+  ["#EFFFEB","#D6FBCD","#BEF6B0","#A7F295","#91EE7A","#7BEA60","#66E646","#52E12E","#3EDD17","#2BD900"], // Verde-erba
+  ["#EBFFEB","#CDFBCD","#B0F6B0","#95F295","#7AEE7A","#60EA60","#46E646","#2EE12E","#17DD17","#00D900"], // Verde
+  ["#EBFFEF","#CDFBD6","#B0F6BE","#95F2A7","#7AEE91","#60EA7B","#46E666","#2EE152","#17DD3E","#00D92B"], // Verde-smeraldo
+  ["#EBFFF3","#CDFBDF","#B0F6CC","#95F2BA","#7AEEA8","#60EA97","#46E686","#2EE176","#17DD66","#00D957"], // Verde-menta
+  ["#EBFFF7","#CDFBE8","#B0F6DA","#95F2CD","#7AEEBF","#60EAB2","#46E6A6","#2EE19A","#17DD8E","#00D982"], // Verde-acqua
+  ["#EBFFFB","#CDFBF2","#B0F6E8","#95F2E0","#7AEED7","#60EACE","#46E6C6","#2EE1BD","#17DDB5","#00D9AD"], // Turchese
+  ["#EBFFFF","#CDFBFB","#B0F6F6","#95F2F2","#7AEEEE","#60EAEA","#46E6E6","#2EE1E1","#17DDDD","#00D9D9"], // Ciano
+  ["#EBFBFF","#CDF2FB","#B0E8F6","#95E0F2","#7AD7EE","#60CEEA","#46C6E6","#2EBDE1","#17B5DD","#00ADD9"], // Azzurro-ciano
+  ["#EBF7FF","#CDE8FB","#B0DAF6","#95CDF2","#7ABFEE","#60B2EA","#46A6E6","#2E9AE1","#178EDD","#0082D9"], // Azzurro
+  ["#EBF3FF","#CDDFFB","#B0CCF6","#95BAF2","#7AA8EE","#6097EA","#4686E6","#2E76E1","#1766DD","#0057D9"], // Azzurro-blu
+  ["#EBEFFF","#CDD6FB","#B0BEF6","#95A7F2","#7A91EE","#607BEA","#4666E6","#2E52E1","#173EDD","#002BD9"], // Blu-cielo
+  ["#EBEBFF","#CDCDFB","#B0B0F6","#9595F2","#7A7AEE","#6060EA","#4646E6","#2E2EE1","#1717DD","#0000D9"], // Blu
+  ["#EFEBFF","#D6CDFB","#BEB0F6","#A795F2","#917AEE","#7B60EA","#6646E6","#522EE1","#3E17DD","#2B00D9"], // Blu-indaco
+  ["#F3EBFF","#DFCDFB","#CCB0F6","#BA95F2","#A87AEE","#9760EA","#8646E6","#762EE1","#6617DD","#5700D9"], // Indaco
+  ["#F7EBFF","#E8CDFB","#DAB0F6","#CD95F2","#BF7AEE","#B260EA","#A646E6","#9A2EE1","#8E17DD","#8200D9"], // Blu-viola
+  ["#FBEBFF","#F2CDFB","#E8B0F6","#E095F2","#D77AEE","#CE60EA","#C646E6","#BD2EE1","#B517DD","#AD00D9"], // Viola
+  ["#FFEBFF","#FBCDFB","#F6B0F6","#F295F2","#EE7AEE","#EA60EA","#E646E6","#E12EE1","#DD17DD","#D900D9"], // Viola-magenta
+  ["#FFEBFB","#FBCDF2","#F6B0E8","#F295E0","#EE7AD7","#EA60CE","#E646C6","#E12EBD","#DD17B5","#D900AD"], // Magenta
+  ["#FFEBF7","#FBCDE8","#F6B0DA","#F295CD","#EE7ABF","#EA60B2","#E646A6","#E12E9A","#DD178E","#D90082"], // Fucsia
+  ["#FFEBF3","#FBCDDF","#F6B0CC","#F295BA","#EE7AA8","#EA6097","#E64686","#E12E76","#DD1766","#D90057"], // Rosa-magenta
+  ["#FFEBEF","#FBCDD6","#F6B0BE","#F295A7","#EE7A91","#EA607B","#E64666","#E12E52","#DD173E","#D9002B"], // Rosa
+];
+const GRID_COLS = GRID_PALETTE[0].length;
 
-// Le sostituzioni della griglia (pallino normalizzato -> colore reale che
-// rappresenta) sono PERSISTENTI e GLOBALI in localStorage, condivise da ogni
-// GridColorPicker dell'app: un colore scelto/importato dal pannello Preciso
-// "prende casa" in un pallino preciso e ci resta finché non si preme
-// Normalizza. Struttura salvata: { "rowIdx-colIdx": "#HEXCOLORE", ... }
+// NOTA: la funzione "Normalizza" (depositaColoreInGriglia / normalizzaColoriInGriglia)
+// resta nel file ma è DISATTIVATA a livello di interfaccia (vedi più sotto):
+// la griglia mostrata è sempre quella statica di GRID_PALETTE, senza sostituzioni.
+
 function leggiSostituzioniGriglia(){
   try{
     const raw = localStorage.getItem('gridColorOverrides');
@@ -1959,36 +1969,26 @@ function scriviSostituzioniGriglia(obj){
   try{ localStorage.setItem('gridColorOverrides', JSON.stringify(obj)); }catch(e){}
 }
 
-// Trova la cella (riga/colonna) della griglia matematica il cui colore è più
+// Trova la cella (riga/colonna) della griglia statica il cui colore è più
 // vicino a "hex", confrontando in spazio HSV (differenza circolare su H,
 // lineare su S e V). Usata sia per "porta un colore da Preciso a Griglia"
-// sia per la Normalizzazione dei colori già usati.
+// sia per la Normalizzazione dei colori già usati (funzione attualmente
+// disattivata in interfaccia, vedi GridColorPicker).
 function trovaCellaPiuVicina(hex){
   const rgb = hexToRgbObj(hex);
   const hsv = rgbToHsv(rgb.r, rgb.g, rgb.b);
   let migliore = null, distMin = Infinity;
-  // Riga dei grigi: stessa metrica ma s fissa a 0, confrontata sulle
-  // GRID_COLS-1 colonne di luminosità (colonna 0 bianco omessa). Va
-  // valutata insieme alle righe di tonalità così un colore quasi
-  // desaturato finisce davvero tra i grigi.
-  RIGA_GRIGI.forEach((_,ci)=>{
-    const k = ci/(GRID_COLS-2);
-    const v = 96-k*96;
-    const ds = 0-hsv.s, dv = v-hsv.v;
-    const dist = ds*ds + dv*dv;
-    if(dist<distMin){ distMin=dist; migliore={ri:"grigi",ci}; }
-  });
-  for(let ri=0; ri<GRID_ROWS; ri++){
-    const h = GRID_HUES[ri];
-    let dh = Math.abs(h - hsv.h);
-    if(dh>180) dh = 360-dh;
-    for(let ci=0; ci<GRID_COLS; ci++){
-      const {s,v} = calcolaColonnaGriglia(ci);
-      const ds = s-hsv.s, dv = v-hsv.v;
-      const dist = dh*dh*0.5 + ds*ds + dv*dv; // H pesato meno di S/V, resta comunque decisivo
+  GRID_PALETTE.forEach((riga,ri)=>{
+    riga.forEach((cellHex,ci)=>{
+      const crgb = hexToRgbObj(cellHex);
+      const chsv = rgbToHsv(crgb.r, crgb.g, crgb.b);
+      let dh = Math.abs(chsv.h - hsv.h);
+      if(dh>180) dh = 360-dh;
+      const ds = chsv.s-hsv.s, dv = chsv.v-hsv.v;
+      const dist = dh*dh*0.5 + ds*ds + dv*dv;
       if(dist<distMin){ distMin=dist; migliore={ri,ci}; }
-    }
-  }
+    });
+  });
   return migliore;
 }
 
@@ -2019,37 +2019,12 @@ export function normalizzaColoriInGriglia(coloriUsati){
 }
 
 function GridColorPicker({T, value, onChange, coloriUsati=[]}){
-  const [overrides, setOverrides] = useState(()=>leggiSostituzioniGriglia());
-
-  useEffect(()=>{
-    // Rilegge le sostituzioni ad ogni apertura (potrebbero essere cambiate
-    // da un altro ColorPickerModal aperto altrove nell'app).
-    setOverrides(leggiSostituzioniGriglia());
-  }, []);
-
-  function handleNormalizza(){
-    const next = normalizzaColoriInGriglia(coloriUsati);
-    setOverrides(next);
-  }
+  // NORMALIZZA DISATTIVATA: la griglia è sempre quella statica di
+  // GRID_PALETTE, senza sostituzioni salvate. Le funzioni sopra restano
+  // pronte per essere riattivate in futuro (bottone e stato rimossi qui).
+  const righe = GRID_PALETTE;
 
   const setUsati = new Set((coloriUsati||[]).filter(Boolean).map(c=>c.toUpperCase()));
-
-  const righeTonalita = GRID_HUES.map((h,ri)=>
-    Array.from({length:GRID_COLS}, (_,ci)=>{
-      const override = overrides[`${ri}-${ci}`];
-      if(override) return override;
-      const {s,v} = calcolaColonnaGriglia(ci);
-      const rgb = hsvToRgb(h,s,v);
-      return rgbToHex(rgb.r,rgb.g,rgb.b);
-    })
-  );
-  const rigaGrigi = RIGA_GRIGI.map((hex,ci)=> overrides[`grigi-${ci}`] || hex);
-  const righe = [[null, ...rigaGrigi], ...righeTonalita]; // null = cella vuota (colonna bianco omessa)
-
-  function luminosaPercepita(hex){
-    const rgb = hexToRgbObj(hex);
-    return (rgb.r*299 + rgb.g*587 + rgb.b*114) / 1000; // 0-255
-  }
 
   const coloreCella = (hex)=>{
     const selezionato = value?.toUpperCase()===hex.toUpperCase();
@@ -2069,13 +2044,7 @@ function GridColorPicker({T, value, onChange, coloriUsati=[]}){
   return (
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-        <div style={{fontSize:10,color:T.sub}}>{GRID_ROWS} tonalità + grigi × {GRID_COLS} sfumature</div>
-        <button type="button" onClick={handleNormalizza}
-          title="Porta tutti i colori usati nei pallini più vicini della griglia"
-          style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
-            padding:"5px 10px",color:T.text,fontSize:11,fontWeight:700,cursor:"pointer"}}>
-          Normalizza
-        </button>
+        <div style={{fontSize:10,color:T.sub}}>{GRID_PALETTE.length-1} tonalità + neutri × {GRID_COLS} sfumature</div>
       </div>
       <div style={{maxHeight:300,overflowY:"auto",paddingRight:2}}>
         {righe.map((riga,ri)=>(
