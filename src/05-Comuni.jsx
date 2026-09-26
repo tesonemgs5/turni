@@ -1962,8 +1962,11 @@ const GRID_PALETTE = [
 const GRID_COLS = GRID_PALETTE[0].length;
 
 // NOTA: la funzione "Normalizza" (depositaColoreInGriglia / normalizzaColoriInGriglia)
-// resta nel file ma è DISATTIVATA a livello di interfaccia (vedi più sotto):
-// la griglia mostrata è sempre quella statica di GRID_PALETTE, senza sostituzioni.
+// è ATTIVA: la griglia mostrata parte da GRID_PALETTE ma ogni cella può essere
+// sovrascritta da una sostituzione salvata in localStorage. Un colore scelto
+// col pannello Preciso si deposita nel pallino più vicino al momento della
+// conferma (OK); i colori già "usati" nell'app (coloriUsati) si depositano
+// automaticamente all'apertura del picker in modalità Griglia.
 
 function leggiSostituzioniGriglia(){
   try{
@@ -2025,10 +2028,29 @@ export function normalizzaColoriInGriglia(coloriUsati){
 }
 
 function GridColorPicker({T, value, onChange, coloriUsati=[]}){
-  // NORMALIZZA DISATTIVATA: la griglia è sempre quella statica di
-  // GRID_PALETTE, senza sostituzioni salvate. Le funzioni sopra restano
-  // pronte per essere riattivate in futuro (bottone e stato rimossi qui).
-  const righe = GRID_PALETTE;
+  // NORMALIZZA RIATTIVATA: la griglia parte dallo schema statico di
+  // GRID_PALETTE, ma ogni cella può essere sovrascritta da una sostituzione
+  // salvata (localStorage, chiave "gridColorOverrides"). Le sostituzioni
+  // vengono scritte da depositaColoreInGriglia (quando si conferma un
+  // colore scelto col pannello Preciso) e da normalizzaColoriInGriglia
+  // (chiamata una volta all'apertura del picker per "depositare" anche i
+  // colori già in uso nell'app, cioè quelli mostrati in "USATI").
+  const [sostituzioni, setSostituzioni] = useState(()=>leggiSostituzioniGriglia());
+
+  // Al primo render, deposita anche i colori già "usati" nell'app (quelli
+  // passati come coloriUsati) nei pallini più vicini, così sono subito
+  // visibili in griglia senza dover prima passare dal pannello Preciso.
+  useEffect(()=>{
+    if(coloriUsati && coloriUsati.length){
+      const next = normalizzaColoriInGriglia(coloriUsati);
+      setSostituzioni(prev=>({...prev, ...next}));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const righe = GRID_PALETTE.map((riga,ri)=>
+    riga.map((hexOriginale,ci)=> sostituzioni[`${ri}-${ci}`] || hexOriginale)
+  );
 
   const setUsati = new Set((coloriUsati||[]).filter(Boolean).map(c=>c.toUpperCase()));
 
