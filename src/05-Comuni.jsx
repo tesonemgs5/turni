@@ -1964,16 +1964,31 @@ function GridColorPicker({T, value, onChange, coloriUsati=[]}){
 
   const setUsati = new Set((coloriUsati||[]).filter(Boolean).map(c=>c.toUpperCase()));
 
-  const coloreCella = (hex)=>{
-    const selezionato = value?.toUpperCase()===hex.toUpperCase();
+  // Cella da evidenziare: quella esatta; se il colore corrente non è in
+  // griglia (es. colore vecchio), il pallino più vicino.
+  let cellaSel = null;
+  if(value){
+    let dMin = Infinity;
+    const v = hexToRgbObj(value);
+    righe.forEach((riga,ri)=>riga.forEach((h,ci)=>{
+      if(!h) return;
+      const c = hexToRgbObj(h);
+      const d = (c.r-v.r)**2 + (c.g-v.g)**2 + (c.b-v.b)**2;
+      if(d<dMin){ dMin=d; cellaSel=`${ri}-${ci}`; }
+    }));
+  }
+
+  const coloreCella = (hex, chiave)=>{
+    const selezionato = cellaSel===chiave;
     const usato = setUsati.has(hex.toUpperCase());
-    const bianco = hex.toUpperCase()==="#FFFFFF";
+    const c = hexToRgbObj(hex);
+    const bianco = c.r>=240 && c.g>=240 && c.b>=240;
     return (
       <button key={hex} type="button" onClick={()=>onChange(hex)}
         title={hex}
         style={{position:"relative",aspectRatio:"1",borderRadius:"50%",background:hex,cursor:"pointer",padding:0,
           minWidth:24,minHeight:24,
-          border:selezionato?`2.5px solid ${T.text}`:(bianco?"1px solid #d1d5db":"none"),
+          border:selezionato?"3px solid #000":(bianco?"1px solid #9ca3af":"none"),
           outline:selezionato?`2px solid ${T.surface}`:"none",outlineOffset:selezionato?1:0,
           boxShadow:usato?`0 0 0 2px rgba(15,23,42,0.35)`:"none"}}/>
     );
@@ -1987,7 +2002,7 @@ function GridColorPicker({T, value, onChange, coloriUsati=[]}){
       <div>
         {righe.map((riga,ri)=>(
           <div key={ri} style={{display:"grid",gridTemplateColumns:`repeat(${GRID_COLS},1fr)`,gap:5,marginBottom:5}}>
-            {riga.map((hex,ci)=> hex===null ? <div key={ci}/> : coloreCella(hex))}
+            {riga.map((hex,ci)=> hex===null ? <div key={ci}/> : coloreCella(hex, `${ri}-${ci}`))}
           </div>
         ))}
       </div>
