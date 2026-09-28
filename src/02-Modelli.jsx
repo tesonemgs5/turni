@@ -231,7 +231,7 @@ export default function VistaModelli({ C }){
                   color:modalitaSpostamento?"#fff":T.sub,
                   transition:"background 0.12s ease, border-color 0.12s ease"}}>↑↓</button>
               )}
-              {modelliTab==="turni"&&(
+              {(modelliTab==="turni"||modelliTab==="colori")&&(
               <button onClick={async()=>{
                   setStatoSalvaDisposizione("salvando");
                   try {
@@ -246,7 +246,7 @@ export default function VistaModelli({ C }){
                   setTimeout(()=>setStatoSalvaDisposizione("idle"), 2000);
                   setTimeout(()=>setBanner(null), 5000);
                 }}
-                title="Salva la disposizione attuale dei modelli come backup"
+                title="Salva modelli, colori e fasce come backup (Normalizza riporta a questi colori)"
                 style={{background:statoSalvaDisposizione==="ok"?"#10b981":statoSalvaDisposizione==="errore"?"#ef4444":T.s2,
                   border:`1.5px solid ${statoSalvaDisposizione==="ok"?"#10b981":statoSalvaDisposizione==="errore"?"#ef4444":T.border}`,
                   borderRadius:8, padding:"6px 10px",fontSize:16,fontWeight:700,cursor:"pointer",
@@ -1058,11 +1058,11 @@ export default function VistaModelli({ C }){
               return;
             }
             const elenco = analisi.modelli.map(m=>`• ${m.titolo||"Senza nome"}`).join("\n");
-            if(!confirm(`Trovati ${analisi.totale} modelli con un colore "congelato" da riportare all'automatico:\n\n${elenco}\n\nProcedere?`)) return;
+            if(!confirm(`Trovati ${analisi.totale} modelli da riallineare al colore memorizzato (o automatico della fascia):\n\n${elenco}\n\nProcedere?`)) return;
             setBanner("⏳ Normalizzazione colori in corso...");
             try {
               const esito = await applicaNormalizzazioneColori();
-              setBanner(`✅ ${esito.totale} modelli riportati al colore automatico della loro fascia.`);
+              setBanner(`✅ ${esito.totale} modelli riportati al colore memorizzato. Eventi già inseriti aggiornati.`);
             } catch(e){
               segnalaErrore(e, "Normalizzazione colori modelli");
               setBanner("❌ Errore durante la normalizzazione. Controlla il Log.");
