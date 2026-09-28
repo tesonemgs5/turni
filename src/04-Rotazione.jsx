@@ -64,8 +64,8 @@ export const COLORE_H24 = "#64748b";
 // from/to in MINUTI dalla mezzanotte (non stringhe "HH:MM").
 export const FASCE_AUTOMATICHE_DEFAULT = [
   { key:"mattina",     label:"PRIMO",    color:"#FFEB3C", from:360,  to:705  }, // 06:00–11:45
-  { key:"pomeriggio",  label:"SECONDO",  color:"#FAC02E", from:720,  to:990  }, // 12:00–16:30
-  { key:"terzo_turno", label:"3° TURNO", color:"#90CAF8", from:991,  to:1080 }, // 16:31–18:00
+  { key:"pomeriggio",  label:"SECONDO",  color:"#FAC02E", from:706,  to:960  }, // 11:46–16:00
+  { key:"terzo_turno", label:"3° TURNO", color:"#90CAF8", from:961,  to:1080 }, // 16:01–18:00
   { key:"notte",       label:"NOTTE",    color:"#1E40AF", from:1080, to:359  }, // 18:00–05:59 (attraversa la mezzanotte)
 ];
 
