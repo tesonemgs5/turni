@@ -809,13 +809,13 @@ export default function VistaModelli({ C }){
                               (m.tempo!=="h24" && m.inizio && colByTime(m.inizio)===hex)
                             );
                             const selezionato = m.coloreCustom===hex || matchAuto;
-                            const coloreAttuale = m.coloreCustom||colByTime(m.inizio);
+                            const coloreAttuale = m.coloreCustom||(m.tempo==="h24"?COLORE_H24:colByTime(m.inizio));
                             return (
                               <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                                 <div onClick={()=>{
                                   if(selezionato){ saveModello({...m, coloreCustom: null}); return; }
                                   const eUnaFascia = fasceAutomatiche.some(f=>f.color===hex) || hex===COLORE_H24;
-                                  saveModello({...m, coloreCustom: eUnaFascia ? null : hex});
+                                  saveModello({...m, coloreCustom: (eUnaFascia && m.tempo!=="h24") ? null : hex});
                                 }} style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}>
                                   <div style={{width:20,height:20,borderRadius:6,marginRight:12,flexShrink:0,
                                     border:`2px solid ${selezionato?hex:T.border}`,
