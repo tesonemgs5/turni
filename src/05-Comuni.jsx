@@ -1915,7 +1915,8 @@ export function HexColorPicker({T, value, onChange}){
 // lum 95); colonne 6-10: sat 100 -> 90, lum 92 -> 67 (mai troppo scuro).
 // Le righe con nome semplice (Rosso, Arancio, Giallo, Blu...) sono i colori
 // "assoluti"; quelle composte (Rosso-Vermiglio...) sono di transizione.
-// Riga 0 = Neutri (chiaro->scuro).
+// Riga 0 = Neutri (chiaro->scuro). Ultime 2 righe = Marrone (curva propria:
+// sat/lum più basse, perché il marrone è un arancio scuro).
 const GRID_PALETTE = [
   ["#F5F5F5","#D9D9D9","#BFBFBF","#A3A3A3","#878787","#6E6E6E","#525252","#363636","#1C1C1C","#0F0F0F"], // Neutri
   ["#F28585","#F26D6D","#F25555","#F23D3D","#F22424","#EB0000","#E00000","#D10A0A","#BD1313","#AB1111"], // Rosso (0°)
@@ -1949,6 +1950,8 @@ const GRID_PALETTE = [
   ["#F285D7","#F26DD1","#F255CB","#F23DC5","#F224BF","#EB00B0","#E000A8","#D10A9F","#BD1392","#AB1184"], // Magenta-Rosa (315°)
   ["#F285C5","#F26DBB","#F255B1","#F23DA7","#F2249C","#EB0089","#E00083","#D10A7E","#BD1376","#AB116B"], // Fucsia (325°)
   ["#F285B3","#F26DA5","#F25596","#F23D88","#F2247A","#EB0062","#E0005D","#D10A5D","#BD135A","#AB1151"], // Rosa (335°)
+  ["#D9AC8D","#C7936D","#B57B51","#A36539","#945629","#85481D","#783F16","#6B3610","#5E2E0B","#522708"], // Marrone (25°)
+  ["#D9BD8D","#C7A66D","#B59151","#A37C39","#946D29","#855F1D","#785416","#6B4A10","#5E400B","#523708"], // Marrone-Ocra (38°)
 ];
 const GRID_COLS = GRID_PALETTE[0].length;
 
