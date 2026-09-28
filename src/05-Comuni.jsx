@@ -1984,7 +1984,7 @@ function GridColorPicker({T, value, onChange, coloriUsati=[]}){
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
         <div style={{fontSize:10,color:T.sub}}>{GRID_PALETTE.length-1} tonalità + neutri × {GRID_COLS} sfumature</div>
       </div>
-      <div style={{maxHeight:300,overflowY:"auto",paddingRight:2}}>
+      <div>
         {righe.map((riga,ri)=>(
           <div key={ri} style={{display:"grid",gridTemplateColumns:`repeat(${GRID_COLS},1fr)`,gap:5,marginBottom:5}}>
             {riga.map((hex,ci)=> hex===null ? <div key={ci}/> : coloreCella(hex))}
@@ -2060,22 +2060,25 @@ export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, tit
   useEffect(()=>()=>stopDrag(), []);
 
   return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:900,
-      display:pos?"block":"flex",alignItems:"center",justifyContent:"center",padding:16}}
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:900,boxSizing:"border-box",
+      display:pos?"block":"flex",alignItems:"center",justifyContent:"center",
+      padding:"16px 16px calc(84px + env(safe-area-inset-bottom, 0px))"}}
       onClick={onClose}>
       <div ref={boxRef}
         style={{background:T.surface,borderRadius:16,width:"100%",maxWidth:340,
-          maxHeight:"88vh",overflowY:"auto",padding:18,
+          maxHeight:"calc(100vh - 100px - env(safe-area-inset-bottom, 0px))",display:"flex",flexDirection:"column",
+          overflow:"hidden",padding:14,
           ...(pos?{position:"fixed",left:pos.left,top:pos.top,margin:0}:{})}}
         onClick={e=>e.stopPropagation()}>
         <div onMouseDown={startDrag} onTouchStart={startDrag}
-          style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,cursor:"grab",userSelect:"none"}}>
+          style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,cursor:"grab",userSelect:"none",flexShrink:0}}>
           <div style={{width:26,height:26,borderRadius:"50%",background:previewColor,border:`2px solid ${T.border}`,flexShrink:0}}/>
           <div style={{fontSize:16,fontWeight:900,color:T.text,flex:1}}>{title}</div>
           <button onClick={onClose}
             style={{background:"none",border:"none",fontSize:18,color:T.sub,cursor:"pointer",padding:4,lineHeight:1}}>✕</button>
         </div>
 
+        <div style={{flex:1,minHeight:0,overflowY:"auto",paddingRight:2}}>
         {coloriUsati&&coloriUsati.length>0&&(
           <>
             <div style={{fontSize:12,color:T.sub,fontWeight:700,marginBottom:8}}>USATI</div>
@@ -2135,17 +2138,19 @@ export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, tit
           </div>
         )}
 
-        <div style={{display:"flex",gap:8,marginTop:16}}>
+        </div>
+
+        <div style={{display:"flex",gap:8,marginTop:10,flexShrink:0}}>
           <button onClick={onClose}
             style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
-              color:T.text,padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:13}}>
+              color:T.text,padding:"8px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
             Annulla
           </button>
           <button onClick={()=>{
               onPick(previewColor);onClose();
             }}
             style={{flex:1,background:previewColor,border:"none",borderRadius:10,
-              color:getContrastTextColor(previewColor),padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:13}}>
+              color:getContrastTextColor(previewColor),padding:"8px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
             OK
           </button>
         </div>
