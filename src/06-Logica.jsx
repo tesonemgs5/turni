@@ -3742,6 +3742,47 @@ const importsRecenti = useMemo(()=>{
   // ed eventi collegati, effetti collaterali non voluti qui): aggiorna
   // solo colore/colore_custom, subito in locale, poi in coda offline-friendly
   // via scriviConBackup — stesso meccanismo di salvaModifichePosizioni.
+  // ── Propagazione del COLORE di un modello agli eventi già in calendario.
+  // Stessa logica che saveModelloInterno applica a nome/orario/colore quando
+  // si salva un modello dal form, ma riusabile dai percorsi che cambiano il
+  // colore SENZA passare dal form (cambio hex in Modelli->Colori, ricolorazione
+  // per fascia, normalizzazione). Riceve una mappa { modelloId: nuovoColore }.
+  // Aggiorna store locale + localStorage subito, poi Supabase (events) e Sheets
+  // in background. Ritorna il nuovo events da usare per sync/backup.
+  async function propagaColoreModelliAgliEventi(mappaColori){
+    const ids = Object.keys(mappaColori||{});
+    if(ids.length===0 || !userId) return null;
+    const nuovoStore = JSON.parse(JSON.stringify(store));
+    Object.keys(nuovoStore.events||{}).forEach(dk=>{
+      Object.keys(nuovoStore.events[dk]||{}).forEach(cid=>{
+        nuovoStore.events[dk][cid] = (nuovoStore.events[dk][cid]||[]).map(e=>
+          (e.modelloId && mappaColori[e.modelloId]) ? {...e, color:mappaColori[e.modelloId]} : e
+        );
+      });
+    });
+    saveToLocalStorage(nuovoStore.events, nuovoStore.calendars, modelli);
+    setStore(nuovoStore);
+    const ts = new Date().toISOString();
+    (async()=>{
+      // Un update per colore distinto (non per modello) per ridurre le chiamate.
+      const perColore = {};
+      ids.forEach(id=>{ (perColore[mappaColori[id]] = perColore[mappaColori[id]]||[]).push(id); });
+      for(const [colore, idsModelli] of Object.entries(perColore)){
+        for(const idMod of idsModelli){
+          const ris = await scriviConBackup({
+            tipo:"update", table:"events", payload:{ color: colore },
+            matchObj:{ modello_id:idMod, user_id:userId },
+            contesto:"Cambio colore modello — propagazione agli eventi già in calendario", ts,
+            eventsPerSheets: nuovoStore.events, calendarsPerSheets: nuovoStore.calendars, modelliPerSheets: modelli,
+            opzioni:{soloLog:true},
+          });
+          if(ris?.errore) segnalaErroreDb(ris.errore, "Propagazione colore agli eventi");
+        }
+      }
+    })();
+    return nuovoStore.events;
+  }
+
   async function ricoloraModelliPerFasciaOraria(){
     let prevSnapshot = null, modelliDaSalvare = [];
     setModelli(prev=>{
@@ -3765,6 +3806,10 @@ const importsRecenti = useMemo(()=>{
         opzioni: { soloLog: true },
       })
     ));
+    // Gli eventi già inseriti seguono il nuovo colore del modello.
+    const mappaColori = {};
+    modelliDaSalvare.forEach(m=>{ mappaColori[m.id] = m.colore; });
+    await propagaColoreModelliAgliEventi(mappaColori);
     return { totale: modelliDaSalvare.length };
   }
 
@@ -4243,8 +4288,12 @@ const importsRecenti = useMemo(()=>{
         eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelliAggiornati,
       });
     }
-    saveToLocalStorage(store.events, store.calendars, modelliAggiornati);
-    syncSeAttivo(store.events, store.calendars, modelliAggiornati);
+    // Gli eventi già inseriti passano al nuovo colore (fascia/H24) del modello.
+    const mappaColori = {};
+    candidati.forEach(c=>{ mappaColori[c.id] = c.coloreNuovo; });
+    const eventiAggiornati = await propagaColoreModelliAgliEventi(mappaColori);
+    saveToLocalStorage(eventiAggiornati||store.events, store.calendars, modelliAggiornati);
+    syncSeAttivo(eventiAggiornati||store.events, store.calendars, modelliAggiornati);
     return { ok:true, totale: candidati.length };
   }
 
@@ -4452,7 +4501,11 @@ const importsRecenti = useMemo(()=>{
       setStore(s=>({...s, fasceAutomatiche:nuoveFasce}));
       saveSettings({fasce_automatiche:nuoveFasce});
     }
-    syncSeAttivo(store.events, store.calendars, modelli);
+    // Gli eventi già inseriti dei modelli con questo colore seguono il nuovo hex.
+    const mappaColori = {};
+    daAggiornare.forEach(m=>{ mappaColori[m.id] = newHex; });
+    const eventiAggiornati = await propagaColoreModelliAgliEventi(mappaColori);
+    syncSeAttivo(eventiAggiornati||store.events, store.calendars, modelliAggiornati||modelli);
   }
 
   async function saveRotazione(data){
