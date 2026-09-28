@@ -4317,9 +4317,16 @@ const importsRecenti = useMemo(()=>{
   // sovrascrive pulito il backup precedente, senza accumulare storico.
   async function salvaDisposizioneModelli(){
     if(!userId) return { ok:false, errore:"Utente non autenticato" };
+    const adesso = new Date().toISOString();
+    // Ordine + COLORI di ogni modello (colore effettivo e colore scelto a mano).
     const righe = modelli.map(m=>({
-      user_id:userId, modello_id:m.id, sort_order:m.sortOrder||0, salvato_il:new Date().toISOString()
+      user_id:userId, modello_id:m.id, sort_order:m.sortOrder||0,
+      colore:m.colore||null, colore_custom:m.coloreCustom||null,
+      salvato_il:adesso
     }));
+    // Fasce automatiche (nome, hex, orari) e colori extra (hex, nome, ordine).
+    const fasce = (store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT).map(f=>({...f}));
+    const coloriExtraSnap = (coloriExtra||[]).map(c=>({...c}));
     try{
       const { error } = await supabase.from("modelli_sortorder_backup")
         .upsert(righe, { onConflict:"user_id,modello_id" });
@@ -4327,13 +4334,21 @@ const importsRecenti = useMemo(()=>{
         segnalaErroreDb(error, "Salvataggio disposizione modelli");
         return { ok:false, errore:error.message };
       }
+      const { error:errImp } = await supabase.from("impostazioni_backup")
+        .upsert({ user_id:userId, fasce_automatiche:fasce, colori_extra:coloriExtraSnap, salvato_il:adesso },
+                { onConflict:"user_id" });
+      if(errImp){
+        segnalaErroreDb(errImp, "Salvataggio fasce/colori nel backup disposizione");
+        return { ok:false, errore:errImp.message };
+      }
       // Snapshot anche in locale: un ripristino deve poter funzionare anche
       // offline, senza dipendere dalla raggiungibilità di Supabase in quel
       // momento (stesso principio usato per store.events/calendars).
       try{
         localStorage.setItem("disposizioneModelliBackup", JSON.stringify({
-          userId, salvato_il:new Date().toISOString(),
-          voci: modelli.map(m=>({modello_id:m.id, sort_order:m.sortOrder||0}))
+          userId, salvato_il:adesso,
+          voci: modelli.map(m=>({modello_id:m.id, sort_order:m.sortOrder||0, colore:m.colore||null, colore_custom:m.coloreCustom||null})),
+          fasce, coloriExtra: coloriExtraSnap
         }));
       }catch{}
       annullaTimerSalvaDisposizione();
@@ -4344,19 +4359,24 @@ const importsRecenti = useMemo(()=>{
     }
   }
 
-  // ── Ripristina l'ultimo snapshot salvato: rilegge le posizioni salvate e
-  // le riscrive sui modelli CORRENTI. Un modello creato dopo l'ultimo
-  // salvataggio (non presente nello snapshot) mantiene semplicemente il suo
-  // sortOrder attuale; un modello nello snapshot ma nel frattempo eliminato
-  // viene ignorato senza errori.
+  // ── Ripristina l'ultimo snapshot salvato: rilegge posizioni E colori dei
+  // modelli, le fasce automatiche e i colori extra, e li riscrive sui dati
+  // CORRENTI. Un modello creato dopo l'ultimo salvataggio (non presente nello
+  // snapshot) resta com'è; uno nello snapshot ma nel frattempo eliminato viene
+  // ignorato. Gli eventi già in calendario seguono il colore ripristinato.
   async function ripristinaDisposizioneModelli(){
     if(!userId) return { ok:false, errore:"Utente non autenticato" };
-    let vociBackup = null;
+    let vociBackup = null, fasceBackup = null, coloriExtraBackup = null;
     try{
       const { data, error } = await supabase.from("modelli_sortorder_backup")
-        .select("modello_id, sort_order").eq("user_id", userId);
+        .select("modello_id, sort_order, colore, colore_custom").eq("user_id", userId);
       if(error) throw error;
-      if(data && data.length>0) vociBackup = data.map(r=>({modello_id:r.modello_id, sort_order:r.sort_order}));
+      if(data && data.length>0) vociBackup = data.map(r=>({
+        modello_id:r.modello_id, sort_order:r.sort_order, colore:r.colore, colore_custom:r.colore_custom
+      }));
+      const { data:imp } = await supabase.from("impostazioni_backup")
+        .select("fasce_automatiche, colori_extra").eq("user_id", userId).maybeSingle();
+      if(imp){ fasceBackup = imp.fasce_automatiche||null; coloriExtraBackup = imp.colori_extra||null; }
     }catch(e){
       // Supabase irraggiungibile: fallback sull'ultimo snapshot locale,
       // così il ripristino resta possibile anche offline.
@@ -4364,23 +4384,72 @@ const importsRecenti = useMemo(()=>{
         const raw = localStorage.getItem("disposizioneModelliBackup");
         if(raw){
           const parsed = JSON.parse(raw);
-          if(parsed?.userId===userId && Array.isArray(parsed.voci)) vociBackup = parsed.voci;
+          if(parsed?.userId===userId && Array.isArray(parsed.voci)){
+            vociBackup = parsed.voci;
+            fasceBackup = parsed.fasce||null;
+            coloriExtraBackup = parsed.coloriExtra||null;
+          }
         }
       }catch{}
     }
     if(!vociBackup || vociBackup.length===0){
       return { ok:false, errore:"Nessuna disposizione salvata trovata" };
     }
-    const sortOrderById = new Map(vociBackup.map(v=>[v.modello_id, v.sort_order]));
+    const vociById = new Map(vociBackup.map(v=>[v.modello_id, v]));
+
+    // 1) Fasce automatiche
+    if(Array.isArray(fasceBackup) && fasceBackup.length>0){
+      setStore(s=>({...s, fasceAutomatiche:fasceBackup}));
+      await saveSettings({fasce_automatiche:fasceBackup});
+    }
+
+    // 2) Colori extra: reinserisce quelli mancanti (non cancella niente)
+    if(Array.isArray(coloriExtraBackup)){
+      for(const c of coloriExtraBackup){
+        if(c?.hex) { try{ await ensureColoreRegistrato(c.hex); }catch{} }
+      }
+    }
+
+    // 3) Modelli: ordine + colori
     let modelliRicalcolati;
+    const daRiscrivere = [];
     setModelli(prev=>{
-      modelliRicalcolati = prev.map(m=>
-        sortOrderById.has(m.id) ? {...m, sortOrder:sortOrderById.get(m.id)} : m
-      );
+      modelliRicalcolati = prev.map(m=>{
+        const v = vociById.get(m.id);
+        if(!v) return m;
+        const nuovo = {...m, sortOrder:v.sort_order};
+        // Snapshot vecchi (senza colori): non toccare i colori
+        if(v.colore!==undefined && v.colore!==null || v.colore_custom!==undefined){
+          if(v.colore!==undefined && v.colore!==null) nuovo.colore = v.colore;
+          if(v.colore_custom!==undefined) nuovo.coloreCustom = v.colore_custom||null;
+          if(nuovo.colore!==m.colore || (nuovo.coloreCustom||null)!==(m.coloreCustom||null)) daRiscrivere.push(nuovo);
+        }
+        return nuovo;
+      });
       return modelliRicalcolati;
     });
     saveToLocalStorage(store.events, store.calendars, modelliRicalcolati);
     await salvaModifichePosizioni(modelli, modelliRicalcolati);
+
+    // 4) Scrive i colori dei modelli su Supabase (con attesa dell'esito)
+    const ts = new Date().toISOString();
+    for(const m of daRiscrivere){
+      const ris = await scriviConBackup({
+        tipo:"update", table:"modelli",
+        payload:{ colore:m.colore, colore_custom:m.coloreCustom||null },
+        matchObj:{ id:m.id, user_id:userId },
+        contesto:"Ripristino disposizione: colori modello", ts,
+        eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelliRicalcolati,
+        opzioni:{soloLog:true},
+      });
+      if(ris?.errore) segnalaErroreDb(ris.errore, "Ripristino colori modello");
+    }
+
+    // 5) Allinea gli eventi già in calendario al colore effettivo del modello
+    const mappaColori = {};
+    daRiscrivere.forEach(m=>{ mappaColori[m.id] = m.coloreCustom || m.colore; });
+    await propagaColoreModelliAgliEventi(mappaColori);
+
     annullaTimerSalvaDisposizione();
     return { ok:true, totale: vociBackup.length };
   }

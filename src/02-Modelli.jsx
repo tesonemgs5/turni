@@ -1077,7 +1077,7 @@ export default function VistaModelli({ C }){
         <div style={{fontSize:11,color:T.sub,margin:"14px 0 10px"}}>
           Protezione extra contro un problema ancora in fase di indagine che
           a volte rimescola da solo l'ordine dei modelli. "Salva
-          disposizione" congela l'ordine attuale come backup separato (mai
+          disposizione" congela ordine, colori dei modelli, fasce orarie e colori extra come backup separato (mai
           sovrascritto in automatico, solo quando premi questo pulsante).
           Se in futuro l'ordine dovesse rimescolarsi di nuovo, tocca
           "Ripristina disposizione" per tornare esattamente a come l'avevi
@@ -1100,7 +1100,7 @@ export default function VistaModelli({ C }){
           💾 Salva disposizione
         </button>
         <button onClick={async()=>{
-            if(!confirm("Ripristinare l'ultima disposizione salvata? L'ordine attuale dei modelli verrà sostituito con quello del backup.")) return;
+            if(!confirm("Ripristinare l'ultima disposizione salvata? Ordine, colori dei modelli, fasce orarie e colori extra verranno sostituiti con quelli del backup (gli eventi già in calendario seguiranno i colori ripristinati).")) return;
             setBanner("⏳ Ripristino disposizione in corso...");
             try {
               const esito = await ripristinaDisposizioneModelli();
