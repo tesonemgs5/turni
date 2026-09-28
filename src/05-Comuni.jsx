@@ -1909,148 +1909,55 @@ export function HexColorPicker({T, value, onChange}){
   );
 }
 
-// ── Modalità alternativa: griglia di 200 pallini (10 colonne × 20 righe),
-// fedele allo schema delle immagini di riferimento: ogni RIGA è una
-// tonalità fissa diversa (20 tonalità che coprono tutta la ruota
-// cromatica, passo 18°), e scorre in 10 COLONNE da chiaro/pastello a
-// sinistra fino a colore pieno/saturo a destra, a luminosità alta e
-// costante. Il tocco su un pallino intero è più preciso col dito rispetto
-// GRIGLIA STATICA E FISSA: tavolozza approvata (28 tonalità + riga neutri,
-// 10 colonne), copiata a valori esatti invece che ricalcolata con HSV — così
-// l'ordine e i colori non possono più "spostarsi" da soli.
-// Riga 0 = Neutri (chiaro->scuro). Righe 1-28 = ruota cromatica pittorica
-// completa: 3 PRIMARI (Rosso, Giallo, Blu), 3 SECONDARI (Arancio, Verde,
-// Viola), 6 TERZIARI con nome proprio (Vermiglio, Ambra, Chartreuse, Teal,
-// Indaco, Magenta) più Rosa in chiusura, con tonalità intermedie senza nome
-// specifico a riempire gli spazi tra un colore nominato e il successivo.
-// Ogni riga mantiene sempre lo stesso hue/saturazione dall'estremo chiaro
-// (colonna 1) al più scuro (colonna 10): nessuno sconfinamento verso un
-// altro colore, nessuna riga che scivola verso il bianco slavato o il nero.
-// La riga Giallo ha in colonna 6 il valore esatto #FFEB3C (hue 53.85°,
-// sat 76.47%, val 100%) su richiesta esplicita.
+// GRIGLIA STATICA E FISSA: 9 colonne. Ogni riga ha UN SOLO HUE (tonalità):
+// cambiano solo saturazione e luminosità, quindi il colore non scivola mai
+// verso quello vicino. Colonne 1-5: pastello -> colore pieno (sat 45-85,
+// lum 95); colonne 6-9: sat 100 -> 90, lum 92 -> 74 (mai troppo scuro).
+// Le righe con nome semplice (Rosso, Arancio, Giallo, Blu...) sono i colori
+// "assoluti"; quelle composte (Rosso-Vermiglio...) sono di transizione.
+// Riga 0 = Neutri (chiaro->scuro).
 const GRID_PALETTE = [
-  ["#F5F5F5","#D9D9D9","#BFBFBF","#A3A3A3","#878787","#6E6E6E","#525252","#363636","#1C1C1C","#000000"], // Neutri
-  ["#FFA6A6","#FF8C8C","#FF7373","#FF5C5C","#FF4747","#F53B3B","#E03636","#CC3131","#B52B2B","#9E2626"], // Rosso
-  ["#FFB5A6","#FF9F8C","#FF8A73","#FF775C","#FF6647","#F55A3B","#E05236","#CC4B31","#B5422B","#9E3A26"], // Rosso-Vermiglio
-  ["#FFC3A6","#FFB28C","#FFA273","#FF925C","#FF8547","#F5793B","#E06F36","#CC6531","#B5592B","#9E4E26"], // Vermiglio
-  ["#FFCBA6","#FFBC8C","#FFAD73","#FFA05C","#FF9447","#F5883B","#E07D36","#CC7231","#B5652B","#9E5826"], // Vermiglio-Arancio
-  ["#FFD2A6","#FFC68C","#FFB973","#FFAD5C","#FFA347","#F5983B","#E08B36","#CC7E31","#B5702B","#9E6226"], // Arancio
-  ["#FFDEA6","#FFD48C","#FFCA73","#FFC25C","#FFBA47","#F5AF3B","#E0A036","#CC9231","#B5812B","#9E7126"], // Arancio-Ambra
-  ["#FFE9A6","#FFE28C","#FFDC73","#FFD65C","#FFD147","#F5C63B","#E0B636","#CCA531","#B5932B","#9E8026"], // Ambra
-  ["#FFEDA6","#FFE88C","#FFE373","#FFDE5C","#FFDA47","#F5CF3B","#E0BE36","#CCAD31","#B5992B","#9E8626"], // Ambra-Giallo1
-  ["#FFF1A6","#FFEE8C","#FFEA73","#FFE65C","#FFE347","#F5D93B","#E0C736","#CCB431","#B5A02B","#9E8C26"], // Ambra-Giallo2
-  ["#FFF6A6","#FFF38C","#FFF173","#FFEE5C","#FFEC47","#FFEB3C","#E0CF35","#CCBC30","#B5A72B","#9E9225"], // Giallo
-  ["#FBFFA6","#F9FF8C","#F8FF73","#F7FF5C","#F6FF47","#ECF53B","#D8E036","#C5CC31","#AEB52B","#989E26"], // Giallo-Chartreuse1
-  ["#EDFFA6","#E8FF8C","#E3FF73","#DFFF5C","#DBFF47","#D0F53B","#BFE036","#ADCC31","#9AB52B","#869E26"], // Giallo-Chartreuse2
-  ["#E0FFA6","#D7FF8C","#CEFF73","#C6FF5C","#BFFF47","#B4F53B","#A5E036","#96CC31","#85B52B","#749E26"], // Giallo-Chartreuse3
-  ["#D2FFA6","#C6FF8C","#B9FF73","#ADFF5C","#A3FF47","#98F53B","#8BE036","#7ECC31","#70B52B","#629E26"], // Chartreuse
-  ["#BCFFA6","#A9FF8C","#96FF73","#85FF5C","#75FF47","#69F53B","#60E036","#58CC31","#4EB52B","#449E26"], // Chartreuse-Verde
-  ["#A6FFA6","#8CFF8C","#73FF73","#5CFF5C","#47FF47","#3BF53B","#36E036","#31CC31","#2BB52B","#269E26"], // Verde
-  ["#A6FFD2","#8CFFC6","#73FFB9","#5CFFAD","#47FFA3","#3BF598","#36E08B","#31CC7E","#2BB570","#269E62"], // Verde-Teal
-  ["#A6FFFF","#8CFFFF","#73FFFF","#5CFFFF","#47FFFF","#3BF5F5","#36E0E0","#31CCCC","#2BB5B5","#269E9E"], // Teal
-  ["#A6D2FF","#8CC6FF","#73B9FF","#5CADFF","#47A3FF","#3B98F5","#368BE0","#317ECC","#2B70B5","#26629E"], // Teal-Blu
-  ["#A6A6FF","#8C8CFF","#7373FF","#5C5CFF","#4747FF","#3B3BF5","#3636E0","#3131CC","#2B2BB5","#26269E"], // Blu
-  ["#B1A6FF","#9B8CFF","#8473FF","#705CFF","#5E47FF","#523BF5","#4B36E0","#4431CC","#3D2BB5","#35269E"], // Blu-Indaco
-  ["#BCA6FF","#A98CFF","#9673FF","#855CFF","#7547FF","#693BF5","#6036E0","#5831CC","#4E2BB5","#44269E"], // Indaco
-  ["#C7A6FF","#B78CFF","#A773FF","#995CFF","#8C47FF","#813BF5","#7636E0","#6B31CC","#5F2BB5","#53269E"], // Indaco-Viola
-  ["#D2A6FF","#C68CFF","#B973FF","#AD5CFF","#A347FF","#983BF5","#8B36E0","#7E31CC","#702BB5","#62269E"], // Viola
-  ["#E9A6FF","#E28CFF","#DC73FF","#D65CFF","#D147FF","#C63BF5","#B636E0","#A531CC","#932BB5","#80269E"], // Viola-Magenta
-  ["#FFA6FF","#FF8CFF","#FF73FF","#FF5CFF","#FF47FF","#F53BF5","#E036E0","#CC31CC","#B52BB5","#9E269E"], // Magenta
-  ["#FFA6E1","#FF8CD9","#FF73D0","#FF5CC9","#FF47C2","#F53BB7","#E036A8","#CC3198","#B52B87","#9E2676"], // Magenta-Rosa
-  ["#FFCCDD","#FFBDD3","#FFADC9","#FFA1C0","#FF94B8","#F587AB","#E07B9D","#CC708F","#B5647F","#9E576F"], // Rosa
+  ["#F5F5F5","#D9D9D9","#BFBFBF","#A3A3A3","#878787","#6E6E6E","#525252","#363636","#1C1C1C"], // Neutri
+  ["#F28585","#F26D6D","#F25555","#F23D3D","#F22424","#EB0000","#E00000","#D10A0A","#BD1313"], // Rosso (0°)
+  ["#F29385","#F27E6D","#F26855","#F2533D","#F23E24","#EB1D00","#E01C00","#D1230A","#BD2813"], // Rosso-Vermiglio (7.5°)
+  ["#F2A085","#F28E6D","#F27C55","#F26A3D","#F25824","#EB3B00","#E03800","#D13C0A","#BD3D13"], // Vermiglio (15°)
+  ["#F2AE85","#F29F6D","#F29055","#F2813D","#F27224","#EB5800","#E05400","#D1550A","#BD5313"], // Vermiglio-Arancio (22.5°)
+  ["#F2BC85","#F2B06D","#F2A455","#F2973D","#F28B24","#EB7500","#E07000","#D16E0A","#BD6813"], // Arancio (30°)
+  ["#F2C985","#F2C06D","#F2B755","#F2AE3D","#F2A524","#EB9300","#E08C00","#D1870A","#BD7D13"], // Arancio-Ambra (37.5°)
+  ["#F2D785","#F2D16D","#F2CB55","#F2C53D","#F2BF24","#EBB000","#E0A800","#D19F0A","#BD9213"], // Ambra (45°)
+  ["#F2E585","#F2E26D","#F2DF55","#F2DC3D","#F2D924","#EBCD00","#E0C400","#D1B80A","#BDA713"], // Ambra-Giallo (52.5°)
+  ["#F2EB85","#F2E96D","#F2E855","#F2E63D","#F2E524","#EBDB00","#E0D100","#D1C40A","#BDB113"], // Giallo-Oro (56°)
+  ["#F2F285","#F2F26D","#F2F255","#F2F23D","#F2F224","#EBEB00","#E0E000","#D1D10A","#BDBD13"], // Giallo (60°)
+  ["#BCF285","#B0F26D","#A4F255","#97F23D","#8BF224","#75EB00","#70E000","#6ED10A","#68BD13"], // Chartreuse (90°)
+  ["#A0F285","#8EF26D","#7CF255","#6AF23D","#58F224","#3BEB00","#38E000","#3CD10A","#3DBD13"], // Chartreuse-Verde (105°)
+  ["#85F285","#6DF26D","#55F255","#3DF23D","#24F224","#00EB00","#00E000","#0AD10A","#13BD13"], // Verde (120°)
+  ["#85F2BC","#6DF2B0","#55F2A4","#3DF297","#24F28B","#00EB75","#00E070","#0AD16E","#13BD68"], // Verde-Teal (150°)
+  ["#85F2F2","#6DF2F2","#55F2F2","#3DF2F2","#24F2F2","#00EBEB","#00E0E0","#0AD1D1","#13BDBD"], // Teal (180°)
+  ["#85D7F2","#6DD1F2","#55CBF2","#3DC5F2","#24BFF2","#00B0EB","#00A8E0","#0A9FD1","#1392BD"], // Teal-Azzurro (195°)
+  ["#85BCF2","#6DB0F2","#55A4F2","#3D97F2","#248BF2","#0075EB","#0070E0","#0A6ED1","#1368BD"], // Teal-Blu (210°)
+  ["#85A0F2","#6D8EF2","#557CF2","#3D6AF2","#2458F2","#003BEB","#0038E0","#0A3CD1","#133DBD"], // Azzurro-Blu (225°)
+  ["#8585F2","#6D6DF2","#5555F2","#3D3DF2","#2424F2","#0000EB","#0000E0","#0A0AD1","#1313BD"], // Blu (240°)
+  ["#9385F2","#7E6DF2","#6855F2","#533DF2","#3E24F2","#1D00EB","#1C00E0","#230AD1","#2813BD"], // Blu-Indaco (247.5°)
+  ["#A085F2","#8E6DF2","#7C55F2","#6A3DF2","#5824F2","#3B00EB","#3800E0","#3C0AD1","#3D13BD"], // Indaco (255°)
+  ["#AE85F2","#9F6DF2","#9055F2","#813DF2","#7224F2","#5800EB","#5400E0","#550AD1","#5313BD"], // Indaco-Viola (262.5°)
+  ["#BC85F2","#B06DF2","#A455F2","#973DF2","#8B24F2","#7500EB","#7000E0","#6E0AD1","#6813BD"], // Viola (270°)
+  ["#C985F2","#C06DF2","#B755F2","#AE3DF2","#A524F2","#9300EB","#8C00E0","#870AD1","#7D13BD"], // Viola-Porpora (277.5°)
+  ["#D785F2","#D16DF2","#CB55F2","#C53DF2","#BF24F2","#B000EB","#A800E0","#9F0AD1","#9213BD"], // Viola-Magenta (285°)
+  ["#E585F2","#E26DF2","#DF55F2","#DC3DF2","#D924F2","#CD00EB","#C400E0","#B80AD1","#A713BD"], // Porpora (292.5°)
+  ["#F285F2","#F26DF2","#F255F2","#F23DF2","#F224F2","#EB00EB","#E000E0","#D10AD1","#BD13BD"], // Magenta (300°)
+  ["#F285E5","#F26DE2","#F255DF","#F23DDC","#F224D9","#EB00CD","#E000C4","#D10AB8","#BD13A7"], // Magenta-Porpora (307.5°)
+  ["#F285D7","#F26DD1","#F255CB","#F23DC5","#F224BF","#EB00B0","#E000A8","#D10A9F","#BD1392"], // Magenta-Rosa (315°)
+  ["#F285C5","#F26DBB","#F255B1","#F23DA7","#F2249C","#EB0089","#E00083","#D10A7E","#BD1376"], // Fucsia (325°)
+  ["#F285B3","#F26DA5","#F25596","#F23D88","#F2247A","#EB0062","#E0005D","#D10A5D","#BD135A"], // Rosa (335°)
 ];
 const GRID_COLS = GRID_PALETTE[0].length;
 
-// NOTA: la funzione "Normalizza" (depositaColoreInGriglia / normalizzaColoriInGriglia)
-// è ATTIVA: la griglia mostrata parte da GRID_PALETTE ma ogni cella può essere
-// sovrascritta da una sostituzione salvata in localStorage. Un colore scelto
-// col pannello Preciso si deposita nel pallino più vicino al momento della
-// conferma (OK); i colori già "usati" nell'app (coloriUsati) si depositano
-// automaticamente all'apertura del picker in modalità Griglia.
-
-function leggiSostituzioniGriglia(){
-  try{
-    const raw = localStorage.getItem('gridColorOverrides');
-    return raw ? JSON.parse(raw) : {};
-  }catch(e){ return {}; }
-}
-function scriviSostituzioniGriglia(obj){
-  try{ localStorage.setItem('gridColorOverrides', JSON.stringify(obj)); }catch(e){}
-}
-
-// Trova la cella (riga/colonna) della griglia statica il cui colore è più
-// vicino a "hex", confrontando in spazio HSV (differenza circolare su H,
-// lineare su S e V). Usata sia per "porta un colore da Preciso a Griglia"
-// sia per la Normalizzazione dei colori già usati (funzione attualmente
-// disattivata in interfaccia, vedi GridColorPicker).
-function trovaCellaPiuVicina(hex){
-  const rgb = hexToRgbObj(hex);
-  const hsv = rgbToHsv(rgb.r, rgb.g, rgb.b);
-  let migliore = null, distMin = Infinity;
-  GRID_PALETTE.forEach((riga,ri)=>{
-    riga.forEach((cellHex,ci)=>{
-      const crgb = hexToRgbObj(cellHex);
-      const chsv = rgbToHsv(crgb.r, crgb.g, crgb.b);
-      let dh = Math.abs(chsv.h - hsv.h);
-      if(dh>180) dh = 360-dh;
-      const ds = chsv.s-hsv.s, dv = chsv.v-hsv.v;
-      const dist = dh*dh*0.5 + ds*ds + dv*dv;
-      if(dist<distMin){ distMin=dist; migliore={ri,ci}; }
-    });
-  });
-  return migliore;
-}
-
-// Applica al colore hex il colore di sostituzione nel pallino più vicino:
-// usata quando un colore arriva dal pannello Preciso e "si deposita" in
-// griglia. Ritorna le nuove sostituzioni (da salvare).
-export function depositaColoreInGriglia(hex){
-  const cella = trovaCellaPiuVicina(hex);
-  if(!cella) return leggiSostituzioniGriglia();
-  const attuali = leggiSostituzioniGriglia();
-  const next = {...attuali, [`${cella.ri}-${cella.ci}`]: hex};
-  scriviSostituzioniGriglia(next);
-  return next;
-}
-
-// Normalizza: prende tutta la lista di colori attualmente usati nell'app
-// (calendari/modelli/fasce) e deposita ognuno nel pallino più vicino,
-// sovrascrivendo le sostituzioni precedenti (si riparte puliti da questa
-// lista). Così i colori "storici" fuori griglia trovano casa una volta sola.
-export function normalizzaColoriInGriglia(coloriUsati){
-  const next = {};
-  (coloriUsati||[]).filter(Boolean).forEach(hex=>{
-    const cella = trovaCellaPiuVicina(hex);
-    if(cella) next[`${cella.ri}-${cella.ci}`] = hex;
-  });
-  scriviSostituzioniGriglia(next);
-  return next;
-}
+// Pulizia una tantum: le vecchie sostituzioni salvate ("Normalizza", ora
+// disattivata) non vanno più applicate alla griglia.
+try{ localStorage.removeItem('gridColorOverrides'); }catch(e){}
 
 function GridColorPicker({T, value, onChange, coloriUsati=[]}){
-  // NORMALIZZA RIATTIVATA: la griglia parte dallo schema statico di
-  // GRID_PALETTE, ma ogni cella può essere sovrascritta da una sostituzione
-  // salvata (localStorage, chiave "gridColorOverrides"). Le sostituzioni
-  // vengono scritte da depositaColoreInGriglia (quando si conferma un
-  // colore scelto col pannello Preciso) e da normalizzaColoriInGriglia
-  // (chiamata una volta all'apertura del picker per "depositare" anche i
-  // colori già in uso nell'app, cioè quelli mostrati in "USATI").
-  const [sostituzioni, setSostituzioni] = useState(()=>leggiSostituzioniGriglia());
-
-  // Al primo render, deposita anche i colori già "usati" nell'app (quelli
-  // passati come coloriUsati) nei pallini più vicini, così sono subito
-  // visibili in griglia senza dover prima passare dal pannello Preciso.
-  useEffect(()=>{
-    if(coloriUsati && coloriUsati.length){
-      const next = normalizzaColoriInGriglia(coloriUsati);
-      setSostituzioni(prev=>({...prev, ...next}));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const righe = GRID_PALETTE.map((riga,ri)=>
-    riga.map((hexOriginale,ci)=> sostituzioni[`${ri}-${ci}`] || hexOriginale)
-  );
+  const righe = GRID_PALETTE;
 
   const setUsati = new Set((coloriUsati||[]).filter(Boolean).map(c=>c.toUpperCase()));
 
@@ -2108,7 +2015,11 @@ export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, tit
   // condivisa da ogni ColorPickerModal dell'app. Resta sulla modalità scelta
   // finché l'utente non ne seleziona manualmente un'altra, anche aprendo un
   // color picker diverso o riavviando l'app.
+  // MOSTRA_PRECISO=false: solo Griglia. Per rimettere il pannello Preciso
+  // basta portarlo a true.
+  const MOSTRA_PRECISO = false;
   const [modalitaPicker, setModalitaPicker] = useState(()=>{
+    if(!MOSTRA_PRECISO) return 'griglia';
     try{ return localStorage.getItem('colorPickerModalita')==='griglia'?'griglia':'preciso'; }catch(e){ return 'preciso'; }
   });
   function selezionaModalita(m){
@@ -2191,22 +2102,24 @@ export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, tit
           </>
         )}
 
-        <div style={{display:"flex",gap:6,marginBottom:14,background:T.s2,borderRadius:10,padding:4}}>
-          <button type="button" onClick={()=>selezionaModalita('preciso')}
-            style={{flex:1,border:"none",borderRadius:8,padding:"7px 0",cursor:"pointer",
-              fontWeight:800,fontSize:12,
-              background:modalitaPicker==='preciso'?T.surface:"transparent",
-              color:modalitaPicker==='preciso'?T.text:T.sub}}>
-            Preciso
-          </button>
-          <button type="button" onClick={()=>selezionaModalita('griglia')}
-            style={{flex:1,border:"none",borderRadius:8,padding:"7px 0",cursor:"pointer",
-              fontWeight:800,fontSize:12,
-              background:modalitaPicker==='griglia'?T.surface:"transparent",
-              color:modalitaPicker==='griglia'?T.text:T.sub}}>
-            Griglia
-          </button>
-        </div>
+        {MOSTRA_PRECISO&&(
+          <div style={{display:"flex",gap:6,marginBottom:14,background:T.s2,borderRadius:10,padding:4}}>
+            <button type="button" onClick={()=>selezionaModalita('preciso')}
+              style={{flex:1,border:"none",borderRadius:8,padding:"7px 0",cursor:"pointer",
+                fontWeight:800,fontSize:12,
+                background:modalitaPicker==='preciso'?T.surface:"transparent",
+                color:modalitaPicker==='preciso'?T.text:T.sub}}>
+              Preciso
+            </button>
+            <button type="button" onClick={()=>selezionaModalita('griglia')}
+              style={{flex:1,border:"none",borderRadius:8,padding:"7px 0",cursor:"pointer",
+                fontWeight:800,fontSize:12,
+                background:modalitaPicker==='griglia'?T.surface:"transparent",
+                color:modalitaPicker==='griglia'?T.text:T.sub}}>
+              Griglia
+            </button>
+          </div>
+        )}
 
         {modalitaPicker==='preciso'?(
           <>
@@ -2226,11 +2139,6 @@ export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, tit
             Annulla
           </button>
           <button onClick={()=>{
-              // Se il colore è stato scelto/affinato nel pannello Preciso, lo
-              // depositiamo anche nel pallino più vicino della Griglia: così
-              // la prossima volta che si apre Griglia questo colore ha già
-              // una casa precisa, invece di dover essere ricercato a mano.
-              if(modalitaPicker==='preciso'){ depositaColoreInGriglia(previewColor); }
               onPick(previewColor);onClose();
             }}
             style={{flex:1,background:previewColor,border:"none",borderRadius:10,
