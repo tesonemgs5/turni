@@ -267,12 +267,34 @@ export default function VistaCalendario({ C }){
         <button onClick={()=>month===11?(setYear(y=>y+1),setMonth(0)):setMonth(m=>m+1)}
           style={{...NB, color:"rgba(15,23,42,0.8)"}}>›</button>
         <div style={{flex:1}}/>
-        <button onClick={()=>setShowModelloPicker("quick")}
-          title="Applica un modello a più giorni"
-          style={{background:"#f1f5f9",border:"1px solid #e2e8f0",
-            borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:"#0f172a",flexShrink:0}}>
-          ✏️
-        </button>
+        {(()=>{
+          const modAttivo = quickModeModello ? modelli.find(m=>m.id===quickModeModello) : null;
+          const quickAttivo = !!modAttivo;
+          const cModAttivo = modAttivo ? (modAttivo.coloreCustom||(modAttivo.tempo==="h24"?"#64748b":colByTime(modAttivo.inizio))) : null;
+          return (<>
+            <button onClick={()=>{
+                // Matita attiva -> seconda pressione la spegne davvero.
+                if(quickAttivo){ setQuickModeModello(null); setShowModelloPicker(false); return; }
+                setShowModelloPicker("quick");
+              }}
+              title={quickAttivo?"Riempimento rapido attivo: tocca per disattivare":"Applica un modello a più giorni"}
+              style={{background:quickAttivo?"#0f172a":"#f1f5f9",
+                border:`1.5px solid ${quickAttivo?"#0f172a":"#e2e8f0"}`,
+                borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,
+                color:quickAttivo?"#ffffff":"#0f172a",flexShrink:0,
+                filter:quickAttivo?"grayscale(1) brightness(2.2)":"none"}}>
+              ✏️
+            </button>
+            {quickAttivo&&(
+              <div title={`Modello attivo: ${modAttivo.titolo||""}`}
+                style={{display:"flex",alignItems:"center",gap:5,flexShrink:0,
+                  background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:20,padding:"2px 10px"}}>
+                <div style={{width:10,height:10,borderRadius:"50%",background:cModAttivo,flexShrink:0}}/>
+                <span style={{fontSize:11,fontWeight:800,color:"#0f172a",whiteSpace:"nowrap"}}>{modAttivo.titolo||"Senza nome"}</span>
+              </div>
+            )}
+          </>);
+        })()}
 
         <button onClick={()=>{
             setEditMode(em=>{
