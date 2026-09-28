@@ -1909,46 +1909,46 @@ export function HexColorPicker({T, value, onChange}){
   );
 }
 
-// GRIGLIA STATICA E FISSA: 9 colonne. Ogni riga ha UN SOLO HUE (tonalità):
+// GRIGLIA STATICA E FISSA: 10 colonne. Ogni riga ha UN SOLO HUE (tonalità):
 // cambiano solo saturazione e luminosità, quindi il colore non scivola mai
 // verso quello vicino. Colonne 1-5: pastello -> colore pieno (sat 45-85,
-// lum 95); colonne 6-9: sat 100 -> 90, lum 92 -> 74 (mai troppo scuro).
+// lum 95); colonne 6-10: sat 100 -> 90, lum 92 -> 67 (mai troppo scuro).
 // Le righe con nome semplice (Rosso, Arancio, Giallo, Blu...) sono i colori
 // "assoluti"; quelle composte (Rosso-Vermiglio...) sono di transizione.
 // Riga 0 = Neutri (chiaro->scuro).
 const GRID_PALETTE = [
-  ["#F5F5F5","#D9D9D9","#BFBFBF","#A3A3A3","#878787","#6E6E6E","#525252","#363636","#1C1C1C"], // Neutri
-  ["#F28585","#F26D6D","#F25555","#F23D3D","#F22424","#EB0000","#E00000","#D10A0A","#BD1313"], // Rosso (0°)
-  ["#F29385","#F27E6D","#F26855","#F2533D","#F23E24","#EB1D00","#E01C00","#D1230A","#BD2813"], // Rosso-Vermiglio (7.5°)
-  ["#F2A085","#F28E6D","#F27C55","#F26A3D","#F25824","#EB3B00","#E03800","#D13C0A","#BD3D13"], // Vermiglio (15°)
-  ["#F2AE85","#F29F6D","#F29055","#F2813D","#F27224","#EB5800","#E05400","#D1550A","#BD5313"], // Vermiglio-Arancio (22.5°)
-  ["#F2BC85","#F2B06D","#F2A455","#F2973D","#F28B24","#EB7500","#E07000","#D16E0A","#BD6813"], // Arancio (30°)
-  ["#F2C985","#F2C06D","#F2B755","#F2AE3D","#F2A524","#EB9300","#E08C00","#D1870A","#BD7D13"], // Arancio-Ambra (37.5°)
-  ["#F2D785","#F2D16D","#F2CB55","#F2C53D","#F2BF24","#EBB000","#E0A800","#D19F0A","#BD9213"], // Ambra (45°)
-  ["#F2E585","#F2E26D","#F2DF55","#F2DC3D","#F2D924","#EBCD00","#E0C400","#D1B80A","#BDA713"], // Ambra-Giallo (52.5°)
-  ["#F2EB85","#F2E96D","#F2E855","#F2E63D","#F2E524","#EBDB00","#E0D100","#D1C40A","#BDB113"], // Giallo-Oro (56°)
-  ["#F2F285","#F2F26D","#F2F255","#F2F23D","#F2F224","#EBEB00","#E0E000","#D1D10A","#BDBD13"], // Giallo (60°)
-  ["#BCF285","#B0F26D","#A4F255","#97F23D","#8BF224","#75EB00","#70E000","#6ED10A","#68BD13"], // Chartreuse (90°)
-  ["#A0F285","#8EF26D","#7CF255","#6AF23D","#58F224","#3BEB00","#38E000","#3CD10A","#3DBD13"], // Chartreuse-Verde (105°)
-  ["#85F285","#6DF26D","#55F255","#3DF23D","#24F224","#00EB00","#00E000","#0AD10A","#13BD13"], // Verde (120°)
-  ["#85F2BC","#6DF2B0","#55F2A4","#3DF297","#24F28B","#00EB75","#00E070","#0AD16E","#13BD68"], // Verde-Teal (150°)
-  ["#85F2F2","#6DF2F2","#55F2F2","#3DF2F2","#24F2F2","#00EBEB","#00E0E0","#0AD1D1","#13BDBD"], // Teal (180°)
-  ["#85D7F2","#6DD1F2","#55CBF2","#3DC5F2","#24BFF2","#00B0EB","#00A8E0","#0A9FD1","#1392BD"], // Teal-Azzurro (195°)
-  ["#85BCF2","#6DB0F2","#55A4F2","#3D97F2","#248BF2","#0075EB","#0070E0","#0A6ED1","#1368BD"], // Teal-Blu (210°)
-  ["#85A0F2","#6D8EF2","#557CF2","#3D6AF2","#2458F2","#003BEB","#0038E0","#0A3CD1","#133DBD"], // Azzurro-Blu (225°)
-  ["#8585F2","#6D6DF2","#5555F2","#3D3DF2","#2424F2","#0000EB","#0000E0","#0A0AD1","#1313BD"], // Blu (240°)
-  ["#9385F2","#7E6DF2","#6855F2","#533DF2","#3E24F2","#1D00EB","#1C00E0","#230AD1","#2813BD"], // Blu-Indaco (247.5°)
-  ["#A085F2","#8E6DF2","#7C55F2","#6A3DF2","#5824F2","#3B00EB","#3800E0","#3C0AD1","#3D13BD"], // Indaco (255°)
-  ["#AE85F2","#9F6DF2","#9055F2","#813DF2","#7224F2","#5800EB","#5400E0","#550AD1","#5313BD"], // Indaco-Viola (262.5°)
-  ["#BC85F2","#B06DF2","#A455F2","#973DF2","#8B24F2","#7500EB","#7000E0","#6E0AD1","#6813BD"], // Viola (270°)
-  ["#C985F2","#C06DF2","#B755F2","#AE3DF2","#A524F2","#9300EB","#8C00E0","#870AD1","#7D13BD"], // Viola-Porpora (277.5°)
-  ["#D785F2","#D16DF2","#CB55F2","#C53DF2","#BF24F2","#B000EB","#A800E0","#9F0AD1","#9213BD"], // Viola-Magenta (285°)
-  ["#E585F2","#E26DF2","#DF55F2","#DC3DF2","#D924F2","#CD00EB","#C400E0","#B80AD1","#A713BD"], // Porpora (292.5°)
-  ["#F285F2","#F26DF2","#F255F2","#F23DF2","#F224F2","#EB00EB","#E000E0","#D10AD1","#BD13BD"], // Magenta (300°)
-  ["#F285E5","#F26DE2","#F255DF","#F23DDC","#F224D9","#EB00CD","#E000C4","#D10AB8","#BD13A7"], // Magenta-Porpora (307.5°)
-  ["#F285D7","#F26DD1","#F255CB","#F23DC5","#F224BF","#EB00B0","#E000A8","#D10A9F","#BD1392"], // Magenta-Rosa (315°)
-  ["#F285C5","#F26DBB","#F255B1","#F23DA7","#F2249C","#EB0089","#E00083","#D10A7E","#BD1376"], // Fucsia (325°)
-  ["#F285B3","#F26DA5","#F25596","#F23D88","#F2247A","#EB0062","#E0005D","#D10A5D","#BD135A"], // Rosa (335°)
+  ["#F5F5F5","#D9D9D9","#BFBFBF","#A3A3A3","#878787","#6E6E6E","#525252","#363636","#1C1C1C","#0F0F0F"], // Neutri
+  ["#F28585","#F26D6D","#F25555","#F23D3D","#F22424","#EB0000","#E00000","#D10A0A","#BD1313","#AB1111"], // Rosso (0°)
+  ["#F29385","#F27E6D","#F26855","#F2533D","#F23E24","#EB1D00","#E01C00","#D1230A","#BD2813","#AB2411"], // Rosso-Vermiglio (7.5°)
+  ["#F2A085","#F28E6D","#F27C55","#F26A3D","#F25824","#EB3B00","#E03800","#D13C0A","#BD3D13","#AB3811"], // Vermiglio (15°)
+  ["#F2AE85","#F29F6D","#F29055","#F2813D","#F27224","#EB5800","#E05400","#D1550A","#BD5313","#AB4B11"], // Vermiglio-Arancio (22.5°)
+  ["#F2BC85","#F2B06D","#F2A455","#F2973D","#F28B24","#EB7500","#E07000","#D16E0A","#BD6813","#AB5E11"], // Arancio (30°)
+  ["#F2C985","#F2C06D","#F2B755","#F2AE3D","#F2A524","#EB9300","#E08C00","#D1870A","#BD7D13","#AB7111"], // Arancio-Ambra (37.5°)
+  ["#F2D785","#F2D16D","#F2CB55","#F2C53D","#F2BF24","#EBB000","#E0A800","#D19F0A","#BD9213","#AB8411"], // Ambra (45°)
+  ["#F2E585","#F2E26D","#F2DF55","#F2DC3D","#F2D924","#EBCD00","#E0C400","#D1B80A","#BDA713","#AB9811"], // Ambra-Giallo (52.5°)
+  ["#F2EB85","#F2E96D","#F2E855","#F2E63D","#F2E524","#EBDB00","#E0D100","#D1C40A","#BDB113","#ABA111"], // Giallo-Oro (56°)
+  ["#F2F285","#F2F26D","#F2F255","#F2F23D","#F2F224","#EBEB00","#E0E000","#D1D10A","#BDBD13","#ABAB11"], // Giallo (60°)
+  ["#BCF285","#B0F26D","#A4F255","#97F23D","#8BF224","#75EB00","#70E000","#6ED10A","#68BD13","#5EAB11"], // Chartreuse (90°)
+  ["#A0F285","#8EF26D","#7CF255","#6AF23D","#58F224","#3BEB00","#38E000","#3CD10A","#3DBD13","#38AB11"], // Chartreuse-Verde (105°)
+  ["#85F285","#6DF26D","#55F255","#3DF23D","#24F224","#00EB00","#00E000","#0AD10A","#13BD13","#11AB11"], // Verde (120°)
+  ["#85F2BC","#6DF2B0","#55F2A4","#3DF297","#24F28B","#00EB75","#00E070","#0AD16E","#13BD68","#11AB5E"], // Verde-Teal (150°)
+  ["#85F2F2","#6DF2F2","#55F2F2","#3DF2F2","#24F2F2","#00EBEB","#00E0E0","#0AD1D1","#13BDBD","#11ABAB"], // Teal (180°)
+  ["#85D7F2","#6DD1F2","#55CBF2","#3DC5F2","#24BFF2","#00B0EB","#00A8E0","#0A9FD1","#1392BD","#1184AB"], // Teal-Azzurro (195°)
+  ["#85BCF2","#6DB0F2","#55A4F2","#3D97F2","#248BF2","#0075EB","#0070E0","#0A6ED1","#1368BD","#115EAB"], // Teal-Blu (210°)
+  ["#85A0F2","#6D8EF2","#557CF2","#3D6AF2","#2458F2","#003BEB","#0038E0","#0A3CD1","#133DBD","#1138AB"], // Azzurro-Blu (225°)
+  ["#8585F2","#6D6DF2","#5555F2","#3D3DF2","#2424F2","#0000EB","#0000E0","#0A0AD1","#1313BD","#1111AB"], // Blu (240°)
+  ["#9385F2","#7E6DF2","#6855F2","#533DF2","#3E24F2","#1D00EB","#1C00E0","#230AD1","#2813BD","#2411AB"], // Blu-Indaco (247.5°)
+  ["#A085F2","#8E6DF2","#7C55F2","#6A3DF2","#5824F2","#3B00EB","#3800E0","#3C0AD1","#3D13BD","#3811AB"], // Indaco (255°)
+  ["#AE85F2","#9F6DF2","#9055F2","#813DF2","#7224F2","#5800EB","#5400E0","#550AD1","#5313BD","#4B11AB"], // Indaco-Viola (262.5°)
+  ["#BC85F2","#B06DF2","#A455F2","#973DF2","#8B24F2","#7500EB","#7000E0","#6E0AD1","#6813BD","#5E11AB"], // Viola (270°)
+  ["#C985F2","#C06DF2","#B755F2","#AE3DF2","#A524F2","#9300EB","#8C00E0","#870AD1","#7D13BD","#7111AB"], // Viola-Porpora (277.5°)
+  ["#D785F2","#D16DF2","#CB55F2","#C53DF2","#BF24F2","#B000EB","#A800E0","#9F0AD1","#9213BD","#8411AB"], // Viola-Magenta (285°)
+  ["#E585F2","#E26DF2","#DF55F2","#DC3DF2","#D924F2","#CD00EB","#C400E0","#B80AD1","#A713BD","#9811AB"], // Porpora (292.5°)
+  ["#F285F2","#F26DF2","#F255F2","#F23DF2","#F224F2","#EB00EB","#E000E0","#D10AD1","#BD13BD","#AB11AB"], // Magenta (300°)
+  ["#F285E5","#F26DE2","#F255DF","#F23DDC","#F224D9","#EB00CD","#E000C4","#D10AB8","#BD13A7","#AB1198"], // Magenta-Porpora (307.5°)
+  ["#F285D7","#F26DD1","#F255CB","#F23DC5","#F224BF","#EB00B0","#E000A8","#D10A9F","#BD1392","#AB1184"], // Magenta-Rosa (315°)
+  ["#F285C5","#F26DBB","#F255B1","#F23DA7","#F2249C","#EB0089","#E00083","#D10A7E","#BD1376","#AB116B"], // Fucsia (325°)
+  ["#F285B3","#F26DA5","#F25596","#F23D88","#F2247A","#EB0062","#E0005D","#D10A5D","#BD135A","#AB1151"], // Rosa (335°)
 ];
 const GRID_COLS = GRID_PALETTE[0].length;
 
