@@ -343,7 +343,8 @@ export default function VistaModelli({ C }){
           <div style={{margin:"0 12px 10px",display:"flex"}}>
             <CalBadge calId={calId} calAttivo={calAttivo2} coloreCal={coloreCal2}
               testoContrasto={testoContrasto2} T={T} store={store} setStore={setStore}
-              updateCalendar={updateCalendar} accent={accent} setCalId={setCalId}/>
+              updateCalendar={updateCalendar} accent={accent} setCalId={setCalId}
+              fasceAutomatiche={fasceAutomatiche} coloriExtra={coloriExtra}/>
           </div>
         );
       })()}
@@ -856,6 +857,7 @@ export default function VistaModelli({ C }){
       {showEditFasciaColor&&(
         <ColorPickerModal T={T} cur={showEditFasciaColor} title="Cambia colore"
           coloriUsati={[...new Set(modelli.map(m=>m.coloreCustom||(m.tempo==="h24"?COLORE_H24:colByTime(m.inizio))).filter(Boolean))].filter(h=>h!==showEditFasciaColor)}
+          getNomeColore={p=>nomeDelColore(p,{fasceAutomatiche,coloriExtra})}
           onPick={async(p)=>{
             const old = showEditFasciaColor;
             setShowColorAssignPicker(p);
@@ -1215,6 +1217,7 @@ export default function VistaModelli({ C }){
                   onClick={e=>{e.stopPropagation();setPal(pal===("fascia-"+f.key)?null:("fascia-"+f.key));}}/>
                 {pal===("fascia-"+f.key)&&<ColorPickerModal T={T} cur={f.color} title={`Colore ${f.label||"fascia"}`}
                   coloriUsati={[...new Set(fasceAutomatiche.map(ff=>ff.color).filter(Boolean))]}
+                  getNomeColore={p=>nomeDelColore(p,{fasceAutomatiche,coloriExtra})}
                   onPick={p=>{
                     updateFascia(f.key,{color:p});
                     saveSettings({fasce_automatiche:fasceAutomatiche.map(ff=>ff.key===f.key?{...ff,color:p}:ff)});
@@ -1281,6 +1284,7 @@ export default function VistaModelli({ C }){
                   onClick={e=>{e.stopPropagation();setPal(pal==="sunday-color"?null:"sunday-color");}}/>
                 {pal==="sunday-color"&&<ColorPickerModal T={T} cur={sundayColor} title="Colore domeniche"
                   coloriUsati={[sundayColor,holidayColor].filter(Boolean)}
+                  getNomeColore={p=>nomeDelColore(p,{fasceAutomatiche,coloriExtra})}
                   onPick={p=>{
                     setStore(s=>({...s,sundayColor:p}));
                     saveSettings({sunday_color:p});
@@ -1298,6 +1302,7 @@ export default function VistaModelli({ C }){
                   onClick={e=>{e.stopPropagation();setPal(pal==="holiday-color"?null:"holiday-color");}}/>
                 {pal==="holiday-color"&&<ColorPickerModal T={T} cur={holidayColor} title="Colore festivi"
                   coloriUsati={[sundayColor,holidayColor].filter(Boolean)}
+                  getNomeColore={p=>nomeDelColore(p,{fasceAutomatiche,coloriExtra})}
                   onPick={p=>{
                     setStore(s=>({...s,holidayColor:p}));
                     saveSettings({holiday_color:p});
@@ -1390,6 +1395,7 @@ export default function VistaModelli({ C }){
                   onClick={e=>{e.stopPropagation();setPal(pal===c.id?null:c.id);}}/>
                 {pal===c.id&&<ColorPickerModal T={T} cur={c.color} title={`Colore ${c.name||"calendario"}`}
                   coloriUsati={[...new Set(store.calendars.map(cc=>cc.color).filter(Boolean))]}
+                  getNomeColore={p=>nomeDelColore(p,{fasceAutomatiche,coloriExtra})}
                   onPick={p=>{
                   const newCals=JSON.parse(JSON.stringify(store.calendars));
                   newCals[ci].color=p;
@@ -1448,6 +1454,7 @@ export default function VistaModelli({ C }){
                         onClick={e=>{e.stopPropagation();setPal(pal===sh.id?null:sh.id);}}/>
                       {pal===sh.id&&<ColorPickerModal T={T} cur={sh.color} title={`Colore ${sh.label||"turno"}`}
                         coloriUsati={[...new Set((c.shifts||[]).map(s2=>s2.color).filter(Boolean))]}
+                        getNomeColore={p=>nomeDelColore(p,{fasceAutomatiche,coloriExtra})}
                         onPick={p=>{
                         const newCals=JSON.parse(JSON.stringify(store.calendars));
                         newCals[ci].shifts[si].color=p;
@@ -1475,6 +1482,7 @@ export default function VistaModelli({ C }){
                       onClick={e=>{e.stopPropagation();setPal(pal==="ns"?null:"ns");}}/>
                     {pal==="ns"&&<ColorPickerModal T={T} cur={nsColor} title="Colore nuovo turno"
                       coloriUsati={[...new Set((c.shifts||[]).map(s2=>s2.color).filter(Boolean))]}
+                      getNomeColore={p=>nomeDelColore(p,{fasceAutomatiche,coloriExtra})}
                       onPick={p=>setNsColor(p)}
                       onClose={()=>setPal(null)}/>}
                   </div>
@@ -1502,6 +1510,7 @@ export default function VistaModelli({ C }){
               onClick={e=>{e.stopPropagation();setPal(pal==="nc"?null:"nc");}}/>
             {pal==="nc"&&<ColorPickerModal T={T} cur={ncColor} title="Colore nuovo calendario"
               coloriUsati={[...new Set(store.calendars.map(cc=>cc.color).filter(Boolean))]}
+              getNomeColore={p=>nomeDelColore(p,{fasceAutomatiche,coloriExtra})}
               onPick={p=>setNcColor(p)}
               onClose={()=>setPal(null)}/>}
           </div>
