@@ -992,6 +992,7 @@ export default function VistaModelli({ C }){
             if(!confirm("Svuotare la cache locale e ricaricare tutto dal server? Serve connessione internet.")) return;
             setBanner("⏳ Svuotamento cache...");
             clearLocalStorageCache();
+            try{ localStorage.setItem("turnipm_riordina_dopo_cache","1"); }catch(e){}
             try {
               if("caches" in window){
                 const cacheNames = await caches.keys();

@@ -54,6 +54,7 @@ export function useAppCore(session){
   const storeRef = useRef(INIT);
   useEffect(()=>{ storeRef.current = store; }, [store]);
   const [loading, setLoading] = useState(true);
+  const [riordinaDopoCache, setRiordinaDopoCache] = useState(false);
   const [year,  setYear]  = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
   const [calId, setCalId] = useState(null);
@@ -1050,6 +1051,7 @@ export function useAppCore(session){
         saveToLocalStorage(events, calendars, modelliMappati, cached?.calId);
         isInitialized.current = true;
         setLoading(false);
+        try{ if(localStorage.getItem("turnipm_riordina_dopo_cache")==="1") setRiordinaDopoCache(true); }catch(e){}
 
         // ── Da qui in giù: sola manutenzione in background. Non serve per
         // mostrare il calendario, quindi non blocca né ridisegna la UI a meno
@@ -4224,6 +4226,15 @@ const importsRecenti = useMemo(()=>{
     await salvaModifichePosizioni(modelli, modelliRicalcolati);
     return { ok:true, totaleModelli: modelliRicalcolati.length, totaleCalendari: calendarsOrdinati.length };
   }
+
+  // Dopo "Svuota cache e ricarica tutto": riordino automatico una sola volta,
+  // appena i modelli sono stati ricaricati dal server.
+  useEffect(()=>{
+    if(!riordinaDopoCache || loading || !modelli.length) return;
+    setRiordinaDopoCache(false);
+    try{ localStorage.removeItem("turnipm_riordina_dopo_cache"); }catch(e){}
+    ripulisciTutteLePosizioniModelli().catch(e=>segnalaErrore(e, "Riordino automatico dopo svuota cache"));
+  }, [riordinaDopoCache, loading, modelli]);
 
   // ══════════════════════════════════════════════════════════════════════
   // NORMALIZZAZIONE COLORI "CONGELATI" (drift fascia oraria / coloreCustom)
