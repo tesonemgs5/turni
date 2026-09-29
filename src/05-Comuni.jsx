@@ -1997,7 +1997,7 @@ function GridColorPicker({T, value, onChange, coloriUsati=[]}){
           minWidth:24,minHeight:24,
           border:selezionato?"3px solid #000":(bianco?"1px solid #9ca3af":"none"),
           outline:selezionato?`2px solid ${T.surface}`:"none",outlineOffset:selezionato?1:0,
-          boxShadow:usato?`0 0 0 2px #D1D5DB`:"none"}}/>
+          boxShadow:"none"}}>{usato&&<span style={{position:"absolute",left:"20%",right:"20%",bottom:-5,height:3,borderRadius:2,background:"#9CA3AF",pointerEvents:"none"}}/>}</button>
     );
   };
 
