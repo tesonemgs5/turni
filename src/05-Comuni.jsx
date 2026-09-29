@@ -2162,7 +2162,29 @@ export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, tit
 
         </div>
 
+        {modalitaPicker==='griglia'&&(()=>{
+          const c=hexToRgbObj(previewColor||"#000000");
+          const colonne=[["Esadecimale",(previewColor||"").toUpperCase()],["Rosso",Math.round(c.r)],["Verde",Math.round(c.g)],["Blu",Math.round(c.b)]];
+          return (
+            <div style={{display:"flex",alignItems:"center",gap:10,marginTop:10,paddingTop:10,borderTop:`1px solid ${T.border}`,flexShrink:0}}>
+              <div style={{display:"flex",width:64,height:32,borderRadius:10,overflow:"hidden",border:`2px solid ${T.border}`,flexShrink:0}}>
+                <div style={{flex:1,background:cur}}/>
+                <div style={{flex:1,background:previewColor}}/>
+              </div>
+              <div style={{flex:1,display:"grid",gridTemplateColumns:"1.9fr 1fr 1fr 1fr",textAlign:"center",gap:2}}>
+                {colonne.map(([et,val])=>(
+                  <div key={et}>
+                    <div style={{fontSize:9,fontWeight:800,color:T.sub}}>{et}</div>
+                    <div style={{fontSize:12,fontWeight:700,color:T.text,marginTop:3}}>{val}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
         <div style={{display:"flex",gap:8,marginTop:10,flexShrink:0}}>
+
           <button onClick={onClose}
             style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
               color:T.text,padding:"8px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
