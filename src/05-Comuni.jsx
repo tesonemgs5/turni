@@ -1969,9 +1969,24 @@ function GridColorPicker({T, value, onChange, coloriUsati=[]}){
     }));
   }
 
+  // Colori già usati: ogni colore usato marca la sua cella esatta, oppure
+  // (se non è in griglia) la cella più vicina.
+  const celleUsate = new Set();
+  [...setUsati].forEach(u=>{
+    const v = hexToRgbObj(u);
+    let dMin = Infinity, best = null;
+    righe.forEach((riga,ri)=>riga.forEach((h,ci)=>{
+      if(!h) return;
+      const k = hexToRgbObj(h);
+      const d = (k.r-v.r)**2 + (k.g-v.g)**2 + (k.b-v.b)**2;
+      if(d<dMin){ dMin=d; best=`${ri}-${ci}`; }
+    }));
+    if(best) celleUsate.add(best);
+  });
+
   const coloreCella = (hex, chiave)=>{
     const selezionato = cellaSel===chiave;
-    const usato = setUsati.has(hex.toUpperCase());
+    const usato = celleUsate.has(chiave);
     const c = hexToRgbObj(hex);
     const bianco = c.r>=240 && c.g>=240 && c.b>=240;
     return (
