@@ -1925,6 +1925,7 @@ const GRID_PALETTE = [
   ["#F7B6A1","#F79B7C","#F57D56","#F06030","#E63900","#D63600","#C4380A","#B23A12","#A33510"], // Vermiglio (15°)
   ["#F7CCA1","#F7BA7C","#F5A556","#F09030","#E67300","#D66B00","#C4670A","#B26212","#A35A10"], // Arancio (30°)
   ["#F7E2A1","#F7D87C","#F5CD56","#F0C030","#E6AC00","#D6A100","#C4960A","#B28A12","#A37E10"], // Ambra (45°)
+  ["#FFF6A6","#FFF38C","#FFF173","#FFEE5C","#FFEC47","#FFEB3C","#E6D336","#CCBC30","#ADA029"], // Giallo puro (54°)
   ["#F7F7A1","#F7F77C","#F5F556","#F0F030","#E6E600","#D6D600","#C4C40A","#B2B212","#A3A310"], // Giallo (60°)
   ["#CCF7A1","#BAF77C","#A5F556","#90F030","#73E600","#6BD600","#67C40A","#62B212","#5AA310"], // Chartreuse (90°)
   ["#B6F7A1","#9BF77C","#7DF556","#60F030","#39E600","#36D600","#38C40A","#3AB212","#35A310"], // Chartreuse-Verde (105°)
@@ -1996,7 +1997,7 @@ function GridColorPicker({T, value, onChange, coloriUsati=[]}){
           minWidth:24,minHeight:24,
           border:selezionato?"3px solid #000":(bianco?"1px solid #9ca3af":"none"),
           outline:selezionato?`2px solid ${T.surface}`:"none",outlineOffset:selezionato?1:0,
-          boxShadow:usato?`0 0 0 2px rgba(15,23,42,0.35)`:"none"}}/>
+          boxShadow:usato?`0 0 0 2px #D1D5DB`:"none"}}/>
     );
   };
 
