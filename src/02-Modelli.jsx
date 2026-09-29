@@ -194,6 +194,32 @@ export default function VistaModelli({ C }){
     setSottomenuEspansoEvento({});
   }, [form?.editId, !form]);
 
+  // Schermata "assegna colore" (lista modelli con le spunte): i modelli
+  // già selezionati per quel colore vanno IN CIMA, ma l'ordine viene
+  // fissato UNA VOLTA quando la schermata si apre e non cambia mentre
+  // si spunta/deseleziona (altrimenti le righe "scapperebbero" sotto il
+  // dito). Il nuovo ordine si vede alla riapertura, cioè dopo aver premuto
+  // "Fatto". Se il colore viene cambiato a schermata aperta (Cambia
+  // colore) lo snapshot resta valido: i modelli passano tutti al nuovo colore.
+  const snapSelColoreRef = useRef({aperto:false, ids:null});
+  {
+    const apertoOra = !!showColorAssignPicker;
+    if(apertoOra && !snapSelColoreRef.current.aperto){
+      const hexA = showColorAssignPicker;
+      const ids = new Set();
+      (modelli||[]).forEach(m=>{
+        const matchAuto = !m.coloreCustom && (
+          (m.tempo==="h24" && hexA===COLORE_H24) ||
+          (m.tempo!=="h24" && m.inizio && colByTime(m.inizio)===hexA)
+        );
+        if(m.coloreCustom===hexA || matchAuto) ids.add(m.id);
+      });
+      snapSelColoreRef.current = {aperto:true, ids};
+    } else if(!apertoOra && snapSelColoreRef.current.aperto){
+      snapSelColoreRef.current = {aperto:false, ids:null};
+    }
+  }
+
   const modelliView = (
     <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
       {(()=>{
@@ -792,7 +818,12 @@ export default function VistaModelli({ C }){
                   .filter(c=>calSelezionati.includes(c.id))
                   .map(c=>({
                     cal: c,
-                    modelli: modelliOrdinati.filter(m=>modelloVisibileInCalendario(m, c.id, mainCalId)),
+                    modelli: (()=>{
+                      const lista = modelliOrdinati.filter(m=>modelloVisibileInCalendario(m, c.id, mainCalId));
+                      const ids = snapSelColoreRef.current.ids;
+                      if(!ids || ids.size===0) return lista;
+                      return [...lista.filter(x=>ids.has(x.id)), ...lista.filter(x=>!ids.has(x.id))];
+                    })(),
                   }))
                   .filter(g=>g.modelli.length>0);
                 return (
