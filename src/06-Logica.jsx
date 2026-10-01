@@ -35,6 +35,11 @@ const REPORT_TEMPLATES = [
 
 const INIT = { calendars:[], events:{}, theme:"auto", extraHols:[], reports:[], reportSettings:{}, fasceAutomatiche: FASCE_AUTOMATICHE_DEFAULT, sundayColor:"", holidayColor:"", nationalHolsEnabled:FESTIVITA_DEFAULT_ATTIVE, calEventRows:1, calRow1Field:"titolo", calRow2Field:"---" };
 
+// Calendari di destinazione degli import da foto. Se rinomini il calendario
+// nell'app, cambia solo il nome qui sotto (confronto senza maiuscole/spazi).
+const NOME_CAL_TURNI_PERSONALI = "FU";
+const NOME_CAL_TURNI_STELLA = "COT";
+
 export function useAppCore(session){
   const today = new Date();
   // <- AGGANCIO: qui aggiungo un <style> globale con @keyframes calFadeIn, iniettato una sola volta nel render finale
@@ -1625,6 +1630,9 @@ export function useAppCore(session){
 
   const activeCal = store.calendars.find(c=>c.id===calId)||null;
   const mainCal   = store.calendars.find(c=>c.isMain)||null;
+  const trovaCalIdPerNome = (nome)=> store.calendars.find(c=>(c.name||"").trim().toUpperCase()===nome.trim().toUpperCase())?.id || null;
+  const calPersonaleId = trovaCalIdPerNome(NOME_CAL_TURNI_PERSONALI); // destinazione import foto "Turni personali"
+  const calStellaId = trovaCalIdPerNome(NOME_CAL_TURNI_STELLA);       // destinazione import foto "Turni Stella"
   const mainCalId = mainCal?.id||null; // calendario principale: usato come fallback per i modelli/rotazioni senza calendarId esplicito
 
   // Default per il Report: se reportCalIds risulta vuoto (nessuna scelta
@@ -3485,19 +3493,22 @@ function ricalcolaPosizioniGlobali(prev, calendarsOrdinati, ordiniPerCalendario,
 const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
 
 const importsRecenti = useMemo(()=>{
+  // Raggruppa per (calendario, importId): serve a tutti e 3 i dialog di import.
   const gruppi = {};
   for(const [dateKey, calMap] of Object.entries(store.events||{})){
-    const lista = calMap?.[calId] || [];
-    for(const ev of lista){
-      if(!ev.importId) continue;
-      if(!gruppi[ev.importId]) gruppi[ev.importId] = { importId: ev.importId, count:0, minDate:dateKey, maxDate:dateKey };
-      gruppi[ev.importId].count++;
-      if(dateKey < gruppi[ev.importId].minDate) gruppi[ev.importId].minDate = dateKey;
-      if(dateKey > gruppi[ev.importId].maxDate) gruppi[ev.importId].maxDate = dateKey;
+    for(const [cid, lista] of Object.entries(calMap||{})){
+      for(const ev of (lista||[])){
+        if(!ev.importId) continue;
+        const k = cid+"|"+ev.importId;
+        if(!gruppi[k]) gruppi[k] = { importId: ev.importId, calendarId: cid, count:0, minDate:dateKey, maxDate:dateKey };
+        gruppi[k].count++;
+        if(dateKey < gruppi[k].minDate) gruppi[k].minDate = dateKey;
+        if(dateKey > gruppi[k].maxDate) gruppi[k].maxDate = dateKey;
+      }
     }
   }
   return Object.values(gruppi).sort((a,b)=> (b.importId||"").localeCompare(a.importId||""));
-}, [store.events, calId]);
+}, [store.events]);
 
 
   // Pinna un modello: lo aggancia "sopra" il modello che si trova alla
@@ -4715,8 +4726,9 @@ const importsRecenti = useMemo(()=>{
     if(!mod && !labelOverride) return;
     const {
       note="", collega="", auto="", importId=null, protPagFine=null, protRecFine=null,
-      oraInizioOverride=null, oraFineOverride=null,
+      oraInizioOverride=null, oraFineOverride=null, calIdOverride=null,
     } = extra;
+    const calDest = calIdOverride || calId; // calendario di destinazione (default: quello attivo)
     const dateKey = dkey(dataEv.getFullYear(), dataEv.getMonth(), dataEv.getDate());
     const color = mod ? (mod?.coloreCustom || (mod.tempo==="h24" ? "#64748b" : colByTime(mod.inizio))) : "#94a3b8";
     const label = (labelOverride || mod?.label || mod?.titolo || "").toUpperCase();
@@ -4729,7 +4741,7 @@ const importsRecenti = useMemo(()=>{
     const tOut = oraFineOverride!=null ? oraFineOverride : ((!mod || allDay) ? "" : calcFineModello(mod));
 
     const { data, error } = await creaEventoSupabase({
-      userId, calId, dateKey, label, color, allDay,
+      userId, calId: calDest, dateKey, label, color, allDay,
       tIn, tOut, modelloId: mod?.id || null, rotazioneId,
       note, collega, auto, importId, protPagFine, protRecFine,
     });
@@ -4740,8 +4752,8 @@ const importsRecenti = useMemo(()=>{
     }
 
     if(!nuoviEventiLocali[dateKey]) nuoviEventiLocali[dateKey] = {};
-    if(!nuoviEventiLocali[dateKey][calId]) nuoviEventiLocali[dateKey][calId] = [];
-    nuoviEventiLocali[dateKey][calId].push({
+    if(!nuoviEventiLocali[dateKey][calDest]) nuoviEventiLocali[dateKey][calDest] = [];
+    nuoviEventiLocali[dateKey][calDest].push({
       id: data.id,
       color,
       label,
@@ -5145,8 +5157,8 @@ const importsRecenti = useMemo(()=>{
       const ns=JSON.parse(JSON.stringify(prev));
       const idSet = new Set(ids);
       for(const dKey of Object.keys(ns.events||{})){
-        if(ns.events[dKey]?.[cId]){
-          ns.events[dKey][cId] = ns.events[dKey][cId].filter(e=>!idSet.has(e.id));
+        for(const cid of Object.keys(ns.events[dKey]||{})){
+          ns.events[dKey][cid] = (ns.events[dKey][cid]||[]).filter(e=>!idSet.has(e.id));
         }
       }
       saveToLocalStorage(ns.events, ns.calendars, modelli);
@@ -5155,11 +5167,20 @@ const importsRecenti = useMemo(()=>{
     });
   }
 
-  async function importaEventiSingoli(righe){
+  async function importaEventiSingoli(righe, tipoTabella=null){
     // righe: [{ dateKey, modelloId }] -- righe senza modelloId vengono ignorate
+    // tipoTabella: "personale" -> calendario FU, "stella" -> calendario COT
+    // (nomi in cima al file); altrimenti il calendario attivo.
     // Restituisce il numero di righe EFFETTIVAMENTE scritte (esclude modelloId
     // mancante, modello inesistente, e duplicati già presenti sullo stesso giorno).
-    if(!userId || !calId || !righe?.length) return 0;
+    if(!userId || !righe?.length) return 0;
+    const calDest = tipoTabella==="stella" ? calStellaId : tipoTabella==="personale" ? calPersonaleId : calId;
+    if(!calDest){
+      const nome = tipoTabella==="stella" ? NOME_CAL_TURNI_STELLA : NOME_CAL_TURNI_PERSONALI;
+      segnalaErrore(`Calendario "${nome}" non trovato: importazione annullata. Se l'hai rinominato, aggiorna il nome in cima a 06-Logica.jsx.`, "Importa da foto");
+      return 0;
+    }
+    const importId = `imp_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
     const nuoviEventiLocali = {};
     let nScritte = 0;
     for(const r of righe){
@@ -5167,14 +5188,12 @@ const importsRecenti = useMemo(()=>{
       const mod = modelli.find(m=>m.id===r.modelloId);
       if(!mod) continue;
       // Se il giorno ha già un evento con lo stesso modello, non duplicare.
-      // Se ha eventi con modelli diversi, aggiungi sotto (non sovrascrivere).
-      // Se non ha eventi, aggiungi normalmente.
-      const eventiEsistenti = store.events?.[r.dateKey]?.[calId] || [];
+      const eventiEsistenti = store.events?.[r.dateKey]?.[calDest] || [];
       const giaPresente = eventiEsistenti.some(ev => ev.modelloId === r.modelloId);
       if(giaPresente) continue;
       const [y,m,d] = r.dateKey.split("-").map(Number);
       const dataEv = new Date(y, m-1, d);
-      await inserisciEventoGenerico(mod, dataEv, null, nuoviEventiLocali);
+      await inserisciEventoGenerico(mod, dataEv, null, nuoviEventiLocali, null, { importId, calIdOverride: calDest });
       nScritte++;
     }
     setStore(prev => {
@@ -5190,9 +5209,8 @@ const importsRecenti = useMemo(()=>{
       syncSeAttivo(ns.events, ns.calendars);
       return ns;
     });
-    // Stesso bugfix del caso "Creazione turno": il calendario su cui è stato
-    // fatto l'import deve restare visibile dopo il refresh.
-    if(nScritte>0) setSelectedCalIds(prev => prev.length===0 || prev.includes(calId) ? prev : [...prev, calId]);
+    // Il calendario di destinazione deve restare visibile dopo il refresh.
+    if(nScritte>0) setSelectedCalIds(prev => prev.length===0 || prev.includes(calDest) ? prev : [...prev, calDest]);
     return nScritte;
   }
 
@@ -6325,7 +6343,7 @@ const importsRecenti = useMemo(()=>{
     normalizzaModelliTempo,
     normalizzaEventiTempo,
     modelliOrdinati,
-    importsRecenti,
+    importsRecenti, calPersonaleId, calStellaId,
     modelliDelCalendario,
     spostaModelloPuro,
     moveRotazione, moveColoreExtra, ricoloraModelliPerFasciaOraria,

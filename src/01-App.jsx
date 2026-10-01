@@ -168,7 +168,7 @@ function AppInterno({ session }){
     delTutteEvtiRotazione, cancellaTuttiEventiMese, cancellaEventiMeseSelezione, calcMinuti, saveToSheets, syncSeAttivo, loadFromSheets,
     syncFromSheets, handleSave, handleLoad, handleSaveSheetsConfig, handleViewDbData, buildBackupPayload,
     handleExportSupabase, handleOpenImportSupabase, handleRestoreBackup, handleLogout, eseguiNormalizzazione, normalizzaModelliTempo,
-    normalizzaEventiTempo, modelliOrdinati, importsRecenti, modelliDelCalendario, rinumeraSottoinsieme, spostaModelloPuro,
+    normalizzaEventiTempo, modelliOrdinati, importsRecenti, calPersonaleId, calStellaId, modelliDelCalendario, rinumeraSottoinsieme, spostaModelloPuro,
     trascinaModelloPuro, salvaModifichePosizioni, moveH24, reorderModelli, ensureColoreRegistrato, registraValoreAutocomplete,
     registraValoriAutocomplete, rimuoviValoreAutocomplete, supabaseUpsertConRetry, saveModello, deleteModello, addColoreExtra,
     removeColoreExtra, updateColoreExtraLabel, replaceColoreEverywhere, saveRotazione, deleteRotazione, updateGrigliaRotazione,
@@ -834,17 +834,26 @@ function AppInterno({ session }){
       )}
       {showImportaFotoDialog && (
         <ImportaFotoDialog T={T} accent={accent} dark={dark}
-          modelli={modelliOrdinati.filter(m=>(m.calendarId||mainCalId)===calId)}
+          modelliPersonali={modelliOrdinati.filter(m=>(m.calendarId||mainCalId)===calPersonaleId)}
+          modelliStella={modelliOrdinati.filter(m=>(m.calendarId||mainCalId)===calStellaId)}
+          nomeCalPersonale={store.calendars.find(c=>c.id===calPersonaleId)?.name||"(non trovato)"}
+          nomeCalStella={store.calendars.find(c=>c.id===calStellaId)?.name||"(non trovato)"}
+          importsRecenti={importsRecenti
+            .filter(i=>i.calendarId===calPersonaleId||i.calendarId===calStellaId)
+            .map(i=>({...i, calName: store.calendars.find(c=>c.id===i.calendarId)?.name||""}))}
           year={year} month={month}
           onClose={()=>setShowImportaFotoDialog(false)}
-          onConfirm={async(righeValide)=>{
-            const n = await importaEventiSingoli(righeValide);
+          onConfirm={async(righeValide, tipoTabella)=>{
+            const n = await importaEventiSingoli(righeValide, tipoTabella);
             return n;
+          }}
+          onDeleteImport={async(importId, calendarId)=>{
+            await delTuttiEventiImport(importId, calendarId);
           }}/>
       )}
       {showImportaTurniJsonDialog && (
         <ImportaTurniJsonDialog T={T} accent={accent} dark={dark}
-          importsRecenti={importsRecenti}
+          importsRecenti={importsRecenti.filter(i=>i.calendarId===calId)}
           year={year} month={month}
           onClose={()=>setShowImportaTurniJsonDialog(false)}
           onConfirm={async(righeJson)=>{
