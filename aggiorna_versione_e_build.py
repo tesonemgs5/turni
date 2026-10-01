@@ -379,7 +379,9 @@ def main():
 
     copied = []
     if os.path.isfile(apk_src):
-        dest = os.path.join(out_dir, "app-release.apk")
+        # Nome file: turni-a-ggg-hhmm.apk (es. versione 6.274.1145 -> turni-6-274-1145.apk)
+        nome_apk = "turni-" + nuova_versione.replace(".", "-") + ".apk"
+        dest = os.path.join(out_dir, nome_apk)
         shutil.copyfile(apk_src, dest)
         copied.append(dest)
 
