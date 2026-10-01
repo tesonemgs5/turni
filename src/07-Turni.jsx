@@ -454,9 +454,14 @@ async function preprocessaImmagine(file){
   return new File([blob], (file.name||"foto") + "-preproc.png", { type: "image/png" });
 }
 
-export function ImportaFotoDialog({T, accent, dark, modelli, year, month, onClose, onConfirm}){
+export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliStella, nomeCalPersonale, nomeCalStella, importsRecenti, year, month, onClose, onConfirm: onConfirmProp, onDeleteImport}){
   const [step, setStep] = useState("scegli-tipo"); // scegli-tipo | upload | ocr | chiedi-gemini | gemini-ocr | incolla-json | riepilogo
   const [tipoTabella, setTipoTabella] = useState(null); // "personale" | "stella"
+  // I modelli usati dipendono dal tipo: personali -> calendario FU, Stella -> calendario COT.
+  const modelli = (tipoTabella==="stella" ? modelliStella : modelliPersonali) || [];
+  // Ogni conferma dice all'app a quale calendario destinare le righe.
+  const onConfirm = (righe)=> onConfirmProp(righe, tipoTabella);
+  const [confermaEliminaImportId, setConfermaEliminaImportId] = useState(null);
   const [imgPreviewUrl, setImgPreviewUrl] = useState(null);
   const [progresso, setProgresso] = useState(0);
   const [errore, setErrore] = useState("");
@@ -1124,9 +1129,9 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
           <div style={{fontSize:12,color:"#444444",marginTop:2}}>
             Mese in corso: {NOMI_MESI_IT[month]} {year}.{" "}
             {tipoTabella==="stella"
-              ? "Turni Stella: vengono importati per fasce orarie (00.00, 06.00, 12.00, 14.30, 17.30)."
+              ? `Turni Stella: vengono importati per fasce orarie (00.00, 06.00, 12.00, 14.30, 17.30) nel calendario ${nomeCalStella}.`
               : tipoTabella==="personale"
-                ? "Turni personali: vengono importati solo Primo, Secondo, Terzo e Notturno."
+                ? `Turni personali: vengono importati solo Primo, Secondo, Terzo e Notturno nel calendario ${nomeCalPersonale}.`
                 : ""}
           </div>
         </div>
@@ -1156,6 +1161,35 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
                   background:"transparent"}}>
                 📋 Registro problemi import
               </button>
+
+              {importsRecenti?.length>0 && (
+                <div style={{marginTop:16}}>
+                  <div style={{fontSize:11,fontWeight:800,color:T.sub,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>
+                    Importazioni recenti
+                  </div>
+                  {importsRecenti.map(imp=>(
+                    <div key={imp.calendarId+"|"+imp.importId} style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+                      padding:"10px 0",borderBottom:`1px solid ${T.border}`}}>
+                      <div>
+                        <div style={{fontSize:13,color:T.text,fontWeight:700}}>{imp.count} eventi{imp.calName?` — ${imp.calName}`:""}</div>
+                        <div style={{fontSize:11,color:T.sub}}>{fmtDataIT(imp.minDate)} → {fmtDataIT(imp.maxDate)}</div>
+                      </div>
+                      <button onClick={()=>setConfermaEliminaImportId(imp.calendarId+"|"+imp.importId)}
+                        style={{background:"none",border:"none",color:"#ef4444",fontSize:18,cursor:"pointer",padding:4}}>🗑️</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {confermaEliminaImportId&&(()=>{
+                const imp = (importsRecenti||[]).find(i=>(i.calendarId+"|"+i.importId)===confermaEliminaImportId);
+                if(!imp) return null;
+                return (
+                  <ConfermaEliminazione T={T}
+                    testo={`Eliminare tutti i ${imp.count} eventi di questa importazione (dal ${fmtDataIT(imp.minDate)} al ${fmtDataIT(imp.maxDate)})?`}
+                    onConferma={()=>{setConfermaEliminaImportId(null);onDeleteImport(imp.importId, imp.calendarId);}}
+                    onAnnulla={()=>setConfermaEliminaImportId(null)}/>
+                );
+              })()}
             </div>
           )}
 
@@ -1495,8 +1529,7 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
               color:"#444444",padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
             Annulla
           </button>
-        </div>import { useState, useEffect, useRef, useMemo, Fragment } from "react";
-        
+        </div>
       </div>
     </div>
   );
