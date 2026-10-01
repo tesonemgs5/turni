@@ -1011,21 +1011,18 @@ export default function VistaModelli({ C }){
 
       <SecCollapsible label="MANUTENZIONE" T={T}>
         <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
-          Usa questa funzione solo se il calendario mostra dati non aggiornati o
-          sbagliati dopo una modifica fatta da un altro dispositivo. Cancella la
-          copia locale e ripesca tutto da capo dal server: richiede connessione
-          internet, altrimenti i dati resterebbero vuoti finché la linea non torna.
+          Usa questa funzione se il calendario mostra dati non aggiornati o
+          sbagliati. Svuota la cache dell'app (memoria temporanea e service
+          worker) e ricarica tutto dai dati salvati sul dispositivo: non cancella
+          nulla e funziona anche senza connessione internet.
         </div>
         <button onClick={async()=>{
-            if(!navigator.onLine){
-              setBanner("📡 Serve connessione per svuotare la cache. I tuoi dati locali non sono stati toccati.");
-              setTimeout(()=>setBanner(null), 5000);
-              return;
-            }
-            if(!confirm("Svuotare la cache locale e ricaricare tutto dal server? Serve connessione internet.")) return;
+            if(!confirm("Svuotare la cache e ricaricare dai dati locali?")) return;
             setBanner("⏳ Svuotamento cache...");
-            clearLocalStorageCache();
-            try{ localStorage.setItem("turnipm_riordina_dopo_cache","1"); }catch(e){}
+            // I dati dell'app (turnipm_cache_v1 in localStorage) NON vengono
+            // toccati: si svuota solo la cache volatile (Cache Storage e
+            // service worker), poi la pagina si ricarica e rilegge tutto
+            // dal localStorage, anche offline.
             try {
               if("caches" in window){
                 const cacheNames = await caches.keys();
