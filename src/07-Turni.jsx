@@ -1495,7 +1495,8 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
               color:"#444444",padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
             Annulla
           </button>
-        </div>
+        </div>import { useState, useEffect, useRef, useMemo, Fragment } from "react";
+        
       </div>
     </div>
   );
