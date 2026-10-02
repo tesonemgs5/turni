@@ -2407,9 +2407,9 @@ export function useAppCore(session){
     });
   }
 
-  async function updateEvt(){
+  async function updateEvt(ambito){
     try{
-      return await updateEvtInterno();
+      return await updateEvtInterno(ambito);
     }catch(e){
       // Stesso ragionamento di saveEvt: rete instabile qui non è un errore
       // vero, il locale è già a posto. Silenzioso, non un doppio popup.
@@ -2418,7 +2418,11 @@ export function useAppCore(session){
       alert("Si è verificato un errore imprevisto modificando il turno. L'errore è stato registrato nel Log (Impostazioni → Log). Controlla il calendario: la modifica potrebbe non essere stata salvata.");
     }
   }
-  async function updateEvtInterno(){
+  async function updateEvtInterno(ambito){
+    // Ambito della modifica a "Visualizza": "questo" (solo questo evento),
+    // "modello" (modello + tutti i suoi eventi) o "seguenti" (questo evento
+    // e tutti i successivi dello stesso modello).
+    const amb = (ambito==="modello"||ambito==="seguenti") ? ambito : "questo";
     const editCalId = form?.editCid || calId;
     if(!form||!dayKey||!editCalId||!userId||!form.editId) return;
     const cal = store.calendars.find(c=>c.id===editCalId);
@@ -2548,6 +2552,51 @@ export function useAppCore(session){
       contesto:"Modifica turno", ts:new Date().toISOString(),
       eventsPerSheets: nuovoStore.events, calendarsPerSheets: nuovoStore.calendars,
     });
+
+    // 2bis) Estensione della visibilità ("Visualizza") agli altri eventi
+    // dello stesso modello, se scelto dall'utente.
+    if(amb!=="questo" && formEffettivo.modelloId){
+      const modId = formEffettivo.modelloId;
+      const nuoveVis = formEffettivo.visibileAncheIn||[];
+      const idsAltri = [];
+      const ns2 = JSON.parse(JSON.stringify(nuovoStore));
+      Object.keys(ns2.events||{}).forEach(dk=>{
+        if(amb==="seguenti" && dk<dayKey) return;
+        const lista = ns2.events[dk]?.[editCalId];
+        if(!Array.isArray(lista)) return;
+        ns2.events[dk][editCalId] = lista.map(e=>{
+          if(e.modelloId!==modId || e.id===formEffettivo.editId) return e;
+          idsAltri.push(e.id);
+          return {...e, visibileAncheIn: nuoveVis};
+        });
+      });
+      let modelliAgg = modelli;
+      if(amb==="modello"){
+        modelliAgg = modelli.map(m=>m.id===modId ? {...m, visibileAncheIn: nuoveVis} : m);
+        setModelli(modelliAgg);
+      }
+      saveToLocalStorage(ns2.events, ns2.calendars, modelliAgg);
+      setStore(ns2);
+      storeRef.current = ns2;
+      const ts2 = new Date().toISOString();
+      const valoreDb = nuoveVis.length>0 ? nuoveVis : null;
+      if(amb==="modello"){
+        await scriviConBackup({
+          tipo:"update", table:"modelli", payload:{ visibile_anche_in: valoreDb },
+          matchObj:{ id: modId, user_id: userId },
+          contesto:"Visualizza modello (da evento)", ts:ts2,
+          opzioni:{ soloLog:true },
+        });
+      }
+      for(let i=0;i<idsAltri.length;i+=20){
+        await Promise.all(idsAltri.slice(i,i+20).map(idEv=>scriviConBackup({
+          tipo:"update", table:"events", payload:{ visibile_anche_in: valoreDb },
+          matchObj:{ id: idEv, user_id: userId },
+          contesto:"Visualizza eventi del modello", ts:ts2,
+          opzioni:{ soloLog:true },
+        })));
+      }
+    }
 
     // 3) Sincronizzo (crea/aggiorna/rimuove) gli eventi "figli" di
     // protrazione, allo stesso modo di saveEvt — solo se l'evento

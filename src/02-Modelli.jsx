@@ -114,6 +114,9 @@ export default function VistaModelli({ C }){
   // cui rendere visibile anche questo evento (sola visualizzazione, stessa
   // fonte di verità — vedi modelloVisibileInCalendario in 05-Comuni.jsx).
   const [mostraVisualizzaEvento, setMostraVisualizzaEvento] = useState(false);
+  // Domanda mostrata al salvataggio quando "Visualizza" è cambiato: applicare
+  // a solo questo evento, a tutto il modello o da questo evento in poi.
+  const [chiediAmbitoVisualizza, setChiediAmbitoVisualizza] = useState(false);
   const {
     today, tipoModelloProtrazione, computeStornoRecupero, computeStornoPI, tipoModelloPI, store, setStore, loading, setLoading, year,
     ripristinaModelliMancanti, ripristinoInCorso, setRipristinoInCorso, ripristinoEsito, setRipristinoEsito,
@@ -2193,7 +2196,7 @@ export default function VistaModelli({ C }){
                 protPagFine:e.protPagFine||"", protRecFine:e.protRecFine||"",
                 protMenoRecIn:e.protMenoRecIn||"", protMenoRecOut:e.protMenoRecOut||"",
                 categoriaTurno:e.categoriaTurno||"", categoriaAppAuto:e.categoriaAppAuto||"",
-                visibileAncheIn:e.visibileAncheIn||[] });
+                visibileAncheIn:e.visibileAncheIn||[], visibileAncheInOrig:e.visibileAncheIn||[] });
             }}
             style={{background:e.color,borderRadius:10,padding:"10px 12px",marginBottom:8,cursor:"pointer",
               display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
@@ -2321,7 +2324,7 @@ export default function VistaModelli({ C }){
                 protPagFine:e.protPagFine||"",protRecFine:e.protRecFine||"",
                 protMenoRecIn:e.protMenoRecIn||"",protMenoRecOut:e.protMenoRecOut||"",
                 categoriaTurno:e.categoriaTurno||"",categoriaAppAuto:e.categoriaAppAuto||"",
-                visibileAncheIn:e.visibileAncheIn||[],
+                visibileAncheIn:e.visibileAncheIn||[], visibileAncheInOrig:e.visibileAncheIn||[],
               });}}
               style={{background:cardTextColor==="#ffffff"?"rgba(0,0,0,0.2)":"rgba(255,255,255,0.35)",border:"none",borderRadius:6,
                 color:cardTextColor,width:26,height:26,cursor:"pointer",fontSize:14,marginLeft:4,flexShrink:0,
@@ -3222,12 +3225,40 @@ export default function VistaModelli({ C }){
                   borderRadius:10,color:T.sub,padding:"13px 0",cursor:"pointer",fontSize:16,fontWeight:700}}>
                 Annulla
               </button>
-              <button onClick={form.editId?updateEvt:saveEvt}
+              <button onClick={()=>{
+                  if(!form.editId){ saveEvt(); return; }
+                  const nuovaVis = [...(form.visibileAncheIn||[])].sort().join("|");
+                  const vecchiaVis = [...(form.visibileAncheInOrig||[])].sort().join("|");
+                  const collegatoAModello = !!(form.modelloId||form.evtModelloId);
+                  if(nuovaVis!==vecchiaVis && collegatoAModello){ setChiediAmbitoVisualizza(true); return; }
+                  updateEvt("questo");
+                }}
                 style={{flex:2,background:accent,border:"none",borderRadius:10,
                   color:getContrastTextColor(accent),padding:"13px 0",cursor:"pointer",fontSize:16,fontWeight:800}}>
                 💾 Salva
               </button>
             </div>
+            {chiediAmbitoVisualizza&&(
+              <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:100001,
+                display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
+                onClick={()=>setChiediAmbitoVisualizza(false)}>
+                <div style={{background:T.surface,borderRadius:16,width:"100%",maxWidth:340,padding:18}}
+                  onClick={e=>e.stopPropagation()}>
+                  <div style={{fontSize:15,fontWeight:800,color:T.text,marginBottom:14,textAlign:"center"}}>
+                    Applicare "Visualizza" a:
+                  </div>
+                  {[["questo","Solo questo evento"],["modello","Tutto il modello"],["seguenti","Da questo evento in poi"]].map(([k,t])=>(
+                    <button key={k} onClick={()=>{setChiediAmbitoVisualizza(false);updateEvt(k);}}
+                      style={{display:"block",width:"100%",background:T.s2,border:`1px solid ${T.border}`,
+                        borderRadius:10,color:T.text,padding:"12px 0",marginBottom:8,cursor:"pointer",
+                        fontWeight:800,fontSize:14}}>{t}</button>
+                  ))}
+                  <button onClick={()=>setChiediAmbitoVisualizza(false)}
+                    style={{display:"block",width:"100%",background:"transparent",border:"none",
+                      color:T.sub,padding:"8px 0",cursor:"pointer",fontWeight:700,fontSize:13}}>Annulla</button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
