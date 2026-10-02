@@ -189,8 +189,8 @@ export default function VistaCalendario({ C }){
     if(calEventRows!==2){
       return (
         <div style={{background:e.color,borderRadius:3,padding:"0 4px",
-          fontSize:evtFontSize,fontWeight:800,color:textColor,overflow:"hidden",
-          whiteSpace:"nowrap",display:"flex",alignItems:"center",lineHeight:1,
+          fontSize:`min(${evtFontSize}, 17cqh)`,fontWeight:800,color:textColor,overflow:"hidden",
+          whiteSpace:"nowrap",display:"flex",alignItems:"center",lineHeight:1,minHeight:0,
           textShadow:shadow,gridRow:"span 1"}}>
           {e.label}
         </div>
@@ -439,7 +439,7 @@ export default function VistaCalendario({ C }){
                     </div>
                   </div>
                   <div style={{flex:1,overflow:"hidden",display:"grid",
-                    gridTemplateRows:`repeat(${TOTAL_SLOTS},1fr)`,
+                    gridTemplateRows:`repeat(${TOTAL_SLOTS},minmax(0,1fr))`,minHeight:0,...(calEventRows!==2?{containerType:"size"}:{}),
                     gap:"1px",padding:"0 1px 1px"}}>
                     {evts.slice(0,maxEvtSlots).map((e,ei)=>(
                       <EventCard key={e.id+ei} e={e}/>
@@ -492,7 +492,7 @@ export default function VistaCalendario({ C }){
                 </div>
               </div>
               <div style={{flex:1,overflow:"hidden",display:"grid",
-                gridTemplateRows:`repeat(${TOTAL_SLOTS},1fr)`,
+                gridTemplateRows:`repeat(${TOTAL_SLOTS},minmax(0,1fr))`,minHeight:0,...(calEventRows!==2?{containerType:"size"}:{}),
                 gap:"1px",padding:"0 1px 1px"}}>
                 {evts.slice(0,maxEvtSlots).map((e,ei)=>(
                   <EventCard key={e.id+ei} e={e}/>
