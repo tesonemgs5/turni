@@ -85,19 +85,6 @@ export default function VistaCalendario({ C }){
   } = C;
 
   const calBarRef = useRef(null);
-  // Altezza reale dell'area griglia: serve per calcolare l'altezza esatta
-  // degli slot-evento in modo che 5 settimane x 5 eventi entrino sempre.
-  const [gridWrapEl,setGridWrapEl] = useState(null);
-  const [gridH,setGridH] = useState(0);
-  useEffect(()=>{
-    if(!gridWrapEl) return;
-    const aggiorna = ()=>setGridH(gridWrapEl.clientHeight);
-    aggiorna();
-    if(typeof ResizeObserver==="undefined"){ window.addEventListener("resize", aggiorna); return ()=>window.removeEventListener("resize", aggiorna); }
-    const ro = new ResizeObserver(aggiorna);
-    ro.observe(gridWrapEl);
-    return ()=>ro.disconnect();
-  },[gridWrapEl]);
 
   async function applyQuickModello(key){
     if(!quickModeModello||!calId||!userId) return;
@@ -151,13 +138,6 @@ export default function VistaCalendario({ C }){
   const totalDays = daysInMonth(year,month);
   const fd = firstDay(year,month);
   const cells = [...Array(fd).fill(null), ...Array.from({length:totalDays},(_,i)=>i+1)];
-  // Altezza di ogni slot-evento (px): la riga-settimana è 1/N dell'area griglia,
-  // meno l'intestazione col numero del giorno; il resto va in 5 slot uguali.
-  const numRighe = Math.max(1, Math.ceil(cells.length/7));
-  const rigaH = gridH>0 ? (gridH-(numRighe-1))/numRighe : 0;
-  const slotH = (calEventRows!==2 && rigaH>0) ? Math.max(6, Math.floor((rigaH-26-5)/TOTAL_SLOTS)) : 0;
-  const slotFontPx = slotH>0 ? Math.max(6, Math.floor(slotH*0.9)) : 0;
-  const slotRows = slotH>0 ? `repeat(${TOTAL_SLOTS},${slotH}px)` : `repeat(${TOTAL_SLOTS},minmax(0,1fr))`;
 
   if(loading) return (
     <div style={{background:dark?"#090e1a":"#f1f5f9",height:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -190,7 +170,7 @@ export default function VistaCalendario({ C }){
   // contenere davvero due righe di testo: senza aumentare l'altezza della
   // cella-giorno, la riga 2 non avrebbe mai spazio reale e sparirebbe
   // sempre, anche quando ci sarebbe posto.
-  const weekRowMinH = calEventRows===2 ? 92 : 0;
+  const weekRowMinH = calEventRows===2 ? 92 : 54;
   function eventRowText(e, field){
     switch(field){
       case "titolo": return e.label||"";
@@ -209,7 +189,7 @@ export default function VistaCalendario({ C }){
     if(calEventRows!==2){
       return (
         <div style={{background:e.color,borderRadius:3,padding:"0 4px",
-          fontSize:slotFontPx>0?`min(${evtFontSize}, ${slotFontPx}px)`:evtFontSize,fontWeight:800,color:textColor,overflow:"hidden",
+          fontSize:`min(${evtFontSize}, 17cqh)`,fontWeight:800,color:textColor,overflow:"hidden",
           whiteSpace:"nowrap",display:"flex",alignItems:"center",lineHeight:1,minHeight:0,
           textShadow:shadow,gridRow:"span 1"}}>
           {e.label}
@@ -430,7 +410,7 @@ export default function VistaCalendario({ C }){
           📴 OFFLINE — le modifiche verranno sincronizzate al ritorno della connessione
         </div>
       )}
-      <div ref={setGridWrapEl} style={{position:"relative",flex:1,overflow:calEventRows===2?"auto":"hidden",minHeight:0}}>
+      <div style={{position:"relative",flex:1,overflow:calEventRows===2?"auto":"hidden",minHeight:0}}>
       {prevGrid&&(()=>{
         const pTotalDays=daysInMonth(prevGrid.year,prevGrid.month);
         const pFd=firstDay(prevGrid.year,prevGrid.month);
@@ -459,7 +439,7 @@ export default function VistaCalendario({ C }){
                     </div>
                   </div>
                   <div style={{flex:1,overflow:"hidden",display:"grid",
-                    gridTemplateRows:slotRows,alignContent:"start",minHeight:0,
+                    gridTemplateRows:`repeat(${TOTAL_SLOTS},minmax(0,1fr))`,minHeight:0,...(calEventRows!==2?{containerType:"size"}:{}),
                     gap:"1px",padding:"0 1px 1px"}}>
                     {evts.slice(0,maxEvtSlots).map((e,ei)=>(
                       <EventCard key={e.id+ei} e={e}/>
@@ -512,7 +492,7 @@ export default function VistaCalendario({ C }){
                 </div>
               </div>
               <div style={{flex:1,overflow:"hidden",display:"grid",
-                gridTemplateRows:slotRows,alignContent:"start",minHeight:0,
+                gridTemplateRows:`repeat(${TOTAL_SLOTS},minmax(0,1fr))`,minHeight:0,...(calEventRows!==2?{containerType:"size"}:{}),
                 gap:"1px",padding:"0 1px 1px"}}>
                 {evts.slice(0,maxEvtSlots).map((e,ei)=>(
                   <EventCard key={e.id+ei} e={e}/>
