@@ -170,7 +170,7 @@ export default function VistaCalendario({ C }){
   // contenere davvero due righe di testo: senza aumentare l'altezza della
   // cella-giorno, la riga 2 non avrebbe mai spazio reale e sparirebbe
   // sempre, anche quando ci sarebbe posto.
-  const weekRowMinH = calEventRows===2 ? 92 : 54;
+  const weekRowMinH = calEventRows===2 ? 92 : 0;
   function eventRowText(e, field){
     switch(field){
       case "titolo": return e.label||"";
@@ -189,7 +189,7 @@ export default function VistaCalendario({ C }){
     if(calEventRows!==2){
       return (
         <div style={{background:e.color,borderRadius:3,padding:"0 4px",
-          fontSize:`min(${evtFontSize}, 17cqh)`,fontWeight:800,color:textColor,overflow:"hidden",
+          fontSize:`min(${evtFontSize}, 16cqh)`,fontWeight:800,color:textColor,overflow:"hidden",
           whiteSpace:"nowrap",display:"flex",alignItems:"center",lineHeight:1,minHeight:0,
           textShadow:shadow,gridRow:"span 1"}}>
           {e.label}
@@ -245,7 +245,7 @@ export default function VistaCalendario({ C }){
       }}
       style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden",position:"relative"}}>
       <div style={{background:"#ffffff",display:"flex",alignItems:"center",
-        gap:5,padding:"6px 8px",overflowX:"auto",scrollbarWidth:"none",flexShrink:0,
+        gap:5,padding:"2px 8px",overflowX:"auto",scrollbarWidth:"none",flexShrink:0,
         borderBottom:"1px solid #e2e8f0"}}>
         <button onClick={()=>month===0?(setYear(y=>y-1),setMonth(11)):setMonth(m=>m-1)}
           style={{...NB, color:"rgba(15,23,42,0.8)"}}>‹</button>
@@ -340,7 +340,7 @@ export default function VistaCalendario({ C }){
           {syncMode==='on'?(isOnline?'🟢 SYNC':'🔴 OFFLINE'):'⏸️ SYNC OFF'}
         </button>
       </div>
-      <div style={{background:"#ffffff",display:"flex",alignItems:"center",padding:"4px 4px",borderBottom:"1px solid #e2e8f0",flexShrink:0}}>
+      <div style={{background:"#ffffff",display:"flex",alignItems:"center",padding:"1px 4px",borderBottom:"1px solid #e2e8f0",flexShrink:0}}>
         <button onClick={()=>calBarRef.current?.scrollBy({left:-160, behavior:"smooth"})}
           title="Scorri calendari a sinistra"
           style={{background:"#f1f5f9",border:"1px solid #cbd5e1",borderRadius:20,
@@ -402,7 +402,7 @@ export default function VistaCalendario({ C }){
         borderBottom:`1px solid ${!isOnline ? "#b91c1c" : (editMode?T.border:"#000000")}`,flexShrink:0}}>
         {DAYS.map((d,i)=>(
           <div key={i} style={{textAlign:"center",fontSize:9,fontWeight:800,
-            padding:"3px 0",color: !isOnline ? "#ffffff" : (i===6?"#ef4444":(editMode?T.sub:"#0f172a"))}}>{d}</div>
+            padding:"1px 0",color: !isOnline ? "#ffffff" : (i===6?"#ef4444":(editMode?T.sub:"#0f172a"))}}>{d}</div>
         ))}
       </div>
       {!isOnline && (
@@ -432,10 +432,10 @@ export default function VistaCalendario({ C }){
               return (
                 <div key={i} style={{background:redBg(isSun,isH)||T.surface,
                   display:"flex",flexDirection:"column",overflow:"hidden"}}>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:2,padding:"2px 3px 0",flexShrink:0}}>
-                    <span style={{fontSize:20,fontWeight:500,lineHeight:1,color:red?"#ef4444":T.sub}}>{d}</span>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:2,padding:"1px 3px 0",flexShrink:0}}>
+                    <span style={{fontSize:13,fontWeight:500,lineHeight:1,color:red?"#ef4444":T.sub}}>{d}</span>
                     <div style={{display:"flex",alignItems:"center",gap:3,flexShrink:0}}>
-                      {evts.length>maxEvtSlots&&<span style={{fontSize:11,fontWeight:800,color:T.sub}}>+{evts.length-maxEvtSlots}</span>}
+                      {evts.length>maxEvtSlots&&<span style={{fontSize:9,fontWeight:800,color:T.sub}}>+{evts.length-maxEvtSlots}</span>}
                     </div>
                   </div>
                   <div style={{flex:1,overflow:"hidden",display:"grid",
@@ -477,18 +477,18 @@ export default function VistaCalendario({ C }){
               style={{background:isT?(dark?"#1a2f50":"#dbeafe"):(redBg(isSun,isH)||T.surface),
                 cursor:"pointer",display:"flex",flexDirection:"column",overflow:"hidden",
                 borderTop:"none"}}>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:2,padding:"2px 3px 0",flexShrink:0}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:2,padding:"1px 3px 0",flexShrink:0}}>
                 {giornoImportante?(
                   <span title={giornoImportante.nota||"Giorno importante"}
                     style={{display:"inline-flex",alignItems:"center",justifyContent:"center",
-                      width:22,height:22,borderRadius:"50%",background:"#ef4444",
-                      fontSize:13,fontWeight:900,lineHeight:1,color:"#ffffff",flexShrink:0}}>{d}</span>
+                      width:15,height:15,borderRadius:"50%",background:"#ef4444",
+                      fontSize:10,fontWeight:900,lineHeight:1,color:"#ffffff",flexShrink:0}}>{d}</span>
                 ):(
-                  <span style={{fontSize:20,fontWeight:isT?900:500,lineHeight:1,
+                  <span style={{fontSize:13,fontWeight:isT?900:500,lineHeight:1,
                     color:isT?accent:red?"#ef4444":T.sub}}>{d}</span>
                 )}
                 <div style={{display:"flex",alignItems:"center",gap:3,flexShrink:0}}>
-                  {evts.length>maxEvtSlots&&<span style={{fontSize:11,fontWeight:800,color:T.sub}}>+{evts.length-maxEvtSlots}</span>}
+                  {evts.length>maxEvtSlots&&<span style={{fontSize:9,fontWeight:800,color:T.sub}}>+{evts.length-maxEvtSlots}</span>}
                 </div>
               </div>
               <div style={{flex:1,overflow:"hidden",display:"grid",
