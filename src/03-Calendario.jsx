@@ -189,7 +189,7 @@ export default function VistaCalendario({ C }){
     if(calEventRows!==2){
       return (
         <div style={{background:e.color,borderRadius:3,padding:"0 4px",
-          fontSize:`min(calc(${evtFontSize} * 0.85), 18cqh)`,fontWeight:800,color:textColor,overflow:"hidden",
+          fontSize:`min(calc(${evtFontSize} * 0.72), 15cqh)`,fontWeight:800,color:textColor,overflow:"hidden",
           whiteSpace:"nowrap",display:"flex",alignItems:"center",lineHeight:1,minHeight:0,
           textShadow:shadow,gridRow:"span 1"}}>
           {e.label}
