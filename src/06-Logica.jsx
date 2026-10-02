@@ -3748,23 +3748,23 @@ const importsRecenti = useMemo(()=>{
   }
 
   function spostaColoreExtraPuro(prev, hex, dir, ordineVisibile){
-    // ordineVisibile (opzionale): hex nell'ordine mostrato in Modelli->Colori.
-    // Se presente, lo spostamento parte da quell'ordine (cosi' la freccia
-    // scambia con il vicino che si vede davvero).
-    const posVis = new Map((ordineVisibile||[]).map((h,i)=>[String(h).toLowerCase(), i]));
     const ordinato = [...prev].sort((a,b)=>{
-      if(posVis.size>0){
-        const pa = posVis.has(String(a.hex).toLowerCase()) ? posVis.get(String(a.hex).toLowerCase()) : 1e9;
-        const pb = posVis.has(String(b.hex).toLowerCase()) ? posVis.get(String(b.hex).toLowerCase()) : 1e9;
-        if(pa!==pb) return pa-pb;
-      }
       const sa=a.sortOrder||0, sb=b.sortOrder||0;
       if(sa!==sb) return sa-sb;
       return String(a.hex).localeCompare(String(b.hex));
     });
     const idx = ordinato.findIndex(c=>stessoHexColore(c.hex,hex));
     if(idx===-1) return prev;
-    const vicinoIdx = dir==="up" ? idx-1 : idx+1;
+    let vicinoIdx;
+    if(Array.isArray(ordineVisibile) && ordineVisibile.length>0){
+      // Il vicino è quello che si vede in lista (può essere filtrata per calendario).
+      const iv = ordineVisibile.findIndex(h=>stessoHexColore(h,hex));
+      const nh = iv===-1 ? null : ordineVisibile[dir==="up" ? iv-1 : iv+1];
+      if(!nh) return prev;
+      vicinoIdx = ordinato.findIndex(c=>stessoHexColore(c.hex,nh));
+    } else {
+      vicinoIdx = dir==="up" ? idx-1 : idx+1;
+    }
     if(vicinoIdx<0 || vicinoIdx>=ordinato.length) return prev;
     [ordinato[idx], ordinato[vicinoIdx]] = [ordinato[vicinoIdx], ordinato[idx]];
     return ordinato.map((c,i)=>({...c, sortOrder:i}));

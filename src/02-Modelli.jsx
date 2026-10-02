@@ -656,7 +656,9 @@ export default function VistaModelli({ C }){
         {modelliTab==="colori"&&(()=>{
           const eqHex = (a,b)=> String(a||"").toLowerCase()===String(b||"").toLowerCase();
           const hexModello = (m)=> m?.coloreCustom||m?.colore||null;
-          function contaModelli(hex){ return modelli.filter(m=>eqHex(hexModello(m),hex)).length; }
+          // Solo i modelli del calendario selezionato (calId null = tutti i calendari).
+          const modelliColori = calId===null ? modelli : modelli.filter(m=>modelloVisibileInCalendario(m, calId, mainCalId));
+          function contaModelli(hex){ return modelliColori.filter(m=>eqHex(hexModello(m),hex)).length; }
           // Un gruppo per ogni colore realmente usato dai modelli, nell'ordine
           // dei blocchi della lista modelli; in coda i colori registrati ma
           // vuoti (aggiunti con "+"), eliminabili con la X.
@@ -675,7 +677,7 @@ export default function VistaModelli({ C }){
               count:contaModelli(hex),
             });
           };
-          modelliOrdinati.forEach(m=>{ const h = hexModello(m); if(h) aggiungiRiga(h); });
+          modelliOrdinati.filter(m=>calId===null || modelloVisibileInCalendario(m, calId, mainCalId)).forEach(m=>{ const h = hexModello(m); if(h) aggiungiRiga(h); });
           coloriExtra.slice().sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0)).forEach(c=>aggiungiRiga(c.hex));
           // Posizione dei gruppi: i colori registrati seguono il loro sortOrder
           // (modificabile con le frecce); quelli non ancora registrati restano in coda.
@@ -686,6 +688,8 @@ export default function VistaModelli({ C }){
             if(b.reg) return 1;
             return 0;
           });
+          // In un calendario si vedono solo i colori usati dai suoi modelli.
+          if(calId!==null){ for(let k=righeTutte.length-1;k>=0;k--){ if(righeTutte[k].count===0) righeTutte.splice(k,1); } }
           const ordineVisibile = righeTutte.filter(r=>r.reg).map(r=>r.reg.hex);
           return (
             <div style={{paddingBottom:80}}>
