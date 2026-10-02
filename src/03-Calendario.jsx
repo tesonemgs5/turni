@@ -66,7 +66,7 @@ export default function VistaCalendario({ C }){
     setShowIntervalPicker, indennita, setIndennita, valoreTicket, setValoreTicket, conteggioConfigs, setConteggioConfigs, showReportModelliPicker,
     setShowReportModelliPicker, editFascia, setEditFascia, showFasciaColorPicker, setShowFasciaColorPicker, userId,
     isInitialized, processaCodaSync, sysDark, dark, T, activeCal,
-    mainCal, mainCalId, accent, accentText, hols, fasceAutomatiche,
+    mainCal, mainCalId, calFuId, accent, accentText, hols, fasceAutomatiche,
     colByTime, colLabel, isRed, sundayColor, holidayColor, redBg,
     getEvts, allEvts, dots, saveSettings, addCalendar, updateCalendar,
     deleteCalendar, computeEventFields, saveEvt, updateEvt, delEvt, delEvtiRotazioneDaData,
@@ -638,7 +638,7 @@ export default function VistaCalendario({ C }){
                 onRename={label=>renameReport(r.id, label)}
                 onUpdateCfg={newCfg=>updateConteggioConfig(r.id, newCfg)}/>
             )}
-            {r.type==="straordinari" && <StraordinariView T={T} data={data} store={store} reportRange={{from:range.from,to:range.to}} modelliInclusi={cfg.modelliInclusi||[]} reportCalIds={reportCalIds}/>}
+            {r.type==="straordinari" && <StraordinariView T={T} data={data} store={store} reportRange={{from:range.from,to:range.to}} modelliInclusi={cfg.modelliInclusi||[]} reportCalIds={reportCalIds} calTurniId={mainCalId} calFuId={calFuId}/>}
             {r.type==="guadagni" && (
               <GuadagniView T={T} indennita={indennita} calc={computeIndennita(cfg.modelliInclusi||[], r.id)}/>
             )}

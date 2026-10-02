@@ -1515,7 +1515,7 @@ export function OrePerTurnoView({T, data}){
   );
 }
 
-export function StraordinariView({T, data, store, reportRange, modelliInclusi=[], reportCalIds=[]}){
+export function StraordinariView({T, data, store, reportRange, modelliInclusi=[], reportCalIds=[], calTurniId=null, calFuId=null}){
   const {from, to} = reportRange || {from:"", to:""};
 
   let minPagamento = 0;
@@ -1524,8 +1524,13 @@ export function StraordinariView({T, data, store, reportRange, modelliInclusi=[]
   for(const [dateKey, calMap] of Object.entries(store?.events||{})){
     if(from && dateKey < from) continue;
     if(to   && dateKey > to  ) continue;
+    // Regola giorno TURNI/FU: se TURNI ha eventi utili quel giorno, i FU non contano.
+    const fuSalta = (calTurniId && calFuId && calTurniId!==calFuId && calMap[calFuId]
+      && (reportCalIds.length===0 || reportCalIds.includes(calTurniId))
+      && (calMap[calTurniId]||[]).some(ev=>modelliInclusi.length===0 || modelliInclusi.includes(ev.modelloId))) ? calFuId : null;
     for(const [cid, evts] of Object.entries(calMap)){
       if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
+      if(cid===fuSalta) continue;
       for(const e of evts){
         if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
         const nota  = (e.note||"").toUpperCase();
