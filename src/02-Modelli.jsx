@@ -674,7 +674,7 @@ export default function VistaModelli({ C }){
           // Un'unica lista con tutti i colori (fasce automatiche + H24 + personalizzati),
           // nessuna sezione separata: tocca un colore per rinominarlo/gestirlo.
           const righeTutteFasce = fasceAutomatiche.map(f=>({
-            key:f.key, hex:f.color, label:f.label, sub:"Automatico per orario",
+            key:f.key, hex:f.color, label:f.label, sub:"Colore fascia (per i nuovi modelli)",
             count:contaModelliFascia(f), isFascia:true, fasciaKey:f.key,
           }));
           const rigaH24 = { key:"__h24", hex:COLORE_H24, label:"H24", sub:"Standard turni H24",
@@ -771,8 +771,8 @@ export default function VistaModelli({ C }){
             )}
             {isFascia&&(
               <div style={{padding:"10px 16px",fontSize:12,color:T.sub,background:T.s2}}>
-                Colore automatico. Assegnando qui un modello, quel modello userà sempre questo colore.
-                {fasciaCorrente&&" L'orario della fascia si modifica da Impostazioni."}
+                Assegnando qui un modello, quel modello userà questo colore.
+                {fasciaCorrente&&" La fascia (orario e nome) serve solo per colorare i nuovi modelli e si modifica da Impostazioni."}
               </div>
             )}
             {store.calendars.length>1&&(()=>{
@@ -845,9 +845,11 @@ export default function VistaModelli({ C }){
                             return (
                               <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                                 <div onClick={()=>{
+                                  // Colore sempre esplicito: deselezionando, il modello
+                                  // riprende il colore della fascia per il suo orario
+                                  // (calcolato al salvataggio) e resta fisso.
                                   if(selezionato){ saveModello({...m, coloreCustom: null}); return; }
-                                  const eUnaFascia = fasceAutomatiche.some(f=>f.color===hex) || hex===COLORE_H24;
-                                  saveModello({...m, coloreCustom: (eUnaFascia && m.tempo!=="h24") ? null : hex});
+                                  saveModello({...m, coloreCustom: hex});
                                 }} style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}>
                                   <div style={{width:20,height:20,borderRadius:6,marginRight:12,flexShrink:0,
                                     border:`2px solid ${selezionato?hex:T.border}`,
@@ -1234,7 +1236,7 @@ export default function VistaModelli({ C }){
 
       <SecCollapsible label="FASCE ORARIE AUTOMATICHE" T={T}>
         <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
-          Personalizza nome, orario e colore delle 4 fasce usate per colorare automaticamente i modelli.
+          Nome, orario e colore delle 4 fasce usate per assegnare il colore ai NUOVI modelli in base all'orario. I modelli già creati non cambiano.
         </div>
         {fasceAutomatiche.map((f,fi)=>(
           <div key={f.key} style={{background:T.s2,borderRadius:10,padding:"10px 12px",marginBottom:8}}>
@@ -1282,22 +1284,7 @@ export default function VistaModelli({ C }){
           color:T.sub,padding:"9px 0",cursor:"pointer",fontWeight:700,fontSize:12,marginBottom:8}}>
           ↩ Ripristina fasce predefinite
         </button>
-        <button onClick={async()=>{
-            if(!window.confirm("Ricolorare TUTTI i modelli (esclusi gli H24) in base alle fasce orarie attuali?\n\nQuesta operazione sovrascrive anche i colori scelti a mano sui singoli modelli, rendendoli di nuovo \"automatici per orario\". Non è reversibile con un click.")) return;
-            setBanner("⏳ Ricolorazione modelli in corso...");
-            try {
-              const esito = await ricoloraModelliPerFasciaOraria();
-              setBanner(esito.totale>0 ? `✅ ${esito.totale} modelli ricolorati secondo le fasce orarie.` : "✅ Tutti i modelli erano già coerenti con le fasce orarie attuali.");
-            } catch(e){
-              segnalaErrore(e, "Ricolorazione modelli per fascia oraria");
-              setBanner("❌ Errore durante la ricolorazione. Controlla il Log.");
-            }
-            setTimeout(()=>setBanner(null), 5000);
-          }} style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,
-          color:T.sub,padding:"9px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
-          🎨 Ricolora modelli secondo queste fasce (esclusi H24)
-        </button>
-      </SecCollapsible>
+</SecCollapsible>
 
       <SecCollapsible label="DOMENICHE E FESTIVI" T={T}>
         <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
