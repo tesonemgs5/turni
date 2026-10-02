@@ -2025,11 +2025,15 @@ function GridColorPicker({T, value, onChange, coloriUsati=[]}){
 // mostra subito il nome nuovo, perché il nome non viene mai salvato altrove.
 export function nomeDelColore(hex, {fasceAutomatiche=[], coloriExtra=[]}={}){
   if(!hex) return null;
-  const fascia = (fasceAutomatiche||[]).find(f=>f.color===hex);
-  if(fascia) return fascia.label;
-  if(hex===COLORE_H24) return "H24";
-  const extra = (coloriExtra||[]).find(c=>c.hex===hex);
+  const h = String(hex).toLowerCase();
+  // Il nome del gruppo e' quello salvato in Colori (indipendente dalle fasce).
+  // Solo se il colore non e' ancora registrato si usa, come ripiego, il nome
+  // della fascia con lo stesso colore (o H24).
+  const extra = (coloriExtra||[]).find(c=>String(c.hex).toLowerCase()===h);
   if(extra&&extra.label) return extra.label;
+  const fascia = (fasceAutomatiche||[]).find(f=>String(f.color).toLowerCase()===h);
+  if(fascia) return fascia.label;
+  if(h===String(COLORE_H24).toLowerCase()) return "H24";
   return hex.toUpperCase();
 }
 
