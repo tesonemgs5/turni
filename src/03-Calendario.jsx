@@ -174,17 +174,20 @@ export default function VistaCalendario({ C }){
   // Spazio recuperato dai tagli in alto (barre, frecce, riga giorni): tutto
   // assegnato all'ULTIMA settimana, e dentro di essa al 5° evento.
   // Regola questo valore (px) per dare più o meno spazio.
-  const EXTRA_ULTIMA_RIGA = 20;
+  const EXTRA_ULTIMA_RIGA = 36;
   function righeSettimane(nSett){
     if(calEventRows===2 || nSett<2) return `repeat(${nSett},minmax(${weekRowMinH}px,1fr))`;
+    // Settimane 1..n-1: altezza identica a prima (altezza attuale meno lo spazio recuperato, diviso n).
+    // Ultima settimana: tutto il resto = altezza di prima + spazio recuperato.
     return `repeat(${nSett-1},minmax(${weekRowMinH}px,calc((100% - ${EXTRA_ULTIMA_RIGA}px)/${nSett}))) minmax(${weekRowMinH}px,1fr)`;
   }
+  // Eventi 1-4: stessa altezza di prima in ogni settimana. Il 5° evento prende
+  // tutto lo spazio recuperato (1px del filo bianco in ogni riga + EXTRA nell'ultima).
   function righeSlot(ultimaSett){
-    if(calEventRows===2 || !ultimaSett) return `repeat(${TOTAL_SLOTS},1fr)`;
-    const nSett = Math.ceil(cells.length/7);
-    const extraUltima = EXTRA_ULTIMA_RIGA*(nSett-1)/nSett;
-    const ratio = (1 + extraUltima/(evtFontSize+2)).toFixed(2);
-    return `repeat(${TOTAL_SLOTS-1},minmax(0,1fr)) minmax(0,${ratio}fr)`;
+    if(calEventRows===2) return `repeat(${TOTAL_SLOTS},1fr)`;
+    const recuperato = 1 + (ultimaSett ? EXTRA_ULTIMA_RIGA : 0);
+    const gaps = TOTAL_SLOTS-1;
+    return `repeat(${TOTAL_SLOTS-1},calc((100% - ${recuperato+gaps}px)/${TOTAL_SLOTS})) minmax(0,1fr)`;
   }
   function eventRowText(e, field){
     switch(field){
