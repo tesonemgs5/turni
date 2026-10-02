@@ -85,6 +85,27 @@ export default function VistaCalendario({ C }){
   } = C;
 
   const calBarRef = useRef(null);
+  // Altezza realmente disponibile per la griglia: dalla sua posizione in alto
+  // fino alla barra di navigazione fissa in basso. Senza questo limite l'ultima
+  // settimana finiva sotto la barra e gli ultimi eventi risultavano tagliati.
+  const gridWrapRef = useRef(null);
+  const [gridMaxH, setGridMaxH] = useState(null);
+  useEffect(()=>{
+    const el = gridWrapRef.current;
+    if(!el) return;
+    const v = Math.round(window.innerHeight - el.getBoundingClientRect().top);
+    setGridMaxH(prev=> prev===v ? prev : v);
+  });
+  useEffect(()=>{
+    const onResize = ()=>{
+      const el = gridWrapRef.current;
+      if(!el) return;
+      const v = Math.round(window.innerHeight - el.getBoundingClientRect().top);
+      setGridMaxH(prev=> prev===v ? prev : v);
+    };
+    window.addEventListener("resize", onResize);
+    return ()=>window.removeEventListener("resize", onResize);
+  },[]);
 
   async function applyQuickModello(key){
     if(!quickModeModello||!calId||!userId) return;
@@ -418,7 +439,9 @@ export default function VistaCalendario({ C }){
           📴 OFFLINE — le modifiche verranno sincronizzate al ritorno della connessione
         </div>
       )}
-      <div style={{position:"relative",flex:1,overflow:calEventRows===2?"auto":"hidden",minHeight:0}}>
+      <div ref={gridWrapRef}
+        style={{position:"relative",flex:1,overflow:calEventRows===2?"auto":"hidden",minHeight:0,
+          maxHeight: gridMaxH ? `calc(${gridMaxH}px - ${typeof NAV_HEIGHT_CSS==="number" ? NAV_HEIGHT_CSS+"px" : NAV_HEIGHT_CSS})` : undefined}}>
       {prevGrid&&(()=>{
         const pTotalDays=daysInMonth(prevGrid.year,prevGrid.month);
         const pFd=firstDay(prevGrid.year,prevGrid.month);
