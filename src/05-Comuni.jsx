@@ -1953,6 +1953,7 @@ try{ localStorage.removeItem('gridColorOverrides'); }catch(e){}
 
 function GridColorPicker({T, value, onChange, coloriUsati=[]}){
   const righe = GRID_PALETTE;
+  const selRef = useRef(null);
 
   const setUsati = new Set((coloriUsati||[]).filter(Boolean).map(c=>c.toUpperCase()));
 
@@ -1992,6 +1993,7 @@ function GridColorPicker({T, value, onChange, coloriUsati=[]}){
     const bianco = c.r>=240 && c.g>=240 && c.b>=240;
     return (
       <button key={hex} type="button" onClick={()=>onChange(hex)}
+        ref={selezionato?selRef:null}
         title={hex}
         style={{position:"relative",aspectRatio:"1",borderRadius:"50%",background:hex,cursor:"pointer",padding:0,
           minWidth:24,minHeight:24,
@@ -2000,6 +2002,12 @@ function GridColorPicker({T, value, onChange, coloriUsati=[]}){
           boxShadow:"none"}}>{usato&&<span style={{position:"absolute",left:"20%",right:"20%",bottom:-5,height:3,borderRadius:2,background:"#9CA3AF",pointerEvents:"none"}}/>}</button>
     );
   };
+
+  // Porta in vista il pallino selezionato (anche quando il colore viene
+  // digitato nel campo esadecimale).
+  useEffect(()=>{
+    try{ selRef.current?.scrollIntoView({block:"nearest", inline:"nearest"}); }catch(e){}
+  }, [cellaSel]);
 
   return (
     <div>
@@ -2056,6 +2064,16 @@ export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, tit
     try{ localStorage.setItem('colorPickerModalita', m); }catch(e){}
   }
   const [previewColor,setPreviewColor]=useState(cur);
+  // Testo del campo esadecimale: modificabile a mano; se il codice è valido
+  // (6 cifre) il colore e il pallino in griglia si aggiornano subito.
+  const [hexTesto,setHexTesto]=useState((cur||"").toUpperCase());
+  useEffect(()=>{ setHexTesto((previewColor||"").toUpperCase()); }, [previewColor]);
+  function digitaHex(v){
+    const t = String(v||"").toUpperCase().replace(/[^#0-9A-F]/g,"");
+    setHexTesto(t);
+    const norm = t.startsWith("#")?t:"#"+t;
+    if(/^#[0-9A-F]{6}$/.test(norm)) setPreviewColor(norm);
+  }
   const dragState = useRef(null);
   const boxRef = useRef(null);
 
@@ -2179,7 +2197,16 @@ export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, tit
                 {colonne.map(([et,val])=>(
                   <div key={et}>
                     <div style={{fontSize:9,fontWeight:800,color:T.sub}}>{et}</div>
-                    <div style={{fontSize:12,fontWeight:700,color:T.text,marginTop:3}}>{val}</div>
+                    {et==="Esadecimale"?(
+                      <input value={hexTesto} onChange={e=>digitaHex(e.target.value)}
+                        maxLength={7} spellCheck={false} autoCapitalize="characters"
+                        onBlur={()=>setHexTesto((previewColor||"").toUpperCase())}
+                        style={{width:"100%",boxSizing:"border-box",marginTop:2,textAlign:"center",
+                          fontSize:12,fontWeight:700,color:T.text,background:T.s2,
+                          border:`1px solid ${T.border}`,borderRadius:6,padding:"3px 0",outline:"none"}}/>
+                    ):(
+                      <div style={{fontSize:12,fontWeight:700,color:T.text,marginTop:3}}>{val}</div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -2229,6 +2256,60 @@ export function ConfermaEliminazione({T, testo="Vuoi eliminare questo elemento?"
         </div>
       </div>
     </div>
+  );
+}
+
+// ── Ricerca nei menu di scelta modello ─────────────────────────────────
+// Nessuna distinzione maiuscole/minuscole né accenti. Più parole = devono
+// valere tutte. Cerca in titolo, etichetta, orari di inizio/fine ("06",
+// "06:00", "6:00", "12:15") e "h24".
+function normRicerca(s){
+  return String(s==null?"":s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+}
+function fineModelloRicerca(m){
+  if(m.fine) return m.fine;
+  const add = m.tempo==="6h15"?375:m.tempo==="6h30"?390:0;
+  if(!add||!m.inizio) return "";
+  const mt = /^(\d{1,2}):(\d{2})$/.exec(String(m.inizio).trim());
+  if(!mt) return "";
+  const t = (parseInt(mt[1],10)*60+parseInt(mt[2],10)+add)%1440;
+  return String(Math.floor(t/60)).padStart(2,"0")+":"+String(t%60).padStart(2,"0");
+}
+export function modelloCorrispondeRicerca(m, query){
+  const tokens = normRicerca(query).split(/\s+/).filter(Boolean);
+  if(tokens.length===0) return true;
+  const orari = [m.inizio, fineModelloRicerca(m)].filter(Boolean).map(String);
+  const varianti = [];
+  orari.forEach(o=>{
+    varianti.push(o);
+    const mt = /^(\d{1,2}):(\d{2})$/.exec(o.trim());
+    if(mt){
+      const hh = String(parseInt(mt[1],10)).padStart(2,"0");
+      varianti.push(hh+":"+mt[2], String(parseInt(mt[1],10))+":"+mt[2], hh);
+    }
+  });
+  const hay = normRicerca([m.titolo, m.label, m.tempo==="h24"?"h24":"", ...varianti].join(" "));
+  return tokens.every(t=>hay.includes(t));
+}
+export function NessunModello({T}){
+  return <div style={{textAlign:"center",padding:"24px 16px",color:T.sub,fontSize:14,fontWeight:700}}>Nessun modello</div>;
+}
+// Campo di ricerca + filtro. children(filtra, cercando): "filtra" applica la
+// ricerca a una lista di modelli (anche per gruppo/calendario). Il testo si
+// azzera da solo quando il menu si chiude (il componente si smonta).
+export function CercaModelli({T, children, stile}){
+  const [q,setQ] = useState("");
+  const cercando = q.trim()!=="";
+  const filtra = (lista)=> cercando ? (lista||[]).filter(m=>modelloCorrispondeRicerca(m,q)) : lista;
+  return (
+    <>
+      <input value={q} onChange={e=>setQ(e.target.value)}
+        placeholder="🔎 Cerca modello o orario..."
+        style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
+          borderRadius:10,padding:"10px 12px",color:T.text,fontSize:14,
+          boxSizing:"border-box",outline:"none",marginBottom:10,...(stile||{})}}/>
+      {children(filtra, cercando)}
+    </>
   );
 }
 

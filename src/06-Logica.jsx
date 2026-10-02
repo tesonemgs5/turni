@@ -3747,13 +3747,22 @@ const importsRecenti = useMemo(()=>{
     if(prevSnapshot && nuovoElenco) await salvaModifichePosizioniRotazioni(prevSnapshot, nuovoElenco);
   }
 
-  function spostaColoreExtraPuro(prev, hex, dir){
+  function spostaColoreExtraPuro(prev, hex, dir, ordineVisibile){
+    // ordineVisibile (opzionale): hex nell'ordine mostrato in Modelli->Colori.
+    // Se presente, lo spostamento parte da quell'ordine (cosi' la freccia
+    // scambia con il vicino che si vede davvero).
+    const posVis = new Map((ordineVisibile||[]).map((h,i)=>[String(h).toLowerCase(), i]));
     const ordinato = [...prev].sort((a,b)=>{
+      if(posVis.size>0){
+        const pa = posVis.has(String(a.hex).toLowerCase()) ? posVis.get(String(a.hex).toLowerCase()) : 1e9;
+        const pb = posVis.has(String(b.hex).toLowerCase()) ? posVis.get(String(b.hex).toLowerCase()) : 1e9;
+        if(pa!==pb) return pa-pb;
+      }
       const sa=a.sortOrder||0, sb=b.sortOrder||0;
       if(sa!==sb) return sa-sb;
       return String(a.hex).localeCompare(String(b.hex));
     });
-    const idx = ordinato.findIndex(c=>c.hex===hex);
+    const idx = ordinato.findIndex(c=>stessoHexColore(c.hex,hex));
     if(idx===-1) return prev;
     const vicinoIdx = dir==="up" ? idx-1 : idx+1;
     if(vicinoIdx<0 || vicinoIdx>=ordinato.length) return prev;
@@ -3779,11 +3788,11 @@ const importsRecenti = useMemo(()=>{
     ));
   }
 
-  async function moveColoreExtra(hex, dir){
+  async function moveColoreExtra(hex, dir, ordineVisibile){
     let prevSnapshot = null, nuovoElenco = null;
     setColoriExtra(prev=>{
       prevSnapshot = prev;
-      nuovoElenco = spostaColoreExtraPuro(prev, hex, dir);
+      nuovoElenco = spostaColoreExtraPuro(prev, hex, dir, ordineVisibile);
       return nuovoElenco;
     });
     if(prevSnapshot && nuovoElenco) await salvaModifichePosizioniColori(prevSnapshot, nuovoElenco);

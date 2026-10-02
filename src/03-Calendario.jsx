@@ -12,7 +12,7 @@ import {
 import { CalBadge, SmartTimeInput, AutocompleteInput, ColorPickerModal,
   ModaleErroriMultipli, FasceExpand, ConteggioConfigCard, TurnazioneConfigCard, OreTurnoConfigCard, fmtOreMin,
   IndennitaConfig, OrePerTurnoView, StraordinariView, GuadagniView,
-  ViabilitaView, TicketConfig, NAV_HEIGHT_CSS, ConfermaEliminazione } from "./05-Comuni";
+  ViabilitaView, TicketConfig, NAV_HEIGHT_CSS, ConfermaEliminazione, CercaModelli, NessunModello } from "./05-Comuni";
 import { ModelloCard, ModelForm, RotazioneCard, RotazioneForm, ModelloSelector,
   GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView } from "./04-Rotazione";
 import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
@@ -953,6 +953,11 @@ export default function VistaCalendario({ C }){
               {modelli.length===0?(
                 <div style={{textAlign:"center",padding:"40px 24px",color:T.sub}}>Nessun modello creato ancora.</div>
               ):(
+                <CercaModelli T={T}>{(filtra,cercando)=>{
+                const gruppiFiltrati = gruppiPerCalendario
+                  .map(g=>({...g, modelli: filtra(g.modelli)}))
+                  .filter(g=>g.modelli.length>0);
+                return (
                 <div style={{display:"flex",flexDirection:"column",gap:14}}>
                   {!isTurnazione&&(
                     <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
@@ -968,7 +973,8 @@ export default function VistaCalendario({ C }){
                       </div>
                     </div>
                   )}
-                  {gruppiPerCalendario.map(({cal, modelli:modelliCal})=>(
+                  {cercando&&gruppiFiltrati.length===0&&<NessunModello T={T}/>}
+                  {gruppiFiltrati.map(({cal, modelli:modelliCal})=>(
                     <div key={cal.id}>
                       <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6,paddingLeft:2}}>
                         <div style={{width:8,height:8,borderRadius:"50%",background:cal.color}}/>
@@ -1003,6 +1009,8 @@ export default function VistaCalendario({ C }){
                     </div>
                   ))}
                 </div>
+                );
+                }}</CercaModelli>
               )}
             </div>
             <div style={{padding:12,borderTop:`1px solid ${T.border}`,background:T.surface}}>

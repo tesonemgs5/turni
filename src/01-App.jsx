@@ -2,7 +2,7 @@ import { useState, useRef, useMemo, Fragment, Component } from "react";
 import { useAppCore } from "./06-Logica";
 import VistaCalendario from "./03-Calendario";
 import VistaModelli from "./02-Modelli";
-import { ModaleErroriMultipli, NAV_HEIGHT, NAV_HEIGHT_CSS, ConfermaEliminazione } from "./05-Comuni";
+import { ModaleErroriMultipli, NAV_HEIGHT, NAV_HEIGHT_CSS, ConfermaEliminazione, CercaModelli, NessunModello } from "./05-Comuni";
 import {
   getContrastTextColor, NOMI_MESI_IT, calcFine6h15, calcFine6h30, calcDurata, formattaDurataHM, calcFineModello,
   fmtDataIT, impostaSilenziamentoErrore, segnalaErrore,
@@ -688,8 +688,12 @@ function AppInterno({ session }){
               });
               if(modelliPicker.length===0) return null;
               return (
+              <CercaModelli T={T}>{(filtra,cercando)=>{
+              const modelliFiltrati = filtra(modelliPicker);
+              if(modelliFiltrati.length===0) return <NessunModello T={T}/>;
+              return (
               <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:12}}>
-                {modelliPicker.map((m,i,arr)=>{
+                {modelliFiltrati.map((m,i,arr)=>{
                   const c=m.coloreCustom||colByTime(m.inizio);
                   const durata=m.tempo==="h24"?"H24"
                     :m.tempo==="6h15"&&m.inizio?`${m.inizio} - ${calcFine6h15(m.inizio)} • 6h 15m`:m.tempo==="6h30"&&m.inizio?`${m.inizio} - ${calcFine6h30(m.inizio)} • 6h 30m`
@@ -720,6 +724,8 @@ function AppInterno({ session }){
                   );
                 })}
               </div>
+              );
+              }}</CercaModelli>
               );
             })()}
             {(activeCal?.shifts||[]).length>0&&(

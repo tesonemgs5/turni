@@ -13,7 +13,7 @@ import { CalBadge, SmartTimeInput, AutocompleteInput, ColorPickerModal,
   ModaleErroriMultipli, FasceExpand, ConteggioConfigCard, TurnazioneConfigCard,
   IndennitaConfig, OrePerTurnoView, StraordinariView, GuadagniView, Sec, SecCollapsible,
   NAV_HEIGHT_CSS, nomeDelColore, ConfermaEliminazione, preparaFixCursore,
-  modelloVisibileInCalendario } from "./05-Comuni";
+  modelloVisibileInCalendario, CercaModelli, NessunModello } from "./05-Comuni";
 import { ModelloCard, ModelForm, RotazioneCard, RotazioneForm, ModelloSelector,
   GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView, ReperibilitaView } from "./04-Rotazione";
 import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
@@ -677,6 +677,16 @@ export default function VistaModelli({ C }){
           };
           modelliOrdinati.forEach(m=>{ const h = hexModello(m); if(h) aggiungiRiga(h); });
           coloriExtra.slice().sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0)).forEach(c=>aggiungiRiga(c.hex));
+          // Posizione dei gruppi: i colori registrati seguono il loro sortOrder
+          // (modificabile con le frecce); quelli non ancora registrati restano in coda.
+          righeTutte.forEach(r=>{ r.reg = coloriExtra.find(c=>eqHex(c.hex,r.hex))||null; });
+          righeTutte.sort((a,b)=>{
+            if(a.reg&&b.reg) return (a.reg.sortOrder||0)-(b.reg.sortOrder||0);
+            if(a.reg) return -1;
+            if(b.reg) return 1;
+            return 0;
+          });
+          const ordineVisibile = righeTutte.filter(r=>r.reg).map(r=>r.reg.hex);
           return (
             <div style={{paddingBottom:80}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,paddingLeft:4}}>
@@ -690,15 +700,15 @@ export default function VistaModelli({ C }){
               </div>
               <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
                 {righeTutte.map((r,i,arr)=>{
-                  // L'ordine dei gruppi segue i blocchi della lista modelli:
-                  // niente frecce. La X compare solo sui gruppi vuoti.
-                  const regRiga = coloriExtra.find(c=>eqHex(c.hex,r.hex));
+                  // Frecce per spostare la posizione del gruppo. La X compare solo sui gruppi vuoti.
+                  const regRiga = r.reg;
                   return (
                     <div key={r.key} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                       <ColorRow T={T} accent={accent} hex={r.hex} label={r.label} sub={r.sub}
                         count={r.count} onClick={()=>setShowColorAssignPicker(r.hex)}
                         onRemove={(r.count===0 && regRiga)?()=>removeColoreExtra(regRiga.hex):null}
-                        onMoveUp={null} onMoveDown={null}/>
+                        onMoveUp={(regRiga && i>0 && arr[i-1].reg)?()=>moveColoreExtra(regRiga.hex,"up",ordineVisibile):null}
+                        onMoveDown={(regRiga && i<arr.length-1 && arr[i+1].reg)?()=>moveColoreExtra(regRiga.hex,"down",ordineVisibile):null}/>
                     </div>
                   );
                 })}
@@ -783,20 +793,23 @@ export default function VistaModelli({ C }){
                 <div style={{textAlign:"center",padding:"40px 24px",color:T.sub}}>
                   Nessun modello creato ancora.
                 </div>
-              ):(()=>{
+              ):(
+              <CercaModelli T={T}>{(filtra,cercando)=>{
+              return (()=>{
                 const calSelezionati = colorAssignCalFiltro===null ? store.calendars.map(c=>c.id) : colorAssignCalFiltro;
                 const gruppiColorePerCalendario = store.calendars
                   .filter(c=>calSelezionati.includes(c.id))
                   .map(c=>({
                     cal: c,
                     modelli: (()=>{
-                      const lista = modelliOrdinati.filter(m=>modelloVisibileInCalendario(m, c.id, mainCalId));
+                      const lista = filtra(modelliOrdinati.filter(m=>modelloVisibileInCalendario(m, c.id, mainCalId)));
                       const ids = snapSelColoreRef.current.ids;
                       if(!ids || ids.size===0) return lista;
                       return [...lista.filter(x=>ids.has(x.id)), ...lista.filter(x=>!ids.has(x.id))];
                     })(),
                   }))
                   .filter(g=>g.modelli.length>0);
+                if(gruppiColorePerCalendario.length===0) return <NessunModello T={T}/>;
                 return (
                   <div style={{display:"flex",flexDirection:"column",gap:14}}>
                     {gruppiColorePerCalendario.map(({cal, modelli:modelliCal})=>(
@@ -841,7 +854,9 @@ export default function VistaModelli({ C }){
                     ))}
                   </div>
                 );
-              })()}
+              })();
+              }}</CercaModelli>
+              )}
             </div>
             <div style={{padding:12,borderTop:`1px solid ${T.border}`,background:T.surface}}>
               <button onClick={()=>{setShowColorAssignPicker(null);setColorAssignCalFiltro(null);}}
@@ -2352,8 +2367,12 @@ export default function VistaModelli({ C }){
               return (
               <>
                 <div style={{fontSize:10,color:T.sub,marginBottom:6,fontWeight:600}}>CAMBIA MODELLO TURNO</div>
+                <CercaModelli T={T}>{(filtra)=>{
+                const modelliFiltrati = filtra(modelliDelCal);
+                if(modelliFiltrati.length===0) return <NessunModello T={T}/>;
+                return (
                 <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
-                  {modelliDelCal.map(m=>{
+                  {modelliFiltrati.map(m=>{
                     const c=m.coloreCustom||colByTime(m.inizio);
                     return (
                       <button key={m.id}
@@ -2377,6 +2396,8 @@ export default function VistaModelli({ C }){
                     );
                   })}
                 </div>
+                );
+                }}</CercaModelli>
               </>
               );
             })()}
@@ -2392,8 +2413,12 @@ export default function VistaModelli({ C }){
               return (
               <>
                 {!form.modelloId&&<div style={{fontSize:10,color:T.sub,marginBottom:6,fontWeight:600}}>MODELLO TURNO</div>}
+                <CercaModelli T={T} stile={form.modelloId?{display:"none"}:null}>{(filtra)=>{
+                const modelliFiltrati = form.modelloId ? modelliDelCal.filter(m=>m.id===form.modelloId) : filtra(modelliDelCal);
+                return (
                 <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
-                  {(form.modelloId?modelliDelCal.filter(m=>m.id===form.modelloId):modelliDelCal).map(m=>{
+                  {modelliFiltrati.length===0&&!form.modelloId&&<div style={{width:"100%",fontSize:12,fontWeight:700,color:T.sub,padding:"6px 2px"}}>Nessun modello</div>}
+                  {modelliFiltrati.map(m=>{
                     const c=m.coloreCustom||colByTime(m.inizio);
                     return (
                       <button key={m.id}
@@ -2424,6 +2449,8 @@ export default function VistaModelli({ C }){
                     </button>
                   )}
                 </div>
+                );
+                }}</CercaModelli>
               </>
               );
             })()}
