@@ -164,6 +164,7 @@ export default function VistaModelli({ C }){
     registraValoriAutocomplete, rimuoviValoreAutocomplete, supabaseUpsertConRetry, saveModello, deleteModello, addColoreExtra,
     ripulisciTutteLePosizioniModelli,
     analizzaColoriDaNormalizzare, applicaNormalizzazioneColori,
+    versioniAutomatiche, sorgenteDisposizione, setSorgenteDisposizione, aggiornaVersioniAutomatiche, caricaVersioneAutomatica,
     salvaDisposizioneModelli, ripristinaDisposizioneModelli,
     showSalvaDisposizionePopup, setShowSalvaDisposizionePopup, annullaTimerSalvaDisposizione,
     removeColoreExtra, updateColoreExtraLabel, replaceColoreEverywhere, saveRotazione, deleteRotazione, updateGrigliaRotazione,
@@ -653,44 +654,29 @@ export default function VistaModelli({ C }){
           </div>
         )}
         {modelliTab==="colori"&&(()=>{
-          const fasceColorSet = new Set([...fasceAutomatiche.map(f=>f.color), COLORE_H24]);
-          const coloriExtraFiltrati = coloriExtra.filter(c=>!fasceColorSet.has(c.hex));
-          const coloriUsatiDaModelli = [...new Set(modelli.map(m=>m.coloreCustom).filter(Boolean))]
-            .filter(h=>!fasceColorSet.has(h));
-          const hexUsatiDaExtra = new Set(coloriExtraFiltrati.map(c=>c.hex));
-          const coloriManualiOggetti = [
-            ...coloriExtraFiltrati,
-            ...coloriUsatiDaModelli.filter(h=>!hexUsatiDaExtra.has(h)).map(h=>({hex:h,label:null})),
-          ];
-          function contaModelli(hex){ return modelli.filter(m=>m.coloreCustom===hex).length; }
-          function contaModelliFascia(fascia){
-            return modelli.filter(m=>{
-              if(m.coloreCustom) return m.coloreCustom===fascia.color;
-              if(fascia.key==="notte") return m.tempo==="h24"?false:(!m.inizio?false:colByTime(m.inizio)===fascia.color);
-              return m.tempo!=="h24" && m.inizio && colByTime(m.inizio)===fascia.color;
-            }).length;
-          }
-          const contaH24 = modelli.filter(m=>m.coloreCustom ? m.coloreCustom===COLORE_H24 : m.tempo==="h24").length;
-          // Un'unica lista con tutti i colori (fasce automatiche + H24 + personalizzati),
-          // nessuna sezione separata: tocca un colore per rinominarlo/gestirlo.
-          const righeTutteFasce = fasceAutomatiche.map(f=>({
-            key:f.key, hex:f.color, label:f.label, sub:"Colore fascia (per i nuovi modelli)",
-            count:contaModelliFascia(f), isFascia:true, fasciaKey:f.key,
-          }));
-          const rigaH24 = { key:"__h24", hex:COLORE_H24, label:"H24", sub:"Standard turni H24",
-            count:contaH24, isFascia:true, fasciaKey:null };
-          const righeExtra = coloriManualiOggetti
-            .slice()
-            .sort((a,b)=>{
-              const sa=a.sortOrder||0, sb=b.sortOrder||0;
-              if(sa!==sb) return sa-sb;
-              return String(a.hex).localeCompare(String(b.hex));
-            })
-            .map(c=>({
-              key:c.hex, hex:c.hex, label:c.label||c.hex.toUpperCase(), sub:"Personalizzato",
-              count:contaModelli(c.hex), isFascia:false,
-            }));
-          const righeTutte = [...righeTutteFasce, rigaH24, ...righeExtra];
+          const eqHex = (a,b)=> String(a||"").toLowerCase()===String(b||"").toLowerCase();
+          const hexModello = (m)=> m?.coloreCustom||m?.colore||null;
+          function contaModelli(hex){ return modelli.filter(m=>eqHex(hexModello(m),hex)).length; }
+          // Un gruppo per ogni colore realmente usato dai modelli, nell'ordine
+          // dei blocchi della lista modelli; in coda i colori registrati ma
+          // vuoti (aggiunti con "+"), eliminabili con la X.
+          const righeTutte = [];
+          const visti = new Set();
+          const aggiungiRiga = (hex)=>{
+            const k = String(hex).toLowerCase();
+            if(visti.has(k)) return;
+            visti.add(k);
+            const reg = coloriExtra.find(c=>eqHex(c.hex,hex));
+            const fasciaLegata = fasceAutomatiche.find(f=>eqHex(f.color,hex));
+            const nome = (reg&&reg.label) || (fasciaLegata&&fasciaLegata.label) || (eqHex(hex,COLORE_H24)?"H24":null) || String(hex).toUpperCase();
+            righeTutte.push({
+              key:k, hex, label:nome,
+              sub: fasciaLegata ? `Stesso colore della fascia ${fasciaLegata.label}` : "",
+              count:contaModelli(hex),
+            });
+          };
+          modelliOrdinati.forEach(m=>{ const h = hexModello(m); if(h) aggiungiRiga(h); });
+          coloriExtra.slice().sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0)).forEach(c=>aggiungiRiga(c.hex));
           return (
             <div style={{paddingBottom:80}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,paddingLeft:4}}>
@@ -700,22 +686,19 @@ export default function VistaModelli({ C }){
                     fontSize:16,fontWeight:800,cursor:"pointer",color:getContrastTextColor(accent)}}>+</button>
               </div>
               <div style={{fontSize:11,color:T.sub,marginBottom:8,paddingLeft:4}}>
-                Tocca un colore per rinominarlo o per riassegnarlo ai modelli.
+                Un gruppo per ogni colore usato dai modelli. Tocca un colore per rinominarlo o per riassegnarlo ai modelli.
               </div>
               <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
                 {righeTutte.map((r,i,arr)=>{
-                  // Le frecce di spostamento hanno senso solo tra colori
-                  // extra (righeExtra): le fasce automatiche e H24 hanno un
-                  // ordine fisso, deciso altrove (fascia oraria), non spostabile.
-                  const idxExtra = righeExtra.findIndex(e=>e.key===r.key);
-                  const puoSpostare = !r.isFascia && idxExtra!==-1;
+                  // L'ordine dei gruppi segue i blocchi della lista modelli:
+                  // niente frecce. La X compare solo sui gruppi vuoti.
+                  const regRiga = coloriExtra.find(c=>eqHex(c.hex,r.hex));
                   return (
                     <div key={r.key} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                       <ColorRow T={T} accent={accent} hex={r.hex} label={r.label} sub={r.sub}
                         count={r.count} onClick={()=>setShowColorAssignPicker(r.hex)}
-                        onRemove={(!r.isFascia && r.count===0)?()=>removeColoreExtra(r.hex):null}
-                        onMoveUp={puoSpostare&&idxExtra>0?()=>moveColoreExtra(r.hex,"up"):null}
-                        onMoveDown={puoSpostare&&idxExtra<righeExtra.length-1?()=>moveColoreExtra(r.hex,"down"):null}/>
+                        onRemove={(r.count===0 && regRiga)?()=>removeColoreExtra(regRiga.hex):null}
+                        onMoveUp={null} onMoveDown={null}/>
                     </div>
                   );
                 })}
@@ -733,11 +716,11 @@ export default function VistaModelli({ C }){
 
       {showColorAssignPicker&&(()=>{
         const hex = showColorAssignPicker;
-        const fasciaCorrente = fasceAutomatiche.find(f=>f.color===hex);
-        const isH24 = hex===COLORE_H24;
-        const isFascia = !!fasciaCorrente || isH24;
-        const coloreExtraCorrente = coloriExtra.find(c=>c.hex===hex);
-        const nomeAttuale = fasciaCorrente ? fasciaCorrente.label : isH24 ? "H24" : (coloreExtraCorrente?.label || "");
+        const eqHexP = (a,b)=> String(a||"").toLowerCase()===String(b||"").toLowerCase();
+        const fasciaCorrente = fasceAutomatiche.find(f=>eqHexP(f.color,hex));
+        const coloreExtraCorrente = coloriExtra.find(c=>eqHexP(c.hex,hex));
+        // Nome del gruppo: salvato in Colori, indipendente dalla fascia.
+        const nomeAttuale = coloreExtraCorrente?.label ?? (fasciaCorrente ? fasciaCorrente.label : (eqHexP(hex,COLORE_H24) ? "H24" : ""));
         return (
           <div style={{position:"fixed",top:0,left:0,right:0,bottom:NAV_HEIGHT_CSS,background:"rgba(0,0,0,0.85)",zIndex:600,
             display:"flex",flexDirection:"column"}}>
@@ -752,29 +735,17 @@ export default function VistaModelli({ C }){
               </button>
               <div style={{width:32}}/>
             </div>
-            {isH24?(
-              <div style={{padding:"10px 16px",fontSize:16,fontWeight:900,color:T.text,background:T.surface,borderBottom:`1px solid ${T.border}`}}>
-                H24
-              </div>
-            ):(
-              <div style={{padding:"10px 16px",background:T.surface,borderBottom:`1px solid ${T.border}`}}>
-                <input value={nomeAttuale}
-                  onChange={e=>{
-                    const v = e.target.value.toUpperCase();
-                    if(fasciaCorrente) updateFascia(fasciaCorrente.key, {label:v});
-                    else updateColoreExtraLabel(hex, v);
-                  }}
-                  placeholder="Nome di questo colore"
-                  style={{width:"100%",background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
-                    padding:"9px 12px",color:T.text,fontSize:16,fontWeight:900,outline:"none",boxSizing:"border-box"}}/>
-              </div>
-            )}
-            {isFascia&&(
-              <div style={{padding:"10px 16px",fontSize:12,color:T.sub,background:T.s2}}>
-                Assegnando qui un modello, quel modello userà questo colore.
-                {fasciaCorrente&&" La fascia (orario e nome) serve solo per colorare i nuovi modelli e si modifica da Impostazioni."}
-              </div>
-            )}
+            <div style={{padding:"10px 16px",background:T.surface,borderBottom:`1px solid ${T.border}`}}>
+              <input value={nomeAttuale}
+                onChange={e=>updateColoreExtraLabel(coloreExtraCorrente ? coloreExtraCorrente.hex : hex, e.target.value.toUpperCase())}
+                placeholder="Nome di questo colore"
+                style={{width:"100%",background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
+                  padding:"9px 12px",color:T.text,fontSize:16,fontWeight:900,outline:"none",boxSizing:"border-box"}}/>
+            </div>
+            <div style={{padding:"10px 16px",fontSize:12,color:T.sub,background:T.s2}}>
+              Assegnando qui un modello, quel modello userà questo colore.
+              {fasciaCorrente&&` Questo colore è anche quello della fascia ${fasciaCorrente.label}: cambiandolo qui cambia anche in Impostazioni (e viceversa).`}
+            </div>
             {store.calendars.length>1&&(()=>{
               const calSelezionati = colorAssignCalFiltro===null ? store.calendars.map(c=>c.id) : colorAssignCalFiltro;
               function toggleCal(cid){
@@ -836,12 +807,8 @@ export default function VistaModelli({ C }){
                         </div>
                         <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
                           {modelliCal.map((m,i,arr)=>{
-                            const matchAuto = !m.coloreCustom && (
-                              (m.tempo==="h24" && hex===COLORE_H24) ||
-                              (m.tempo!=="h24" && m.inizio && colByTime(m.inizio)===hex)
-                            );
-                            const selezionato = m.coloreCustom===hex || matchAuto;
-                            const coloreAttuale = m.coloreCustom||(m.tempo==="h24"?COLORE_H24:colByTime(m.inizio));
+                            const selezionato = eqHexP(m.coloreCustom||m.colore, hex);
+                            const coloreAttuale = m.coloreCustom||m.colore||(m.tempo==="h24"?COLORE_H24:colByTime(m.inizio));
                             return (
                               <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                                 <div onClick={()=>{
@@ -862,7 +829,7 @@ export default function VistaModelli({ C }){
                                     <div style={{fontSize:15,fontWeight:700,color:T.text}}>{m.titolo||"Senza nome"}</div>
                                     <div style={{fontSize:11,color:T.sub}}>
                                       {m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${m.fine?` - ${m.fine}`:""}`:""}
-                                      {m.coloreCustom&&!selezionato?" · colore personalizzato diverso":""}
+                                      {!selezionato?" · colore diverso":""}
                                     </div>
                                   </div>
                                 </div>
@@ -889,7 +856,7 @@ export default function VistaModelli({ C }){
 
       {showEditFasciaColor&&(
         <ColorPickerModal T={T} cur={showEditFasciaColor} title="Cambia colore"
-          coloriUsati={[...new Set(modelli.map(m=>m.coloreCustom||(m.tempo==="h24"?COLORE_H24:colByTime(m.inizio))).filter(Boolean))].filter(h=>h!==showEditFasciaColor)}
+          coloriUsati={[...new Set(modelli.map(m=>m.coloreCustom||m.colore||(m.tempo==="h24"?COLORE_H24:colByTime(m.inizio))).filter(Boolean))].filter(h=>String(h).toLowerCase()!==String(showEditFasciaColor).toLowerCase())}
           getNomeColore={p=>nomeDelColore(p,{fasceAutomatiche,coloriExtra})}
           onPick={async(p)=>{
             const old = showEditFasciaColor;
@@ -1011,7 +978,7 @@ export default function VistaModelli({ C }){
         </button>
       </Sec>
 
-      <SecCollapsible label="MANUTENZIONE" T={T}>
+      <SecCollapsible label="MANUTENZIONE" T={T} onToggle={(aperta)=>{ if(aperta) aggiornaVersioniAutomatiche(); }}>
         <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
           Usa questa funzione se il calendario mostra dati non aggiornati o
           sbagliati. Svuota la cache dell'app (memoria temporanea e service
@@ -1072,29 +1039,60 @@ export default function VistaModelli({ C }){
           📐 Riordina posizione modelli
         </button>
 
+        <div style={{fontSize:11,color:T.sub,margin:"14px 0 6px",fontWeight:700}}>
+          SORGENTE PER NORMALIZZA E RIPRISTINA
+        </div>
+        <select value={sorgenteDisposizione} onChange={e=>setSorgenteDisposizione(e.target.value)}
+          style={{width:"100%",background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,color:T.text,
+            padding:"9px 10px",fontSize:12,fontWeight:700,marginBottom:6}}>
+          <option value="manuale">Ultima disposizione salvata a mano</option>
+          {(versioniAutomatiche||[]).map(v=>(
+            <option key={v.id} value={v.id}>
+              Automatica {new Date(v.salvato_il).toLocaleString("it-IT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})} — {v.n_modelli} modelli
+            </option>
+          ))}
+        </select>
+        <div style={{fontSize:11,color:T.sub,marginBottom:6}}>
+          Le versioni automatiche si salvano da sole ~10 secondi dopo ogni cambio
+          di colori, gruppi, fasce o ordine (ultime 20).
+        </div>
         <div style={{fontSize:11,color:T.sub,margin:"14px 0 10px"}}>
-          Se qualche modello mostra un colore leggermente diverso dagli altri
-          della stessa fascia oraria (es. un vecchio blu invece del "3° TURNO"
-          attuale), è perché quel modello aveva scelto il colore della fascia
-          come "personalizzato" prima che tu la ricolorassi da Impostazioni —
-          e da allora è rimasto congelato a quel vecchio colore. Questo
-          pulsante trova quei modelli e li riporta a seguire sempre la fascia
-          oraria in automatico, senza toccare i colori davvero personalizzati
-          (quelli con un nome proprio nella scheda Colori).
+          Se colori e gruppi si sono mescolati, questo pulsante riporta ai
+          colori della sorgente scelta qui sopra (di default l'ultimo "Salva disposizione"): ogni modello riprende il
+          colore salvato (e rientra nel suo gruppo), le fasce orarie
+          riadottano il colore salvato e i gruppi ritrovano il loro nome.
+          Non tocca ordine, orari e titoli.
         </div>
         <button onClick={async()=>{
-            const analisi = analizzaColoriDaNormalizzare();
+            let sorg = null;
+            if(sorgenteDisposizione!=="manuale"){
+              sorg = await caricaVersioneAutomatica(sorgenteDisposizione);
+              if(!sorg){
+                setBanner("⚠️ Versione automatica non trovata. Riapri la sezione per aggiornare l'elenco.");
+                setTimeout(()=>setBanner(null), 6000);
+                return;
+              }
+            }
+            const analisi = analizzaColoriDaNormalizzare(sorg);
+            if(analisi.nessunaDisposizione){
+              setBanner("⚠️ Nessuna disposizione salvata: premi prima \"Salva disposizione\" quando i colori sono a posto.");
+              setTimeout(()=>setBanner(null), 6000);
+              return;
+            }
             if(analisi.totale===0){
-              setBanner("✅ Nessun colore da normalizzare: tutto già coerente con le fasce attuali.");
+              setBanner("✅ Nessun colore da normalizzare: tutto già uguale all'ultima disposizione salvata.");
               setTimeout(()=>setBanner(null), 5000);
               return;
             }
-            const elenco = analisi.modelli.map(m=>`• ${m.titolo||"Senza nome"}`).join("\n");
-            if(!confirm(`Trovati ${analisi.totale} modelli da riallineare al colore memorizzato (o automatico della fascia):\n\n${elenco}\n\nProcedere?`)) return;
+            const elenco = [
+              ...analisi.fasce.map(f=>`• Fascia ${f.label}: colore salvato`),
+              ...analisi.modelli.map(m=>`• ${m.titolo||"Senza nome"}`),
+            ].join("\n");
+            if(!confirm(`Trovati ${analisi.modelli.length} modelli e ${analisi.fasce.length} fasce da riportare ai colori dell'ultima disposizione salvata:\n\n${elenco}\n\nProcedere?`)) return;
             setBanner("⏳ Normalizzazione colori in corso...");
             try {
-              const esito = await applicaNormalizzazioneColori();
-              setBanner(`✅ ${esito.totale} modelli riportati al colore memorizzato. Eventi già inseriti aggiornati.`);
+              const esito = await applicaNormalizzazioneColori(sorg);
+              setBanner(`✅ ${esito.totale} modelli e ${esito.totaleFasce} fasce riportati ai colori salvati. Eventi già inseriti aggiornati.`);
             } catch(e){
               segnalaErrore(e, "Normalizzazione colori modelli");
               setBanner("❌ Errore durante la normalizzazione. Controlla il Log.");
@@ -1109,8 +1107,9 @@ export default function VistaModelli({ C }){
         <div style={{fontSize:11,color:T.sub,margin:"14px 0 10px"}}>
           Protezione extra contro un problema ancora in fase di indagine che
           a volte rimescola da solo l'ordine dei modelli. "Salva
-          disposizione" congela ordine, colori dei modelli, fasce orarie e colori extra come backup separato (mai
+          disposizione" congela ordine, colori dei modelli, fasce orarie e colori extra come backup manuale (mai
           sovrascritto in automatico, solo quando premi questo pulsante).
+          In parallelo l'app tiene da sola lo storico delle ultime 20 versioni automatiche.
           Se in futuro l'ordine dovesse rimescolarsi di nuovo, tocca
           "Ripristina disposizione" per tornare esattamente a come l'avevi
           salvato, senza dover risistemare i modelli a mano uno per uno.
@@ -1135,7 +1134,12 @@ export default function VistaModelli({ C }){
             if(!confirm("Ripristinare l'ultima disposizione salvata? Ordine, colori dei modelli, fasce orarie e colori extra verranno sostituiti con quelli del backup (gli eventi già in calendario seguiranno i colori ripristinati).")) return;
             setBanner("⏳ Ripristino disposizione in corso...");
             try {
-              const esito = await ripristinaDisposizioneModelli();
+              let sorg = null;
+              if(sorgenteDisposizione!=="manuale"){
+                sorg = await caricaVersioneAutomatica(sorgenteDisposizione);
+                if(!sorg){ setBanner("⚠️ Versione automatica non trovata. Riapri la sezione per aggiornare l'elenco."); setTimeout(()=>setBanner(null), 6000); return; }
+              }
+              const esito = await ripristinaDisposizioneModelli(sorg);
               if(esito.ok) setBanner(`✅ Disposizione ripristinata: ${esito.totale} modelli.`);
               else setBanner(`❌ ${esito.errore||"Nessuna disposizione salvata trovata."}`);
             } catch(e){
@@ -1249,8 +1253,9 @@ export default function VistaModelli({ C }){
                   coloriUsati={[...new Set(fasceAutomatiche.map(ff=>ff.color).filter(Boolean))]}
                   getNomeColore={p=>nomeDelColore(p,{fasceAutomatiche,coloriExtra})}
                   onPick={p=>{
-                    updateFascia(f.key,{color:p});
-                    saveSettings({fasce_automatiche:fasceAutomatiche.map(ff=>ff.key===f.key?{...ff,color:p}:ff)});
+                    // Stesso colore in Impostazioni e in Modelli > Colori: il cambio
+                    // porta con se' il gruppo (modelli, eventi, nome) con quel colore.
+                    replaceColoreEverywhere(f.color, p);
                   }}
                   onClose={()=>setPal(null)}/>}
               </div>

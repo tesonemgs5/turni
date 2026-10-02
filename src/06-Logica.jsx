@@ -3377,6 +3377,9 @@ export function useAppCore(session){
 // globale se necessario.
 // Chiave di raggruppamento colore (confronto case-insensitive: "#FFEB3C" e
 // "#ffeb3c" sono lo stesso colore).
+function stessoHexColore(a,b){
+  return String(a||"").toLowerCase()===String(b||"").toLowerCase();
+}
 function chiaveColoreModello(m){
   return String((m && (m.coloreCustom||m.colore)) || "").toLowerCase();
 }
@@ -3873,14 +3876,24 @@ const importsRecenti = useMemo(()=>{
   // salvato subito nella tabella "colori" (se non già presente), così
   // compare istantaneamente nella tab Modelli -> Colori senza dover
   // ricaricare l'app, e può essere associato ad altri modelli da lì.
-  async function ensureColoreRegistrato(hex){
+  // Nome di partenza di un gruppo-colore nuovo: quello della fascia che ha
+  // questo colore (o H24). Serve SOLO al momento della registrazione: dopo,
+  // il nome vive in Colori ed e' indipendente dalle fasce.
+  function nomePredefinitoColore(hex){
+    if(!hex) return null;
+    const fascia = (store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT).find(f=>stessoHexColore(f.color,hex));
+    if(fascia) return fascia.label||null;
+    if(stessoHexColore(hex,COLORE_H24)) return "H24";
+    return null;
+  }
+  async function ensureColoreRegistrato(hex, label=null){
     if(!userId || !hex) return;
-    if(coloriExtra.some(c=>c.hex===hex)) return;
+    if(coloriExtra.some(c=>stessoHexColore(c.hex,hex))) return;
     // 1) SUBITO in locale: visibile in Modelli -> Colori all'istante.
-    setColoriExtra(prev=>prev.some(c=>c.hex===hex)?prev:[...prev, {hex, label:null, sortOrder:prev.length}]);
+    setColoriExtra(prev=>prev.some(c=>stessoHexColore(c.hex,hex))?prev:[...prev, {hex, label:label||null, sortOrder:prev.length}]);
     // 2) Backup su Supabase (con retry colonna) + Sheets in parallelo.
     scriviConBackup({
-      tipo:"insert", table:"colori", payload:{ user_id:userId, hex }, matchObj:null,
+      tipo:"insert", table:"colori", payload: label ? { user_id:userId, hex, label } : { user_id:userId, hex }, matchObj:null,
       contesto:"Registrazione nuovo colore", ts:new Date().toISOString(),
       eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelli,
     });
@@ -3991,7 +4004,7 @@ const importsRecenti = useMemo(()=>{
       // ovunque, a differenza di "Copia" che duplica fisicamente il modello.
       visibile_anche_in: (data.visibileAncheIn && data.visibileAncheIn.length>0) ? data.visibileAncheIn : null,
     };
-    if(data.coloreCustom) ensureColoreRegistrato(data.coloreCustom); // non bloccante: colore già visibile localmente comunque
+    ensureColoreRegistrato(coloreEff, nomePredefinitoColore(coloreEff)); // il gruppo-colore entra in Colori col nome della fascia; poi e' indipendente
     if(data.titolo) registraValoreAutocomplete("titolo", (data.titolo||"").toUpperCase());
     if(data.label) registraValoreAutocomplete("nome_visualizzato", (data.label||"").toUpperCase());
     const ts = new Date().toISOString();
@@ -4292,6 +4305,129 @@ const importsRecenti = useMemo(()=>{
     ripulisciTutteLePosizioniModelli().catch(e=>segnalaErrore(e, "Riordino automatico dopo svuota cache"));
   }, [riordinaDopoCache, loading, modelli]);
 
+  // Una tantum per sessione, a dati del server caricati: i colori in uso che
+  // coincidono con una fascia (o H24) ma non hanno ancora un gruppo registrato
+  // in Colori vengono registrati col nome della fascia. Da quel momento il
+  // gruppo e' indipendente dalle Impostazioni.
+  // ══════════════════════════════════════════════════════════════════════
+  // SALVATAGGIO AUTOMATICO DELLA DISPOSIZIONE (storico ultime 20 versioni)
+  // ══════════════════════════════════════════════════════════════════════
+  // Copia SEPARATA da "Salva disposizione" (che resta manuale e non viene mai
+  // toccata). Salva colore/ordine/calendario di ogni modello, fasce e gruppi
+  // colore con i loro nomi, ~10 secondi dopo ogni cambio. Ogni versione resta
+  // nello storico (tabella disposizione_auto), cosi' anche se uno stato
+  // sbagliato viene salvato, quelle precedenti restano disponibili per
+  // Normalizza e Ripristina.
+  const MAX_VERSIONI_AUTO = 20;
+  const [versioniAutomatiche, setVersioniAutomatiche] = useState([]);
+  const [sorgenteDisposizione, setSorgenteDisposizione] = useState("manuale");
+  const ultimaAutoRef = useRef({ firma:null, n:0, pronto:false });
+  const timerAutoRef = useRef(null);
+
+  function firmaStabile(v){
+    if(Array.isArray(v)) return "["+v.map(firmaStabile).join(",")+"]";
+    if(v && typeof v==="object") return "{"+Object.keys(v).sort().map(k=>JSON.stringify(k)+":"+firmaStabile(v[k])).join(",")+"}";
+    return JSON.stringify(v===undefined?null:v);
+  }
+  function firmaDisposizione(d){
+    const voci = (d.voci||[]).map(v=>[String(v.modello_id), v.sort_order||0, v.colore||null, v.colore_custom||null, v.calendar_id||null])
+      .sort((a,b)=>a[0].localeCompare(b[0]));
+    const extra = (d.coloriExtra||[]).map(c=>[String(c.hex).toLowerCase(), c.label||null]).sort((a,b)=>a[0].localeCompare(b[0]));
+    return firmaStabile({ voci, fasce:d.fasce||[], extra });
+  }
+  function costruisciDisposizioneCorrente(){
+    return {
+      voci: modelli.filter(Boolean).map(m=>({
+        modello_id:m.id, titolo:m.titolo||"", calendar_id:m.calendarId||null, sort_order:m.sortOrder||0,
+        colore:m.colore||null, colore_custom:m.coloreCustom||null,
+      })),
+      fasce: (store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT).map(f=>({...f})),
+      coloriExtra: (coloriExtra||[]).map(c=>({hex:c.hex, label:c.label||null, sortOrder:c.sortOrder||0})),
+    };
+  }
+  async function salvaVersioneAutomatica(){
+    if(!userId) return;
+    const d = costruisciDisposizioneCorrente();
+    if(d.voci.length===0) return;
+    const firma = firmaDisposizione(d);
+    const u = ultimaAutoRef.current;
+    if(firma===u.firma) return; // nessun cambiamento rispetto all'ultima versione
+    // Guardia: un calo improvviso dei modelli e' quasi sempre dato parziale, non si salva.
+    if(u.n>=5 && d.voci.length < u.n*0.7){
+      segnalaErroreSoloLog(`Salvataggio automatico saltato: modelli scesi da ${u.n} a ${d.voci.length}`, "Salvataggio automatico disposizione");
+      return;
+    }
+    try{
+      const { error } = await supabase.from("disposizione_auto").insert({ user_id:userId, n_modelli:d.voci.length, dati:d });
+      if(error){ segnalaErroreSoloLog(error, "Salvataggio automatico disposizione"); return; }
+      ultimaAutoRef.current = { firma, n:d.voci.length, pronto:true };
+      // Potatura: si tengono solo le ultime MAX_VERSIONI_AUTO versioni.
+      const { data: vecchie } = await supabase.from("disposizione_auto").select("id")
+        .eq("user_id",userId).order("salvato_il",{ascending:false}).range(MAX_VERSIONI_AUTO, MAX_VERSIONI_AUTO+200);
+      if(vecchie && vecchie.length>0){
+        await supabase.from("disposizione_auto").delete().eq("user_id",userId).in("id", vecchie.map(r=>r.id));
+      }
+    }catch(e){ segnalaErroreSoloLog(e?.message||String(e), "Salvataggio automatico disposizione"); }
+  }
+  async function aggiornaVersioniAutomatiche(){
+    if(!userId) return [];
+    try{
+      const { data, error } = await supabase.from("disposizione_auto").select("id,salvato_il,n_modelli")
+        .eq("user_id",userId).order("salvato_il",{ascending:false}).limit(MAX_VERSIONI_AUTO);
+      if(error){ segnalaErroreSoloLog(error, "Elenco versioni automatiche"); return []; }
+      setVersioniAutomatiche(data||[]);
+      return data||[];
+    }catch(e){ segnalaErroreSoloLog(e?.message||String(e), "Elenco versioni automatiche"); return []; }
+  }
+  // Ritorna una disposizione {voci,fasce,coloriExtra,salvato_il} pronta per
+  // Normalizza / Ripristina, oppure null se non trovata.
+  async function caricaVersioneAutomatica(id){
+    if(!userId || !id) return null;
+    try{
+      const { data, error } = await supabase.from("disposizione_auto").select("id,salvato_il,dati")
+        .eq("user_id",userId).eq("id",id).maybeSingle();
+      if(error || !data || !data.dati) return null;
+      return { ...data.dati, salvato_il:data.salvato_il };
+    }catch{ return null; }
+  }
+  useEffect(()=>{
+    if(loading || !userId || !isInitialized.current || modelli.length===0) return;
+    if(timerAutoRef.current) clearTimeout(timerAutoRef.current);
+    timerAutoRef.current = setTimeout(async()=>{
+      if(!ultimaAutoRef.current.pronto){
+        // Prima volta nella sessione: si legge l'ultima versione per confrontarsi.
+        try{
+          const { data, error } = await supabase.from("disposizione_auto").select("n_modelli,dati")
+            .eq("user_id",userId).order("salvato_il",{ascending:false}).limit(1);
+          if(error){ segnalaErroreSoloLog(error, "Salvataggio automatico disposizione (lettura ultima versione)"); return; }
+          ultimaAutoRef.current = data && data[0]
+            ? { firma:firmaDisposizione(data[0].dati||{}), n:data[0].n_modelli||0, pronto:true }
+            : { firma:null, n:0, pronto:true };
+        }catch{ return; }
+      }
+      salvaVersioneAutomatica();
+    }, 10000);
+    return ()=>{ if(timerAutoRef.current) clearTimeout(timerAutoRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modelli, coloriExtra, store.fasceAutomatiche, loading, userId]);
+
+  const nomiGruppiMigrati = useRef(false);
+  useEffect(()=>{
+    if(loading || !userId || !isInitialized.current || nomiGruppiMigrati.current || modelli.length===0) return;
+    nomiGruppiMigrati.current = true;
+    const visti = new Set((coloriExtra||[]).map(c=>String(c.hex).toLowerCase()));
+    modelli.forEach(m=>{
+      const h = m?.coloreCustom||m?.colore;
+      if(!h) return;
+      const k = String(h).toLowerCase();
+      if(visti.has(k)) return;
+      visti.add(k);
+      const nome = nomePredefinitoColore(h);
+      if(nome) ensureColoreRegistrato(h, nome);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, userId, modelli, coloriExtra]);
+
   // ══════════════════════════════════════════════════════════════════════
   // NORMALIZZAZIONE COLORI "CONGELATI" (drift fascia oraria / coloreCustom)
   // ══════════════════════════════════════════════════════════════════════
@@ -4322,78 +4458,119 @@ const importsRecenti = useMemo(()=>{
   // dall'utente. Ritorna una Map modello_id -> voce, oppure null se lo
   // snapshot non esiste o è vecchio (senza colori).
   function leggiSnapshotColoriLocale(){
+    const raw = leggiSnapshotLocaleCompleto();
+    if(!raw) return null;
+    const mappa = new Map();
+    raw.voci.forEach(v=>{ if(v && "colore" in v) mappa.set(v.modello_id, v); });
+    return mappa.size>0 ? mappa : null;
+  }
+  function leggiSnapshotLocaleCompleto(){
     try{
       const raw = localStorage.getItem("disposizioneModelliBackup");
       if(!raw) return null;
       const parsed = JSON.parse(raw);
       if(parsed?.userId!==userId || !Array.isArray(parsed.voci)) return null;
-      const mappa = new Map();
-      parsed.voci.forEach(v=>{ if(v && "colore" in v) mappa.set(v.modello_id, v); });
-      return mappa.size>0 ? mappa : null;
+      return parsed;
     }catch{ return null; }
   }
 
-  // Modelli da riallineare. Con uno snapshot salvato, il colore di riferimento
-  // è quello memorizzato: colore scelto a mano -> quello stesso hex; colore
-  // automatico -> colore attuale della fascia. Senza snapshot (o per i modelli
-  // creati dopo) vale la regola storica: colore "congelato" di una vecchia
-  // fascia -> torna automatico.
-  function analizzaColoriDaNormalizzare(){
-    const fasce = store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT;
-    const hexFasceAttuali = new Set([...fasce.map(f=>f.color), COLORE_H24]);
-    const hexConNomeProprio = new Set((coloriExtra||[]).filter(c=>c.label).map(c=>c.hex));
-    const snap = leggiSnapshotColoriLocale();
+  // NORMALIZZA: riporta COLORI e GRUPPI a come erano nell'ultimo "Salva
+  // disposizione". Ogni modello riprende il colore salvato (quindi rientra nel
+  // suo gruppo), le fasce orarie riadottano il colore salvato e i gruppi
+  // ritrovano il nome salvato. Non tocca ordine, orari, titoli.
+  // "sorgente" opzionale: una disposizione {voci,fasce,coloriExtra} (es. una
+  // versione automatica); senza, si usa l'ultima disposizione salvata a mano.
+  function analizzaColoriDaNormalizzare(sorgente=null){
+    const snapRaw = sorgente || leggiSnapshotLocaleCompleto();
+    const snap = (()=>{
+      if(!snapRaw || !Array.isArray(snapRaw.voci)) return null;
+      const mappa = new Map();
+      snapRaw.voci.forEach(v=>{ if(v && "colore" in v) mappa.set(v.modello_id, v); });
+      return mappa.size>0 ? mappa : null;
+    })();
+    if(!snapRaw || !snap) return { totale:0, modelli:[], fasce:[], nessunaDisposizione:true };
+    const fasceAttuali = store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT;
     const candidati = [];
     modelli.forEach(m=>{
       if(!m) return;
-      const autoOra = m.tempo==="h24" ? COLORE_H24 : (m.inizio ? getColorByTime(m.inizio, fasce) : null);
-      const v = snap?.get(m.id);
-      if(v){
-        const customSalvato = v.colore_custom||v.colore||null;
-        const target = customSalvato || autoOra;
-        if(!target) return;
-        if((m.coloreCustom||null)!==customSalvato || (m.colore||null)!==target){
-          candidati.push({ id:m.id, titolo:m.titolo, coloreVecchio:m.coloreCustom||m.colore,
-            coloreNuovo:target, coloreCustomNuovo:customSalvato });
-        }
-        return;
+      const v = snap.get(m.id);
+      if(!v) return;
+      const target = v.colore_custom || v.colore;
+      if(!target) return;
+      if(!stessoHexColore(m.coloreCustom||m.colore, target)){
+        candidati.push({ id:m.id, titolo:m.titolo, coloreVecchio:m.coloreCustom||m.colore, coloreNuovo:target });
       }
-      // I colori sono sempre espliciti: nessun colore va più "riportato
-      // ad automatico". Senza snapshot non c'è nulla da normalizzare.
-      return;
     });
-    return { totale: candidati.length, modelli: candidati };
+    const fasceDaRipristinare = [];
+    (Array.isArray(snapRaw.fasce)?snapRaw.fasce:[]).forEach(sf=>{
+      const cur = fasceAttuali.find(f=>f.key===sf.key);
+      if(cur && sf.color && !stessoHexColore(cur.color, sf.color)){
+        fasceDaRipristinare.push({ key:cur.key, label:cur.label, coloreVecchio:cur.color, coloreNuovo:sf.color });
+      }
+    });
+    return { totale: candidati.length + fasceDaRipristinare.length, modelli:candidati, fasce:fasceDaRipristinare };
   }
 
-  async function applicaNormalizzazioneColori(){
-    const { modelli: candidati } = analizzaColoriDaNormalizzare();
-    if(candidati.length===0) return { ok:true, totale:0 };
+  async function applicaNormalizzazioneColori(sorgente=null){
+    const analisi = analizzaColoriDaNormalizzare(sorgente);
+    const candidati = analisi.modelli;
+    const fasceR = analisi.fasce;
+    if(analisi.totale===0) return { ok:true, totale:0, totaleFasce:0 };
+    const snapRaw = sorgente || leggiSnapshotLocaleCompleto();
     const perId = new Map(candidati.map(c=>[c.id, c]));
-    let modelliAggiornati;
-    setModelli(prev=>{
-      modelliAggiornati = prev.map(m=>{
-        const c = perId.get(m?.id);
-        return c ? {...m, coloreCustom:c.coloreCustomNuovo, colore:c.coloreNuovo} : m;
-      });
-      return modelliAggiornati;
+    const modelliAggiornati = modelli.map(m=>{
+      const c = perId.get(m?.id);
+      return c ? {...m, coloreCustom:c.coloreNuovo, colore:c.coloreNuovo} : m;
     });
-    const ts = new Date().toISOString();
-    for(const c of candidati){
-      scriviConBackup({
-        tipo:"update", table:"modelli",
-        payload:{ colore_custom:c.coloreCustomNuovo, colore:c.coloreNuovo },
-        matchObj:{id:c.id, user_id:userId},
-        contesto:`Normalizzazione colore su modello "${c.titolo||c.id}"`, ts,
-        eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelliAggiornati,
+    setModelli(modelliAggiornati);
+
+    // Fasce: adottano il colore salvato.
+    if(fasceR.length>0){
+      const nuoveFasce = (store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT).map(f=>{
+        const r = fasceR.find(x=>x.key===f.key);
+        return r ? {...f, color:r.coloreNuovo} : f;
       });
+      setStore(s=>({...s, fasceAutomatiche:nuoveFasce}));
+      await saveSettings({fasce_automatiche:nuoveFasce});
     }
-    // Gli eventi già inseriti passano al colore normalizzato del modello.
+
+    // Nomi dei gruppi: dallo snapshot (colori extra) oppure dal nome della
+    // fascia salvata con quel colore; registra i gruppi mancanti.
+    const nomiSnap = new Map();
+    (snapRaw?.coloriExtra||[]).forEach(c=>{ if(c?.hex && c.label) nomiSnap.set(String(c.hex).toLowerCase(), c.label); });
+    (snapRaw?.fasce||[]).forEach(f=>{ if(f?.color && f.label && !nomiSnap.has(String(f.color).toLowerCase())) nomiSnap.set(String(f.color).toLowerCase(), f.label); });
+    const coloriRipristinati = new Set([...candidati.map(c=>c.coloreNuovo), ...fasceR.map(f=>f.coloreNuovo)]);
+    coloriRipristinati.forEach(hex=>{
+      const nome = nomiSnap.get(String(hex).toLowerCase()) || nomePredefinitoColore(hex);
+      const reg = coloriExtra.find(c=>stessoHexColore(c.hex,hex));
+      if(!reg) ensureColoreRegistrato(hex, nome);
+      else if(!reg.label && nome) updateColoreExtraLabel(reg.hex, nome);
+    });
+
+    // Eventi gia' inseriti passano al colore ripristinato del modello.
     const mappaColori = {};
     candidati.forEach(c=>{ mappaColori[c.id] = c.coloreNuovo; });
     const eventiAggiornati = await propagaColoreModelliAgliEventi(mappaColori);
     saveToLocalStorage(eventiAggiornati||store.events, store.calendars, modelliAggiornati);
-    syncSeAttivo(eventiAggiornati||store.events, store.calendars, modelliAggiornati);
-    return { ok:true, totale: candidati.length };
+
+    // Backup remoto: una scrittura alla volta, solo log (niente raffica di popup).
+    const ts = new Date().toISOString();
+    (async()=>{
+      let errori = 0;
+      for(const c of candidati){
+        const ris = await scriviConBackup({
+          tipo:"update", table:"modelli",
+          payload:{ colore_custom:c.coloreNuovo, colore:c.coloreNuovo },
+          matchObj:{id:c.id, user_id:userId},
+          contesto:`Normalizzazione colore su modello "${c.titolo||c.id}"`, ts,
+          opzioni:{ soloLog:true },
+        });
+        if(ris?.errore) errori++;
+      }
+      if(errori>0) segnalaErroreSoloLog(`${errori} modelli non salvati su Supabase durante la normalizzazione`, "Normalizzazione colori");
+      syncSeAttivo(eventiAggiornati||store.events, store.calendars, modelliAggiornati);
+    })();
+    return { ok:true, totale: candidati.length, totaleFasce: fasceR.length };
   }
 
   // ══════════════════════════════════════════════════════════════════════
@@ -4452,10 +4629,16 @@ const importsRecenti = useMemo(()=>{
   // CORRENTI. Un modello creato dopo l'ultimo salvataggio (non presente nello
   // snapshot) resta com'è; uno nello snapshot ma nel frattempo eliminato viene
   // ignorato. Gli eventi già in calendario seguono il colore ripristinato.
-  async function ripristinaDisposizioneModelli(){
+  async function ripristinaDisposizioneModelli(sorgente=null){
     if(!userId) return { ok:false, errore:"Utente non autenticato" };
     let vociBackup = null, fasceBackup = null, coloriExtraBackup = null;
-    try{
+    if(sorgente){
+      // Versione scelta dall'elenco automatico: nessuna lettura dei backup manuali.
+      vociBackup = Array.isArray(sorgente.voci) ? sorgente.voci : null;
+      fasceBackup = sorgente.fasce || null;
+      coloriExtraBackup = sorgente.coloriExtra || null;
+    }
+    if(!sorgente) try{
       const { data, error } = await supabase.from("modelli_sortorder_backup")
         .select("modello_id, sort_order, colore, colore_custom").eq("user_id", userId);
       if(error) throw error;
@@ -4494,7 +4677,7 @@ const importsRecenti = useMemo(()=>{
     // 2) Colori extra: reinserisce quelli mancanti (non cancella niente)
     if(Array.isArray(coloriExtraBackup)){
       for(const c of coloriExtraBackup){
-        if(c?.hex) { try{ await ensureColoreRegistrato(c.hex); }catch{} }
+        if(c?.hex) { try{ await ensureColoreRegistrato(c.hex, c.label||null); }catch{} }
       }
     }
 
@@ -4612,12 +4795,25 @@ const importsRecenti = useMemo(()=>{
   // silenzioso lato server ma aggiorna comunque lo stato locale, così l'app
   // resta utilizzabile nel frattempo.
   async function updateColoreExtraLabel(hex, label){
-    setColoriExtra(prev=>prev.map(c=>c.hex===hex?{...c,label}:c));
+    const gia = coloriExtra.find(c=>stessoHexColore(c.hex,hex));
+    if(!gia){
+      // Colore usato dai modelli ma non ancora registrato: lo si registra col nome.
+      setColoriExtra(prev=>[...prev, {hex, label, sortOrder:prev.length}]);
+      if(!userId) return;
+      scriviConBackup({
+        tipo:"insert", table:"colori", payload:{ user_id:userId, hex, label }, matchObj:null,
+        contesto:"Registrazione nome colore", ts:new Date().toISOString(),
+        opzioni:{ soloLog:true },
+      });
+      return;
+    }
+    const hexReale = gia.hex;
+    setColoriExtra(prev=>prev.map(c=>c.hex===hexReale?{...c,label}:c));
     if(!userId) return;
     scriviConBackup({
-      tipo:"update", table:"colori", payload:{label}, matchObj:{user_id:userId, hex},
+      tipo:"update", table:"colori", payload:{label}, matchObj:{user_id:userId, hex:hexReale},
       contesto:"Aggiornamento etichetta colore", ts:new Date().toISOString(),
-      eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelli,
+      opzioni:{ soloLog:true },
     });
   }
 
@@ -4626,73 +4822,69 @@ const importsRecenti = useMemo(()=>{
   // delle fasce automatiche (es. #F59E0B "mattina") con la palette
   // condivisa, invece di lasciarli fissi.
   async function replaceColoreEverywhere(oldHex, newHex){
-    if(!userId || !newHex || oldHex===newHex) return;
-    // 1) SUBITO in locale: modelli + registro colori aggiornati all'istante.
-    // Operazione di MASSA: oltre ai modelli con coloreCustom uguale al vecchio
-    // hex, coinvolge anche i modelli AUTOMATICI (senza coloreCustom) che oggi
-    // mostrano quel colore tramite la loro fascia oraria / H24. Per questi si
-    // aggiorna "colore" (e gli eventi) ma coloreCustom resta vuoto: continuano
-    // a seguire la fascia in automatico, senza doverli "normalizzare" dopo.
-    const fasceAttuali = store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT;
-    const coloreAutoDi = (m)=> m.tempo==="h24" ? COLORE_H24 : (m.inizio ? getColorByTime(m.inizio, fasceAttuali) : null);
-    const stessoHex = (a,b)=> String(a||"").toLowerCase()===String(b||"").toLowerCase();
-    const daAggiornareCustom = modelli.filter(m=>m?.coloreCustom && stessoHex(m.coloreCustom,oldHex));
-    const daAggiornareAuto = modelli.filter(m=>m && !m.coloreCustom && stessoHex(coloreAutoDi(m),oldHex));
-    const daAggiornare = [...daAggiornareCustom, ...daAggiornareAuto];
-    const idsAuto = new Set(daAggiornareAuto.map(m=>m.id));
-    let modelliAggiornati;
-    setModelli(prev=>{
-      modelliAggiornati = prev.map(m=>{
-        if(m?.coloreCustom && stessoHex(m.coloreCustom,oldHex)) return {...m,coloreCustom:newHex,colore:newHex};
-        if(m && idsAuto.has(m.id)) return {...m,colore:newHex};
-        return m;
-      });
-      return modelliAggiornati;
+    if(!userId || !newHex || !oldHex || stessoHexColore(oldHex,newHex)) return;
+    segnalaModificaOrdineModelli(); // anche un cambio colore e' una modifica da salvare
+    // Tutti i modelli del gruppo (stesso colore, confronto case-insensitive).
+    const daAggiornare = modelli.filter(m=>m && stessoHexColore(m.coloreCustom||m.colore, oldHex));
+    const idsDaAgg = new Set(daAggiornare.map(m=>m.id));
+    const modelliAggiornati = modelli.map(m=>idsDaAgg.has(m?.id) ? {...m, coloreCustom:newHex, colore:newHex} : m);
+    setModelli(modelliAggiornati);
+
+    // Registro colori (nome del gruppo): il gruppo vecchio confluisce nel
+    // nuovo; se il nuovo esisteva gia' (unione di due gruppi) tiene il suo nome.
+    const regVecchio = coloriExtra.find(c=>stessoHexColore(c.hex,oldHex));
+    const regNuovo = coloriExtra.find(c=>stessoHexColore(c.hex,newHex));
+    const nomeGruppo = (regNuovo&&regNuovo.label) || (regVecchio&&regVecchio.label) || nomePredefinitoColore(oldHex) || null;
+    const sortVecchio = regVecchio ? (regVecchio.sortOrder||0) : coloriExtra.length;
+    setColoriExtra(prev=>{
+      const senzaVecchio = prev.filter(c=>!stessoHexColore(c.hex,oldHex));
+      if(senzaVecchio.some(c=>stessoHexColore(c.hex,newHex))) return senzaVecchio.map(c=>stessoHexColore(c.hex,newHex)?{...c,label:nomeGruppo}:c);
+      return [...senzaVecchio, {hex:newHex, label:nomeGruppo, sortOrder:sortVecchio}];
     });
-    const eraRegistrato = coloriExtra.some(c=>c.hex===oldHex);
-    const vecchiaLabel = eraRegistrato ? (coloriExtra.find(c=>c.hex===oldHex)?.label||null) : null;
-    const vecchioSortOrder = eraRegistrato ? (coloriExtra.find(c=>c.hex===oldHex)?.sortOrder||0) : 0;
-    if(eraRegistrato){
-      setColoriExtra(prev=>[...prev.filter(c=>c.hex!==oldHex), {hex:newHex, label:vecchiaLabel, sortOrder:vecchioSortOrder}]);
-    }
-    // 2) Backup su Supabase (con retry colonna) + Sheets, per ogni modello coinvolto.
-    for(const m of daAggiornare){
-      scriviConBackup({
-        tipo:"update", table:"modelli",
-        payload: idsAuto.has(m.id) ? { colore:newHex } : { colore_custom:newHex, colore:newHex },
-        matchObj:{id:m.id, user_id:userId},
-        contesto:`Sostituzione colore su modello "${m.titolo||m.id}"`, ts:new Date().toISOString(),
-        eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelliAggiornati,
-      });
-    }
-    if(eraRegistrato){
-      scriviConBackup({
-        tipo:"delete", table:"colori", payload:null, matchObj:{user_id:userId, hex:oldHex},
-        contesto:"Sostituzione colore ovunque (rimozione vecchio)", ts:new Date().toISOString(),
-        eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelliAggiornati,
-      });
-      scriviConBackup({
-        tipo:"insert", table:"colori", payload:{ user_id:userId, hex:newHex, label:vecchiaLabel }, matchObj:null,
-        contesto:"Sostituzione colore ovunque (inserimento nuovo)", ts:new Date().toISOString(),
-        eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelliAggiornati,
-      });
-    } else {
-      await ensureColoreRegistrato(newHex);
-    }
-    // Se oldHex era il colore di una fascia automatica, aggiorna anche quella
-    // Cambio da Colori = cambio anche in Impostazioni: TUTTE le fasce con
-    // quel colore (anche più di una, confronto case-insensitive) lo seguono.
-    const fasceDaCambiare = (store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT).some(f=>stessoHex(f.color,oldHex));
-    if(fasceDaCambiare){
-      const nuoveFasce = (store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT).map(f=>stessoHex(f.color,oldHex)?{...f,color:newHex}:f);
+
+    // Cambio colore = cambio anche in Impostazioni: ogni fascia con il vecchio colore lo segue.
+    const fasceAttuali = store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT;
+    if(fasceAttuali.some(f=>stessoHexColore(f.color,oldHex))){
+      const nuoveFasce = fasceAttuali.map(f=>stessoHexColore(f.color,oldHex)?{...f,color:newHex}:f);
       setStore(s=>({...s, fasceAutomatiche:nuoveFasce}));
       saveSettings({fasce_automatiche:nuoveFasce});
     }
-    // Gli eventi già inseriti dei modelli con questo colore seguono il nuovo hex.
+
+    // Eventi gia' in calendario dei modelli del gruppo.
     const mappaColori = {};
     daAggiornare.forEach(m=>{ mappaColori[m.id] = newHex; });
     const eventiAggiornati = await propagaColoreModelliAgliEventi(mappaColori);
-    syncSeAttivo(eventiAggiornati||store.events, store.calendars, modelliAggiornati||modelli);
+    saveToLocalStorage(eventiAggiornati||store.events, store.calendars, modelliAggiornati);
+
+    // Backup remoto: UNA scrittura alla volta e solo nel log (niente raffica
+    // di scritture parallele + sync Sheets per ogni modello, che generava
+    // decine di errori "controllo dopo il salvataggio").
+    const ts = new Date().toISOString();
+    (async()=>{
+      let errori = 0;
+      for(const m of daAggiornare){
+        const ris = await scriviConBackup({
+          tipo:"update", table:"modelli", payload:{ colore_custom:newHex, colore:newHex },
+          matchObj:{id:m.id, user_id:userId},
+          contesto:`Sostituzione colore su modello "${m.titolo||m.id}"`, ts,
+          opzioni:{ soloLog:true },
+        });
+        if(ris?.errore) errori++;
+      }
+      if(regVecchio){
+        await scriviConBackup({ tipo:"delete", table:"colori", payload:null, matchObj:{user_id:userId, hex:regVecchio.hex},
+          contesto:"Sostituzione colore (rimozione vecchio)", ts, opzioni:{ soloLog:true } });
+      }
+      if(regNuovo){
+        await scriviConBackup({ tipo:"update", table:"colori", payload:{label:nomeGruppo}, matchObj:{user_id:userId, hex:regNuovo.hex},
+          contesto:"Sostituzione colore (nome gruppo)", ts, opzioni:{ soloLog:true } });
+      } else {
+        await scriviConBackup({ tipo:"insert", table:"colori", payload: nomeGruppo ? { user_id:userId, hex:newHex, label:nomeGruppo } : { user_id:userId, hex:newHex }, matchObj:null,
+          contesto:"Sostituzione colore (nuovo gruppo)", ts, opzioni:{ soloLog:true } });
+      }
+      if(errori>0) segnalaErroreSoloLog(`${errori} modelli non salvati su Supabase durante il cambio colore`, "Sostituzione colore");
+      syncSeAttivo(eventiAggiornati||store.events, store.calendars, modelliAggiornati);
+    })();
   }
 
   async function saveRotazione(data){
@@ -6405,6 +6597,7 @@ const importsRecenti = useMemo(()=>{
     deleteModello,
     ripulisciTutteLePosizioniModelli,
     analizzaColoriDaNormalizzare, applicaNormalizzazioneColori,
+    versioniAutomatiche, sorgenteDisposizione, setSorgenteDisposizione, aggiornaVersioniAutomatiche, caricaVersioneAutomatica,
     salvaDisposizioneModelli,
     ripristinaDisposizioneModelli,
     showSalvaDisposizionePopup,
