@@ -671,7 +671,7 @@ export default function VistaModelli({ C }){
             const nome = (reg&&reg.label) || (fasciaLegata&&fasciaLegata.label) || (eqHex(hex,COLORE_H24)?"H24":null) || String(hex).toUpperCase();
             righeTutte.push({
               key:k, hex, label:nome,
-              sub: fasciaLegata ? `Stesso colore della fascia ${fasciaLegata.label}` : "",
+              sub: "",
               count:contaModelli(hex),
             });
           };
