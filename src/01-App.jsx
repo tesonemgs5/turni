@@ -86,12 +86,12 @@ function BottomNav({ screen, setScreen, T, accent, onBeforeNavigate }) {
           <button key={item.id} onClick={() => { onBeforeNavigate?.(); setScreen(item.id); }}
             aria-label={item.label} aria-current={isActive ? "page" : undefined}
             style={{
-              flex: 1, background: "none", border: "none", padding: "5px 0",
+              flex: 1, background: "none", border: "none", padding: "2px 0",
               cursor: "pointer", display: "flex", flexDirection: "column",
-              alignItems: "center", gap: 1, fontFamily: "system-ui,sans-serif",
+              alignItems: "center", justifyContent: "center", gap: 1, fontFamily: "system-ui,sans-serif",
             }}>
-            <span aria-hidden="true" style={{ fontSize: 16, color: isActive ? accent : T.sub }}>{item.icon}</span>
-            <span style={{ fontSize: 9, fontWeight: 700, color: isActive ? accent : T.sub }}>{item.label}</span>
+            <span aria-hidden="true" style={{ fontSize: 16, lineHeight: 1, color: isActive ? accent : T.sub }}>{item.icon}</span>
+            <span style={{ fontSize: 9, lineHeight: 1, fontWeight: 700, color: isActive ? accent : T.sub }}>{item.label}</span>
           </button>
         );
       })}

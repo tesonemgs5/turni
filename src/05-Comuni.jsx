@@ -8,7 +8,7 @@
 // spazio in basso (bottom: NAV_HEIGHT_CSS invece di inset:0), così il suo
 // contenuto non passa mai sotto la nav: quello spazio non esiste per
 // nessun menu/modale dell'app.
-export const NAV_HEIGHT = 56;
+export const NAV_HEIGHT = 32;
 export const NAV_HEIGHT_CSS = `${NAV_HEIGHT}px`;
 
 // Un modello/evento è "visibile" in un calendario se quel calendario È il
