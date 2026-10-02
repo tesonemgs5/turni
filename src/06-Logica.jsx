@@ -1652,7 +1652,23 @@ export function useAppCore(session){
   const trovaCalIdPerNome = (nome)=> store.calendars.find(c=>(c.name||"").trim().toUpperCase()===nome.trim().toUpperCase())?.id || null;
   const calPersonaleId = trovaCalIdPerNome(NOME_CAL_TURNI_PERSONALI); // destinazione import foto "Turni personali"
   const calStellaId = trovaCalIdPerNome(NOME_CAL_TURNI_STELLA);       // destinazione import foto "Turni Stella"
+  const calFuSalvatoId = store.reportSettings?.calFuId || null;
+  // Calendario FU: collegato per ID (salvato in report_settings), quindi resta valido anche se rinominato.
+  // Fallback sul nome "FU" solo finché il collegamento non è stato ancora creato.
+  const calFuId = (calFuSalvatoId && store.calendars.some(c=>c.id===calFuSalvatoId)) ? calFuSalvatoId : trovaCalIdPerNome("FU");
   const mainCalId = mainCal?.id||null; // calendario principale: usato come fallback per i modelli/rotazioni senza calendarId esplicito
+
+  // Collegamento automatico del calendario FU: la prima volta salva l'id del calendario
+  // che oggi si chiama "FU" in report_settings (sincronizzato). Da lì in poi vale l'id, non il nome.
+  useEffect(()=>{
+    if(loading || !userId || !isInitialized.current || store.calendars.length===0) return;
+    if(calFuSalvatoId && store.calendars.some(c=>c.id===calFuSalvatoId)) return;
+    const idPerNome = trovaCalIdPerNome("FU");
+    if(!idPerNome) return;
+    const nuove = {...(store.reportSettings||{}), calFuId: idPerNome};
+    setStore(s=>({...s, reportSettings: nuove}));
+    saveSettings({report_settings: nuove});
+  }, [loading, userId, store.calendars, calFuSalvatoId]);
 
   // Default per il Report: se reportCalIds risulta vuoto (nessuna scelta
   // salvata, o per qualunque motivo la persistenza non ha ancora effetto)
@@ -5689,6 +5705,18 @@ const importsRecenti = useMemo(()=>{
     return testo.split(/\r?\n|,/).map(s=>s.trim()).filter(Boolean);
   }
 
+  // Regola giorno TURNI/FU: se in un giorno il calendario TURNI (principale) ha almeno un
+  // evento utile per il report (cioè che passa i filtri del report), gli eventi del
+  // calendario FU di quel giorno NON vengono contati. Se TURNI non ha eventi utili
+  // quel giorno, o non è tra i calendari del report, i FU contano normalmente.
+  // Restituisce l'id del calendario FU da saltare per quel giorno (o null).
+  function fuDaSaltare(calMap, passa){
+    const fuId = calFuId;
+    if(!fuId || !mainCalId || fuId===mainCalId || !calMap[fuId]) return null;
+    if(reportCalIds.length>0 && !reportCalIds.includes(mainCalId)) return null;
+    return (calMap[mainCalId]||[]).some(passa) ? fuId : null;
+  }
+
   function computeConteggioForReport(cfg, reportId){
     const {from, to} = getReportRange();
     const result = { totale:0 };
@@ -5701,10 +5729,19 @@ const importsRecenti = useMemo(()=>{
     const perSottomenu = {};
     sottomenu.forEach(sm=>{ perSottomenu[sm.id] = {}; });
 
+    const passaEv = (e)=>{
+      const ov = (reportId ? (e.reportOverrides||{})[reportId] : null)?.stato || null;
+      if(ov==="escluso") return false;
+      if(ov!=="incluso" && modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) return false;
+      if(filtraCollega && !splitColleghi(e.collega).some(c=>c.toUpperCase().includes(filtraCollega))) return false;
+      return true;
+    };
     for(const [dateKey, calMap] of Object.entries(store.events)){
       if(dateKey < from || dateKey > to) continue;
+      const fuSalta = fuDaSaltare(calMap, passaEv);
       for(const [cid, evts] of Object.entries(calMap)){
         if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
+        if(cid===fuSalta) continue;
         for(const e of evts){
           // Override "solo questo evento" su CATEGORIA REPORT: priorità massima,
           // sopra la whitelist modelliInclusi decisa a livello di modello.
@@ -5784,10 +5821,19 @@ const importsRecenti = useMemo(()=>{
       return calcMinuti(e.tIn||"", e.tOut||"");
     }
 
+    const passaEv = (e)=>{
+      const ov = (reportId ? (e.reportOverrides||{})[reportId] : null)?.stato || null;
+      if(ov==="escluso") return false;
+      if(ov!=="incluso" && modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) return false;
+      if(filtraCollega && !splitColleghi(e.collega).some(c=>c.toUpperCase().includes(filtraCollega))) return false;
+      return true;
+    };
     for(const [dateKey, calMap] of Object.entries(store.events)){
       if(dateKey < from || dateKey > to) continue;
+      const fuSalta = fuDaSaltare(calMap, passaEv);
       for(const [cid, evts] of Object.entries(calMap)){
         if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
+        if(cid===fuSalta) continue;
         for(const e of evts){
           // Override "solo questo evento" su CATEGORIA REPORT: priorità massima,
           // stessa logica di computeConteggioForReport.
@@ -5938,10 +5984,19 @@ const importsRecenti = useMemo(()=>{
     const perModello = {};
     const perCollega = {};
     const perGruppo = { primo:{}, secondo:{}, app:{}, auto:{} };
+    const passaEv = (e)=>{
+      const ov = (reportId ? (e.reportOverrides||{})[reportId] : null)?.stato || null;
+      if(ov==="escluso") return false;
+      if(ov!=="incluso" && modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) return false;
+      if(filtraCollega && !splitColleghi(e.collega).some(c=>c.toUpperCase().includes(filtraCollega))) return false;
+      return true;
+    };
     for(const [dateKey, calMap] of Object.entries(store.events)){
       if(dateKey < from || dateKey > to) continue;
+      const fuSalta = fuDaSaltare(calMap, passaEv);
       for(const [cid, evts] of Object.entries(calMap)){
         if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
+        if(cid===fuSalta) continue;
         for(const e of evts){
           // Override "solo questo evento" su CATEGORIA REPORT: priorità massima,
           // sopra l'inclusione/esclusione decisa a livello di modello.
@@ -6051,11 +6106,19 @@ const importsRecenti = useMemo(()=>{
   function computeIndennita(modelliInclusi=[], reportId=null){
     const {from, to} = getReportRange();
     const totaliMin = { diurno:0, notturno:0, festivo:0, notturno_festivo:0 };
+    const passaEv = (e)=>{
+      const ov = (reportId ? (e.reportOverrides||{})[reportId] : null)?.stato || null;
+      if(ov==="escluso") return false;
+      if(ov!=="incluso" && modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) return false;
+      return !e.allDay && !!e.tIn && !!e.tOut;
+    };
     for(const [dateKey, calMap] of Object.entries(store.events)){
       if(dateKey < from || dateKey > to) continue;
+      const fuSalta = fuDaSaltare(calMap, passaEv);
       const fest = isFestivo(dateKey, store.nationalHolsEnabled, store.extraHols);
       for(const [cid, evts] of Object.entries(calMap)){
         if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
+        if(cid===fuSalta) continue;
         for(const e of evts){
           // Override "solo questo evento" su CATEGORIA REPORT: priorità massima.
           const overrideReportEvento = (reportId ? (e.reportOverrides||{})[reportId] : null)?.stato || null;
@@ -6144,10 +6207,16 @@ const importsRecenti = useMemo(()=>{
   function computeViabilita(modelliInclusi=[]){
     const {from, to} = getReportRange();
     let giorni=0, totale=0, oreMancantiTot=0;
+    const passaEv = (e)=>{
+      if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) return false;
+      return !e.allDay && eModelloViabile(e);
+    };
     for(const [dateKey, calMap] of Object.entries(store.events)){
       if(dateKey < from || dateKey > to) continue;
+      const fuSalta = fuDaSaltare(calMap, passaEv);
       for(const [cid, evts] of Object.entries(calMap)){
         if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
+        if(cid===fuSalta) continue;
         for(const e of evts){
           if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
           if(e.allDay) continue;
@@ -6173,11 +6242,17 @@ const importsRecenti = useMemo(()=>{
   function computeTicket(modelliInclusi=[], valoreTicket=0){
     const {from, to} = getReportRange();
     let giorniConDiritto=0;
+    const passaEv = (e)=>{
+      if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) return false;
+      return !e.allDay && eModelloViabile(e);
+    };
     for(const [dateKey, calMap] of Object.entries(store.events)){
       if(dateKey < from || dateKey > to) continue;
+      const fuSalta = fuDaSaltare(calMap, passaEv);
       let minutiGiorno = 0;
       for(const [cid, evts] of Object.entries(calMap)){
         if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
+        if(cid===fuSalta) continue;
         for(const e of evts){
           if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
           if(e.allDay) continue;
@@ -6592,6 +6667,7 @@ const importsRecenti = useMemo(()=>{
     activeCal,
     mainCal,
     mainCalId,
+    calFuId,
     accent,
     accentText,
     hols,
