@@ -171,6 +171,21 @@ export default function VistaCalendario({ C }){
   // cella-giorno, la riga 2 non avrebbe mai spazio reale e sparirebbe
   // sempre, anche quando ci sarebbe posto.
   const weekRowMinH = calEventRows===2 ? 92 : 54;
+  // Spazio recuperato dai tagli in alto (barre, frecce, riga giorni): tutto
+  // assegnato all'ULTIMA settimana, e dentro di essa al 5° evento.
+  // Regola questo valore (px) per dare più o meno spazio.
+  const EXTRA_ULTIMA_RIGA = 20;
+  function righeSettimane(nSett){
+    if(calEventRows===2 || nSett<2) return `repeat(${nSett},minmax(${weekRowMinH}px,1fr))`;
+    return `repeat(${nSett-1},minmax(${weekRowMinH}px,calc((100% - ${EXTRA_ULTIMA_RIGA}px)/${nSett}))) minmax(${weekRowMinH}px,1fr)`;
+  }
+  function righeSlot(ultimaSett){
+    if(calEventRows===2 || !ultimaSett) return `repeat(${TOTAL_SLOTS},1fr)`;
+    const nSett = Math.ceil(cells.length/7);
+    const extraUltima = EXTRA_ULTIMA_RIGA*(nSett-1)/nSett;
+    const ratio = (1 + extraUltima/(evtFontSize+2)).toFixed(2);
+    return `repeat(${TOTAL_SLOTS-1},minmax(0,1fr)) minmax(0,${ratio}fr)`;
+  }
   function eventRowText(e, field){
     switch(field){
       case "titolo": return e.label||"";
@@ -245,10 +260,10 @@ export default function VistaCalendario({ C }){
       }}
       style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden",position:"relative"}}>
       <div style={{background:"#ffffff",display:"flex",alignItems:"center",
-        gap:5,padding:"6px 8px",overflowX:"auto",scrollbarWidth:"none",flexShrink:0,
+        gap:5,padding:"1px 8px",overflowX:"auto",scrollbarWidth:"none",flexShrink:0,
         borderBottom:"1px solid #e2e8f0"}}>
         <button onClick={()=>month===0?(setYear(y=>y-1),setMonth(11)):setMonth(m=>m-1)}
-          style={{...NB, color:"rgba(15,23,42,0.8)"}}>‹</button>
+          style={{...NB, color:"rgba(15,23,42,0.8)", lineHeight:1, padding:"0 6px"}}>‹</button>
         <select value={month} onChange={e=>setMonth(Number(e.target.value))}
           style={{...selectStyle, maxWidth:80, background:"#f1f5f9", color:"#0f172a", border:"1px solid #e2e8f0"}}>
           {MONTHS.map((mn,i)=>(
@@ -265,7 +280,7 @@ export default function VistaCalendario({ C }){
         </select>
         {bgSyncing&&<span style={{color:"rgba(15,23,42,0.7)",fontSize:11}}>🔄</span>}
         <button onClick={()=>month===11?(setYear(y=>y+1),setMonth(0)):setMonth(m=>m+1)}
-          style={{...NB, color:"rgba(15,23,42,0.8)"}}>›</button>
+          style={{...NB, color:"rgba(15,23,42,0.8)", lineHeight:1, padding:"0 6px"}}>›</button>
         <div style={{flex:1}}/>
         {(()=>{
           const modAttivo = quickModeModello ? modelli.find(m=>m.id===quickModeModello) : null;
@@ -340,11 +355,11 @@ export default function VistaCalendario({ C }){
           {syncMode==='on'?(isOnline?'🟢 SYNC':'🔴 OFFLINE'):'⏸️ SYNC OFF'}
         </button>
       </div>
-      <div style={{background:"#ffffff",display:"flex",alignItems:"center",padding:"4px 4px",borderBottom:"1px solid #e2e8f0",flexShrink:0}}>
+      <div style={{background:"#ffffff",display:"flex",alignItems:"center",padding:"1px 4px",borderBottom:"1px solid #e2e8f0",flexShrink:0}}>
         <button onClick={()=>calBarRef.current?.scrollBy({left:-160, behavior:"smooth"})}
           title="Scorri calendari a sinistra"
           style={{background:"#f1f5f9",border:"1px solid #cbd5e1",borderRadius:20,
-            width:24,height:24,display:"flex",alignItems:"center",justifyContent:"center",
+            width:20,height:20,display:"flex",alignItems:"center",justifyContent:"center",
             cursor:"pointer",fontSize:14,fontWeight:900,color:"#0f172a",flexShrink:0,marginRight:3}}>
           ‹
         </button>
@@ -378,10 +393,10 @@ export default function VistaCalendario({ C }){
                   border:`2px solid ${attivoEdit ? "#38bdf8" : (visibile ? "#0f172a" : "#cbd5e1")}`,
                   boxShadow:visibile ? "0 2px 6px rgba(15,23,42,0.25)" : "none",
                   opacity:visibile ? 1 : 0.6,
-                  borderRadius:20,padding:"3px 10px 3px 7px",
+                  borderRadius:20,padding:"1px 9px 1px 6px",
                   transition:"all 0.15s ease"}}>
-                <div style={{width:9,height:9,borderRadius:"50%",background:c.color,border:visibile?"1.5px solid #ffffff":"1px solid rgba(0,0,0,0.2)",boxShadow:"0 1px 2px rgba(0,0,0,0.2)"}}/>
-                <span style={{fontSize:12,fontWeight:visibile?800:600,letterSpacing:visibile?0.2:0}}>{c.name}</span>
+                <div style={{width:8,height:8,borderRadius:"50%",background:c.color,border:visibile?"1.5px solid #ffffff":"1px solid rgba(0,0,0,0.2)",boxShadow:"0 1px 2px rgba(0,0,0,0.2)"}}/>
+                <span style={{fontSize:11,fontWeight:visibile?800:600,letterSpacing:visibile?0.2:0}}>{c.name}</span>
                 {attivoEdit&&<span style={{color:"#38bdf8",fontSize:10,marginLeft:1}}>✏️</span>}
                 {c.isMain&&<span style={{color:visibile?"#facc15":"rgba(15,23,42,0.4)",fontSize:9}}>★</span>}
               </button>
@@ -392,7 +407,7 @@ export default function VistaCalendario({ C }){
         <button onClick={()=>calBarRef.current?.scrollBy({left:160, behavior:"smooth"})}
           title="Scorri calendari a destra"
           style={{background:"#f1f5f9",border:"1px solid #cbd5e1",borderRadius:20,
-            width:24,height:24,display:"flex",alignItems:"center",justifyContent:"center",
+            width:20,height:20,display:"flex",alignItems:"center",justifyContent:"center",
             cursor:"pointer",fontSize:14,fontWeight:900,color:"#0f172a",flexShrink:0,marginLeft:3}}>
           ›
         </button>
@@ -401,8 +416,8 @@ export default function VistaCalendario({ C }){
         background: !isOnline ? "#ef4444" : (editMode?T.s2:"#ffffff"),
         borderBottom:`1px solid ${!isOnline ? "#b91c1c" : (editMode?T.border:"#000000")}`,flexShrink:0}}>
         {DAYS.map((d,i)=>(
-          <div key={i} style={{textAlign:"center",fontSize:9,fontWeight:800,
-            padding:"3px 0",color: !isOnline ? "#ffffff" : (i===6?"#ef4444":(editMode?T.sub:"#0f172a"))}}>{d}</div>
+          <div key={i} style={{textAlign:"center",fontSize:11,fontWeight:800,lineHeight:1,
+            padding:"2px 0",color: !isOnline ? "#ffffff" : (i===6?"#ef4444":(editMode?T.sub:"#0f172a"))}}>{d}</div>
         ))}
       </div>
       {!isOnline && (
@@ -419,7 +434,7 @@ export default function VistaCalendario({ C }){
           <div key={"prev-"+prevGrid.month+"-"+prevGrid.year}
             className={`calSlideOut${prevGrid.dir==="next"?"Left":"Right"}`}
             style={{position:"absolute",inset:0,display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",
-              gridAutoRows:`minmax(${weekRowMinH}px,1fr)`,gap:"1px 0px",background:T.gap,
+              gridTemplateRows:righeSettimane(Math.ceil(pCells.length/7)),gridAutoRows:`minmax(${weekRowMinH}px,1fr)`,gap:"1px 0px",background:T.gap,
               animation:`calSlideOut${prevGrid.dir==="next"?"Left":"Right"} 0.35s ease forwards`}}>
             {pCells.map((d,i)=>{
               if(!d) return <div key={i} style={{background:T.bg}}/>;
@@ -439,8 +454,8 @@ export default function VistaCalendario({ C }){
                     </div>
                   </div>
                   <div style={{flex:1,overflow:"hidden",display:"grid",
-                    gridTemplateRows:`repeat(${TOTAL_SLOTS},1fr)`,
-                    gap:"1px",padding:"0 1px 1px"}}>
+                    gridTemplateRows:righeSlot(Math.floor(i/7)===Math.ceil(pCells.length/7)-1),
+                    gap:"1px",padding:"0 1px 0"}}>
                     {evts.slice(0,maxEvtSlots).map((e,ei)=>(
                       <EventCard key={e.id+ei} e={e}/>
                     ))}
@@ -454,7 +469,7 @@ export default function VistaCalendario({ C }){
       <div key={month+"-"+year}
         className={prevGrid?`calSlideIn${prevGrid.dir==="next"?"Left":"Right"}`:""}
         style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",
-        gridAutoRows:`minmax(${weekRowMinH}px,1fr)`,gap:"1px 0px",background:T.gap,
+        gridTemplateRows:righeSettimane(Math.ceil(cells.length/7)),gridAutoRows:`minmax(${weekRowMinH}px,1fr)`,gap:"1px 0px",background:T.gap,
         position:prevGrid?"absolute":"relative",inset:0,
         [calEventRows===2?"minHeight":"height"]:"100%",
         animation:prevGrid?`calSlideIn${prevGrid.dir==="next"?"Left":"Right"} 0.35s ease forwards`:"none"}}>
@@ -492,8 +507,8 @@ export default function VistaCalendario({ C }){
                 </div>
               </div>
               <div style={{flex:1,overflow:"hidden",display:"grid",
-                gridTemplateRows:`repeat(${TOTAL_SLOTS},1fr)`,
-                gap:"1px",padding:"0 1px 1px"}}>
+                gridTemplateRows:righeSlot(Math.floor(i/7)===Math.ceil(cells.length/7)-1),
+                gap:"1px",padding:"0 1px 0"}}>
                 {evts.slice(0,maxEvtSlots).map((e,ei)=>(
                   <EventCard key={e.id+ei} e={e}/>
                 ))}
