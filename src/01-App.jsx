@@ -286,7 +286,7 @@ function AppInterno({ session }){
           <span style={{cursor:"pointer",opacity:0.8}}>✕</span>
         </div>
       )}
-      <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",paddingBottom:44}}>
+      <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",paddingBottom:NAV_HEIGHT_CSS}}>
         {screen==="cal"      && calView}
         {screen==="report"   && reportView}
         {screen==="modelli"  && modelliView}
