@@ -925,7 +925,11 @@ export function useAppCore(session){
         const modelliMappati = (modelliDb||[]).map(m=>({
           id:m.id, titolo:m.titolo, label:m.label||"", tempo:m.tempo,
           inizio:m.inizio||"", fine:m.fine||"",
-          colore:m.colore, coloreCustom:m.colore_custom||null,
+          // Colore SEMPRE esplicito: se il modello non ha un colore salvato
+          // (vecchio "automatico per orario") gli si assegna ora quello della
+          // fascia corrente, e da qui in poi non cambia più da solo.
+          colore:m.colore,
+          coloreCustom:m.colore_custom || (m.tempo==="h24" ? COLORE_H24 : getColorByTime(m.inizio||"", savedFasce)),
           posizione:m.posizione||"", sortOrder:m.sort_order||0,
           calendarId:m.calendar_id||null,
           categoria:(m.categoria==="primo"||m.categoria==="secondo")?m.categoria:"",
@@ -1024,6 +1028,21 @@ export function useAppCore(session){
         if(!modelliUguali){
           setModelli(modelliMappati);
         }
+        // MIGRAZIONE una tantum: scrive su Supabase il colore esplicito dei
+        // modelli che sul DB non avevano colore_custom (ex "automatici").
+        try{
+          const tsMig = new Date().toISOString();
+          const righeSenzaColore = new Map((modelliDb||[]).filter(r=>!r.colore_custom).map(r=>[r.id,r]));
+          modelliMappati.filter(m=>righeSenzaColore.has(m.id)).forEach(m=>{
+            scriviConBackup({
+              tipo:"update", table:"modelli",
+              payload:{ colore:m.coloreCustom, colore_custom:m.coloreCustom },
+              matchObj:{ id:m.id, user_id:userId },
+              contesto:"Migrazione: colore esplicito sul modello", ts:tsMig,
+              opzioni:{ soloLog:true },
+            });
+          });
+        }catch(eMig){ segnalaErroreSoloLog(eMig?.message||String(eMig), "Migrazione colore esplicito modelli"); }
         setColoriExtra((coloriDb||[]).map(c=>({hex:c.hex, label:c.label||null, sortOrder:c.sort_order||0}))
           .sort((a,b)=>{
             const sa=a.sortOrder, sb=b.sortOrder;
@@ -1125,7 +1144,7 @@ export function useAppCore(session){
               setModelli((modelliDb2||[]).map(m=>({
                 id:m.id,titolo:m.titolo,label:m.label||"",tempo:m.tempo,
                 inizio:m.inizio||"",fine:m.fine||"",
-                colore:m.colore,coloreCustom:m.colore_custom||null,
+                colore:m.colore,coloreCustom:m.colore_custom||m.colore||null,
                 posizione:m.posizione||"",sortOrder:m.sort_order||0,
               })));
             }
@@ -1207,7 +1226,7 @@ export function useAppCore(session){
               setModelli((modelliDbAggiornati||[]).map(m=>({
                 id:m.id,titolo:m.titolo,label:m.label||"",tempo:m.tempo,
                 inizio:m.inizio||"",fine:m.fine||"",
-                colore:m.colore,coloreCustom:m.colore_custom||null,
+                colore:m.colore,coloreCustom:m.colore_custom||m.colore||null,
                 calendarId:m.calendar_id||null,
                 posizione:m.posizione||"",sortOrder:m.sort_order||0,
               })));
@@ -1265,7 +1284,7 @@ export function useAppCore(session){
               setModelli((modelliDbConLabel||[]).map(m=>({
                 id:m.id,titolo:m.titolo,label:m.label||"",tempo:m.tempo,
                 inizio:m.inizio||"",fine:m.fine||"",
-                colore:m.colore,coloreCustom:m.colore_custom||null,
+                colore:m.colore,coloreCustom:m.colore_custom||m.colore||null,
                 calendarId:m.calendar_id||null,
                 posizione:m.posizione||"",sortOrder:m.sort_order||0,
               })));
@@ -1334,7 +1353,7 @@ export function useAppCore(session){
                 setModelli((modelliDbAggiornati2||[]).map(m=>({
                   id:m.id,titolo:m.titolo,label:m.label||"",tempo:m.tempo,
                   inizio:m.inizio||"",fine:m.fine||"",
-                  colore:m.colore,coloreCustom:m.colore_custom||null,
+                  colore:m.colore,coloreCustom:m.colore_custom||m.colore||null,
                   calendarId:m.calendar_id||null,
                   posizione:m.posizione||"",sortOrder:m.sort_order||0,
                 })));
@@ -3356,8 +3375,31 @@ export function useAppCore(session){
 // dentro il blocco del proprio calendario (non lo fanno mai "sconfinare" nel
 // blocco di un altro), ma il numero assoluto risultante riflette lo shift
 // globale se necessario.
+// Chiave di raggruppamento colore (confronto case-insensitive: "#FFEB3C" e
+// "#ffeb3c" sono lo stesso colore).
+function chiaveColoreModello(m){
+  return String((m && (m.coloreCustom||m.colore)) || "").toLowerCase();
+}
+// Raggruppa una lista GIÀ ordinata in blocchi contigui per colore: i blocchi
+// seguono l'ordine di prima comparsa del colore, dentro ogni blocco i modelli
+// "etichetta" (NOTTE/MATTINA/POMERIGGIO/3 TURNO) vanno in testa e gli altri
+// mantengono l'ordine relativo che avevano.
+function raggruppaPerColore(lista){
+  const blocchi = new Map();
+  (lista||[]).filter(Boolean).forEach(m=>{
+    const k = chiaveColoreModello(m);
+    if(!blocchi.has(k)) blocchi.set(k, []);
+    blocchi.get(k).push(m);
+  });
+  const out = [];
+  blocchi.forEach(arr=>{
+    out.push(...arr.filter(m=>fasciaModelloEtichetta(m)!=null));
+    out.push(...arr.filter(m=>fasciaModelloEtichetta(m)==null));
+  });
+  return out;
+}
 function calcolaOrdineModelli(sottoinsieme){
-  return [...(sottoinsieme||[])].filter(Boolean).sort((a,b)=>{
+  return raggruppaPerColore([...(sottoinsieme||[])].filter(Boolean).sort((a,b)=>{
     const sa = a.sortOrder || 0, sb = b.sortOrder || 0;
     if(sa!==sb) return sa-sb;
     const fa = classificaFasciaOrariaModello(a);
@@ -3367,7 +3409,7 @@ function calcolaOrdineModelli(sottoinsieme){
     const mb = b.tempo==="h24" ? 99999 : (oraInMinuti(b.inizio||"") ?? 99999);
     if(ma!==mb) return ma-mb;
     return (a.titolo||"").localeCompare(b.titolo||"");
-  });
+  }));
 }
 
 // ── Ordinamento per FASCIA ORARIA D'INIZIO, usato SOLO dal pulsante
@@ -3937,7 +3979,7 @@ const importsRecenti = useMemo(()=>{
     const payload={
       user_id:userId, titolo:(data.titolo||"").toUpperCase(), label:(data.label||"").toUpperCase(), tempo:data.tempo,
       inizio:data.inizio||null, fine:data.fine||null,
-      colore:coloreEff, colore_custom:data.coloreCustom||null,
+      colore:coloreEff, colore_custom:coloreEff, // colore sempre esplicito
       sort_order:data.sortOrder||modelli.length,
       calendar_id: targetCalId,
       categoria: (data.categoria==="primo"||data.categoria==="secondo") ? data.categoria : null,
@@ -3973,7 +4015,7 @@ const importsRecenti = useMemo(()=>{
       let modelloAggiornato;
       let modelliAggiornati = modelli.map(m=>{
         if(m.id!==data.id) return m;
-        const nuovo = {...m,...datiUpdatePuliti,colore:coloreEff,calendarId:targetCalId};
+        const nuovo = {...m,...datiUpdatePuliti,colore:coloreEff,coloreCustom:coloreEff,calendarId:targetCalId};
         modelloAggiornato = nuovo;
         return nuovo;
       });
@@ -3985,7 +4027,8 @@ const importsRecenti = useMemo(()=>{
       const orarioCambiato = modelloPrimaModifica && (
         modelloPrimaModifica.inizio!==modelloAggiornato.inizio ||
         modelloPrimaModifica.tempo!==modelloAggiornato.tempo ||
-        (modelloPrimaModifica.calendarId||mainCalId)!==targetCalId
+        (modelloPrimaModifica.calendarId||mainCalId)!==targetCalId ||
+        chiaveColoreModello(modelloPrimaModifica)!==chiaveColoreModello(modelloAggiornato)
       );
       if(orarioCambiato){
         const calendarioModelli = modelliAggiornati.filter(m=>(m.calendarId||mainCalId)===targetCalId);
@@ -4012,8 +4055,9 @@ const importsRecenti = useMemo(()=>{
           } else if(fasciaM === fasciaNuovo && minutiM > minutiNuovo){ idxInserimento = i; break; }
           idxInserimento = i+1;
         }
-        const riordinato = [...senzaQuesto];
-        riordinato.splice(idxInserimento, 0, modelloAggiornato);
+        const riordinato0 = [...senzaQuesto];
+        riordinato0.splice(idxInserimento, 0, modelloAggiornato);
+        const riordinato = raggruppaPerColore(riordinato0); // modelli dello stesso colore sempre consecutivi
         const calendarsOrdinati = nuovoStore.calendars.map(c=>c.id);
         const ordiniPerCalendario = new Map([[targetCalId, riordinato]]);
         modelliAggiornati = ricalcolaPosizioniGlobali(modelliAggiornati, calendarsOrdinati, ordiniPerCalendario, mainCalId);
@@ -4092,9 +4136,10 @@ const importsRecenti = useMemo(()=>{
         idxInserimento = i+1;
       }
 
-      const modelloCreato = {...(({silenzioso,...rest})=>rest)(data),id:idLocale,colore:coloreEff,sortOrder:0,calendarId:targetCalId};
-      const riordinato = [...tutti];
-      riordinato.splice(idxInserimento, 0, modelloCreato);
+      const modelloCreato = {...(({silenzioso,...rest})=>rest)(data),id:idLocale,colore:coloreEff,coloreCustom:coloreEff,sortOrder:0,calendarId:targetCalId};
+      const riordinato0 = [...tutti];
+      riordinato0.splice(idxInserimento, 0, modelloCreato);
+      const riordinato = raggruppaPerColore(riordinato0); // modelli dello stesso colore sempre consecutivi
 
       // Subito in locale: nuovo modello inserito + rinumerazione GLOBALE a
       // blocchi contigui (il blocco di questo calendario resta ordinato,
@@ -4228,7 +4273,7 @@ const importsRecenti = useMemo(()=>{
     const calendarsOrdinati = store.calendars.map(c=>c.id);
     const ordiniPerCalendario = new Map();
     for(const cId of calendarsOrdinati){
-      const delCalendario = calcolaOrdinePerFasciaOraria(modelli.filter(m=>(m.calendarId||mainCalId)===cId));
+      const delCalendario = raggruppaPerColore(calcolaOrdinePerFasciaOraria(modelli.filter(m=>(m.calendarId||mainCalId)===cId)));
       ordiniPerCalendario.set(cId, delCalendario);
     }
     const modelliRicalcolati = ricalcolaPosizioniGlobali(modelli, calendarsOrdinati, ordiniPerCalendario, mainCalId);
@@ -4304,7 +4349,7 @@ const importsRecenti = useMemo(()=>{
       const autoOra = m.tempo==="h24" ? COLORE_H24 : (m.inizio ? getColorByTime(m.inizio, fasce) : null);
       const v = snap?.get(m.id);
       if(v){
-        const customSalvato = v.colore_custom||null;
+        const customSalvato = v.colore_custom||v.colore||null;
         const target = customSalvato || autoOra;
         if(!target) return;
         if((m.coloreCustom||null)!==customSalvato || (m.colore||null)!==target){
@@ -4313,12 +4358,9 @@ const importsRecenti = useMemo(()=>{
         }
         return;
       }
-      if(!m.coloreCustom) return;
-      if(hexFasceAttuali.has(m.coloreCustom)) return;
-      if(hexConNomeProprio.has(m.coloreCustom)) return;
-      if(!(m.tempo==="h24" || m.inizio)) return;
-      candidati.push({ id:m.id, titolo:m.titolo, coloreVecchio:m.coloreCustom,
-        coloreNuovo:autoOra, coloreCustomNuovo:null });
+      // I colori sono sempre espliciti: nessun colore va più "riportato
+      // ad automatico". Senza snapshot non c'è nulla da normalizzare.
+      return;
     });
     return { totale: candidati.length, modelli: candidati };
   }
@@ -4467,7 +4509,7 @@ const importsRecenti = useMemo(()=>{
         // Snapshot vecchi (senza colori): non toccare i colori
         if(v.colore!==undefined && v.colore!==null || v.colore_custom!==undefined){
           if(v.colore!==undefined && v.colore!==null) nuovo.colore = v.colore;
-          if(v.colore_custom!==undefined) nuovo.coloreCustom = v.colore_custom||null;
+          if(v.colore_custom!==undefined) nuovo.coloreCustom = v.colore_custom||v.colore||m.coloreCustom||null;
           if(nuovo.colore!==m.colore || (nuovo.coloreCustom||null)!==(m.coloreCustom||null)) daRiscrivere.push(nuovo);
         }
         return nuovo;
@@ -4593,14 +4635,15 @@ const importsRecenti = useMemo(()=>{
     // a seguire la fascia in automatico, senza doverli "normalizzare" dopo.
     const fasceAttuali = store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT;
     const coloreAutoDi = (m)=> m.tempo==="h24" ? COLORE_H24 : (m.inizio ? getColorByTime(m.inizio, fasceAttuali) : null);
-    const daAggiornareCustom = modelli.filter(m=>m?.coloreCustom===oldHex);
-    const daAggiornareAuto = modelli.filter(m=>m && !m.coloreCustom && coloreAutoDi(m)===oldHex);
+    const stessoHex = (a,b)=> String(a||"").toLowerCase()===String(b||"").toLowerCase();
+    const daAggiornareCustom = modelli.filter(m=>m?.coloreCustom && stessoHex(m.coloreCustom,oldHex));
+    const daAggiornareAuto = modelli.filter(m=>m && !m.coloreCustom && stessoHex(coloreAutoDi(m),oldHex));
     const daAggiornare = [...daAggiornareCustom, ...daAggiornareAuto];
     const idsAuto = new Set(daAggiornareAuto.map(m=>m.id));
     let modelliAggiornati;
     setModelli(prev=>{
       modelliAggiornati = prev.map(m=>{
-        if(m?.coloreCustom===oldHex) return {...m,coloreCustom:newHex,colore:newHex};
+        if(m?.coloreCustom && stessoHex(m.coloreCustom,oldHex)) return {...m,coloreCustom:newHex,colore:newHex};
         if(m && idsAuto.has(m.id)) return {...m,colore:newHex};
         return m;
       });
@@ -4637,9 +4680,11 @@ const importsRecenti = useMemo(()=>{
       await ensureColoreRegistrato(newHex);
     }
     // Se oldHex era il colore di una fascia automatica, aggiorna anche quella
-    const fasciaIdx = (store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT).findIndex(f=>f.color===oldHex);
-    if(fasciaIdx>-1){
-      const nuoveFasce = (store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT).map((f,i)=>i===fasciaIdx?{...f,color:newHex}:f);
+    // Cambio da Colori = cambio anche in Impostazioni: TUTTE le fasce con
+    // quel colore (anche più di una, confronto case-insensitive) lo seguono.
+    const fasceDaCambiare = (store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT).some(f=>stessoHex(f.color,oldHex));
+    if(fasceDaCambiare){
+      const nuoveFasce = (store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT).map(f=>stessoHex(f.color,oldHex)?{...f,color:newHex}:f);
       setStore(s=>({...s, fasceAutomatiche:nuoveFasce}));
       saveSettings({fasce_automatiche:nuoveFasce});
     }

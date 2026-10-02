@@ -1401,7 +1401,7 @@ export function ModelForm({
   function sceltaColore(hexCliccato) {
     const eUnaFascia = (fasceAutomatiche || FASCE_AUTOMATICHE_DEFAULT).some(f => f.color === hexCliccato);
     const eH24 = hexCliccato === COLORE_H24;
-    setForm(prev => ({ ...prev, coloreCustom: (eUnaFascia || eH24) ? null : hexCliccato }));
+    setForm(prev => ({ ...prev, coloreCustom: hexCliccato })); // colore sempre esplicito
   }
 
   function campo(label, node) {
