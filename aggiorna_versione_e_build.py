@@ -60,7 +60,37 @@ except Exception:
     ROMA = None
 
 
+AUTO = ("--auto" in sys.argv) or os.environ.get("AUTO_BUILD") == "1"
+
+
+def pulisci_vecchie_build(project_root, tieni=1):
+    """
+    Prima di una nuova build lascia solo le ultime `tieni` cartelle APK
+    (default 1): a build finita ne restano 2 (la precedente + la nuova),
+    cosi' se la nuova non parte c'e' sempre un APK di backup.
+    Le cartelle si chiamano AAAAMMGG_HHMM_vX.Y.Z, quindi l'ordine
+    alfabetico coincide con quello cronologico. Tocca SOLO cartelle
+    con quel nome dentro release-builds.
+    """
+    base = os.path.join(project_root, "release-builds")
+    if not os.path.isdir(base):
+        return
+    cartelle = sorted(
+        d for d in os.listdir(base)
+        if re.match(r"^\d{8}_\d{4}_v", d) and os.path.isdir(os.path.join(base, d))
+    )
+    da_cancellare = cartelle[:-tieni] if tieni > 0 else cartelle
+    for d in da_cancellare:
+        try:
+            shutil.rmtree(os.path.join(base, d))
+            print(f"Rimossa vecchia build: {d}")
+        except Exception as e:
+            print(f"ATTENZIONE: non riesco a rimuovere {d}: {e}")
+
+
 def pausa_finale():
+    if AUTO:
+        return
     try:
         input("\nPremi INVIO per chiudere...")
     except Exception:
@@ -223,7 +253,7 @@ def run_npm_o_npx(project_root, comando, descrizione):
     """
     is_windows = os.name == "nt"
     print(f"\nEseguo: {comando} ({descrizione})...\n")
-    result = subprocess.run(comando, cwd=project_root, shell=is_windows)
+    result = subprocess.run(comando, cwd=project_root, shell=True)
     if result.returncode != 0:
         print(f"\nERRORE: '{comando}' e' fallito. Controlla l'output sopra.")
         print("La build Android NON verra' avviata: rifarla ora produrrebbe")
@@ -232,7 +262,19 @@ def run_npm_o_npx(project_root, comando, descrizione):
         sys.exit(1)
 
 
-def bump_version_gradle(gradle_path, nuova_versione):
+def calcola_version_code(project_root):
+    """
+    versionCode = minuti trascorsi dal 1/1/2026 (UTC) alla data dell'ultimo
+    commit. Cresce sempre ed e' IDENTICO su PC e su GitHub Actions: cosi'
+    non serve piu' salvare nulla in build.gradle per "contare" le build.
+    """
+    from datetime import timezone
+    ora = ultima_data_commit(project_root).astimezone(timezone.utc)
+    base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    return int((ora - base).total_seconds() // 60)
+
+
+def bump_version_gradle(gradle_path, nuova_versione, version_code=None):
     with open(gradle_path, "r", encoding="utf-8") as f:
         content = f.read()
 
@@ -245,7 +287,7 @@ def bump_version_gradle(gradle_path, nuova_versione):
 
     old_code = int(match_code.group(1))
     old_name = match_name.group(1)
-    new_code = old_code + 1
+    new_code = max(old_code + 1, version_code or 0)
 
     content = content.replace(f"versionCode {old_code}", f"versionCode {new_code}", 1)
     content = content.replace(
@@ -352,7 +394,10 @@ def main():
     print(f"\nNuova versione calcolata (dall'ultimo commit git): {nuova_versione}\n")
 
     # 5. Aggiorna build.gradle
-    new_code = bump_version_gradle(app_gradle_path, nuova_versione)
+    new_code = bump_version_gradle(app_gradle_path, nuova_versione, calcola_version_code(project_root))
+
+    # 5b. Pulizia: tieni solo l'ultimo APK precedente (backup) prima di crearne uno nuovo
+    pulisci_vecchie_build(project_root, tieni=1)
 
     # 6. Build APK velocizzata (usa demone caldo Gradle + build parallela)
     run_gradle_task(android_dir, "assembleRelease")

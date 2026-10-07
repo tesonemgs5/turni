@@ -5,6 +5,7 @@ import Auth from './10-auth.jsx'
 import { supabase } from './11-supabase.js'
 import { useState, useEffect } from 'react'
 import { registerSW } from 'virtual:pwa-register'
+import AvvisoAggiornamento from './12-avviso-aggiornamento.jsx'
 
 // Registra il service worker SOLO quando l'app gira in un vero browser
 // (versione PWA su web/telefono). Dentro Electron l'app è già interamente
@@ -134,7 +135,7 @@ function Root() {
       </div>
     );
   }
-  return session ? <App session={session} /> : <Auth />
+  return session ? <><AvvisoAggiornamento /><App session={session} /></> : <Auth />
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(

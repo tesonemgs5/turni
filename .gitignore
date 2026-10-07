@@ -7,3 +7,17 @@ android/local.properties
 release/
 .idea/
 *.iml
+android/keystore.properties
+android/release.jks
+*.jks
+*.keystore
+release-builds/
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+*.bak
+build-auto.log
+.build-apk.lock
+_backup_prima_applica/
