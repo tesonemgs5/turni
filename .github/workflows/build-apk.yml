@@ -53,7 +53,7 @@ jobs:
       - run: npm ci
 
       - name: Cap sync
-        run: npx cap sync android
+        run: npm run build && npx cap sync android
       - name: Build APK (stesso script che usi sul PC)
         run: |
           chmod +x android/gradlew
