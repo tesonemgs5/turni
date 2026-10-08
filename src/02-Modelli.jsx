@@ -1042,16 +1042,18 @@ export default function VistaModelli({ C }){
         <div style={{fontSize:11,color:T.sub,margin:"14px 0 10px"}}>
           Se i modelli in un calendario appaiono in un ordine strano, o
           l'app segnala di non riuscire a posizionare automaticamente un
-          nuovo modello, usa questo pulsante: rinumera tutti i modelli di
-          tutti i calendari da capo, raggruppandoli per fascia oraria
-          d'inizio — prima NOTTE (00:00), poi MATTINA (06:00–11:45), poi
-          POMERIGGIO (12:00–17:15), poi 3° TURNO (17:15–18:00), infine tutti
-          gli altri modelli (H24 compresi) in coda, ordinati per orario —
-          senza toccare titoli, orari o colori. Non serve rifarlo dopo: da
+          nuovo modello, usa questo pulsante: riordina i modelli di
+          tutti i calendari per fascia oraria d'inizio — prima NOTTE
+          (18:00–05:59), poi PRIMO (06:00–11:45), poi SECONDO
+          (11:46–16:00), poi 3° TURNO (16:01–18:00), infine gli altri
+          modelli (H24 compresi) in coda. Ogni fascia parte con il
+          proprio modello etichetta; dentro la fascia l'ordine esistente
+          resta invariato, e anche l'ordine degli H24 — senza toccare
+          titoli, orari o colori. Non serve rifarlo dopo: da
           qui in poi ogni modifica ai modelli mantiene l'ordine da sola.
         </div>
         <button onClick={async()=>{
-            if(!confirm("Riordinare tutti i modelli in tutti i calendari per fascia oraria (NOTTE, MATTINA, POMERIGGIO, 3° TURNO, altri)? L'operazione non tocca titoli, orari o colori, solo l'ordine di visualizzazione.")) return;
+            if(!confirm("Riordinare tutti i modelli in tutti i calendari per fascia oraria (NOTTE, PRIMO, SECONDO, 3° TURNO, altri/H24 in coda)? L'ordine esistente dentro ogni fascia e degli H24 resta invariato. L'operazione non tocca titoli, orari o colori, solo l'ordine di visualizzazione.")) return;
             setBanner("⏳ Riordino modelli in corso...");
             try {
               const esito = await ripulisciTutteLePosizioniModelli();
