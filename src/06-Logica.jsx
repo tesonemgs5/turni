@@ -1,5 +1,6 @@
     import { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "./11-supabase";
+import { calcolaAllineamentoColori } from "./13-allinea-colori";
 import {
   FASCE_AUTOMATICHE_DEFAULT, FESTIVITA_DEFAULT_ATTIVE, MONTHS, NOMI_GIORNI_IT, PALETTE, COLORE_H24,
   calcFine6h15, calcFine6h30, calcFineModello, categoriaAppAutoAutomatica, categoriaTurnoAutomatica,
@@ -3893,7 +3894,7 @@ const importsRecenti = useMemo(()=>{
       });
     });
     saveToLocalStorage(nuovoStore.events, nuovoStore.calendars, modelli);
-    setStore(nuovoStore);
+    setStore(s=>({...s, events:nuovoStore.events})); // solo gli eventi: non riporta indietro fasce e altro
     const ts = new Date().toISOString();
     (async()=>{
       // Un update per colore distinto (non per modello) per ridurre le chiamate.
@@ -3913,6 +3914,45 @@ const importsRecenti = useMemo(()=>{
       }
     })();
     return nuovoStore.events;
+  }
+
+  // -- Ricolora gli eventi gia' in calendario (anche quelli scritti a mano) come il loro
+  // modello. Cambia solo il colore (e il collegamento al modello se nome+orari coincidono).
+  // Aggiorna SOLO gli eventi nello store: fasce, calendari e il resto restano come sono.
+  async function applicaAllineamentoEventi(lista){
+    if(!lista || lista.length===0 || !userId) return null;
+    const perId = new Map(lista.map(x=>[x.id,x]));
+    const mappa = ev => {
+      const out = JSON.parse(JSON.stringify(ev||{}));
+      Object.keys(out).forEach(dk=>{
+        Object.keys(out[dk]||{}).forEach(cid=>{
+          out[dk][cid] = (out[dk][cid]||[]).map(e=>{
+            const x = e && perId.get(e.id);
+            return x ? {...e, color:x.coloreNuovo, ...(x.collega?{modelloId:x.collega}:{})} : e;
+          });
+        });
+      });
+      return out;
+    };
+    const eventiNuovi = mappa((storeRef.current||store).events);
+    setStore(s=>({...s, events: mappa(s.events)}));
+    if(storeRef.current) storeRef.current = {...storeRef.current, events:eventiNuovi};
+    const ts = new Date().toISOString();
+    (async()=>{
+      let errori = 0;
+      for(let i=0;i<lista.length;i+=20){
+        await Promise.all(lista.slice(i,i+20).map(async x=>{
+          const payload = x.collega ? { color:x.coloreNuovo, modello_id:x.collega } : { color:x.coloreNuovo };
+          const ris = await scriviConBackup({
+            tipo:"update", table:"events", payload, matchObj:{ id:x.id, user_id:userId },
+            contesto:"Normalizza colori: allineo evento al suo modello", ts, opzioni:{ soloLog:true },
+          });
+          if(ris?.errore) errori++;
+        }));
+      }
+      if(errori>0) segnalaErroreSoloLog(`${errori} eventi non salvati su Supabase durante la normalizzazione colori`, "Normalizzazione colori");
+    })();
+    return eventiNuovi;
   }
 
   async function ricoloraModelliPerFasciaOraria(){
@@ -4562,7 +4602,10 @@ const importsRecenti = useMemo(()=>{
       snapRaw.voci.forEach(v=>{ if(v && "colore" in v) mappa.set(v.modello_id, v); });
       return mappa.size>0 ? mappa : null;
     })();
-    if(!snapRaw || !snap) return { totale:0, modelli:[], fasce:[], nessunaDisposizione:true };
+    if(!snapRaw || !snap){
+      const soloEv = calcolaAllineamentoColori({ events:store.events, modelli, mainCalId, coloreDelModello:m => m.coloreCustom||m.colore||(m.tempo==="h24"?COLORE_H24:colByTime(m.inizio)) });
+      return { totale:soloEv.totale, modelli:[], fasce:[], eventi:soloEv.eventi, perModelloEventi:soloEv.perModello, collegati:soloEv.collegati, nessunaDisposizione:soloEv.totale===0 };
+    }
     const fasceAttuali = store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT;
     const candidati = [];
     modelli.forEach(m=>{
@@ -4582,7 +4625,11 @@ const importsRecenti = useMemo(()=>{
         fasceDaRipristinare.push({ key:cur.key, label:cur.label, coloreVecchio:cur.color, coloreNuovo:sf.color });
       }
     });
-    return { totale: candidati.length + fasceDaRipristinare.length, modelli:candidati, fasce:fasceDaRipristinare };
+    // Eventi gia' in calendario: devono avere il colore del loro modello (come sara' dopo la normalizzazione).
+    const nuoviCol = new Map(candidati.map(c=>[c.id, c.coloreNuovo]));
+    const modelliFuturi = modelli.map(m=>(m && nuoviCol.has(m.id)) ? {...m, coloreCustom:nuoviCol.get(m.id), colore:nuoviCol.get(m.id)} : m);
+    const ev = calcolaAllineamentoColori({ events:store.events, modelli:modelliFuturi, mainCalId, coloreDelModello:m => m.coloreCustom||m.colore||(m.tempo==="h24"?COLORE_H24:colByTime(m.inizio)) });
+    return { totale: candidati.length + fasceDaRipristinare.length + ev.totale, modelli:candidati, fasce:fasceDaRipristinare, eventi:ev.eventi, perModelloEventi:ev.perModello, collegati:ev.collegati };
   }
 
   async function applicaNormalizzazioneColori(sorgente=null){
@@ -4621,10 +4668,8 @@ const importsRecenti = useMemo(()=>{
       else if(!reg.label && nome) updateColoreExtraLabel(reg.hex, nome);
     });
 
-    // Eventi gia' inseriti passano al colore ripristinato del modello.
-    const mappaColori = {};
-    candidati.forEach(c=>{ mappaColori[c.id] = c.coloreNuovo; });
-    const eventiAggiornati = await propagaColoreModelliAgliEventi(mappaColori);
+    // Eventi gia' in calendario (anche quelli scritti a mano): prendono il colore del loro modello.
+    const eventiAggiornati = await applicaAllineamentoEventi(analisi.eventi);
     saveToLocalStorage(eventiAggiornati||store.events, store.calendars, modelliAggiornati);
 
     // Backup remoto: una scrittura alla volta, solo log (niente raffica di popup).
@@ -4644,7 +4689,7 @@ const importsRecenti = useMemo(()=>{
       if(errori>0) segnalaErroreSoloLog(`${errori} modelli non salvati su Supabase durante la normalizzazione`, "Normalizzazione colori");
       syncSeAttivo(eventiAggiornati||store.events, store.calendars, modelliAggiornati);
     })();
-    return { ok:true, totale: candidati.length, totaleFasce: fasceR.length };
+    return { ok:true, totale: candidati.length, totaleFasce: fasceR.length, totaleEventi: (analisi.eventi||[]).length };
   }
 
   // ══════════════════════════════════════════════════════════════════════
