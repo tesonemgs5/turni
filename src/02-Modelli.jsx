@@ -848,7 +848,7 @@ export default function VistaModelli({ C }){
                                   </div>
                                   <div style={{width:10,height:10,borderRadius:"50%",background:coloreAttuale,marginRight:10,flexShrink:0}}/>
                                   <div style={{flex:1,minWidth:0}}>
-                                    <div style={{fontSize:15,fontWeight:700,color:T.text}}>{m.titolo||"Senza nome"}</div>
+                                    <div style={{fontSize:15,fontWeight:700,color:T.text}}>{m.label||m.titolo||"Senza nome"}</div>
                                     <div style={{fontSize:11,color:T.sub}}>
                                       {m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${m.fine?` - ${m.fine}`:""}`:""}
                                       {!selezionato?" · colore diverso":""}
@@ -1114,7 +1114,7 @@ export default function VistaModelli({ C }){
             }
             const elenco = [
               ...analisi.fasce.map(f=>`• Fascia ${f.label}: colore salvato`),
-              ...analisi.modelli.map(m=>`• ${m.titolo||"Senza nome"}`),
+              ...analisi.modelli.map(m=>`• ${m.label||m.titolo||"Senza nome"}`),
               ...(analisi.perModelloEventi||[]).slice(0,8).map(r=>`• Eventi ${r.titolo}: ${r.n} da ricolorare`),
             ].join("\n");
             if(!confirm(`Trovati ${analisi.modelli.length} modelli, ${analisi.fasce.length} fasce e ${(analisi.eventi||[]).length} eventi da riportare ai colori giusti:\n\n${elenco}\n\nProcedere?`)) return;
@@ -2411,7 +2411,7 @@ export default function VistaModelli({ C }){
                           color:form.modelloId===m.id?"#fff":T.sub,fontSize:11,fontWeight:700,
                           display:"flex",alignItems:"center",gap:5}}>
                         <div style={{width:8,height:8,borderRadius:"50%",background:c}}/>
-                        {m.titolo}
+                        {m.label||m.titolo}
                         {m.tempo!=="h24"&&m.inizio&&(
                           <span style={{opacity:0.75,fontWeight:600}}>{m.inizio}→{calcFineModello(m)||m.fine||""}</span>
                         )}
@@ -2455,7 +2455,7 @@ export default function VistaModelli({ C }){
                           color:form.modelloId===m.id?"#fff":T.sub,fontSize:11,fontWeight:700,
                           display:"flex",alignItems:"center",gap:5}}>
                         <div style={{width:8,height:8,borderRadius:"50%",background:c}}/>
-                        {m.titolo}
+                        {m.label||m.titolo}
                         {m.tempo!=="h24"&&m.inizio&&(
                           <span style={{opacity:0.75,fontWeight:600}}>{m.inizio}→{calcFineModello(m)||m.fine||""}</span>
                         )}

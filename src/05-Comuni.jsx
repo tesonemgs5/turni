@@ -440,7 +440,7 @@ export function FasceExpand({data, pct1, pct2, T, modelli, accent, cfg}){
                     padding:"5px 6px",borderRadius:6,marginBottom:3,background:T.surface}}>
                     <div style={{width:8,height:8,borderRadius:"50%",background:c,flexShrink:0}}/>
                     <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>
-                    {m.titolo}
+                    {m.label||m.titolo}
                     {m.tempo!=="h24"&&m.inizio&&(
                       <span style={{opacity:0.7,fontWeight:500,marginLeft:5}}>{m.inizio}→{m.fine||""}</span>
                     )}
@@ -621,7 +621,7 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
                               background:T.s2,borderRadius:isOpenG?"6px 6px 0 0":6,cursor:"pointer"}}>
                             <div style={{width:10,height:10,borderRadius:"50%",background:c}}/>
                             <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>
-                    {m.titolo}
+                    {m.label||m.titolo}
                     {m.tempo!=="h24"&&m.inizio&&(
                       <span style={{opacity:0.7,fontWeight:500,marginLeft:5}}>{m.inizio}→{m.fine||""}</span>
                     )}
@@ -711,7 +711,7 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
                                             style={{cursor:"pointer",flexShrink:0}}/>
                                           <div style={{width:8,height:8,borderRadius:"50%",background:c,flexShrink:0}}/>
                                           <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>
-                    {m.titolo}
+                    {m.label||m.titolo}
                     {m.tempo!=="h24"&&m.inizio&&(
                       <span style={{opacity:0.7,fontWeight:500,marginLeft:5}}>{m.inizio}→{m.fine||""}</span>
                     )}
@@ -948,7 +948,7 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
                               background:T.s2,borderRadius:isOpenG?"6px 6px 0 0":6,cursor:"pointer"}}>
                             <div style={{width:10,height:10,borderRadius:"50%",background:c}}/>
                             <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>
-                    {m.titolo}
+                    {m.label||m.titolo}
                     {m.tempo!=="h24"&&m.inizio&&(
                       <span style={{opacity:0.7,fontWeight:500,marginLeft:5}}>{m.inizio}→{m.fine||""}</span>
                     )}
@@ -1034,7 +1034,7 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
                                             style={{cursor:"pointer",flexShrink:0}}/>
                                           <div style={{width:8,height:8,borderRadius:"50%",background:c,flexShrink:0}}/>
                                           <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>
-                    {m.titolo}
+                    {m.label||m.titolo}
                     {m.tempo!=="h24"&&m.inizio&&(
                       <span style={{opacity:0.7,fontWeight:500,marginLeft:5}}>{m.inizio}→{m.fine||""}</span>
                     )}
@@ -1194,7 +1194,7 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
                         style={{cursor:"pointer",flexShrink:0,width:17,height:17}}/>
                       <div style={{width:10,height:10,borderRadius:"50%",background:c,flexShrink:0}}/>
                       <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:16,color:T.text,fontWeight:600}}>{m.titolo}</div>
+                        <div style={{fontSize:16,color:T.text,fontWeight:600}}>{m.label||m.titolo}</div>
                         <div style={{fontSize:13,color:T.sub}}>
                           {m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${m.fine?` - ${m.fine}`:""}`:""}
                         </div>
@@ -1240,7 +1240,7 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
                     padding:"6px 8px",background:T.s2,borderRadius:isOpen?"6px 6px 0 0":6,cursor:"pointer"}}>
                   <div style={{width:10,height:10,borderRadius:"50%",background:c}}/>
                   <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>
-                    {m.titolo}
+                    {m.label||m.titolo}
                     {m.tempo!=="h24"&&m.inizio&&(
                       <span style={{opacity:0.7,fontWeight:500,marginLeft:5}}>{m.inizio}→{m.fine||""}</span>
                     )}
