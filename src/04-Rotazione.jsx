@@ -1274,7 +1274,7 @@ export function ModelloSelector({ T, modelli = [], value, onChange, fasceAutomat
               fontSize: 12, fontWeight: 700, cursor: "pointer",
             }}>
             <div style={{ width: 8, height: 8, borderRadius: "50%", background: colore, flexShrink: 0 }} />
-            <span>{m.titolo}</span>
+            <span>{m.label||m.titolo}</span>
             <span style={{ opacity: 0.85, fontWeight: 600 }}>{orario}</span>
           </button>
         );
@@ -1316,7 +1316,7 @@ export function ModelloSelectorCollassabile({ T, modelli = [], value, onChange, 
           <>
             <div style={{ width: 9, height: 9, borderRadius: "50%", background: coloreScelto, flexShrink: 0 }} />
             <span style={{ fontSize: 13, fontWeight: 700, flex: 1, minWidth: 0,
-              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{modelloScelto.titolo}</span>
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{modelloScelto.label||modelloScelto.titolo}</span>
             <span style={{ fontSize: 12, opacity: 0.7, fontWeight: 600, flexShrink: 0 }}>{orarioScelto}</span>
           </>
         ) : (
@@ -2053,7 +2053,7 @@ export function ModelloCard({
         <div style={{ width: 28, height: 28, borderRadius: 6, background: colore, flexShrink: 0, alignSelf: "center", marginLeft: 2, marginRight: 2 }} />
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 18, fontWeight: 700, color: T.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {modello.titolo}
+            {modello.label||modello.titolo}
           </div>
           <div style={{ fontSize: 18, color: T.sub }}>
             {modello.tempo === "h24" ? "H24" : (() => {
@@ -2098,7 +2098,7 @@ export function ModelloCard({
           <div style={{ width: 28, height: 28, borderRadius: 6, background: colore, flexShrink: 0, marginLeft: 2, marginRight: 2 }} />
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 18, fontWeight: 700, color: T.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {modello.titolo}
+              {modello.label||modello.titolo}
             </div>
             <div style={{ fontSize: 18, color: T.sub }}>
               {modello.tempo === "h24" ? "H24" : `${modello.inizio || "—"} – ${calcFineModello(modello) || modello.fine || "—"}`}
@@ -2107,7 +2107,7 @@ export function ModelloCard({
         </div>
       )}
       {confermaVisibile && (
-        <ConfermaEliminazione T={T} testo={`Vuoi eliminare "${modello.titolo}"?`}
+        <ConfermaEliminazione T={T} testo={`Vuoi eliminare "${modello.label||modello.titolo}"?`}
           onConferma={() => { setConfermaVisibile(false); onDelete(modello); }}
           onAnnulla={() => setConfermaVisibile(false)} />
       )}
@@ -2192,14 +2192,14 @@ export function NLRSView({ rot, T, accent, modelli }) {
           <div style={{ fontSize: 10, color: T.sub, fontWeight: 700, marginBottom: 4 }}>MODELLO RS</div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <div style={{ width: 10, height: 10, borderRadius: "50%", background: modRS?.coloreCustom || accent }} />
-            <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{modRS?.titolo || "— nessun modello —"}</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{(modRS?.label||modRS?.titolo) || "— nessun modello —"}</div>
           </div>
         </div>
         <div style={{ flex: 1, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: 10 }}>
           <div style={{ fontSize: 10, color: T.sub, fontWeight: 700, marginBottom: 4 }}>MODELLO NL</div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <div style={{ width: 10, height: 10, borderRadius: "50%", background: modNL?.coloreCustom || accent }} />
-            <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{modNL?.titolo || "— nessun modello —"}</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{(modNL?.label||modNL?.titolo) || "— nessun modello —"}</div>
           </div>
         </div>
       </div>
@@ -2222,14 +2222,14 @@ export function NLRSScalanteView({ rot, T, accent, modelli }) {
           <div style={{ fontSize: 10, color: T.sub, fontWeight: 700, marginBottom: 4 }}>MODELLO RS</div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <div style={{ width: 10, height: 10, borderRadius: "50%", background: modRS?.coloreCustom || accent }} />
-            <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{modRS?.titolo || "— nessun modello —"}</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{(modRS?.label||modRS?.titolo) || "— nessun modello —"}</div>
           </div>
         </div>
         <div style={{ flex: 1, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: 10 }}>
           <div style={{ fontSize: 10, color: T.sub, fontWeight: 700, marginBottom: 4 }}>MODELLO NL</div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <div style={{ width: 10, height: 10, borderRadius: "50%", background: modNL?.coloreCustom || accent }} />
-            <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{modNL?.titolo || "— nessun modello —"}</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{(modNL?.label||modNL?.titolo) || "— nessun modello —"}</div>
           </div>
         </div>
       </div>
@@ -2270,14 +2270,14 @@ export function DomenicheView({ rot, T, accent, modelli, fasceAutomatiche, sunda
           <div style={{ fontSize: 10, color: T.sub, fontWeight: 700, marginBottom: 4 }}>DOMENICA LAVORO</div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <div style={{ width: 10, height: 10, borderRadius: "50%", background: modLav?.coloreCustom || accent }} />
-            <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{modLav?.titolo || "— nessun modello —"}</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{(modLav?.label||modLav?.titolo) || "— nessun modello —"}</div>
           </div>
         </div>
         <div style={{ flex: 1, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: 10 }}>
           <div style={{ fontSize: 10, color: T.sub, fontWeight: 700, marginBottom: 4 }}>DOMENICHE RIPOSO</div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <div style={{ width: 10, height: 10, borderRadius: "50%", background: modRip?.coloreCustom || accent }} />
-            <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{modRip?.titolo || "— nessun modello —"}</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{(modRip?.label||modRip?.titolo) || "— nessun modello —"}</div>
           </div>
         </div>
       </div>
@@ -2394,7 +2394,7 @@ export function ReperibilitaView({ rot, T, accent, modelli }) {
               <div style={{ fontSize: 10, color: T.sub, fontWeight: 700, marginBottom: 4 }}>GIORNO {g}</div>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <div style={{ width: 10, height: 10, borderRadius: "50%", background: mod?.coloreCustom || accent }} />
-                <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{mod?.titolo || "— nessun modello —"}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{(mod?.label||mod?.titolo) || "— nessun modello —"}</div>
               </div>
             </div>
           );
@@ -2419,7 +2419,7 @@ export function ReperibilitaView({ rot, T, accent, modelli }) {
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <div style={{ width: 8, height: 8, borderRadius: "50%", background: mod?.coloreCustom || accent }} />
-                <div style={{ fontSize: 12, color: T.sub }}>{mod?.titolo || `Giorno ${r.giornoCiclo}`}</div>
+                <div style={{ fontSize: 12, color: T.sub }}>{(mod?.label||mod?.titolo) || `Giorno ${r.giornoCiclo}`}</div>
               </div>
             </div>
           );
@@ -2521,7 +2521,7 @@ export function GrigliaRotazione({ rot, T, accent, modelli, fasceAutomatiche, su
                 fontSize: 12, fontWeight: 700, cursor: "pointer"
               }}>
               <div style={{ width: 8, height: 8, borderRadius: "50%", background: colM }} />
-              {m.titolo}
+              {m.label||m.titolo}
             </button>
           );
         })}

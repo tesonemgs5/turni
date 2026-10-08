@@ -315,11 +315,11 @@ export default function VistaCalendario({ C }){
               ✏️
             </button>
             {quickAttivo&&(
-              <div title={`Modello attivo: ${modAttivo.titolo||""}`}
+              <div title={`Modello attivo: ${modAttivo.label||modAttivo.titolo||""}`}
                 style={{display:"flex",alignItems:"center",gap:5,flexShrink:0,
                   background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:20,padding:"2px 10px"}}>
                 <div style={{width:10,height:10,borderRadius:"50%",background:cModAttivo,flexShrink:0}}/>
-                <span style={{fontSize:11,fontWeight:800,color:"#0f172a",whiteSpace:"nowrap"}}>{modAttivo.titolo||"Senza nome"}</span>
+                <span style={{fontSize:11,fontWeight:800,color:"#0f172a",whiteSpace:"nowrap"}}>{modAttivo.label||modAttivo.titolo||"Senza nome"}</span>
               </div>
             )}
           </>);
@@ -1027,7 +1027,7 @@ export default function VistaCalendario({ C }){
                                 </div>
                                 <div style={{width:10,height:10,borderRadius:"50%",background:colore,marginRight:10,flexShrink:0}}/>
                                 <div style={{flex:1,minWidth:0}}>
-                                  <div style={{fontSize:15,fontWeight:700,color:T.text}}>{m.titolo||"Senza nome"}</div>
+                                  <div style={{fontSize:15,fontWeight:700,color:T.text}}>{m.label||m.titolo||"Senza nome"}</div>
                                   <div style={{fontSize:11,color:T.sub}}>
                                     {m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${(calcFineModello(m)||m.fine)?` - ${calcFineModello(m)||m.fine}`:""}`:""}
                                   </div>
