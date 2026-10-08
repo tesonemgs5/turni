@@ -2491,39 +2491,71 @@ export default function VistaModelli({ C }){
                 </div>
               </>
             )}
-            {!form.shiftId&&!form.modelloId&&!form.editId&&(
-              <AutocompleteInput value={form.label||""} onChange={e=>setForm(f=>({...f,label:e.target.value}))}
-                suggestions={autocompleteValori.titolo}
-                onRemoveSuggestion={s=>rimuoviValoreAutocomplete("titolo", s)}
-                placeholder="NOME EVENTO..."
-                style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
-                  borderRadius:8,padding:"9px 10px",color:T.text,fontSize:13,
-                  marginBottom:10,boxSizing:"border-box",outline:"none"}}/>
-            )}
-            {!form.modelloId&&(
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-                <span style={{fontSize:14,color:T.sub,fontWeight:700}}>COLORE</span>
-                <div style={{position:"relative"}}>
-                  <div style={{width:22,height:22,borderRadius:"50%",cursor:"pointer",
-                    background:form.colorOvr||(form.shiftId?activeCal?.shifts?.find(s=>s.id===form.shiftId)?.color:activeCal?.color)||"#94a3b8",
-                    border:`2px solid ${T.border}`}}
-                    onClick={e=>{e.stopPropagation();setPal(pal==="ec"?null:"ec");}}/>
-                  {pal==="ec"&&<ColorPickerModal T={T}
-                    cur={form.colorOvr||(form.shiftId?activeCal?.shifts?.find(s=>s.id===form.shiftId)?.color:activeCal?.color)||"#94a3b8"}
-                    title="Colore evento"
-                    onPick={p=>setForm(f=>({...f,colorOvr:p}))}
-                    onClose={()=>setPal(null)}
-                    coloriUsati={[...new Set(modelli.map(m=>m.coloreCustom||(m.tempo==="h24"?COLORE_H24:colByTime(m.inizio))).filter(Boolean))]}
-                    getNomeColore={p=>nomeDelColore(p,{fasceAutomatiche,coloriExtra})}/>}
-                </div>
-                {form.colorOvr&&(
-                  <button onClick={()=>setForm(f=>({...f,colorOvr:null}))}
-                    style={{background:"none",border:"none",color:T.sub,fontSize:13,fontWeight:700,cursor:"pointer"}}>
-                    ↩ {nomeDelColore(form.colorOvr,{fasceAutomatiche,coloriExtra})}
-                  </button>
-                )}
+            {!form.shiftId && (
+              <div style={{marginBottom:10}}>
+                <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:3}}>TITOLO VISUALIZZATO (LABEL)</div>
+                <AutocompleteInput value={form.label||""} onChange={e=>{
+                    const fix=preparaFixCursore(e);
+                    setForm(f=>({...f,label:e.target.value.toUpperCase()}));
+                    fix();
+                  }}
+                  suggestions={autocompleteValori.titolo}
+                  onRemoveSuggestion={s=>rimuoviValoreAutocomplete("titolo", s)}
+                  placeholder="NOME / TITOLO VISUALIZZATO..."
+                  style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
+                    borderRadius:8,padding:"9px 10px",color:T.text,fontSize:13,
+                    boxSizing:"border-box",outline:"none",textTransform:"uppercase"}}/>
               </div>
             )}
+            {(form.modelloId || form.evtModelloId) && (
+              <div style={{marginBottom:10}}>
+                <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:3}}>NOME DEL MODELLO (TITOLO)</div>
+                <AutocompleteInput value={form.modelloTitolo !== undefined ? form.modelloTitolo : ((modelli.find(m=>m.id===(form.modelloId||form.evtModelloId))?.titolo)||"")} onChange={e=>{
+                    const fix=preparaFixCursore(e);
+                    setForm(f=>({...f,modelloTitolo:e.target.value.toUpperCase()}));
+                    fix();
+                  }}
+                  suggestions={autocompleteValori.titolo}
+                  onRemoveSuggestion={s=>rimuoviValoreAutocomplete("titolo", s)}
+                  placeholder="NOME DEL MODELLO..."
+                  style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
+                    borderRadius:8,padding:"9px 10px",color:T.text,fontSize:13,
+                    boxSizing:"border-box",outline:"none",textTransform:"uppercase"}}/>
+              </div>
+            )}
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+              <span style={{fontSize:14,color:T.sub,fontWeight:700}}>COLORE</span>
+              <div style={{position:"relative"}}>
+                {(()=>{
+                  const modCollegatoSelf = (form.modelloId || form.evtModelloId) ? modelli.find(m=>m.id===(form.modelloId||form.evtModelloId)) : null;
+                  const coloreCorrenteForm = form.colorOvr || modCollegatoSelf?.coloreCustom || modCollegatoSelf?.colore || (form.shiftId?activeCal?.shifts?.find(s=>s.id===form.shiftId)?.color:activeCal?.color) || "#94a3b8";
+                  return (
+                    <>
+                      <div style={{width:22,height:22,borderRadius:"50%",cursor:"pointer",
+                        background:coloreCorrenteForm,
+                        border:`2px solid ${T.border}`}}
+                        onClick={e=>{e.stopPropagation();setPal(pal==="ec"?null:"ec");}}/>
+                      {pal==="ec"&&<ColorPickerModal T={T}
+                        cur={coloreCorrenteForm}
+                        title="Colore evento"
+                        onPick={(p, nome)=>{
+                          setForm(f=>({...f,colorOvr:p}));
+                          if(nome) ensureColoreRegistrato(p, nome);
+                        }}
+                        onClose={()=>setPal(null)}
+                        coloriUsati={[...new Set(modelli.map(m=>m.coloreCustom||(m.tempo==="h24"?COLORE_H24:colByTime(m.inizio))).filter(Boolean))]}
+                        getNomeColore={p=>nomeDelColore(p,{fasceAutomatiche,coloriExtra})}/>}
+                    </>
+                  );
+                })()}
+              </div>
+              {form.colorOvr&&(
+                <button onClick={()=>setForm(f=>({...f,colorOvr:null}))}
+                  style={{background:"none",border:"none",color:T.sub,fontSize:13,fontWeight:700,cursor:"pointer"}}>
+                  ↩ {nomeDelColore(form.colorOvr,{fasceAutomatiche,coloriExtra})}
+                </button>
+              )}
+            </div>
             <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>DURATA</div>
             <div style={{display:"flex",gap:4,marginBottom:10}}>
               {[["allday","H24"],["fixed","6h 15m"],["fixed30","6h 30m"],["custom","PERSONALIZZATO"]].map(([v,l])=>(
@@ -3243,20 +3275,23 @@ export default function VistaModelli({ C }){
                   const modCollegato = modId ? modelli.find(m=>m.id===modId) : null;
                   if(modCollegato){
                     const origLabel = (modCollegato.label || modCollegato.titolo || "").toUpperCase();
+                    const origTitolo = (modCollegato.titolo || modCollegato.label || "").toUpperCase();
                     const origColor = (modCollegato.coloreCustom || modCollegato.colore || "").toLowerCase();
                     const origInizio = modCollegato.tempo === "h24" ? "" : (modCollegato.inizio || "");
                     const origFine = modCollegato.tempo === "h24" ? "" : (calcFineModello(modCollegato) || modCollegato.fine || "");
 
                     const nuovaLabel = (form.label || "").toUpperCase();
+                    const nuovoTitolo = (form.modelloTitolo || origTitolo).toUpperCase();
                     const nuovoColore = (form.colorOvr || modCollegato.coloreCustom || modCollegato.colore || "").toLowerCase();
                     const nuovoInizio = form.dur === "allday" ? "" : (form.tIn || "");
                     const nuovaFine = form.dur === "allday" ? "" : (form.tOut || calcFine6h15(form.tIn) || calcFine6h30(form.tIn) || "");
 
                     const labelCambiata = nuovaLabel !== origLabel;
+                    const titoloCambiato = nuovoTitolo !== origTitolo;
                     const coloreCambiato = nuovoColore !== origColor;
                     const orarioCambiato = nuovoInizio !== origInizio || nuovaFine !== origFine;
 
-                    if (labelCambiata || coloreCambiato || orarioCambiato) {
+                    if (labelCambiata || titoloCambiato || coloreCambiato || orarioCambiato) {
                       setChiediAmbitoModifica(true);
                       return;
                     }
@@ -3302,13 +3337,14 @@ export default function VistaModelli({ C }){
                     const mod = modelli.find(m=>m.id===modId);
                     if(mod){
                       const nLabel = (form.label || mod.label || mod.titolo || "").toUpperCase();
+                      const nTitoloMod = (form.modelloTitolo || mod.titolo || nLabel).toUpperCase();
                       const nIn = form.dur === "allday" ? "" : (form.tIn || "");
                       const nOut = form.dur === "allday" ? "" : (form.tOut || calcFine6h15(form.tIn) || calcFine6h30(form.tIn) || "");
                       const nCol = form.colorOvr || mod.coloreCustom || mod.colore || (form.dur === "allday" ? COLORE_H24 : colByTime(nIn));
                       const nTempo = form.dur === "allday" ? "h24" : form.dur === "fixed" ? "6h15" : form.dur === "fixed30" ? "6h30" : "custom";
                       await saveModello({
                         ...mod,
-                        titolo: nLabel,
+                        titolo: nTitoloMod,
                         label: nLabel,
                         inizio: nIn,
                         fine: nOut,
@@ -3333,6 +3369,7 @@ export default function VistaModelli({ C }){
                     const modId = form.modelloId || form.evtModelloId;
                     const mod = modelli.find(m=>m.id===modId);
                     const nLabel = (form.label || mod?.label || mod?.titolo || "").toUpperCase();
+                    const nTitoloMod = (form.modelloTitolo || mod?.titolo || nLabel).toUpperCase();
                     const nIn = form.dur === "allday" ? "" : (form.tIn || "");
                     const nOut = form.dur === "allday" ? "" : (form.tOut || calcFine6h15(form.tIn) || calcFine6h30(form.tIn) || "");
                     const nCol = form.colorOvr || mod?.coloreCustom || mod?.colore || (form.dur === "allday" ? COLORE_H24 : colByTime(nIn));
@@ -3341,7 +3378,7 @@ export default function VistaModelli({ C }){
                     const esitoNuovo = await saveModello({
                       ...(mod || {}),
                       id: null,
-                      titolo: nLabel,
+                      titolo: nTitoloMod,
                       label: nLabel,
                       inizio: nIn,
                       fine: nOut,

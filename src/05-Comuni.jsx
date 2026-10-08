@@ -2052,6 +2052,7 @@ export function nomeDelColore(hex, {fasceAutomatiche=[], coloriExtra=[]}={}){
 
 export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, title="Scegli colore", getNomeColore=null}){
   const [pos,setPos]=useState(null); // null = centrato di default
+  const [nomeColoreInput, setNomeColoreInput] = useState("");
   // Modalità del selettore ("preciso" = riquadro 2D+hue+numeri esistente,
   // "griglia" = pallini precalcolati): PERSISTENTE e GLOBALE in localStorage,
   // condivisa da ogni ColorPickerModal dell'app. Resta sulla modalità scelta
@@ -2219,15 +2220,23 @@ export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, tit
           );
         })()}
 
-        <div style={{display:"flex",gap:8,marginTop:10,flexShrink:0}}>
+        <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${T.border}`,flexShrink:0}}>
+          <div style={{fontSize:10,fontWeight:800,color:T.sub,marginBottom:3}}>NOME COLORE / GRUPPO (OPZIONALE)</div>
+          <input value={nomeColoreInput} onChange={e=>setNomeColoreInput(e.target.value.toUpperCase())}
+            placeholder="Es. FERIE, RIPOSO, PERMESSI..."
+            style={{width:"100%",boxSizing:"border-box",fontSize:12,fontWeight:700,color:T.text,
+              background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,padding:"6px 8px",outline:"none",textTransform:"uppercase"}}/>
+        </div>
 
+        <div style={{display:"flex",gap:8,marginTop:10,flexShrink:0}}>
           <button onClick={onClose}
             style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
               color:T.text,padding:"8px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
             Annulla
           </button>
           <button onClick={()=>{
-              onPick(previewColor);onClose();
+              onPick(previewColor, nomeColoreInput.trim() ? nomeColoreInput.trim().toUpperCase() : null);
+              onClose();
             }}
             style={{flex:1,background:previewColor,border:"none",borderRadius:10,
               color:getContrastTextColor(previewColor),padding:"8px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
