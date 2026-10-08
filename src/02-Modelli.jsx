@@ -884,6 +884,10 @@ export default function VistaModelli({ C }){
           getNomeColore={p=>nomeDelColore(p,{fasceAutomatiche,coloriExtra})}
           onPick={async(p, nome)=>{
             const old = showEditFasciaColor;
+            if(String(old).toLowerCase()===String(p).toLowerCase()){
+              if(nome) updateColoreExtraLabel(p, nome);
+              return;
+            }
             setShowColorAssignPicker(p);
             await replaceColoreEverywhere(old, p, nome);
           }}
