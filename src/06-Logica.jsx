@@ -3493,26 +3493,19 @@ function calcolaOrdineModelli(sottoinsieme){
 //      lasciati in coda, ordinati anch'essi per orario di inizio crescente.
 // All'interno di ciascun blocco l'ordine è per orario di inizio crescente.
 function classificaFasciaOrariaModello(m){
-  // GUARDIA: un modello H24 va SEMPRE in coda con gli "altri", anche se il
-  // campo inizio conserva ancora un valore residuo (es. "00:00" salvato in
-  // precedenza o non ripulito): senza questo controllo esplicito su m.tempo,
-  // un H24 con inizio="00:00" veniva scambiato per un modello NOTTE e
-  // finiva mischiato in mezzo ai modelli con orario reale.
-  //
-  // ECCEZIONE: i 4 modelli "etichetta di fascia" (titolo letteralmente
-  // NOTTE / MATTINA / POMERIGGIO / 3 TURNO) non vanno in coda con gli
-  // "altri": vanno nella fascia che rappresentano, per comparire in testa
-  // al blocco di quella fascia. Vedi fasciaModelloEtichetta più sotto.
+  // Fasce: 0=NOTTE (18:00–05:59), 1=PRIMO (06:00–11:45), 2=SECONDO (11:46–16:00),
+  // 3=3° TURNO (16:01–17:59), 4=altri (H24 e senza orario valido, sempre in coda).
+  // I 4 modelli "etichetta" (titolo NOTTE/PRIMO/SECONDO/3°TURNO) vanno nella
+  // fascia che rappresentano, in testa al loro blocco.
   const fasciaEtichetta = fasciaModelloEtichetta(m);
   if(fasciaEtichetta!=null) return fasciaEtichetta;
-  if(m.tempo==="h24") return 4;
+  if(m.tempo==="h24") return 4; // H24 sempre in coda, anche con inizio residuo
   const mins = oraInMinuti(m.inizio||"");
-  if(mins==null) return 4; // senza orario valido -> in coda con gli "altri"
-  if(mins===0) return 0; // NOTTE: 00:00
-  if(mins>=360 && mins<=705) return 1; // MATTINA: 06:00–11:45
-  if(mins>=720 && mins<=1035) return 2; // POMERIGGIO: 12:00–17:15
-  if(mins>1035 && mins<=1080) return 3; // 3° TURNO: 17:15–18:00
-  return 4; // altri (H24, ecc.)
+  if(mins==null) return 4;
+  if(mins>=1080 || mins<=359) return 0; // NOTTE    18:00–05:59
+  if(mins>=360  && mins<=705) return 1; // PRIMO    06:00–11:45
+  if(mins>=706  && mins<=960) return 2; // SECONDO  11:46–16:00
+  return 3;                             // 3° TURNO 16:01–17:59
 }
 // Riconosce i 4 modelli "etichetta di fascia" dal titolo (case-insensitive,
 // tollerante a spazi e simbolo gradi): restituisce il numero di fascia
@@ -3521,8 +3514,8 @@ function classificaFasciaOrariaModello(m){
 function fasciaModelloEtichetta(m){
   const t = (m.titolo||"").toUpperCase().replace(/[°.\s]/g,"");
   if(t==="NOTTE") return 0;
-  if(t==="MATTINA") return 1;
-  if(t==="POMERIGGIO") return 2;
+  if(t==="PRIMO"||t==="MATTINA") return 1;
+  if(t==="SECONDO"||t==="POMERIGGIO") return 2;
   if(t==="3TURNO"||t==="3ETURNO"||t==="TERZOTURNO") return 3;
   return null;
 }
@@ -3546,6 +3539,24 @@ function calcolaOrdinePerFasciaOraria(sottoinsieme){
     if(ma!==mb) return ma-mb;
     return (a.sortOrder||0)-(b.sortOrder||0); // spareggio stabile, non tocca H24 tra loro
   });
+}
+
+// Riordino per fascia usato dal pulsante "Riordina posizione modelli".
+// Parte dall'ordine esistente e NON ordina per orario: divide i modelli nelle
+// fasce e dentro ogni fascia mette prima l'etichetta (NOTTE/PRIMO/SECONDO/
+// 3°TURNO) e poi gli altri modelli nello stesso ordine che avevano.
+// H24 e modelli senza orario restano in coda, nel loro ordine invariato.
+function calcolaOrdineRiordinoFasce(sottoinsieme){
+  const attuale = calcolaOrdineModelli(sottoinsieme);
+  const blocchi = [[],[],[],[],[]];
+  attuale.forEach(m=>{ blocchi[classificaFasciaOrariaModello(m)].push(m); });
+  const out = [];
+  for(let f=0; f<4; f++){
+    out.push(...blocchi[f].filter(m=>fasciaModelloEtichetta(m)!=null));
+    out.push(...blocchi[f].filter(m=>fasciaModelloEtichetta(m)==null));
+  }
+  out.push(...blocchi[4]);
+  return out;
 }
 
 // ── Rinumerazione GLOBALE a blocchi contigui. "ordiniPerCalendario" è una
@@ -4394,7 +4405,7 @@ const importsRecenti = useMemo(()=>{
     const calendarsOrdinati = store.calendars.map(c=>c.id);
     const ordiniPerCalendario = new Map();
     for(const cId of calendarsOrdinati){
-      const delCalendario = calcolaOrdineModelli(modelli.filter(m=>(m.calendarId||mainCalId)===cId));
+      const delCalendario = calcolaOrdineRiordinoFasce(modelli.filter(m=>(m.calendarId||mainCalId)===cId));
       ordiniPerCalendario.set(cId, delCalendario);
     }
     const modelliRicalcolati = ricalcolaPosizioniGlobali(modelli, calendarsOrdinati, ordiniPerCalendario, mainCalId);
