@@ -3739,29 +3739,23 @@ const importsRecenti = useMemo(()=>{
   }
 
   async function moveH24(id, dir, calIdFiltro){
-    // Tutto il calcolo avviene dentro il callback funzionale di setModelli,
-    // sempre sullo stato più recente anche con click ravvicinati.
-    let prevSnapshot = null, nuovoElenco = null;
-    setModelli(prev=>{
-      prevSnapshot = prev;
-      nuovoElenco = spostaModelloPuro(prev, id, dir, calIdFiltro);
-      return nuovoElenco;
-    });
-    if(prevSnapshot && nuovoElenco) await salvaModifichePosizioni(prevSnapshot, nuovoElenco);
+    const prev = modelliRef.current;
+    const nuovo = spostaModelloPuro(prev, id, dir, calIdFiltro);
+    if(nuovo===prev) return;
+    modelliRef.current = nuovo;
+    setModelli(nuovo);
     segnalaModificaOrdineModelli();
+    await salvaModifichePosizioni(prev, nuovo);
   }
 
   async function reorderModelli(srcId, dstId, calIdFiltro){
-    let prevSnapshot = null, nuovoElenco = null;
-    setModelli(prev=>{
-      prevSnapshot = prev;
-      nuovoElenco = trascinaModelloPuro(prev, srcId, dstId, calIdFiltro);
-      return nuovoElenco;
-    });
-    if(prevSnapshot && nuovoElenco){
-      await salvaModifichePosizioni(prevSnapshot, nuovoElenco);
-    }
+    const prev = modelliRef.current;
+    const nuovo = trascinaModelloPuro(prev, srcId, dstId, calIdFiltro);
+    if(nuovo===prev) return;
+    modelliRef.current = nuovo;
+    setModelli(nuovo);
     segnalaModificaOrdineModelli();
+    await salvaModifichePosizioni(prev, nuovo);
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -4815,28 +4809,27 @@ const importsRecenti = useMemo(()=>{
     }
 
     // 3) Modelli: ripristino 360 gradi (ordine, nomi, titoli, orari, colori)
-    let modelliRicalcolati;
+    const prevModelli = modelliRef.current;
     const daRiscrivere = [];
-    setModelli(prev=>{
-      modelliRicalcolati = prev.map(m=>{
-        const v = vociById.get(m.id);
-        if(!v) return m;
-        const nuovo = {...m};
-        if(v.sort_order!==undefined) nuovo.sortOrder = v.sort_order;
-        if(v.titolo) nuovo.titolo = v.titolo;
-        if(v.label) nuovo.label = v.label;
-        if(v.inizio!==undefined) nuovo.inizio = v.inizio;
-        if(v.fine!==undefined) nuovo.fine = v.fine;
-        if(v.tempo) nuovo.tempo = v.tempo;
-        if(v.colore!==undefined && v.colore!==null) nuovo.colore = v.colore;
-        if(v.colore_custom!==undefined) nuovo.coloreCustom = v.colore_custom||v.colore||m.coloreCustom||null;
-        daRiscrivere.push(nuovo);
-        return nuovo;
-      });
-      return modelliRicalcolati;
+    const modelliRicalcolati = prevModelli.map(m=>{
+      const v = vociById.get(m.id);
+      if(!v) return m;
+      const nuovo = {...m};
+      if(v.sort_order!==undefined) nuovo.sortOrder = v.sort_order;
+      if(v.titolo) nuovo.titolo = v.titolo;
+      if(v.label) nuovo.label = v.label;
+      if(v.inizio!==undefined) nuovo.inizio = v.inizio;
+      if(v.fine!==undefined) nuovo.fine = v.fine;
+      if(v.tempo) nuovo.tempo = v.tempo;
+      if(v.colore!==undefined && v.colore!==null) nuovo.colore = v.colore;
+      if(v.colore_custom!==undefined) nuovo.coloreCustom = v.colore_custom||v.colore||m.coloreCustom||null;
+      daRiscrivere.push(nuovo);
+      return nuovo;
     });
+    modelliRef.current = modelliRicalcolati;
+    setModelli(modelliRicalcolati);
     saveToLocalStorage(store.events, store.calendars, modelliRicalcolati);
-    await salvaModifichePosizioni(modelli, modelliRicalcolati);
+    await salvaModifichePosizioni(prevModelli, modelliRicalcolati);
 
     // 4) Backup su Supabase
     const ts = new Date().toISOString();
