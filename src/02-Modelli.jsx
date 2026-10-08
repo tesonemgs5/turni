@@ -17,6 +17,7 @@ import { CalBadge, SmartTimeInput, AutocompleteInput, ColorPickerModal,
 import { ModelloCard, ModelForm, RotazioneCard, RotazioneForm, ModelloSelector,
   GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView, ReperibilitaView } from "./04-Rotazione";
 import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
+import { ImpostazioniAggiornamenti, inApk } from "./12-avviso-aggiornamento";
 
 // Riga della lista Colori: mostra il pallino colore, etichetta, sottotitolo,
 // contatore di modelli che lo usano e (se applicabile) pulsanti per
@@ -1109,12 +1110,13 @@ export default function VistaModelli({ C }){
             const elenco = [
               ...analisi.fasce.map(f=>`• Fascia ${f.label}: colore salvato`),
               ...analisi.modelli.map(m=>`• ${m.titolo||"Senza nome"}`),
+              ...(analisi.perModelloEventi||[]).slice(0,8).map(r=>`• Eventi ${r.titolo}: ${r.n} da ricolorare`),
             ].join("\n");
-            if(!confirm(`Trovati ${analisi.modelli.length} modelli e ${analisi.fasce.length} fasce da riportare ai colori dell'ultima disposizione salvata:\n\n${elenco}\n\nProcedere?`)) return;
+            if(!confirm(`Trovati ${analisi.modelli.length} modelli, ${analisi.fasce.length} fasce e ${(analisi.eventi||[]).length} eventi da riportare ai colori giusti:\n\n${elenco}\n\nProcedere?`)) return;
             setBanner("⏳ Normalizzazione colori in corso...");
             try {
               const esito = await applicaNormalizzazioneColori(sorg);
-              setBanner(`✅ ${esito.totale} modelli e ${esito.totaleFasce} fasce riportati ai colori salvati. Eventi già inseriti aggiornati.`);
+              setBanner(`✅ ${esito.totale} modelli, ${esito.totaleFasce} fasce e ${esito.totaleEventi||0} eventi riportati ai colori giusti.`);
             } catch(e){
               segnalaErrore(e, "Normalizzazione colori modelli");
               setBanner("❌ Errore durante la normalizzazione. Controlla il Log.");
@@ -1260,6 +1262,11 @@ export default function VistaModelli({ C }){
         </div>
       </Sec>
 
+      {inApk()&&(
+        <SecCollapsible label="AGGIORNAMENTI APP" T={T}>
+          <ImpostazioniAggiornamenti T={T}/>
+        </SecCollapsible>
+      )}
       <SecCollapsible label="FASCE ORARIE AUTOMATICHE" T={T}>
         <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
           Nome, orario e colore delle 4 fasce usate per assegnare il colore ai NUOVI modelli in base all'orario. I modelli già creati non cambiano.
