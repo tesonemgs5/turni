@@ -3468,7 +3468,7 @@ function raggruppaPerColore(lista){
   return out;
 }
 function calcolaOrdineModelli(sottoinsieme){
-  return raggruppaPerColore([...(sottoinsieme||[])].filter(Boolean).sort((a,b)=>{
+  return [...(sottoinsieme||[])].filter(Boolean).sort((a,b)=>{
     const sa = a.sortOrder || 0, sb = b.sortOrder || 0;
     if(sa!==sb) return sa-sb;
     const fa = classificaFasciaOrariaModello(a);
@@ -3478,7 +3478,7 @@ function calcolaOrdineModelli(sottoinsieme){
     const mb = b.tempo==="h24" ? 99999 : (oraInMinuti(b.inizio||"") ?? 99999);
     if(ma!==mb) return ma-mb;
     return (a.titolo||"").localeCompare(b.titolo||"");
-  }));
+  });
 }
 
 // ── Ordinamento per FASCIA ORARIA D'INIZIO, usato SOLO dal pulsante
@@ -4400,7 +4400,7 @@ const importsRecenti = useMemo(()=>{
     const calendarsOrdinati = store.calendars.map(c=>c.id);
     const ordiniPerCalendario = new Map();
     for(const cId of calendarsOrdinati){
-      const delCalendario = raggruppaPerColore(calcolaOrdinePerFasciaOraria(modelli.filter(m=>(m.calendarId||mainCalId)===cId)));
+      const delCalendario = calcolaOrdineModelli(modelli.filter(m=>(m.calendarId||mainCalId)===cId));
       ordiniPerCalendario.set(cId, delCalendario);
     }
     const modelliRicalcolati = ricalcolaPosizioniGlobali(modelli, calendarsOrdinati, ordiniPerCalendario, mainCalId);
@@ -4702,15 +4702,19 @@ const importsRecenti = useMemo(()=>{
   async function salvaDisposizioneModelli(){
     if(!userId) return { ok:false, errore:"Utente non autenticato" };
     const adesso = new Date().toISOString();
-    // Ordine + COLORI di ogni modello (colore effettivo e colore scelto a mano).
+    // Snapshot a 360 gradi di ogni modello (ordine, colori, nome, titolo, orari, calendario, etc.).
     const righe = modelli.map(m=>({
       user_id:userId, modello_id:m.id, sort_order:m.sortOrder||0,
       colore:m.colore||null, colore_custom:m.coloreCustom||null,
+      titolo:m.titolo||"", label:m.label||"", inizio:m.inizio||null, fine:m.fine||null, tempo:m.tempo||"custom",
+      calendar_id:m.calendarId||null,
       salvato_il:adesso
     }));
-    // Fasce automatiche (nome, hex, orari) e colori extra (hex, nome, ordine).
+    // Fasce automatiche, colori extra, sundayColor e holidayColor
     const fasce = (store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT).map(f=>({...f}));
     const coloriExtraSnap = (coloriExtra||[]).map(c=>({...c}));
+    const sundayCol = store.sundayColor || "";
+    const holidayCol = store.holidayColor || "";
     try{
       const { error } = await supabase.from("modelli_sortorder_backup")
         .upsert(righe, { onConflict:"user_id,modello_id" });
@@ -4719,20 +4723,21 @@ const importsRecenti = useMemo(()=>{
         return { ok:false, errore:error.message };
       }
       const { error:errImp } = await supabase.from("impostazioni_backup")
-        .upsert({ user_id:userId, fasce_automatiche:fasce, colori_extra:coloriExtraSnap, salvato_il:adesso },
+        .upsert({ user_id:userId, fasce_automatiche:fasce, colori_extra:coloriExtraSnap, sunday_color:sundayCol, holiday_color:holidayCol, salvato_il:adesso },
                 { onConflict:"user_id" });
       if(errImp){
         segnalaErroreDb(errImp, "Salvataggio fasce/colori nel backup disposizione");
         return { ok:false, errore:errImp.message };
       }
-      // Snapshot anche in locale: un ripristino deve poter funzionare anche
-      // offline, senza dipendere dalla raggiungibilità di Supabase in quel
-      // momento (stesso principio usato per store.events/calendars).
       try{
         localStorage.setItem("disposizioneModelliBackup", JSON.stringify({
           userId, salvato_il:adesso,
-          voci: modelli.map(m=>({modello_id:m.id, sort_order:m.sortOrder||0, colore:m.colore||null, colore_custom:m.coloreCustom||null})),
-          fasce, coloriExtra: coloriExtraSnap
+          voci: modelli.map(m=>({
+            ...m, modello_id:m.id, sort_order:m.sortOrder||0,
+            colore:m.colore||null, colore_custom:m.coloreCustom||null
+          })),
+          fasce, coloriExtra: coloriExtraSnap,
+          sundayColor: sundayCol, holidayColor: holidayCol
         }));
       }catch{}
       annullaTimerSalvaDisposizione();
@@ -4743,33 +4748,32 @@ const importsRecenti = useMemo(()=>{
     }
   }
 
-  // ── Ripristina l'ultimo snapshot salvato: rilegge posizioni E colori dei
-  // modelli, le fasce automatiche e i colori extra, e li riscrive sui dati
-  // CORRENTI. Un modello creato dopo l'ultimo salvataggio (non presente nello
-  // snapshot) resta com'è; uno nello snapshot ma nel frattempo eliminato viene
-  // ignorato. Gli eventi già in calendario seguono il colore ripristinato.
   async function ripristinaDisposizioneModelli(sorgente=null){
     if(!userId) return { ok:false, errore:"Utente non autenticato" };
-    let vociBackup = null, fasceBackup = null, coloriExtraBackup = null;
+    let vociBackup = null, fasceBackup = null, coloriExtraBackup = null, sundayColBackup = null, holidayColBackup = null;
     if(sorgente){
-      // Versione scelta dall'elenco automatico: nessuna lettura dei backup manuali.
       vociBackup = Array.isArray(sorgente.voci) ? sorgente.voci : null;
       fasceBackup = sorgente.fasce || null;
       coloriExtraBackup = sorgente.coloriExtra || null;
+      sundayColBackup = sorgente.sundayColor || null;
+      holidayColBackup = sorgente.holidayColor || null;
     }
     if(!sorgente) try{
       const { data, error } = await supabase.from("modelli_sortorder_backup")
-        .select("modello_id, sort_order, colore, colore_custom").eq("user_id", userId);
+        .select("*").eq("user_id", userId);
       if(error) throw error;
       if(data && data.length>0) vociBackup = data.map(r=>({
-        modello_id:r.modello_id, sort_order:r.sort_order, colore:r.colore, colore_custom:r.colore_custom
+        ...r, modello_id:r.modello_id, sort_order:r.sort_order, colore:r.colore, colore_custom:r.colore_custom, calendarId:r.calendar_id
       }));
       const { data:imp } = await supabase.from("impostazioni_backup")
-        .select("fasce_automatiche, colori_extra").eq("user_id", userId).maybeSingle();
-      if(imp){ fasceBackup = imp.fasce_automatiche||null; coloriExtraBackup = imp.colori_extra||null; }
+        .select("fasce_automatiche, colori_extra, sunday_color, holiday_color").eq("user_id", userId).maybeSingle();
+      if(imp){
+        fasceBackup = imp.fasce_automatiche||null;
+        coloriExtraBackup = imp.colori_extra||null;
+        sundayColBackup = imp.sunday_color||null;
+        holidayColBackup = imp.holiday_color||null;
+      }
     }catch(e){
-      // Supabase irraggiungibile: fallback sull'ultimo snapshot locale,
-      // così il ripristino resta possibile anche offline.
       try{
         const raw = localStorage.getItem("disposizioneModelliBackup");
         if(raw){
@@ -4778,6 +4782,8 @@ const importsRecenti = useMemo(()=>{
             vociBackup = parsed.voci;
             fasceBackup = parsed.fasce||null;
             coloriExtraBackup = parsed.coloriExtra||null;
+            sundayColBackup = parsed.sundayColor||null;
+            holidayColBackup = parsed.holidayColor||null;
           }
         }
       }catch{}
@@ -4785,35 +4791,46 @@ const importsRecenti = useMemo(()=>{
     if(!vociBackup || vociBackup.length===0){
       return { ok:false, errore:"Nessuna disposizione salvata trovata" };
     }
-    const vociById = new Map(vociBackup.map(v=>[v.modello_id, v]));
+    const vociById = new Map(vociBackup.map(v=>[v.modello_id || v.id, v]));
 
-    // 1) Fasce automatiche
+    // 1) Fasce automatiche e Colori Domeniche/Festivi
+    const patchStore = {};
+    const patchSettings = {};
     if(Array.isArray(fasceBackup) && fasceBackup.length>0){
-      setStore(s=>({...s, fasceAutomatiche:fasceBackup}));
-      await saveSettings({fasce_automatiche:fasceBackup});
+      patchStore.fasceAutomatiche = fasceBackup;
+      patchSettings.fasce_automatiche = fasceBackup;
+    }
+    if(sundayColBackup){ patchStore.sundayColor = sundayColBackup; patchSettings.sunday_color = sundayColBackup; }
+    if(holidayColBackup){ patchStore.holidayColor = holidayColBackup; patchSettings.holiday_color = holidayColBackup; }
+    if(Object.keys(patchStore).length>0){
+      setStore(s=>({...s, ...patchStore}));
+      await saveSettings(patchSettings);
     }
 
-    // 2) Colori extra: reinserisce quelli mancanti (non cancella niente)
+    // 2) Colori extra
     if(Array.isArray(coloriExtraBackup)){
       for(const c of coloriExtraBackup){
         if(c?.hex) { try{ await ensureColoreRegistrato(c.hex, c.label||null); }catch{} }
       }
     }
 
-    // 3) Modelli: ordine + colori
+    // 3) Modelli: ripristino 360 gradi (ordine, nomi, titoli, orari, colori)
     let modelliRicalcolati;
     const daRiscrivere = [];
     setModelli(prev=>{
       modelliRicalcolati = prev.map(m=>{
         const v = vociById.get(m.id);
         if(!v) return m;
-        const nuovo = {...m, sortOrder:v.sort_order};
-        // Snapshot vecchi (senza colori): non toccare i colori
-        if(v.colore!==undefined && v.colore!==null || v.colore_custom!==undefined){
-          if(v.colore!==undefined && v.colore!==null) nuovo.colore = v.colore;
-          if(v.colore_custom!==undefined) nuovo.coloreCustom = v.colore_custom||v.colore||m.coloreCustom||null;
-          if(nuovo.colore!==m.colore || (nuovo.coloreCustom||null)!==(m.coloreCustom||null)) daRiscrivere.push(nuovo);
-        }
+        const nuovo = {...m};
+        if(v.sort_order!==undefined) nuovo.sortOrder = v.sort_order;
+        if(v.titolo) nuovo.titolo = v.titolo;
+        if(v.label) nuovo.label = v.label;
+        if(v.inizio!==undefined) nuovo.inizio = v.inizio;
+        if(v.fine!==undefined) nuovo.fine = v.fine;
+        if(v.tempo) nuovo.tempo = v.tempo;
+        if(v.colore!==undefined && v.colore!==null) nuovo.colore = v.colore;
+        if(v.colore_custom!==undefined) nuovo.coloreCustom = v.colore_custom||v.colore||m.coloreCustom||null;
+        daRiscrivere.push(nuovo);
         return nuovo;
       });
       return modelliRicalcolati;
@@ -4821,18 +4838,18 @@ const importsRecenti = useMemo(()=>{
     saveToLocalStorage(store.events, store.calendars, modelliRicalcolati);
     await salvaModifichePosizioni(modelli, modelliRicalcolati);
 
-    // 4) Scrive i colori dei modelli su Supabase (con attesa dell'esito)
+    // 4) Backup su Supabase
     const ts = new Date().toISOString();
     for(const m of daRiscrivere){
       const ris = await scriviConBackup({
         tipo:"update", table:"modelli",
-        payload:{ colore:m.colore, colore_custom:m.coloreCustom||null },
+        payload:{ colore:m.colore, colore_custom:m.coloreCustom||null, titolo:m.titolo, label:m.label, inizio:m.inizio, fine:m.fine, tempo:m.tempo, sort_order:m.sortOrder },
         matchObj:{ id:m.id, user_id:userId },
-        contesto:"Ripristino disposizione: colori modello", ts,
+        contesto:"Ripristino disposizione 360°", ts,
         eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelliRicalcolati,
         opzioni:{soloLog:true},
       });
-      if(ris?.errore) segnalaErroreDb(ris.errore, "Ripristino colori modello");
+      if(ris?.errore) segnalaErroreDb(ris.errore, "Ripristino modelli");
     }
 
     // 5) Allinea gli eventi già in calendario al colore effettivo del modello
@@ -4964,9 +4981,17 @@ const importsRecenti = useMemo(()=>{
     // Cambio colore = cambio anche in Impostazioni: ogni fascia con il vecchio colore lo segue.
     const fasceAttuali = store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT;
     if(fasceAttuali.some(f=>stessoHexColore(f.color,oldHex))){
-      const nuoveFasce = fasceAttuali.map(f=>stessoHexColore(f.color,oldHex)?{...f,color:newHex}:f);
-      setStore(s=>({...s, fasceAutomatiche:nuoveFasce}));
-      saveSettings({fasce_automatiche:nuoveFasce});
+      const me = fasceAttuali.map(f=>stessoHexColore(f.color,oldHex)?{...f,color:newHex}:f);
+      setStore(s=>({...s, fasceAutomatiche:me}));
+      saveSettings({fasce_automatiche:me});
+    }
+    if(stessoHexColore(store.sundayColor, oldHex)){
+      setStore(s=>({...s, sundayColor:newHex}));
+      saveSettings({sunday_color:newHex});
+    }
+    if(stessoHexColore(store.holidayColor, oldHex)){
+      setStore(s=>({...s, holidayColor:newHex}));
+      saveSettings({holiday_color:newHex});
     }
 
     // Eventi gia' in calendario dei modelli del gruppo.

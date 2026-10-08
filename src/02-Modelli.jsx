@@ -118,6 +118,7 @@ export default function VistaModelli({ C }){
   // Domanda mostrata al salvataggio quando "Visualizza" è cambiato: applicare
   // a solo questo evento, a tutto il modello o da questo evento in poi.
   const [chiediAmbitoVisualizza, setChiediAmbitoVisualizza] = useState(false);
+  const [chiediAmbitoModifica, setChiediAmbitoModifica] = useState(false);
   const {
     today, tipoModelloProtrazione, computeStornoRecupero, computeStornoPI, tipoModelloPI, store, setStore, loading, setLoading, year,
     ripristinaModelliMancanti, ripristinoInCorso, setRipristinoInCorso, ripristinoEsito, setRipristinoEsito,
@@ -1125,38 +1126,36 @@ export default function VistaModelli({ C }){
           }}
           style={{width:"100%",background:"none",border:"1px solid #3b82f6",borderRadius:10,color:"#3b82f6",
             padding:"10px 0",fontWeight:800,fontSize:12,cursor:"pointer"}}>
-          🎨 Normalizza colori automatici
+          🎨 Normalizza colori
         </button>
 
         <div style={{fontSize:11,color:T.sub,margin:"14px 0 10px"}}>
-          Protezione extra contro un problema ancora in fase di indagine che
-          a volte rimescola da solo l'ordine dei modelli. "Salva
-          disposizione" congela ordine, colori dei modelli, fasce orarie e colori extra come backup manuale (mai
+          Salva congela a 360° ordine, nomi, titoli, colori dei modelli, fasce orarie e colori extra come backup manuale (mai
           sovrascritto in automatico, solo quando premi questo pulsante).
           In parallelo l'app tiene da sola lo storico delle ultime 20 versioni automatiche.
-          Se in futuro l'ordine dovesse rimescolarsi di nuovo, tocca
-          "Ripristina disposizione" per tornare esattamente a come l'avevi
-          salvato, senza dover risistemare i modelli a mano uno per uno.
+          Se in futuro l'ordine o i dati dovessero variare, tocca
+          "Ripristina" per tornare esattamente a come l'avevi
+          salvato a 360°.
         </div>
         <button onClick={async()=>{
-            setBanner("⏳ Salvataggio disposizione in corso...");
+            setBanner("⏳ Salvataggio in corso...");
             try {
               const esito = await salvaDisposizioneModelli();
-              if(esito.ok) setBanner(`✅ Disposizione salvata: ${esito.totale} modelli.`);
+              if(esito.ok) setBanner(`✅ Salvato a 360°: ${esito.totale} modelli.`);
               else setBanner(`❌ ${esito.errore||"Errore durante il salvataggio."}`);
             } catch(e){
-              segnalaErrore(e, "Salvataggio disposizione modelli");
+              segnalaErrore(e, "Salvataggio modelli");
               setBanner("❌ Errore durante il salvataggio. Controlla il Log.");
             }
             setTimeout(()=>setBanner(null), 5000);
           }}
           style={{width:"100%",background:"#3b82f6",border:"none",borderRadius:10,color:"#fff",
             padding:"10px 0",fontWeight:800,fontSize:12,cursor:"pointer",marginBottom:8}}>
-          💾 Salva disposizione
+          💾 Salva
         </button>
         <button onClick={async()=>{
-            if(!confirm("Ripristinare l'ultima disposizione salvata? Ordine, colori dei modelli, fasce orarie e colori extra verranno sostituiti con quelli del backup (gli eventi già in calendario seguiranno i colori ripristinati).")) return;
-            setBanner("⏳ Ripristino disposizione in corso...");
+            if(!confirm("Ripristinare l'ultimo salvataggio a 360°? Ordine, nomi, titoli, orari, colori dei modelli, fasce orarie e colori extra verranno sostituiti con quelli del backup.")) return;
+            setBanner("⏳ Ripristino in corso...");
             try {
               let sorg = null;
               if(sorgenteDisposizione!=="manuale"){
@@ -1164,17 +1163,17 @@ export default function VistaModelli({ C }){
                 if(!sorg){ setBanner("⚠️ Versione automatica non trovata. Riapri la sezione per aggiornare l'elenco."); setTimeout(()=>setBanner(null), 6000); return; }
               }
               const esito = await ripristinaDisposizioneModelli(sorg);
-              if(esito.ok) setBanner(`✅ Disposizione ripristinata: ${esito.totale} modelli.`);
-              else setBanner(`❌ ${esito.errore||"Nessuna disposizione salvata trovata."}`);
+              if(esito.ok) setBanner(`✅ Ripristinato a 360°: ${esito.totale} modelli.`);
+              else setBanner(`❌ ${esito.errore||"Nessun salvataggio trovato."}`);
             } catch(e){
-              segnalaErrore(e, "Ripristino disposizione modelli");
+              segnalaErrore(e, "Ripristino modelli");
               setBanner("❌ Errore durante il ripristino. Controlla il Log.");
             }
             setTimeout(()=>setBanner(null), 5000);
           }}
           style={{width:"100%",background:"none",border:"1px solid #3b82f6",borderRadius:10,color:"#3b82f6",
             padding:"10px 0",fontWeight:800,fontSize:12,cursor:"pointer"}}>
-          ♻️ Ripristina disposizione
+          ♻️ Ripristina
         </button>
       </SecCollapsible>
 
@@ -1335,8 +1334,11 @@ export default function VistaModelli({ C }){
                   coloriUsati={[sundayColor,holidayColor].filter(Boolean)}
                   getNomeColore={p=>nomeDelColore(p,{fasceAutomatiche,coloriExtra})}
                   onPick={p=>{
+                    const vecchio = sundayColor;
                     setStore(s=>({...s,sundayColor:p}));
                     saveSettings({sunday_color:p});
+                    if(vecchio && vecchio!==p) replaceColoreEverywhere(vecchio, p);
+                    else ensureColoreRegistrato(p, "DOMENICHE");
                   }}
                   onClose={()=>setPal(null)}/>}
               </div>
@@ -1353,8 +1355,11 @@ export default function VistaModelli({ C }){
                   coloriUsati={[sundayColor,holidayColor].filter(Boolean)}
                   getNomeColore={p=>nomeDelColore(p,{fasceAutomatiche,coloriExtra})}
                   onPick={p=>{
+                    const vecchio = holidayColor;
                     setStore(s=>({...s,holidayColor:p}));
                     saveSettings({holiday_color:p});
+                    if(vecchio && vecchio!==p) replaceColoreEverywhere(vecchio, p);
+                    else ensureColoreRegistrato(p, "FESTIVI");
                   }}
                   onClose={()=>setPal(null)}/>}
               </div>
@@ -3234,10 +3239,32 @@ export default function VistaModelli({ C }){
               </button>
               <button onClick={()=>{
                   if(!form.editId){ saveEvt(); return; }
+                  const modId = form.modelloId || form.evtModelloId;
+                  const modCollegato = modId ? modelli.find(m=>m.id===modId) : null;
+                  if(modCollegato){
+                    const origLabel = (modCollegato.label || modCollegato.titolo || "").toUpperCase();
+                    const origColor = (modCollegato.coloreCustom || modCollegato.colore || "").toLowerCase();
+                    const origInizio = modCollegato.tempo === "h24" ? "" : (modCollegato.inizio || "");
+                    const origFine = modCollegato.tempo === "h24" ? "" : (calcFineModello(modCollegato) || modCollegato.fine || "");
+
+                    const nuovaLabel = (form.label || "").toUpperCase();
+                    const nuovoColore = (form.colorOvr || modCollegato.coloreCustom || modCollegato.colore || "").toLowerCase();
+                    const nuovoInizio = form.dur === "allday" ? "" : (form.tIn || "");
+                    const nuovaFine = form.dur === "allday" ? "" : (form.tOut || calcFine6h15(form.tIn) || calcFine6h30(form.tIn) || "");
+
+                    const labelCambiata = nuovaLabel !== origLabel;
+                    const coloreCambiato = nuovoColore !== origColor;
+                    const orarioCambiato = nuovoInizio !== origInizio || nuovaFine !== origFine;
+
+                    if (labelCambiata || coloreCambiato || orarioCambiato) {
+                      setChiediAmbitoModifica(true);
+                      return;
+                    }
+                  }
+
                   const nuovaVis = [...(form.visibileAncheIn||[])].sort().join("|");
                   const vecchiaVis = [...(form.visibileAncheInOrig||[])].sort().join("|");
-                  const collegatoAModello = !!(form.modelloId||form.evtModelloId);
-                  if(nuovaVis!==vecchiaVis && collegatoAModello){ setChiediAmbitoVisualizza(true); return; }
+                  if(nuovaVis!==vecchiaVis && modCollegato){ setChiediAmbitoVisualizza(true); return; }
                   updateEvt("questo");
                 }}
                 style={{flex:2,background:accent,border:"none",borderRadius:10,
@@ -3245,6 +3272,139 @@ export default function VistaModelli({ C }){
                 💾 Salva
               </button>
             </div>
+            {chiediAmbitoModifica && (
+              <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:100001,
+                display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
+                onClick={()=>setChiediAmbitoModifica(false)}>
+                <div style={{background:T.surface,borderRadius:16,width:"100%",maxWidth:360,padding:18}}
+                  onClick={e=>e.stopPropagation()}>
+                  <div style={{fontSize:16,fontWeight:900,color:T.text,marginBottom:6,textAlign:"center"}}>
+                    Modifica Evento
+                  </div>
+                  <div style={{fontSize:12,color:T.sub,marginBottom:14,textAlign:"center",lineHeight:1.4}}>
+                    Hai modificato nome, titolo, orario o colore dell'evento. Come vuoi applicare la modifica?
+                  </div>
+                  
+                  <button onClick={()=>{
+                    setChiediAmbitoModifica(false);
+                    updateEvt("questo");
+                  }} style={{display:"block",width:"100%",background:T.s2,border:`1px solid ${T.border}`,
+                    borderRadius:10,color:T.text,padding:"10px 12px",marginBottom:8,cursor:"pointer",
+                    fontWeight:800,fontSize:13,textAlign:"left"}}>
+                    1. Solo per questo evento
+                    <div style={{fontSize:10,fontWeight:600,color:T.sub,marginTop:2}}>Il modello non cambia</div>
+                  </button>
+
+                  <button onClick={async()=>{
+                    setChiediAmbitoModifica(false);
+                    const editCalId = form?.editCid || calId;
+                    const modId = form.modelloId || form.evtModelloId;
+                    const mod = modelli.find(m=>m.id===modId);
+                    if(mod){
+                      const nLabel = (form.label || mod.label || mod.titolo || "").toUpperCase();
+                      const nIn = form.dur === "allday" ? "" : (form.tIn || "");
+                      const nOut = form.dur === "allday" ? "" : (form.tOut || calcFine6h15(form.tIn) || calcFine6h30(form.tIn) || "");
+                      const nCol = form.colorOvr || mod.coloreCustom || mod.colore || (form.dur === "allday" ? COLORE_H24 : colByTime(nIn));
+                      const nTempo = form.dur === "allday" ? "h24" : form.dur === "fixed" ? "6h15" : form.dur === "fixed30" ? "6h30" : "custom";
+                      await saveModello({
+                        ...mod,
+                        titolo: nLabel,
+                        label: nLabel,
+                        inizio: nIn,
+                        fine: nOut,
+                        tempo: nTempo,
+                        coloreCustom: nCol,
+                        colore: nCol,
+                      });
+                    } else {
+                      await updateEvt("questo");
+                    }
+                    setForm(null); setDayKey(null);
+                  }} style={{display:"block",width:"100%",background:T.s2,border:`1px solid ${T.border}`,
+                    borderRadius:10,color:T.text,padding:"10px 12px",marginBottom:8,cursor:"pointer",
+                    fontWeight:800,fontSize:13,textAlign:"left"}}>
+                    2. Per tutti gli eventi
+                    <div style={{fontSize:10,fontWeight:600,color:T.sub,marginTop:2}}>Il modello cambia e diventa come viene salvato l'evento</div>
+                  </button>
+
+                  <button onClick={async()=>{
+                    setChiediAmbitoModifica(false);
+                    const editCalId = form?.editCid || calId;
+                    const modId = form.modelloId || form.evtModelloId;
+                    const mod = modelli.find(m=>m.id===modId);
+                    const nLabel = (form.label || mod?.label || mod?.titolo || "").toUpperCase();
+                    const nIn = form.dur === "allday" ? "" : (form.tIn || "");
+                    const nOut = form.dur === "allday" ? "" : (form.tOut || calcFine6h15(form.tIn) || calcFine6h30(form.tIn) || "");
+                    const nCol = form.colorOvr || mod?.coloreCustom || mod?.colore || (form.dur === "allday" ? COLORE_H24 : colByTime(nIn));
+                    const nTempo = form.dur === "allday" ? "h24" : form.dur === "fixed" ? "6h15" : form.dur === "fixed30" ? "6h30" : "custom";
+
+                    const esitoNuovo = await saveModello({
+                      ...(mod || {}),
+                      id: null,
+                      titolo: nLabel,
+                      label: nLabel,
+                      inizio: nIn,
+                      fine: nOut,
+                      tempo: nTempo,
+                      coloreCustom: nCol,
+                      colore: nCol,
+                      calendarId: editCalId || calId || mainCalId,
+                    });
+                    const nuovoId = esitoNuovo?.modello?.id;
+
+                    const ns = JSON.parse(JSON.stringify(store));
+                    const idsDaAgg = [];
+                    Object.keys(ns.events||{}).forEach(dk=>{
+                      if(dk >= dayKey){
+                        const lista = ns.events[dk]?.[editCalId];
+                        if(Array.isArray(lista)){
+                          ns.events[dk][editCalId] = lista.map(e=>{
+                            if(e.modelloId === modId || e.id === form.editId){
+                              idsDaAgg.push(e.id);
+                              return {
+                                ...e,
+                                modelloId: nuovoId || e.modelloId,
+                                label: nLabel,
+                                color: nCol,
+                                tIn: nIn,
+                                tOut: nOut,
+                              };
+                            }
+                            return e;
+                          });
+                        }
+                      }
+                    });
+                    saveToLocalStorage(ns.events, ns.calendars, modelli);
+                    setStore(ns);
+                    storeRef.current = ns;
+                    setForm(null); setDayKey(null);
+
+                    if(nuovoId){
+                      const ts = new Date().toISOString();
+                      for(const idEv of idsDaAgg){
+                        await scriviConBackup({
+                          tipo:"update", table:"events",
+                          payload:{ modello_id: nuovoId, label: nLabel, color: nCol, time_in: nIn, time_out: nOut },
+                          matchObj:{ id: idEv, user_id: userId },
+                          contesto:"Da questo evento in poi: nuovo modello", ts,
+                          opzioni:{ soloLog: true }
+                        });
+                      }
+                    }
+                  }} style={{display:"block",width:"100%",background:T.s2,border:`1px solid ${T.border}`,
+                    borderRadius:10,color:T.text,padding:"10px 12px",marginBottom:10,cursor:"pointer",
+                    fontWeight:800,fontSize:13,textAlign:"left"}}>
+                    3. Da questo evento in poi
+                    <div style={{fontSize:10,fontWeight:600,color:T.sub,marginTop:2}}>Si crea un nuovo modello così come è salvato l'evento</div>
+                  </button>
+
+                  <button onClick={()=>setChiediAmbitoModifica(false)}
+                    style={{display:"block",width:"100%",background:"transparent",border:"none",
+                      color:T.sub,padding:"8px 0",cursor:"pointer",fontWeight:700,fontSize:13}}>Annulla</button>
+                </div>
+              </div>
+            )}
             {chiediAmbitoVisualizza&&(
               <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:100001,
                 display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
