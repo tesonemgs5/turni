@@ -4897,13 +4897,13 @@ const importsRecenti = useMemo(()=>{
   }, []);
 
   // ── COLORI: aggiunta/rimozione dalla sezione + assegnazione esclusiva ai modelli
-  async function addColoreExtra(hex){
+  async function addColoreExtra(hex, label=null){
     if(!userId || coloriExtra.some(c=>c.hex===hex)) return;
     // 1) SUBITO in locale.
-    setColoriExtra(prev=>[...prev, {hex, label:null, sortOrder:prev.length}]);
+    setColoriExtra(prev=>[...prev, {hex, label, sortOrder:prev.length}]);
     // 2) Backup su Supabase (con retry colonna) + Sheets in parallelo.
     scriviConBackup({
-      tipo:"insert", table:"colori", payload:{ user_id: userId, hex }, matchObj:null,
+      tipo:"insert", table:"colori", payload: label ? { user_id: userId, hex, label } : { user_id: userId, hex }, matchObj:null,
       contesto:"Aggiunta colore", ts:new Date().toISOString(),
       eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelli,
     });
@@ -4957,7 +4957,7 @@ const importsRecenti = useMemo(()=>{
   // registro colori), permettendo di editare liberamente anche i colori
   // delle fasce automatiche (es. #F59E0B "mattina") con la palette
   // condivisa, invece di lasciarli fissi.
-  async function replaceColoreEverywhere(oldHex, newHex){
+  async function replaceColoreEverywhere(oldHex, newHex, nuovoNome=null){
     if(!userId || !newHex || !oldHex || stessoHexColore(oldHex,newHex)) return;
     segnalaModificaOrdineModelli(); // anche un cambio colore e' una modifica da salvare
     // Tutti i modelli del gruppo (stesso colore, confronto case-insensitive).
@@ -4970,7 +4970,7 @@ const importsRecenti = useMemo(()=>{
     // nuovo; se il nuovo esisteva gia' (unione di due gruppi) tiene il suo nome.
     const regVecchio = coloriExtra.find(c=>stessoHexColore(c.hex,oldHex));
     const regNuovo = coloriExtra.find(c=>stessoHexColore(c.hex,newHex));
-    const nomeGruppo = (regNuovo&&regNuovo.label) || (regVecchio&&regVecchio.label) || nomePredefinitoColore(oldHex) || null;
+    const nomeGruppo = nuovoNome || (regNuovo&&regNuovo.label) || (regVecchio&&regVecchio.label) || nomePredefinitoColore(oldHex) || null;
     const sortVecchio = regVecchio ? (regVecchio.sortOrder||0) : coloriExtra.length;
     setColoriExtra(prev=>{
       const senzaVecchio = prev.filter(c=>!stessoHexColore(c.hex,oldHex));

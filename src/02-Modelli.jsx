@@ -729,7 +729,7 @@ export default function VistaModelli({ C }){
 
       {showAddColorPicker&&(
         <ColorPickerModal T={T} cur="#3b82f6" title="Aggiungi colore"
-          onPick={p=>{addColoreExtra(p);setShowAddColorPicker(false);}}
+          onPick={(p,nome)=>{addColoreExtra(p,nome);setShowAddColorPicker(false);}}
           onClose={()=>setShowAddColorPicker(false)}/>
       )}
 
@@ -882,10 +882,10 @@ export default function VistaModelli({ C }){
         <ColorPickerModal T={T} cur={showEditFasciaColor} title="Cambia colore"
           coloriUsati={[...new Set(modelli.map(m=>m.coloreCustom||m.colore||(m.tempo==="h24"?COLORE_H24:colByTime(m.inizio))).filter(Boolean))].filter(h=>String(h).toLowerCase()!==String(showEditFasciaColor).toLowerCase())}
           getNomeColore={p=>nomeDelColore(p,{fasceAutomatiche,coloriExtra})}
-          onPick={async(p)=>{
+          onPick={async(p, nome)=>{
             const old = showEditFasciaColor;
             setShowColorAssignPicker(p);
-            await replaceColoreEverywhere(old, p);
+            await replaceColoreEverywhere(old, p, nome);
           }}
           onClose={()=>setShowEditFasciaColor(null)}/>
       )}
