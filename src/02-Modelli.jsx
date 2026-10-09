@@ -2376,15 +2376,49 @@ export default function VistaModelli({ C }){
                 style={{fontSize:24,color:T.text,fontWeight:900,marginBottom:12,letterSpacing:1,cursor:"pointer",
                   display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                 {(form.label||"EVENTO").toUpperCase()}
+                <span onClick={e=>{e.stopPropagation();setForm(f=>({...f,_apriTitoli:!f._apriTitoli}));}}
+                  style={{fontSize:16,color:T.sub,cursor:"pointer",padding:"2px 6px"}}>{form._apriTitoli?"\u25B2":"\u25BC"}</span>
                 {(()=>{
                   const idModelloAttuale = form.modelloId || form.evtModelloId;
                   const modSel = idModelloAttuale && modelli.find(m=>m.id===idModelloAttuale);
                   if(!modSel || modSel.tempo==="h24" || !modSel.inizio) return null;
-                  return <span style={{fontSize:14,color:T.sub,fontWeight:700}}>{modSel.inizio}→{calcFineModello(modSel)||modSel.fine||""}</span>;
+                  return (
+                    <>
+                      <span style={{fontSize:14,color:T.sub,fontWeight:700}}>{modSel.inizio}{"\u2192"}{calcFineModello(modSel)||modSel.fine||""}</span>
+                      <span onClick={e=>{e.stopPropagation();setForm(f=>({...f,_apriOrario:!f._apriOrario}));}}
+                        style={{fontSize:16,color:T.sub,cursor:"pointer",padding:"2px 6px"}}>{form._apriOrario?"\u25B2":"\u25BC"}</span>
+                    </>
+                  );
                 })()}
-                <span style={{fontSize:12,color:T.sub,fontWeight:700}}>✎ cambia modello</span>
+                <span style={{fontSize:12,color:T.sub,fontWeight:700}}>{"\u270E"} cambia modello</span>
               </div>
             )}
+            {form.editId&&form._apriOrario&&(()=>{
+              const idm = form.modelloId || form.evtModelloId;
+              const ms = idm && modelli.find(m=>m.id===idm);
+              if(!ms || ms.tempo==="h24") return null;
+              const inV = form.offIn!==undefined ? form.offIn : (ms.inizio||"");
+              const outV = form.offOut!==undefined ? form.offOut : (calcFineModello(ms)||ms.fine||"");
+              const stile = {width:"100%",background:T.surface,border:`1px solid ${T.border}`,
+                borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"};
+              return (
+                <div style={{marginBottom:12}}>
+                  <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:3}}>ORARIO DEL TURNO (cambia il turno, non l'ingresso effettivo)</div>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <SmartTimeInput value={inV} style={stile}
+                        onChange={v=>setForm(f=>({...f,offIn:v,
+                          offOut: ms.tempo==="6h15"&&v ? calcFine6h15(v) : ms.tempo==="6h30"&&v ? calcFine6h30(v) : (f.offOut!==undefined ? f.offOut : outV)}))}/>
+                    </div>
+                    <span style={{color:T.sub,fontWeight:700}}>{"\u2192"}</span>
+                    <div style={{flex:1,minWidth:0}}>
+                      <SmartTimeInput value={outV} style={stile}
+                        onChange={v=>setForm(f=>({...f,offOut:v,offIn:f.offIn!==undefined?f.offIn:inV}))}/>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
             {modelli.length>0&&form.editId&&form._showModPicker&&(()=>{
               const modelliDelCal = modelliOrdinati.filter(m=>{
                 if(!calId) return true;
@@ -2499,7 +2533,7 @@ export default function VistaModelli({ C }){
                 </div>
               </>
             )}
-            {!form.shiftId && (
+            {!form.shiftId && (!form.editId || form._apriTitoli) && (
               <div style={{marginBottom:10}}>
                 <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:3}}>TITOLO VISUALIZZATO (LABEL)</div>
                 <AutocompleteInput value={form.label||""} onChange={e=>{
@@ -2515,7 +2549,7 @@ export default function VistaModelli({ C }){
                     boxSizing:"border-box",outline:"none",textTransform:"uppercase"}}/>
               </div>
             )}
-            {(form.modelloId || form.evtModelloId) && (
+            {(form.modelloId || form.evtModelloId) && (!form.editId || form._apriTitoli) && (
               <div style={{marginBottom:10}}>
                 <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:3}}>NOME DEL MODELLO (TITOLO)</div>
                 <AutocompleteInput value={form.modelloTitolo !== undefined ? form.modelloTitolo : ((modelli.find(m=>m.id===(form.modelloId||form.evtModelloId))?.titolo)||"")} onChange={e=>{
@@ -3281,25 +3315,20 @@ export default function VistaModelli({ C }){
                   if(!form.editId){ saveEvt(); return; }
                   const modId = form.modelloId || form.evtModelloId;
                   const modCollegato = modId ? modelli.find(m=>m.id===modId) : null;
+                  // La richiesta "solo questo / da qui in poi / tutti" compare SOLO se cambia: titolo visualizzato,
+                  // nome del modello, colore oppure orario del turno. Tutto il resto si salva sul singolo evento.
                   if(modCollegato){
-                    const origLabel = (modCollegato.label || modCollegato.titolo || "").toUpperCase();
-                    const origTitolo = (modCollegato.titolo || modCollegato.label || "").toUpperCase();
-                    const origColor = (modCollegato.coloreCustom || modCollegato.colore || "").toLowerCase();
-                    const origInizio = modCollegato.tempo === "h24" ? "" : (modCollegato.inizio || "");
-                    const origFine = modCollegato.tempo === "h24" ? "" : (calcFineModello(modCollegato) || modCollegato.fine || "");
-
-                    const nuovaLabel = (form.label || "").toUpperCase();
-                    const nuovoTitolo = (form.modelloTitolo || origTitolo).toUpperCase();
-                    const nuovoColore = (form.colorOvr || modCollegato.coloreCustom || modCollegato.colore || "").toLowerCase();
-                    const nuovoInizio = form.dur === "allday" ? "" : (form.tIn || "");
-                    const nuovaFine = form.dur === "allday" ? "" : (form.tOut || calcFine6h15(form.tIn) || calcFine6h30(form.tIn) || "");
-
-                    const labelCambiata = nuovaLabel !== origLabel;
-                    const titoloCambiato = nuovoTitolo !== origTitolo;
-                    const coloreCambiato = nuovoColore !== origColor;
-                    const orarioCambiato = nuovoInizio !== origInizio || nuovaFine !== origFine;
-
-                    if (labelCambiata || titoloCambiato || coloreCambiato || orarioCambiato) {
+                    const uguali = (a,b)=>String(a||"").trim().toUpperCase()===String(b||"").trim().toUpperCase();
+                    const evOrig = (curEvts||[]).find(x=>x.id===form.editId);
+                    const labelPrima = evOrig ? evOrig.label : (modCollegato.label || modCollegato.titolo);
+                    const colorePrima = evOrig ? evOrig.color : (modCollegato.coloreCustom || modCollegato.colore);
+                    const finePrima = calcFineModello(modCollegato) || modCollegato.fine || "";
+                    const cambiaTitolo = !uguali(form.label, labelPrima);
+                    const cambiaNomeModello = form.modelloTitolo!==undefined && !uguali(form.modelloTitolo, modCollegato.titolo);
+                    const cambiaColore = !!form.colorOvr && String(form.colorOvr).toLowerCase()!==String(colorePrima||"").toLowerCase();
+                    const cambiaOrario = modCollegato.tempo!=="h24" &&
+                      ((form.offIn!==undefined && form.offIn!==(modCollegato.inizio||"")) || (form.offOut!==undefined && form.offOut!==finePrima));
+                    if(cambiaTitolo || cambiaNomeModello || cambiaColore || cambiaOrario){
                       setChiediAmbitoModifica(true);
                       return;
                     }
@@ -3346,10 +3375,10 @@ export default function VistaModelli({ C }){
                     if(mod){
                       const nLabel = (form.label || mod.label || mod.titolo || "").toUpperCase();
                       const nTitoloMod = (form.modelloTitolo || mod.titolo || nLabel).toUpperCase();
-                      const nIn = form.dur === "allday" ? "" : (form.tIn || "");
-                      const nOut = form.dur === "allday" ? "" : (form.tOut || calcFine6h15(form.tIn) || calcFine6h30(form.tIn) || "");
+                      const nIn = (mod?.tempo==="h24") ? "" : (form.offIn!==undefined ? form.offIn : (mod?.inizio || ""));
+                      const nOut = (mod?.tempo==="h24") ? "" : (form.offOut!==undefined ? form.offOut : ((mod ? calcFineModello(mod) : "") || mod?.fine || ""));
                       const nCol = form.colorOvr || mod.coloreCustom || mod.colore || (form.dur === "allday" ? COLORE_H24 : colByTime(nIn));
-                      const nTempo = form.dur === "allday" ? "h24" : form.dur === "fixed" ? "6h15" : form.dur === "fixed30" ? "6h30" : "custom";
+                      const nTempo = mod?.tempo || "custom";
                       await saveModello({
                         ...mod,
                         titolo: nTitoloMod,
@@ -3378,10 +3407,10 @@ export default function VistaModelli({ C }){
                     const mod = modelli.find(m=>m.id===modId);
                     const nLabel = (form.label || mod?.label || mod?.titolo || "").toUpperCase();
                     const nTitoloMod = (form.modelloTitolo || mod?.titolo || nLabel).toUpperCase();
-                    const nIn = form.dur === "allday" ? "" : (form.tIn || "");
-                    const nOut = form.dur === "allday" ? "" : (form.tOut || calcFine6h15(form.tIn) || calcFine6h30(form.tIn) || "");
+                    const nIn = (mod?.tempo==="h24") ? "" : (form.offIn!==undefined ? form.offIn : (mod?.inizio || ""));
+                    const nOut = (mod?.tempo==="h24") ? "" : (form.offOut!==undefined ? form.offOut : ((mod ? calcFineModello(mod) : "") || mod?.fine || ""));
                     const nCol = form.colorOvr || mod?.coloreCustom || mod?.colore || (form.dur === "allday" ? COLORE_H24 : colByTime(nIn));
-                    const nTempo = form.dur === "allday" ? "h24" : form.dur === "fixed" ? "6h15" : form.dur === "fixed30" ? "6h30" : "custom";
+                    const nTempo = mod?.tempo || "custom";
 
                     const esitoNuovo = await saveModello({
                       ...(mod || {}),
