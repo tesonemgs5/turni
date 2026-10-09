@@ -2738,17 +2738,67 @@ export default function VistaModelli({ C }){
       // + anticipo in uscita (Uscita effettiva prima dell'uscita prevista),
       // esattamente come in sincronizzaEventiProtrazione. Mostro la durata
       // totale risultante come riscontro visivo.
-      function calcDurMenoRec(){
+      function calcMinMenoRec(){
         const tInBase = form.tIn||"", tOutBase = form.tOut||calcFine6h15(form.tIn)||calcFine6h30(form.tIn)||"";
         const mIn1=oraInMinuti(tInBase), mIn2=oraInMinuti(form.protMenoRecIn||"");
         const mOut1=oraInMinuti(tOutBase), mOut2=oraInMinuti(form.protMenoRecOut||"");
         let ritardoEntrata=0, anticipoUscita=0;
         if(mIn1!==null&&mIn2!==null){ let d=mIn2-mIn1; if(d<0) d+=24*60; ritardoEntrata=Math.max(0,d); }
         if(mOut1!==null&&mOut2!==null){ let d=mOut1-mOut2; if(d<0) d+=24*60; anticipoUscita=Math.max(0,d); }
-        const tot = ritardoEntrata+anticipoUscita;
-        return tot>0 ? Math.floor(tot/60)+"h"+(tot%60>0?tot%60+"m":"") : "";
+        return ritardoEntrata+anticipoUscita;
       }
-      const durMenoRec = calcDurMenoRec();
+      const minMenoRec = calcMinMenoRec();
+      const durMenoRec = minMenoRec>0 ? Math.floor(minMenoRec/60)+"h"+(minMenoRec%60>0?minMenoRec%60+"m":"") : "";
+      // Da quali giorni viene scalato il consumo: credito delle PROTRAZIONI A RECUPERO,
+      // dal giorno piu' vecchio (FIFO). Se non basta, resta "non scalato" (in rosso).
+      const sezioneScalo = (()=>{
+        if(!(minMenoRec>0)) return null;
+        const fmtMin = (m)=> m<=0 ? "0m" : Math.floor(m/60)+"h"+(m%60>0?" "+(m%60)+"m":"");
+        const fmtData = (k)=>{ const [y,mm,d]=k.split("-"); return `${d}/${mm}/${y}`; };
+        const { perEvento } = computeStornoRecupero();
+        const idFigli = form.editId ? ["entrata","uscita"].map(s=>`protrazione_di_${form.editId}_meno_recupero_${s}`) : [];
+        const figli = (curEvts||[]).filter(e=>idFigli.includes(e.importId)).map(e=>e.id);
+        const perData = {};
+        for(const [dk,calMap] of Object.entries(store.events||{})){
+          for(const evs of Object.values(calMap||{})){
+            for(const e of (evs||[])){
+              const info = perEvento[e.id];
+              if(!info || info.tipo!=="recupero") continue;
+              // il consumo gia' fatto da QUESTO evento torna disponibile (si ricalcola)
+              const mio = info.storni.filter(s=>figli.includes(s.altroEventId)).reduce((a,s)=>a+s.minuti,0);
+              const disp = info.minutiResidui + mio;
+              if(disp>0) perData[dk] = (perData[dk]||0) + disp;
+            }
+          }
+        }
+        let resto = minMenoRec; const righe = [];
+        for(const dk of Object.keys(perData).sort()){
+          if(resto<=0) break;
+          const preso = Math.min(resto, perData[dk]);
+          righe.push({dk, preso}); resto -= preso;
+        }
+        return (
+          <div style={{marginTop:6,background:T.surface,border:"1px solid "+(resto>0?"#dc2626":T.border),borderRadius:8,padding:"8px 10px"}}>
+            {righe.length>0&&(
+              <>
+                <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:4}}>SCALATO DA</div>
+                {righe.map(r=>(
+                  <div key={r.dk} style={{display:"flex",justifyContent:"space-between",fontSize:12}}>
+                    <span style={{color:T.text,fontWeight:600}}>{fmtData(r.dk)}</span>
+                    <span style={{color:"#dc2626",fontWeight:800}}>-{fmtMin(r.preso)}</span>
+                  </div>
+                ))}
+              </>
+            )}
+            {resto>0&&(
+              <div style={{fontSize:12,fontWeight:800,color:"#dc2626",marginTop:righe.length>0?6:0}}>
+                {righe.length>0 ? `Non scalato: ${fmtMin(resto)}` : "Non scalato"}
+                {" \u2014 credito insufficiente (ore non caricate o a debito)"}
+              </div>
+            )}
+          </div>
+        );
+      })();
       return (
         <>
         <div style={{display:"flex",gap:8}}>
@@ -2809,6 +2859,7 @@ export default function VistaModelli({ C }){
               <div style={{fontSize:12,fontWeight:900,color:"#dc2626"}}>{durMenoRec?"-"+durMenoRec:"—"}</div>
             </div>
           </div>
+          {sezioneScalo}
         </div>
         </>
       );
