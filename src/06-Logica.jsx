@@ -4950,12 +4950,17 @@ const importsRecenti = useMemo(()=>{
   // registro colori), permettendo di editare liberamente anche i colori
   // delle fasce automatiche (es. #F59E0B "mattina") con la palette
   // condivisa, invece di lasciarli fissi.
-  async function replaceColoreEverywhere(oldHex, newHex, nuovoNome=null){
+  // idsModelli (facoltativo): se presente cambia colore SOLO a quei modelli (es. quelli del
+  // calendario aperto); gli altri modelli con lo stesso colore restano come sono.
+  async function replaceColoreEverywhere(oldHex, newHex, nuovoNome=null, idsModelli=null){
     if(!userId || !newHex || !oldHex || stessoHexColore(oldHex,newHex)) return;
     segnalaModificaOrdineModelli(); // anche un cambio colore e' una modifica da salvare
     // Tutti i modelli del gruppo (stesso colore, confronto case-insensitive).
-    const daAggiornare = modelli.filter(m=>m && stessoHexColore(m.coloreCustom||m.colore, oldHex));
+    const soloQuesti = Array.isArray(idsModelli) ? new Set(idsModelli) : null;
+    const daAggiornare = modelli.filter(m=>m && stessoHexColore(m.coloreCustom||m.colore, oldHex) && (!soloQuesti || soloQuesti.has(m.id)));
     const idsDaAgg = new Set(daAggiornare.map(m=>m.id));
+    // Cambio parziale: altri modelli (fuori selezione) usano ancora il vecchio colore.
+    const parziale = !!soloQuesti && modelli.some(m=>m && !idsDaAgg.has(m.id) && stessoHexColore(m.coloreCustom||m.colore, oldHex));
     const modelliAggiornati = modelli.map(m=>idsDaAgg.has(m?.id) ? {...m, coloreCustom:newHex, colore:newHex} : m);
     setModelli(modelliAggiornati);
 
@@ -4963,26 +4968,28 @@ const importsRecenti = useMemo(()=>{
     // nuovo; se il nuovo esisteva gia' (unione di due gruppi) tiene il suo nome.
     const regVecchio = coloriExtra.find(c=>stessoHexColore(c.hex,oldHex));
     const regNuovo = coloriExtra.find(c=>stessoHexColore(c.hex,newHex));
-    const nomeGruppo = nuovoNome || (regNuovo&&regNuovo.label) || (regVecchio&&regVecchio.label) || nomePredefinitoColore(oldHex) || null;
+    const nomeGruppo = parziale
+      ? (nuovoNome || (regNuovo&&regNuovo.label) || nomePredefinitoColore(newHex) || null)
+      : (nuovoNome || (regNuovo&&regNuovo.label) || (regVecchio&&regVecchio.label) || nomePredefinitoColore(oldHex) || null);
     const sortVecchio = regVecchio ? (regVecchio.sortOrder||0) : coloriExtra.length;
     setColoriExtra(prev=>{
-      const senzaVecchio = prev.filter(c=>!stessoHexColore(c.hex,oldHex));
+      const senzaVecchio = parziale ? prev : prev.filter(c=>!stessoHexColore(c.hex,oldHex));
       if(senzaVecchio.some(c=>stessoHexColore(c.hex,newHex))) return senzaVecchio.map(c=>stessoHexColore(c.hex,newHex)?{...c,label:nomeGruppo}:c);
       return [...senzaVecchio, {hex:newHex, label:nomeGruppo, sortOrder:sortVecchio}];
     });
 
     // Cambio colore = cambio anche in Impostazioni: ogni fascia con il vecchio colore lo segue.
     const fasceAttuali = store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT;
-    if(fasceAttuali.some(f=>stessoHexColore(f.color,oldHex))){
+    if(!parziale && fasceAttuali.some(f=>stessoHexColore(f.color,oldHex))){
       const me = fasceAttuali.map(f=>stessoHexColore(f.color,oldHex)?{...f,color:newHex}:f);
       setStore(s=>({...s, fasceAutomatiche:me}));
       saveSettings({fasce_automatiche:me});
     }
-    if(stessoHexColore(store.sundayColor, oldHex)){
+    if(!parziale && stessoHexColore(store.sundayColor, oldHex)){
       setStore(s=>({...s, sundayColor:newHex}));
       saveSettings({sunday_color:newHex});
     }
-    if(stessoHexColore(store.holidayColor, oldHex)){
+    if(!parziale && stessoHexColore(store.holidayColor, oldHex)){
       setStore(s=>({...s, holidayColor:newHex}));
       saveSettings({holiday_color:newHex});
     }
@@ -5008,7 +5015,7 @@ const importsRecenti = useMemo(()=>{
         });
         if(ris?.errore) errori++;
       }
-      if(regVecchio){
+      if(regVecchio && !parziale){
         await scriviConBackup({ tipo:"delete", table:"colori", payload:null, matchObj:{user_id:userId, hex:regVecchio.hex},
           contesto:"Sostituzione colore (rimozione vecchio)", ts, opzioni:{ soloLog:true } });
       }
