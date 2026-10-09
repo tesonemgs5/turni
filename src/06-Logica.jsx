@@ -4834,6 +4834,9 @@ const importsRecenti = useMemo(()=>{
       if(v.tempo) nuovo.tempo = v.tempo;
       if(v.colore!==undefined && v.colore!==null) nuovo.colore = v.colore;
       if(v.colore_custom!==undefined) nuovo.coloreCustom = v.colore_custom||v.colore||m.coloreCustom||null;
+      const cambiato = ["sortOrder","titolo","label","inizio","fine","tempo","colore","coloreCustom"]
+        .some(k=>(nuovo[k]??null)!==(m[k]??null));
+      if(!cambiato) return m;
       daRiscrivere.push(nuovo);
       return nuovo;
     });
@@ -4868,11 +4871,7 @@ const importsRecenti = useMemo(()=>{
   // ── Gestione del timer "modifiche non salvate": persistito su localStorage
   // (non solo stato React) così l'avviso sopravvive alla chiusura dell'app.
   function segnalaModificaOrdineModelli(){
-    try{ localStorage.setItem(ULTIMA_MODIFICA_MODELLI_KEY, String(Date.now())); }catch{}
-    if(timerSalvaDisposizioneRef.current) clearTimeout(timerSalvaDisposizioneRef.current);
-    timerSalvaDisposizioneRef.current = setTimeout(()=>{
-      setShowSalvaDisposizionePopup(true);
-    }, 30000);
+    // Popup "Salvare questa disposizione?" rimosso: non parte nessun timer.
   }
   function annullaTimerSalvaDisposizione(){
     if(timerSalvaDisposizioneRef.current){ clearTimeout(timerSalvaDisposizioneRef.current); timerSalvaDisposizioneRef.current=null; }
@@ -4885,18 +4884,8 @@ const importsRecenti = useMemo(()=>{
   // tempo restante, cosi' la persona ha comunque la finestra di 30s intera
   // dal momento della modifica per salvare manualmente prima dell'avviso.
   useEffect(()=>{
-    let raw;
-    try{ raw = localStorage.getItem(ULTIMA_MODIFICA_MODELLI_KEY); }catch{ raw=null; }
-    if(!raw) return;
-    const trascorso = Date.now() - Number(raw);
-    if(trascorso >= 30000){
-      setShowSalvaDisposizionePopup(true);
-    } else {
-      timerSalvaDisposizioneRef.current = setTimeout(()=>{
-        setShowSalvaDisposizionePopup(true);
-      }, 30000 - trascorso);
-    }
-    return ()=>{ if(timerSalvaDisposizioneRef.current) clearTimeout(timerSalvaDisposizioneRef.current); };
+    try{ localStorage.removeItem(ULTIMA_MODIFICA_MODELLI_KEY); }catch{}
+    return;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
