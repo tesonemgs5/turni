@@ -3379,7 +3379,9 @@ export default function VistaModelli({ C }){
                     const cambiaColore = !!form.colorOvr && String(form.colorOvr).toLowerCase()!==String(colorePrima||"").toLowerCase();
                     const cambiaOrario = modCollegato.tempo!=="h24" &&
                       ((form.offIn!==undefined && form.offIn!==(modCollegato.inizio||"")) || (form.offOut!==undefined && form.offOut!==finePrima));
-                    if(cambiaTitolo || cambiaNomeModello || cambiaColore || cambiaOrario){
+                    // Se hai scelto un altro modello con "cambia modello" vale solo per questo evento: niente richiesta.
+                    const cambioModello = !!form.modelloId && form.modelloId!==form.evtModelloId;
+                    if(!cambioModello && (cambiaTitolo || cambiaNomeModello || cambiaColore || cambiaOrario)){
                       setChiediAmbitoModifica(true);
                       return;
                     }

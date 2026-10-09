@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
-import { ColorPickerModal, nomeDelColore as nomeDelColoreShared, ConfermaEliminazione, preparaFixCursore } from "./05-Comuni";
+import { ColorPickerModal, nomeDelColore as nomeDelColoreShared, ConfermaEliminazione, preparaFixCursore, SmartTimeInput } from "./05-Comuni";
 
 // ═══════════════════════════════════════════════════════════════════════
 // 04-Rotazione.jsx — RICOSTRUITO
@@ -1496,7 +1496,7 @@ export function ModelForm({
           {form.tempo === "personalizzato" ? (
             <div style={{ flex: "0 1 130px" }}>
               <div style={{ fontSize: 9, color: T.sub, marginBottom: 3, fontWeight: 700 }}>ORARIO DI FINE</div>
-              <input type="time" value={form.fine || ""} onChange={e => setForm(prev => ({ ...prev, fine: e.target.value }))}
+              <SmartTimeInput consenti24 value={form.fine || ""} onChange={v => setForm(prev => ({ ...prev, fine: v }))}
                 style={inputStyle} />
             </div>
           ) : (form.tempo === "6h15" || form.tempo === "6h30") && form.inizio ? (

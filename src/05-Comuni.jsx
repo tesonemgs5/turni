@@ -161,7 +161,8 @@ export function CalBadge({ calId, calAttivo, coloreCal, testoContrasto, T, store
 
 // #region SEZIONE 22: SMART TIME INPUT
 // ═══════════════════════════════════════════════════════════════
-export function SmartTimeInput({ value, onChange, style }) {
+// consenti24: permette 24:00 (fine giornata), usato per l'orario di fine di un modello.
+export function SmartTimeInput({ value, onChange, style, consenti24 = false }) {
   const [digits, setDigits] = useState(() => (value || "").replace(/\D/g, "").slice(0, 4));
 
   useEffect(() => {
@@ -180,8 +181,9 @@ export function SmartTimeInput({ value, onChange, style }) {
     }
     if (d.length >= 2) {
       let hh = parseInt(d.slice(0, 2), 10);
-      if (hh > 23) hh = 23;
+      if (hh > (consenti24 ? 24 : 23)) hh = consenti24 ? 24 : 23;
       d = String(hh).padStart(2, "0") + d.slice(2);
+      if (consenti24 && hh === 24 && d.length >= 3) d = "2400";
     }
     if (d.length >= 4) {
       let mm = parseInt(d.slice(2, 4), 10);
