@@ -1269,11 +1269,6 @@ export default function VistaModelli({ C }){
         </div>
       </Sec>
 
-      {inApk()&&(
-        <SecCollapsible label="AGGIORNAMENTI APP" T={T}>
-          <ImpostazioniAggiornamenti T={T}/>
-        </SecCollapsible>
-      )}
       <SecCollapsible label="FASCE ORARIE AUTOMATICHE" T={T}>
         <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
           Nome, orario e colore delle 4 fasce usate per assegnare il colore ai NUOVI modelli in base all'orario. I modelli già creati non cambiano.
@@ -2065,6 +2060,11 @@ export default function VistaModelli({ C }){
         </div>
       </SecCollapsible>
       </SecCollapsible>
+      {inApk()&&(
+        <SecCollapsible label="AGGIORNAMENTI APP" T={T}>
+          <ImpostazioniAggiornamenti T={T}/>
+        </SecCollapsible>
+      )}
     </div>
   );
 
