@@ -1353,7 +1353,7 @@ export function ModelForm({
   reports = [], getConteggioConfig, updateConteggioConfig,
   suggerimentiTitolo = [], suggerimentiNomeVis = [], onRimuoviSuggerimento,
   onSave,
-  calendari = [], onCopia,
+  calendari = [], onCopia, onColoreNome,
 }) {
   const [mostraSuggTitolo, setMostraSuggTitolo] = useState(false);
   const [mostraCopia, setMostraCopia] = useState(false);
@@ -1511,18 +1511,24 @@ export function ModelForm({
 
       {campo("COLORE", (
         <div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
             {paletteDaMostrare.map(c => (
               <div key={c} onClick={() => sceltaColore(c)}
-                style={{
-                  width: 26, height: 26, borderRadius: "50%", background: c, cursor: "pointer",
-                  border: form.coloreCustom === c ? `2px solid ${T.text}` : "2px solid transparent",
+                style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, cursor: "pointer", width: 52 }}>
+                <div style={{
+                  width: 32, height: 32, borderRadius: "50%", background: c, flexShrink: 0,
+                  outline: form.coloreCustom === c ? `3px solid ${T.text}` : "none", outlineOffset: 2,
                 }} />
+                <div style={{ fontSize: 9, color: T.sub, fontWeight: 700, textAlign: "center", maxWidth: 52,
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {nomeDelColore(c)}
+                </div>
+              </div>
             ))}
             {!mostraTuttaPalette && (
               <div onClick={() => setMostraTuttaPalette(true)} title="Scegli tra tutti i colori"
                 style={{
-                  width: 26, height: 26, borderRadius: "50%", background: T.s2, cursor: "pointer",
+                  width: 32, height: 32, borderRadius: "50%", background: T.s2, cursor: "pointer",
                   border: `1px dashed ${T.border}`, display: "flex", alignItems: "center",
                   justifyContent: "center", fontSize: 14, fontWeight: 900, color: T.sub,
                 }}>+</div>
@@ -1545,7 +1551,7 @@ export function ModelForm({
             <ColorPickerModal T={T} cur={coloreAnteprima} title="Colore modello"
               coloriUsati={coloriUsati}
               getNomeColore={nomeDelColore}
-              onPick={c => sceltaColore(c)}
+              onPick={(c, nome) => { sceltaColore(c); if (nome && onColoreNome) onColoreNome(c, nome); }}
               onClose={() => setShowColorPicker(false)} />
           )}
         </div>

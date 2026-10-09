@@ -446,6 +446,7 @@ function AppInterno({ session }){
             </div>
             <ModelForm T={T} form={modelForm} setForm={setModelForm} accent={accent} dark={dark}
               fasceAutomatiche={fasceAutomatiche} modelli={modelli} coloriExtra={coloriExtra}
+              onColoreNome={ensureColoreRegistrato}
               reports={store.reports||[]} getConteggioConfig={getConteggioConfig} updateConteggioConfig={updateConteggioConfig}
               suggerimentiTitolo={autocompleteValori.titolo} suggerimentiNomeVis={autocompleteValori.nome_visualizzato}
               onRimuoviSuggerimento={rimuoviValoreAutocomplete}

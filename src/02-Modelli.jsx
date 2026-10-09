@@ -2412,7 +2412,7 @@ export default function VistaModelli({ C }){
                     </div>
                     <span style={{color:T.sub,fontWeight:700}}>{"\u2192"}</span>
                     <div style={{flex:1,minWidth:0}}>
-                      <SmartTimeInput value={outV} style={stile}
+                      <SmartTimeInput consenti24 value={outV} style={stile}
                         onChange={v=>setForm(f=>({...f,offOut:v,offIn:f.offIn!==undefined?f.offIn:inV}))}/>
                     </div>
                   </div>
@@ -2623,7 +2623,7 @@ export default function VistaModelli({ C }){
       {form.dur==="custom"&&(
         <div style={{flex:"1 1 0",minWidth:0}}>
           <div style={{fontSize:9,color:T.sub,marginBottom:3,minHeight:22,lineHeight:1.3}}>USCITA</div>
-          <SmartTimeInput value={form.tOut||""} onChange={v=>setForm(f=>({...f,tOut:v}))}
+          <SmartTimeInput consenti24 value={form.tOut||""} onChange={v=>setForm(f=>({...f,tOut:v}))}
             style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
               borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"}}/>
         </div>
