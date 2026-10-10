@@ -15,6 +15,25 @@ import { leggiPdfCalendarioTurni } from "./14-pdf-turni";
 
 // #region SEZIONE 28: IMPORT TURNI DA JSON
 // ═══════════════════════════════════════════════════════════════
+// Elenco preciso dei turni di un'importazione (si apre toccando la riga).
+function DettaglioImport({ imp, T, titolo }) {
+  return (
+    <details style={{flex:1,minWidth:0}}>
+      <summary style={{cursor:"pointer",listStyle:"none"}}>
+        <div style={{fontSize:13,color:T.text,fontWeight:700}}>{titolo}</div>
+        <div style={{fontSize:11,color:T.sub}}>
+          {fmtDataIT(imp.minDate)} → {fmtDataIT(imp.maxDate)} · <span style={{color:"#6366f1",fontWeight:700}}>▾ mostra i turni</span>
+        </div>
+      </summary>
+      <div style={{maxHeight:200,overflowY:"auto",marginTop:6,paddingLeft:6,borderLeft:`2px solid ${T.border}`}}>
+        {(imp.eventi||[]).map((e,i)=>(
+          <div key={i} style={{fontSize:11,color:T.text,padding:"2px 0"}}>{fmtDataIT(e.d)} — {e.l||"(senza nome)"}</div>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 export function ImportaTurniJsonDialog({T, accent, dark, importsRecenti, year, month, onClose, onConfirm, onDeleteImport}){
   const [step, setStep] = useState("menu"); // menu | incolla | riepilogo | registro
   const [testoJson, setTestoJson] = useState("");
@@ -162,10 +181,7 @@ Regole: una riga per ogni turno. "data" in formato YYYY-MM-DD. "titolo" esattame
                 {importsRecenti.map(imp=>(
                   <div key={imp.importId} style={{display:"flex",alignItems:"center",justifyContent:"space-between",
                     padding:"10px 0",borderBottom:`1px solid ${T.border}`}}>
-                    <div>
-                      <div style={{fontSize:13,color:T.text,fontWeight:700}}>{imp.count} eventi</div>
-                      <div style={{fontSize:11,color:T.sub}}>{fmtDataIT(imp.minDate)} → {fmtDataIT(imp.maxDate)}</div>
-                    </div>
+                    <DettaglioImport imp={imp} T={T} titolo={`${imp.count} eventi`}/>
                     <button onClick={()=>setConfermaEliminaImportId(imp.importId)}
                       style={{background:"none",border:"none",color:"#ef4444",fontSize:18,cursor:"pointer",padding:4}}>🗑️</button>
                   </div>
@@ -1200,10 +1216,7 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
                   {importsRecenti.map(imp=>(
                     <div key={imp.calendarId+"|"+imp.importId} style={{display:"flex",alignItems:"center",justifyContent:"space-between",
                       padding:"10px 0",borderBottom:`1px solid ${T.border}`}}>
-                      <div>
-                        <div style={{fontSize:13,color:T.text,fontWeight:700}}>{imp.count} eventi{imp.calName?` — ${imp.calName}`:""}</div>
-                        <div style={{fontSize:11,color:T.sub}}>{fmtDataIT(imp.minDate)} → {fmtDataIT(imp.maxDate)}</div>
-                      </div>
+                      <DettaglioImport imp={imp} T={T} titolo={`${imp.count} eventi${imp.calName?` — ${imp.calName}`:""}`}/>
                       <button onClick={()=>setConfermaEliminaImportId(imp.calendarId+"|"+imp.importId)}
                         style={{background:"none",border:"none",color:"#ef4444",fontSize:18,cursor:"pointer",padding:4}}>🗑️</button>
                     </div>

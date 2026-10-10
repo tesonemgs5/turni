@@ -8,6 +8,8 @@ import {
   getContrastTextColor, getShiftBand, isFestivo, isModelloTurnazioneDefault, italianHols,
   leggiCodaSync, leggiErroriSilenziati, leggiLogErrori, loadFromLocalStorage, clearLocalStorageCache, minsOf,
   minutiTurnoModello, normalizzaOraHHMM, oraInMinuti, registraListenerCodaErrori, registraProblemiImport,
+  registraAttivita, confermaSupabase, segnaInCodaSupabase, aggiornaEsitoVoceLog, segnaContestoLog, impostaSorgenteLog,
+  registraListenerLogSync, leggiLogDaSincronizzare, segnaLogSincronizzato, voceLogPerSupabase, diffDisposizione,
   sameData, saveDatiSessioneLocale, saveToLocalStorage, scriviCodaSync, segnalaErrore, segnalaErroreSoloLog,
   uid, withEventoAggiornato, withEventoAggiunto, withEventoRimosso,
   esportaBackupLocaleCompleto, importaBackupLocaleCompleto, CATEGORIE_BACKUP_LOCALE,
@@ -189,6 +191,7 @@ export function useAppCore(session){
       if(opzioni.soloLog) segnalaErroreSoloLog(error, contesto);
       else segnalaErroreDb(error, contesto);
     }
+    else confermaSupabase((data||[]).map(r=>r?.id));
     return { data, error };
   }
   async function dbDelete(table, matchObj, contesto, opzioni={}){
@@ -197,6 +200,7 @@ export function useAppCore(session){
       if(opzioni.soloLog) segnalaErroreSoloLog(error, contesto);
       else segnalaErroreDb(error, contesto);
     }
+    else confermaSupabase((data||[]).map(r=>r?.id));
     return { data, error };
   }
   async function dbInsert(table, payload, contesto, opzioni={}){
@@ -205,6 +209,7 @@ export function useAppCore(session){
       if(opzioni.soloLog) segnalaErroreSoloLog(error, contesto);
       else segnalaErroreDb(error, contesto);
     }
+    else confermaSupabase((data||[]).map(r=>r?.id));
     return { data, error };
   }
 
@@ -351,6 +356,7 @@ export function useAppCore(session){
   }
 
   async function scriviConBackup({ tipo, table, payload, matchObj, contesto, ts, eventsPerSheets, calendarsPerSheets, modelliPerSheets, opzioni={} }){
+    const idsOp = [ (payload && !Array.isArray(payload)) ? payload.id : null, matchObj?.id ].filter(Boolean);
     function accodaSilenziosamente(){
       // Locale è già scritto dal chiamante prima di arrivare qui: qui si
       // accoda solo il backup remoto, senza disturbare l'utente. Nessun
@@ -359,6 +365,7 @@ export function useAppCore(session){
       const coda = leggiCodaSync();
       coda.push({ id: generaIdLocale(), ts: ts||new Date().toISOString(), tipo, table, payload, match: matchObj, contesto });
       scriviCodaSync(coda);
+      segnaInCodaSupabase(idsOp);
       return { ok:true, accodato:true, errore:null };
     }
     // ─── Se il browser segnala che non c'è connessione, non si tenta
@@ -424,12 +431,14 @@ export function useAppCore(session){
         // segnaliamo nel solo log tecnico e consideriamo l'operazione riuscita.
         if(verifica.direte || opzioni.soloLog){
           segnalaErroreSoloLog(`Verifica post-salvataggio non confermata (il salvataggio stesso è andato a buon fine su Supabase). Dettaglio: ${verifica.motivo}`, `${contesto} (verifica saltata)`);
+          confermaSupabase(idsOp);
           return { ok:true, verificaSaltata:true, errore:null };
         }
         const erroreVerifica = { message: verifica.motivo };
         segnalaErroreDb(erroreVerifica, `${contesto} (controllo dopo il salvataggio)`);
         return { ok:false, errore: erroreVerifica };
       }
+      confermaSupabase(idsOp);
       return { ok:true, errore:null };
     }catch(e){
       // Eccezione di rete (offline, DNS non risolto, timeout...): l'intera
@@ -1024,6 +1033,7 @@ export function useAppCore(session){
         }
         // Aggiorno anche la cache delle impostazioni visive, così il
         // prossimo avvio dell'app parte già col colore giusto, senza flash.
+        impostaSorgenteLog("remoto");
         saveToLocalStorage(events, calendars, modelliMappati, calId, {
           theme, extraHols, sundayColor: savedSundayColor, holidayColor: savedHolidayColor,
           fasceAutomatiche: savedFasce, nationalHolsEnabled: savedNationalHolsEnabled,
@@ -1078,6 +1088,7 @@ export function useAppCore(session){
           const daCache = calIdDaCache && calendars.some(c=>c.id===calIdDaCache) ? calIdDaCache : null;
           return daCache || calendars[0]?.id || null;
         });
+        impostaSorgenteLog("remoto");
         saveToLocalStorage(events, calendars, modelliMappati, cached?.calId);
         isInitialized.current = true;
         setLoading(false);
@@ -1576,6 +1587,7 @@ export function useAppCore(session){
           }
         } else {
           rimasti.push(null); // marcato come completato, verrà filtrato sotto
+          confermaSupabase([op.match?.id, op.payload?.id].filter(Boolean));
         }
       } catch(e){
         // Eccezione di rete (offline di nuovo, timeout...): resta in coda,
@@ -2766,50 +2778,105 @@ export function useAppCore(session){
     }
   }
 
-  async function delEvtiRotazioneDaData(rotazioneId, fromDateKey, cId, limit=null){
-    let query = supabase.from("events").select("id,date_key")
-      .eq("rotazione_id", rotazioneId).eq("user_id", userId)
-      .gte("date_key", fromDateKey).order("date_key",{ascending:true});
-    const { data: rows, error } = await query;
-    if(error){ segnalaErroreDb(error, "Eliminazione eventi rotazione da data"); return; }
-    if(!rows) return;
-    const toDelete = limit ? rows.slice(0, limit) : rows;
-    const ids = toDelete.map(r=>r.id);
-    if(ids.length===0) return;
-    const { error: delErr } = await supabase.from("events").delete().in("id", ids).eq("user_id", userId);
-    if(delErr){ segnalaErroreDb(delErr, "Eliminazione eventi rotazione da data"); return; }
-    setStore(prev=>{
-      const ns=JSON.parse(JSON.stringify(prev));
-      const idSet = new Set(ids);
-      for(const dKey of Object.keys(ns.events||{})){
-        if(ns.events[dKey]?.[cId]){
-          ns.events[dKey][cId] = ns.events[dKey][cId].filter(e=>!idSet.has(e.id));
+  // ── Cancellazioni di massa: PRIMA in locale, POI su Supabase ─────────────
+  // 1) stato dell'app + cache del dispositivo (il Log lo registra da qui, con l'elenco
+  //    preciso dei turni); 2) cancellazione su Supabase a blocchi; se manca la rete
+  //    le cancellazioni restano in coda e partono appena torna la linea.
+  function accodaCancellazioniEventi(ids, contesto){
+    const coda = leggiCodaSync();
+    const ts = new Date().toISOString();
+    for(const id of ids){
+      coda.push({ id: generaIdLocale(), ts, tipo:"delete", table:"events", payload:null, match:{ id, user_id:userId }, contesto });
+    }
+    scriviCodaSync(coda);
+    segnaInCodaSupabase(ids);
+  }
+
+  async function eliminaEventiLocalFirst({ contesto, idsLocali, aggiorna, queryServer }){
+    segnaContestoLog(contesto);
+    if(idsLocali.length>0){
+      setStore(prev=>{
+        const ns = aggiorna(prev);
+        saveToLocalStorage(ns.events, ns.calendars, modelli);
+        syncSeAttivo(ns.events, ns.calendars);
+        return ns;
+      });
+    }
+    let idsServer = [];
+    let reteOk = !(typeof navigator!=="undefined" && navigator.onLine===false);
+    if(reteOk){
+      try{
+        const r = await queryServer();
+        if(r?.error){
+          if(eRoreDiRete(r.error)) reteOk = false;
+          else segnalaErroreDb(r.error, contesto);
+        } else idsServer = r?.ids || [];
+      }catch{ reteOk = false; }
+    }
+    const tutti = [...new Set([...idsLocali, ...idsServer].map(String))];
+    if(tutti.length===0) return;
+    if(!reteOk){ accodaCancellazioniEventi(tutti, contesto); return; }
+    for(let k=0; k<tutti.length; k+=100){
+      const blocco = tutti.slice(k, k+100);
+      try{
+        const { error } = await supabase.from("events").delete().in("id", blocco).eq("user_id", userId);
+        if(error){
+          if(eRoreDiRete(error)){ accodaCancellazioniEventi(tutti.slice(k), contesto); return; }
+          segnalaErroreDb(error, contesto);
+          return;
         }
-      }
-      syncSeAttivo(ns.events, ns.calendars);
-      return ns;
+        confermaSupabase(blocco);
+      }catch{ accodaCancellazioniEventi(tutti.slice(k), contesto); return; }
+    }
+  }
+
+  async function delEvtiRotazioneDaData(rotazioneId, fromDateKey, cId, limit=null){
+    let locali = [];
+    for(const [dKey, calMap] of Object.entries(store.events||{})){
+      if(dKey < fromDateKey) continue;
+      for(const e of (calMap?.[cId]||[])) if(e.rotazioneId===rotazioneId) locali.push({ id:e.id, dKey });
+    }
+    locali.sort((a,b)=>a.dKey.localeCompare(b.dKey));
+    if(limit) locali = locali.slice(0, limit);
+    const idsLocali = locali.map(x=>x.id);
+    await eliminaEventiLocalFirst({
+      contesto:"Eliminazione eventi rotazione da data", idsLocali,
+      aggiorna: prev=>{
+        const ns = JSON.parse(JSON.stringify(prev));
+        const idSet = new Set(idsLocali.map(String));
+        for(const dKey of Object.keys(ns.events||{})){
+          if(ns.events[dKey]?.[cId]) ns.events[dKey][cId] = ns.events[dKey][cId].filter(e=>!idSet.has(String(e.id)));
+        }
+        return ns;
+      },
+      queryServer: async()=>{
+        if(limit) return { ids:[] }; // con limite fa fede l'elenco locale (stesso ordine per data)
+        const { data, error } = await supabase.from("events").select("id")
+          .eq("rotazione_id", rotazioneId).eq("user_id", userId).gte("date_key", fromDateKey);
+        return { ids:(data||[]).map(r=>r.id), error };
+      },
     });
   }
 
   async function delTutteEvtiRotazione(rotazioneId, cId){
-    const { data: rows, error } = await supabase.from("events").select("id")
-      .eq("rotazione_id", rotazioneId).eq("user_id", userId);
-    if(error){ segnalaErroreDb(error, "Eliminazione eventi rotazione"); return; }
-    if(!rows) return;
-    const ids = rows.map(r=>r.id);
-    if(ids.length===0) return;
-    const { error: delErr } = await supabase.from("events").delete().in("id", ids).eq("user_id", userId);
-    if(delErr){ segnalaErroreDb(delErr, "Eliminazione eventi rotazione"); return; }
-    setStore(prev=>{
-      const ns=JSON.parse(JSON.stringify(prev));
-      const idSet = new Set(ids);
-      for(const dKey of Object.keys(ns.events||{})){
-        if(ns.events[dKey]?.[cId]){
-          ns.events[dKey][cId] = ns.events[dKey][cId].filter(e=>!idSet.has(e.id));
+    const idsLocali = [];
+    for(const calMap of Object.values(store.events||{}))
+      for(const e of (calMap?.[cId]||[])) if(e.rotazioneId===rotazioneId) idsLocali.push(e.id);
+    await eliminaEventiLocalFirst({
+      contesto:"Eliminazione eventi rotazione", idsLocali,
+      aggiorna: prev=>{
+        const ns = JSON.parse(JSON.stringify(prev));
+        const idSet = new Set(idsLocali.map(String));
+        for(const dKey of Object.keys(ns.events||{})){
+          if(ns.events[dKey]?.[cId]) ns.events[dKey][cId] = ns.events[dKey][cId].filter(e=>!idSet.has(String(e.id)));
         }
-      }
-      syncSeAttivo(ns.events, ns.calendars);
-      return ns;
+        return ns;
+      },
+      queryServer: async()=>{
+        const { data, error } = await supabase.from("events").select("id")
+          .eq("rotazione_id", rotazioneId).eq("user_id", userId);
+        return { ids:(data||[]).map(r=>r.id), error };
+      },
     });
   }
 
@@ -2819,25 +2886,27 @@ export function useAppCore(session){
     const ultimoGiorno = new Date(y, m+1, 0).getDate();
     const fromKey = `${y}-${mm}-01`;
     const toKey = `${y}-${mm}-${String(ultimoGiorno).padStart(2,"0")}`;
-    const { data: rows, error } = await supabase.from("events").select("id")
-      .eq("user_id", userId).eq("calendar_id", cId)
-      .gte("date_key", fromKey).lte("date_key", toKey);
-    if(error){ segnalaErroreDb(error, "Eliminazione eventi del mese"); return; }
-    if(!rows) return;
-    const ids = rows.map(r=>r.id);
-    if(ids.length===0) return;
-    const { error: delErr } = await supabase.from("events").delete().in("id", ids).eq("user_id", userId);
-    if(delErr){ segnalaErroreDb(delErr, "Eliminazione eventi del mese"); return; }
-    setStore(prev=>{
-      const ns=JSON.parse(JSON.stringify(prev));
-      for(const dKey of Object.keys(ns.events||{})){
-        if(dKey>=fromKey && dKey<=toKey && ns.events[dKey]?.[cId]){
-          delete ns.events[dKey][cId];
+    const idsLocali = [];
+    for(const [dKey, calMap] of Object.entries(store.events||{})){
+      if(dKey>=fromKey && dKey<=toKey) for(const e of (calMap?.[cId]||[])) idsLocali.push(e.id);
+    }
+    await eliminaEventiLocalFirst({
+      contesto:"Eliminazione eventi del mese", idsLocali,
+      aggiorna: prev=>{
+        const ns = JSON.parse(JSON.stringify(prev));
+        for(const dKey of Object.keys(ns.events||{})){
+          if(dKey>=fromKey && dKey<=toKey && ns.events[dKey]?.[cId]){
+            delete ns.events[dKey][cId];
+          }
         }
-      }
-      saveToLocalStorage(ns.events, ns.calendars, modelli);
-      syncSeAttivo(ns.events, ns.calendars);
-      return ns;
+        return ns;
+      },
+      queryServer: async()=>{
+        const { data, error } = await supabase.from("events").select("id")
+          .eq("user_id", userId).eq("calendar_id", cId)
+          .gte("date_key", fromKey).lte("date_key", toKey);
+        return { ids:(data||[]).map(r=>r.id), error };
+      },
     });
   }
 
@@ -2852,30 +2921,32 @@ export function useAppCore(session){
     const ultimoGiorno = new Date(y, m+1, 0).getDate();
     const fromKey = `${y}-${mm}-01`;
     const toKey = `${y}-${mm}-${String(ultimoGiorno).padStart(2,"0")}`;
-    const { data: rows, error } = await supabase.from("events").select("id, modello_id")
-      .eq("user_id", userId).in("calendar_id", calIds)
-      .gte("date_key", fromKey).lte("date_key", toKey);
-    if(error){ segnalaErroreDb(error, "Eliminazione eventi selezionati del mese"); return; }
-    const ids = (rows||[]).filter(r=>scelti.has(r.modello_id||VUOTO)).map(r=>r.id);
-    if(ids.length===0) return;
-    for(let k=0; k<ids.length; k+=100){
-      const { error: delErr } = await supabase.from("events").delete()
-        .in("id", ids.slice(k,k+100)).eq("user_id", userId);
-      if(delErr){ segnalaErroreDb(delErr, "Eliminazione eventi selezionati del mese"); return; }
+    const idsLocali = [];
+    for(const [dKey, calMap] of Object.entries(store.events||{})){
+      if(dKey<fromKey || dKey>toKey) continue;
+      for(const cId of calIds)
+        for(const e of (calMap?.[cId]||[])) if(scelti.has(e.modelloId||VUOTO)) idsLocali.push(e.id);
     }
-    setStore(prev=>{
-      const ns=JSON.parse(JSON.stringify(prev));
-      for(const dKey of Object.keys(ns.events||{})){
-        if(dKey<fromKey || dKey>toKey) continue;
-        for(const cId of calIds){
-          if(!ns.events[dKey]?.[cId]) continue;
-          ns.events[dKey][cId] = ns.events[dKey][cId].filter(e=>!scelti.has(e.modelloId||VUOTO));
-          if(ns.events[dKey][cId].length===0) delete ns.events[dKey][cId];
+    await eliminaEventiLocalFirst({
+      contesto:"Eliminazione eventi selezionati del mese", idsLocali,
+      aggiorna: prev=>{
+        const ns = JSON.parse(JSON.stringify(prev));
+        for(const dKey of Object.keys(ns.events||{})){
+          if(dKey<fromKey || dKey>toKey) continue;
+          for(const cId of calIds){
+            if(!ns.events[dKey]?.[cId]) continue;
+            ns.events[dKey][cId] = ns.events[dKey][cId].filter(e=>!scelti.has(e.modelloId||VUOTO));
+            if(ns.events[dKey][cId].length===0) delete ns.events[dKey][cId];
+          }
         }
-      }
-      saveToLocalStorage(ns.events, ns.calendars, modelli);
-      syncSeAttivo(ns.events, ns.calendars);
-      return ns;
+        return ns;
+      },
+      queryServer: async()=>{
+        const { data, error } = await supabase.from("events").select("id, modello_id")
+          .eq("user_id", userId).in("calendar_id", calIds)
+          .gte("date_key", fromKey).lte("date_key", toKey);
+        return { ids:(data||[]).filter(r=>scelti.has(r.modello_id||VUOTO)).map(r=>r.id), error };
+      },
     });
   }
 
@@ -3673,13 +3744,15 @@ const importsRecenti = useMemo(()=>{
       for(const ev of (lista||[])){
         if(!ev.importId) continue;
         const k = cid+"|"+ev.importId;
-        if(!gruppi[k]) gruppi[k] = { importId: ev.importId, calendarId: cid, count:0, minDate:dateKey, maxDate:dateKey };
+        if(!gruppi[k]) gruppi[k] = { importId: ev.importId, calendarId: cid, count:0, minDate:dateKey, maxDate:dateKey, eventi:[] };
         gruppi[k].count++;
+        gruppi[k].eventi.push({ d: dateKey, l: ev.label||"" });
         if(dateKey < gruppi[k].minDate) gruppi[k].minDate = dateKey;
         if(dateKey > gruppi[k].maxDate) gruppi[k].maxDate = dateKey;
       }
     }
   }
+  for(const g of Object.values(gruppi)) g.eventi.sort((a,b)=> a.d.localeCompare(b.d));
   return Object.values(gruppi).sort((a,b)=> (b.importId||"").localeCompare(a.importId||""));
 }, [store.events]);
 
@@ -4755,8 +4828,49 @@ const importsRecenti = useMemo(()=>{
   // su azione esplicita della persona, mai automatico. Un upsert per riga
   // (vincolo unique su user_id+modello_id) così ogni "Salva disposizione"
   // sovrascrive pulito il backup precedente, senza accumulare storico.
+  // ── Invio del Log a Supabase (tabella log_attivita) ──────────────────
+  // Parte da solo, qualche secondo dopo ogni nuova voce o spunta. Se la tabella
+  // non esiste ancora o manca la rete, riprova più tardi (senza disturbare).
+  useEffect(()=>{
+    if(!userId) return;
+    let timer = null, inCorso = false, attesa = 0;
+    async function invia(){
+      if(inCorso) return;
+      inCorso = true;
+      try{
+        for(let giro=0; giro<20; giro++){
+          const daInviare = leggiLogDaSincronizzare(100);
+          if(daInviare.length===0){ attesa = 0; break; }
+          const righe = daInviare.map(v=>voceLogPerSupabase(v, userId));
+          const { error } = await supabase.from("log_attivita").upsert(righe, { onConflict:"id" });
+          if(error){
+            console.warn("Log non inviato a Supabase:", error.message);
+            attesa = Math.min((attesa||15000)*2, 300000);
+            timer = setTimeout(invia, attesa);
+            break;
+          }
+          segnaLogSincronizzato(daInviare.map(v=>({ id:v.id, rev:v._rev||0 })));
+        }
+      }catch(e){
+        console.warn("Invio log fallito:", e);
+        attesa = Math.min((attesa||15000)*2, 300000);
+        timer = setTimeout(invia, attesa);
+      }finally{ inCorso = false; }
+    }
+    const pianifica = ()=>{ if(timer) clearTimeout(timer); timer = setTimeout(invia, 2500); };
+    registraListenerLogSync(pianifica);
+    window.addEventListener("online", pianifica);
+    pianifica();
+    return ()=>{
+      registraListenerLogSync(null);
+      window.removeEventListener("online", pianifica);
+      if(timer) clearTimeout(timer);
+    };
+  }, [userId]);
+
   async function salvaDisposizioneModelli(){
     if(!userId) return { ok:false, errore:"Utente non autenticato" };
+    segnaContestoLog("Salva disposizione modelli");
     const adesso = new Date().toISOString();
     // Snapshot a 360 gradi di ogni modello (ordine, colori, nome, titolo, orari, calendario, etc.).
     const righe = modelli.map(m=>({
@@ -4771,35 +4885,70 @@ const importsRecenti = useMemo(()=>{
     const coloriExtraSnap = (coloriExtra||[]).map(c=>({...c}));
     const sundayCol = store.sundayColor || "";
     const holidayCol = store.holidayColor || "";
+
+    // Ultimo salvataggio fatto (in locale): serve a capire cosa è DAVVERO cambiato.
+    let prec = null;
     try{
-      const { error } = await supabase.from("modelli_sortorder_backup")
-        .upsert(righe, { onConflict:"user_id,modello_id" });
-      if(error){
-        segnalaErroreDb(error, "Salvataggio disposizione modelli");
-        return { ok:false, errore:error.message };
-      }
-      const { error:errImp } = await supabase.from("impostazioni_backup")
-        .upsert({ user_id:userId, fasce_automatiche:fasce, colori_extra:coloriExtraSnap, sunday_color:sundayCol, holiday_color:holidayCol, salvato_il:adesso },
-                { onConflict:"user_id" });
-      if(errImp){
-        segnalaErroreDb(errImp, "Salvataggio fasce/colori nel backup disposizione");
-        return { ok:false, errore:errImp.message };
-      }
-      try{
-        localStorage.setItem("disposizioneModelliBackup", JSON.stringify({
-          userId, salvato_il:adesso,
-          voci: modelli.map(m=>({
-            ...m, modello_id:m.id, sort_order:m.sortOrder||0,
-            colore:m.colore||null, colore_custom:m.coloreCustom||null
-          })),
-          fasce, coloriExtra: coloriExtraSnap,
-          sundayColor: sundayCol, holidayColor: holidayCol
-        }));
-      }catch{}
+      const raw = localStorage.getItem("disposizioneModelliBackup");
+      if(raw){ const p = JSON.parse(raw); if(p?.userId===userId && Array.isArray(p.voci)) prec = p; }
+    }catch{}
+    const cambi = diffDisposizione(prec, righe, fasce, coloriExtraSnap, sundayCol, holidayCol);
+    const daRiprovare = !!prec && prec.supabaseOk===false; // l'ultimo invio a Supabase non era andato a buon fine
+
+    if(cambi.nessunaModifica && !daRiprovare){
+      registraAttivita("Salva disposizione modelli", "Nessuna modifica rispetto all'ultimo salvataggio", { chiave:"salva-disp-nessuna", supabase:"n/a" });
       annullaTimerSalvaDisposizione();
-      return { ok:true, totale: righe.length };
+      return { ok:true, nessunaModifica:true, totale:0, riepilogo:"nessuna modifica" };
+    }
+
+    const tutte = !prec || daRiprovare;
+    const riepilogo = tutte
+      ? (prec ? `riprovo l'invio completo (${righe.length} modelli)` : `prima copia completa (${righe.length} modelli)`)
+      : cambi.riepilogo;
+
+    // 1) PRIMA IN LOCALE
+    const snapshot = {
+      userId, salvato_il:adesso, supabaseOk:false,
+      voci: modelli.map(m=>({
+        ...m, modello_id:m.id, sort_order:m.sortOrder||0,
+        colore:m.colore||null, colore_custom:m.coloreCustom||null
+      })),
+      fasce, coloriExtra: coloriExtraSnap, sundayColor: sundayCol, holidayColor: holidayCol
+    };
+    try{ localStorage.setItem("disposizioneModelliBackup", JSON.stringify(snapshot)); }catch{}
+    const idVoce = registraAttivita("Salva disposizione modelli", `Salvata disposizione: ${riepilogo}`, {
+      chiave:`salva-disp|${adesso}`, dettagli: cambi.dettagli, esito:"attesa",
+    });
+
+    // 2) POI SU SUPABASE: solo le righe cambiate (tutte alla prima copia o se l'invio precedente era fallito)
+    const righeDaInviare = tutte ? righe : righe.filter(r=>cambi.idsCambiati.has(String(r.modello_id)));
+    try{
+      if(righeDaInviare.length>0){
+        const { error } = await supabase.from("modelli_sortorder_backup")
+          .upsert(righeDaInviare, { onConflict:"user_id,modello_id" });
+        if(error){
+          segnalaErroreDb(error, "Salvataggio disposizione modelli");
+          aggiornaEsitoVoceLog(idVoce, "errore");
+          return { ok:false, errore:error.message };
+        }
+      }
+      if(tutte || cambi.impostazioniCambiate){
+        const { error:errImp } = await supabase.from("impostazioni_backup")
+          .upsert({ user_id:userId, fasce_automatiche:fasce, colori_extra:coloriExtraSnap, sunday_color:sundayCol, holiday_color:holidayCol, salvato_il:adesso },
+                  { onConflict:"user_id" });
+        if(errImp){
+          segnalaErroreDb(errImp, "Salvataggio fasce/colori nel backup disposizione");
+          aggiornaEsitoVoceLog(idVoce, "errore");
+          return { ok:false, errore:errImp.message };
+        }
+      }
+      try{ localStorage.setItem("disposizioneModelliBackup", JSON.stringify({ ...snapshot, supabaseOk:true })); }catch{}
+      aggiornaEsitoVoceLog(idVoce, "ok");
+      annullaTimerSalvaDisposizione();
+      return { ok:true, totale: righeDaInviare.length, riepilogo };
     }catch(e){
       segnalaErroreDb(e, "Salvataggio disposizione modelli");
+      aggiornaEsitoVoceLog(idVoce, "errore");
       return { ok:false, errore:String(e) };
     }
   }
@@ -5182,6 +5331,7 @@ const importsRecenti = useMemo(()=>{
       segnalaErroreDb(error, "Inserimento turno da modello");
       return;
     }
+    confermaSupabase([data?.id]);
 
     if(!nuoviEventiLocali[dateKey]) nuoviEventiLocali[dateKey] = {};
     if(!nuoviEventiLocali[dateKey][calDest]) nuoviEventiLocali[dateKey][calDest] = [];
@@ -5404,6 +5554,7 @@ const importsRecenti = useMemo(()=>{
   }
 
   async function importaTurniPdfJson(righeJson){
+    segnaContestoLog("Importazione turni");
     const risultatoVuoto = { nAggiunti:0, nSostituiti:0, nInvariati:0, mancanti:[], sospetti:[], importId:null, sostituzioni:[] };
     if(!userId || !calId || !righeJson?.length) return risultatoVuoto;
 
@@ -5573,33 +5724,40 @@ const importsRecenti = useMemo(()=>{
     if((nAggiunti||0)>0 || (nSostituiti||0)>0) setSelectedCalIds(prev => prev.length===0 || prev.includes(calId) ? prev : [...prev, calId]);
 
     registraProblemiImport(mancanti, sospetti);
+    registraAttivita("Importazione turni",
+      `Importazione completata: ${nAggiunti} aggiunti, ${nSostituiti} sostituiti, ${nInvariati} invariati` +
+      (((mancanti?.length||0)+(sospetti?.length||0))>0 ? `, ${mancanti?.length||0} mancanti, ${sospetti?.length||0} sospetti` : ""),
+      { chiave:`riepilogo-${importId}`, supabase:"n/a" });
     return { nAggiunti, nSostituiti, nInvariati, mancanti, sospetti, importId, sostituzioni };
   }
 
   async function delTuttiEventiImport(importId, cId){
-    const { data: rows, error } = await supabase.from("events").select("id")
-      .eq("import_id", importId).eq("user_id", userId);
-    if(error){ segnalaErroreDb(error, "Eliminazione eventi importati"); return; }
-    if(!rows) return;
-    const ids = rows.map(r=>r.id);
-    if(ids.length===0) return;
-    const { error: delErr } = await supabase.from("events").delete().in("id", ids).eq("user_id", userId);
-    if(delErr){ segnalaErroreDb(delErr, "Eliminazione eventi importati"); return; }
-    setStore(prev=>{
-      const ns=JSON.parse(JSON.stringify(prev));
-      const idSet = new Set(ids);
-      for(const dKey of Object.keys(ns.events||{})){
-        for(const cid of Object.keys(ns.events[dKey]||{})){
-          ns.events[dKey][cid] = (ns.events[dKey][cid]||[]).filter(e=>!idSet.has(e.id));
+    const idsLocali = [];
+    for(const calMap of Object.values(store.events||{}))
+      for(const lista of Object.values(calMap||{}))
+        for(const e of (lista||[])) if(e.importId===importId) idsLocali.push(e.id);
+    await eliminaEventiLocalFirst({
+      contesto:"Eliminazione eventi importati", idsLocali,
+      aggiorna: prev=>{
+        const ns = JSON.parse(JSON.stringify(prev));
+        const idSet = new Set(idsLocali.map(String));
+        for(const dKey of Object.keys(ns.events||{})){
+          for(const cid of Object.keys(ns.events[dKey]||{})){
+            ns.events[dKey][cid] = (ns.events[dKey][cid]||[]).filter(e=>!idSet.has(String(e.id)));
+          }
         }
-      }
-      saveToLocalStorage(ns.events, ns.calendars, modelli);
-      syncSeAttivo(ns.events, ns.calendars);
-      return ns;
+        return ns;
+      },
+      queryServer: async()=>{
+        const { data, error } = await supabase.from("events").select("id")
+          .eq("import_id", importId).eq("user_id", userId);
+        return { ids:(data||[]).map(r=>r.id), error };
+      },
     });
   }
 
   async function importaEventiSingoli(righe, tipoTabella=null){
+    segnaContestoLog("Importazione turni");
     // righe: [{ dateKey, modelloId }] -- righe senza modelloId vengono ignorate
     // tipoTabella: "personale" -> calendario FU, "stella" -> calendario COT
     // (nomi in cima al file); altrimenti il calendario attivo.
@@ -5643,6 +5801,10 @@ const importsRecenti = useMemo(()=>{
     });
     // Il calendario di destinazione deve restare visibile dopo il refresh.
     if(nScritte>0) setSelectedCalIds(prev => prev.length===0 || prev.includes(calDest) ? prev : [...prev, calDest]);
+    registraAttivita("Importazione turni",
+      `Importazione completata (${store.calendars.find(c=>c.id===calDest)?.name||"calendario"}): ${nScritte} turni aggiunti su ${righe.length} righe` +
+      ((righe.length-nScritte)>0 ? `, ${righe.length-nScritte} saltati perché già presenti o senza modello` : ""),
+      { chiave:`riepilogo-${importId}`, supabase:"n/a" });
     return nScritte;
   }
 

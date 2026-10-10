@@ -603,6 +603,9 @@ export function saveToLocalStorage(events, calendars, modelli, calId, extra = {}
       ...(calId !== undefined ? { calId } : {}),
       ...extra, _savedAt: Date.now(),
     };
+    // Il Log nasce da qui, nel momento in cui il dato viene salvato in locale:
+    // si registra solo ciò che è davvero cambiato rispetto alla cache precedente.
+    registraDifferenzeLocali(precedente, { events, calendars, modelli });
     localStorage.setItem(LS_CACHE_KEY, JSON.stringify(payload));
   } catch (e) {
     // Storage pieno o non disponibile: non blocchiamo l'app per questo.
@@ -935,9 +938,26 @@ function scriviLogErrori(voce) {
   try {
     const log = leggiLogErrori();
     log.push(voce);
-    // Tiene solo le ultime 200 voci per non far crescere localStorage indefinitamente.
-    const tagliato = log.slice(-200);
+    // Ogni voce ha un id e viene marcata "da inviare" alla tabella log_attivita di Supabase.
+    if (voce && typeof voce === "object") {
+      if (!voce.id) voce.id = generaIdLocale();
+      voce._dirty = true; voce._rev = (voce._rev || 0) + 1;
+    }
+    // Tiene al massimo 500 voci per non far crescere localStorage indefinitamente.
+    // Oltre il limite si scartano per prime le operazioni più vecchie (frequenti e
+    // meno critiche): gli errori restano il più a lungo possibile.
+    const MAX_VOCI_LOG = 500;
+    let tagliato = log;
+    if (tagliato.length > MAX_VOCI_LOG) {
+      let daTogliere = tagliato.length - MAX_VOCI_LOG;
+      tagliato = tagliato.filter(v => {
+        if (daTogliere > 0 && v && v.tipo === "operazione") { daTogliere--; return false; }
+        return true;
+      });
+      if (tagliato.length > MAX_VOCI_LOG) tagliato = tagliato.slice(-MAX_VOCI_LOG);
+    }
     localStorage.setItem(LS_LOG_ERRORI_KEY, JSON.stringify(tagliato));
+    notificaLogSync();
   } catch (e) {
     console.warn("scriviLogErrori fallito:", e);
   }
@@ -1009,6 +1029,388 @@ export function segnalaErroreSoloLog(error, contesto) {
   };
   scriviLogErrori(voce);
   console.error(`[${contesto}] (solo log)`, error);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// REGISTRO DELLE OPERAZIONI (log attività)
+// Nasce nel momento in cui un dato viene SALVATO IN LOCALE: saveToLocalStorage
+// confronta la cache precedente con quella nuova e scrive nel Log solo ciò che
+// è davvero cambiato (turni, modelli, calendari), con l'elenco preciso.
+// Ogni voce ha due spunte:
+//   💾 locale  → il dato è già nella cache del dispositivo (nasce con la voce)
+//   ☁️ Supabase → si completa quando Supabase conferma ogni singola riga
+// Le voci vengono inviate anche alla tabella "log_attivita" di Supabase.
+// ─────────────────────────────────────────────────────────────────────
+const MAX_DETTAGLI = 400;
+const MAX_IDS_ATTESA = 2000;
+
+let _listenerLogSync = null;
+export function registraListenerLogSync(cb) { _listenerLogSync = typeof cb === "function" ? cb : null; }
+function notificaLogSync() { try { if (_listenerLogSync) _listenerLogSync(); } catch { /* non blocca */ } }
+
+function sporca(v) { v._dirty = true; v._rev = (v._rev || 0) + 1; }
+
+function salvaLogCompleto(log) {
+  try {
+    localStorage.setItem(LS_LOG_ERRORI_KEY, JSON.stringify(log));
+    notificaLogSync();
+  } catch (e) { console.warn("salvaLogCompleto fallito:", e); }
+}
+
+// Righe già confermate da Supabase (serve quando il salvataggio remoto avviene
+// PRIMA di quello locale: la voce nasce già con la spunta completa).
+const _confermati = new Map();
+function giaConfermato(id) { const t = _confermati.get(String(id)); return !!t && (Date.now() - t) < 600000; }
+
+let _contestoLog = null;
+export function segnaContestoLog(testo) { _contestoLog = { testo, ts: Date.now() }; }
+let _sorgenteLog = "locale";
+export function impostaSorgenteLog(s) { _sorgenteLog = s || "locale"; }
+
+const forma = (n, sing, plur) => `${n} ${n === 1 ? sing : plur}`;
+function testoRiepilogo(etichetta, c) {
+  const p = [];
+  if (c.aggiunti) p.push(forma(c.aggiunti, "aggiunto", "aggiunti"));
+  if (c.eliminati) p.push(forma(c.eliminati, "eliminato", "eliminati"));
+  if (c.modificati) p.push(forma(c.modificati, "modificato", "modificati"));
+  if (c.riordinati) p.push(forma(c.riordinati, "riordinato", "riordinati"));
+  return `${etichetta}: ${p.join(", ")}`;
+}
+
+function nz(x) { return (x === undefined || x === null || x === "") ? null : x; }
+function uguali(a, b) { a = nz(a); b = nz(b); return a === b || JSON.stringify(a) === JSON.stringify(b); }
+function fmtVal(v) {
+  if (nz(v) === null) return "—";
+  if (typeof v === "object") { try { return JSON.stringify(v).slice(0, 40); } catch { return "[…]"; } }
+  const s = String(v);
+  return s.length > 40 ? s.slice(0, 37) + "…" : s;
+}
+
+// opzioni: { chiave, dettagli:[], ids:[], conteggi:{}, etichetta, supabase:"n/a", origine, esito }
+export function registraAttivita(contesto, message, extra = {}) {
+  try {
+    const ora = Date.now();
+    const chiave = extra.chiave || contesto;
+    const dettagli = Array.isArray(extra.dettagli) ? extra.dettagli : [];
+    const ids = Array.isArray(extra.ids) ? extra.ids.map(String) : [];
+    const idsAttesa = extra.supabase === "n/a" ? [] : ids.filter(id => !giaConfermato(id));
+    const log = leggiLogErrori();
+    let voce = null;
+    for (let i = log.length - 1, n = 0; i >= 0 && n < 8; i--, n++) {
+      const v = log[i];
+      if (v && v.tipo === "operazione" && v.chiave === chiave
+          && ora - new Date(v.tsUltimo || v.ts).getTime() < 8000) { voce = v; break; }
+    }
+    if (voce) {
+      voce.conteggio = (voce.conteggio || 1) + 1;
+      voce.tsUltimo = new Date(ora).toISOString();
+      voce.dettagli = [...(voce.dettagli || []), ...dettagli].slice(0, MAX_DETTAGLI);
+      voce.dettagliTotali = (voce.dettagliTotali || 0) + dettagli.length;
+      voce.idsAttesa = [...new Set([...(voce.idsAttesa || []), ...idsAttesa])].slice(0, MAX_IDS_ATTESA);
+      voce.idsTotali = (voce.idsTotali || 0) + ids.length;
+      if (voce.conteggi && extra.conteggi) {
+        for (const k of Object.keys(extra.conteggi)) voce.conteggi[k] = (voce.conteggi[k] || 0) + extra.conteggi[k];
+        voce.message = testoRiepilogo(extra.etichetta || contesto, voce.conteggi);
+      }
+      sporca(voce);
+      salvaLogCompleto(log);
+      return voce.id;
+    }
+    const nuova = {
+      id: generaIdLocale(),
+      ts: new Date(ora).toISOString(),
+      tipo: "operazione",
+      contesto: contesto || "Operazione",
+      message,
+      chiave,
+      conteggio: 1,
+      ...(extra.conteggi ? { conteggi: { ...extra.conteggi } } : {}),
+      dettagli: dettagli.slice(0, MAX_DETTAGLI),
+      dettagliTotali: dettagli.length,
+      idsAttesa: idsAttesa.slice(0, MAX_IDS_ATTESA),
+      idsTotali: ids.length,
+      origine: extra.origine || "locale",
+      inCoda: false,
+      ...(extra.esito ? { esito: extra.esito } : {}),
+    };
+    scriviLogErrori(nuova);
+    return nuova.id;
+  } catch (e) {
+    console.warn("registraAttivita fallito:", e);
+    return null;
+  }
+}
+
+// Supabase ha confermato queste righe: completa la seconda spunta delle voci.
+export function confermaSupabase(ids) {
+  try {
+    const lista = (Array.isArray(ids) ? ids : [ids]).filter(x => x !== undefined && x !== null && x !== "").map(String);
+    if (!lista.length) return;
+    const ora = Date.now();
+    for (const id of lista) _confermati.set(id, ora);
+    if (_confermati.size > 5000) for (const [k, t] of _confermati) if (ora - t > 600000) _confermati.delete(k);
+    const set = new Set(lista);
+    const log = leggiLogErrori();
+    let cambiato = false;
+    for (let i = log.length - 1, n = 0; i >= 0 && n < 150; i--, n++) {
+      const v = log[i];
+      if (!v || v.tipo !== "operazione" || !v.idsAttesa || !v.idsAttesa.length) continue;
+      const restanti = v.idsAttesa.filter(id => !set.has(id));
+      if (restanti.length !== v.idsAttesa.length) {
+        v.idsAttesa = restanti;
+        if (!restanti.length) { v.inCoda = false; v.tsSupabase = new Date(ora).toISOString(); }
+        sporca(v); cambiato = true;
+      }
+    }
+    if (cambiato) salvaLogCompleto(log);
+  } catch { /* il log non deve mai bloccare l'app */ }
+}
+
+// Il salvataggio remoto è finito in coda (offline): la spunta mostra "in coda".
+export function segnaInCodaSupabase(ids) {
+  try {
+    const set = new Set((Array.isArray(ids) ? ids : [ids]).filter(Boolean).map(String));
+    if (!set.size) return;
+    const log = leggiLogErrori();
+    let cambiato = false;
+    for (let i = log.length - 1, n = 0; i >= 0 && n < 150; i--, n++) {
+      const v = log[i];
+      if (!v || v.tipo !== "operazione" || !v.idsAttesa || !v.idsAttesa.length) continue;
+      if (v.idsAttesa.some(id => set.has(id)) && !v.inCoda) { v.inCoda = true; sporca(v); cambiato = true; }
+    }
+    if (cambiato) salvaLogCompleto(log);
+  } catch { /* ignora */ }
+}
+
+// Per le operazioni senza elenco di righe (es. Salva disposizione): esito esplicito.
+export function aggiornaEsitoVoceLog(idVoce, esito) {
+  try {
+    if (!idVoce) return;
+    const log = leggiLogErrori();
+    const v = log.find(x => x && x.id === idVoce);
+    if (!v) return;
+    v.esito = esito;
+    if (esito === "ok") v.tsSupabase = new Date().toISOString();
+    sporca(v);
+    salvaLogCompleto(log);
+  } catch { /* ignora */ }
+}
+
+// Testo della seconda spunta (☁️) per una voce del log.
+export function statoSupabaseVoce(v) {
+  if (!v || v.tipo !== "operazione") return null;
+  if (v.origine === "remoto") return { icona: "☁️", testo: "arrivato da Supabase", colore: "ok" };
+  if (v.esito) {
+    if (v.esito === "ok") return { icona: "☁️", testo: "Supabase ✓", colore: "ok" };
+    if (v.esito === "coda") return { icona: "🕓", testo: "Supabase: in coda", colore: "attesa" };
+    if (v.esito === "errore") return { icona: "⚠️", testo: "Supabase: NON salvato", colore: "errore" };
+    return { icona: "☁️", testo: "Supabase: in corso…", colore: "attesa" };
+  }
+  const tot = v.idsTotali || 0;
+  if (!tot) return null;
+  const rest = (v.idsAttesa || []).length;
+  if (rest === 0) return { icona: "☁️", testo: "Supabase ✓", colore: "ok" };
+  const ok = Math.max(0, tot - rest);
+  if (v.inCoda) return { icona: "🕓", testo: `Supabase: in coda (${ok}/${tot})`, colore: "attesa" };
+  if (Date.now() - new Date(v.ts).getTime() > 120000) return { icona: "⚠️", testo: `Supabase: non confermato (${ok}/${tot})`, colore: "errore" };
+  return { icona: "☁️", testo: `Supabase: ${ok}/${tot}…`, colore: "attesa" };
+}
+
+// ── Confronto cache precedente / nuova: cosa è cambiato ──────────────
+const CAMPI_EVENTO = ["label", "color", "allDay", "tIn", "tOut", "place", "note", "modelloId", "rotazioneId",
+  "collega", "auto", "importId", "protPagFine", "protRecFine"];
+const CAMPI_MODELLO = ["titolo", "label", "inizio", "fine", "tempo", "colore", "coloreCustom", "calendarId",
+  "posizione", "categoria", "categoriaAppAuto", "turnoVuoto", "appAutoVuoto", "visibileAncheIn"];
+
+function dataIt(dk) {
+  try {
+    const [y, m, d] = String(dk).split("-").map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString("it-IT", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" });
+  } catch { return String(dk); }
+}
+function nomeCal(cals, id) {
+  const c = (cals || []).find(x => String(x.id) === String(id));
+  return c?.name || c?.nome || String(id).slice(0, 6);
+}
+function appiattisciEventi(events) {
+  const m = new Map();
+  for (const [dk, calMap] of Object.entries(events || {}))
+    for (const [cid, lista] of Object.entries(calMap || {}))
+      for (const ev of (lista || [])) if (ev && ev.id !== undefined && ev.id !== null) m.set(String(ev.id), { dk, cid, ev });
+  return m;
+}
+const ordina = (x, y) => (x.k === y.k ? x.t.localeCompare(y.t) : String(x.k).localeCompare(String(y.k)));
+
+function diffEventi(prec, nuovo) {
+  const A = appiattisciEventi(prec.events), B = appiattisciEventi(nuovo.events);
+  const cals = nuovo.calendars || prec.calendars;
+  const agg = [], eli = [], mod = [], ids = [];
+  for (const [id, b] of B) {
+    const a = A.get(id);
+    const desc = `${dataIt(b.dk)} · ${nomeCal(cals, b.cid)} · ${b.ev.label || "(senza nome)"}`;
+    if (!a) { agg.push({ k: b.dk, t: `+ ${desc}` }); ids.push(id); continue; }
+    const cambi = [];
+    if (a.dk !== b.dk) cambi.push(`giorno ${a.dk}→${b.dk}`);
+    if (String(a.cid) !== String(b.cid)) cambi.push(`calendario ${nomeCal(cals, a.cid)}→${nomeCal(cals, b.cid)}`);
+    for (const f of CAMPI_EVENTO) if (!uguali(a.ev[f], b.ev[f])) cambi.push(`${f}: ${fmtVal(a.ev[f])}→${fmtVal(b.ev[f])}`);
+    if (cambi.length) { mod.push({ k: b.dk, t: `~ ${desc}: ${cambi.join("; ")}` }); ids.push(id); }
+  }
+  for (const [id, a] of A) if (!B.has(id)) {
+    eli.push({ k: a.dk, t: `− ${dataIt(a.dk)} · ${nomeCal(prec.calendars || cals, a.cid)} · ${a.ev.label || "(senza nome)"}` });
+    ids.push(id);
+  }
+  if (!agg.length && !eli.length && !mod.length) return null;
+  return {
+    conteggi: { aggiunti: agg.length, eliminati: eli.length, modificati: mod.length },
+    dettagli: [...agg.sort(ordina), ...eli.sort(ordina), ...mod.sort(ordina)].map(x => x.t),
+    ids,
+  };
+}
+
+function diffModelli(prec, nuovo) {
+  const A = new Map((prec.modelli || []).map(m => [String(m.id), m]));
+  const B = new Map((nuovo.modelli || []).map(m => [String(m.id), m]));
+  const nome = m => m.titolo || m.label || String(m.id).slice(0, 8);
+  const agg = [], eli = [], mod = [], riord = [], ids = [];
+  for (const [id, b] of B) {
+    const a = A.get(id);
+    if (!a) { agg.push(`+ ${nome(b)} (${b.inizio || "–"}–${b.fine || "–"})`); ids.push(id); continue; }
+    const cambi = [];
+    for (const f of CAMPI_MODELLO) if (!uguali(a[f], b[f])) cambi.push(`${f}: ${fmtVal(a[f])}→${fmtVal(b[f])}`);
+    if (cambi.length) { mod.push(`~ ${nome(b)}: ${cambi.join("; ")}`); ids.push(id); }
+    if (!uguali(a.sortOrder ?? 0, b.sortOrder ?? 0)) {
+      riord.push(`↕ ${nome(b)}: posizione ${fmtVal(a.sortOrder ?? 0)}→${fmtVal(b.sortOrder ?? 0)}`);
+      if (!cambi.length) ids.push(id);
+    }
+  }
+  for (const [id, a] of A) if (!B.has(id)) { eli.push(`− ${nome(a)}`); ids.push(id); }
+  if (!agg.length && !eli.length && !mod.length && !riord.length) return null;
+  return {
+    conteggi: { aggiunti: agg.length, eliminati: eli.length, modificati: mod.length, riordinati: riord.length },
+    dettagli: [...agg, ...eli, ...mod, ...riord],
+    ids,
+  };
+}
+
+function diffCalendari(prec, nuovo) {
+  const A = new Map((prec.calendars || []).map(c => [String(c.id), c]));
+  const B = new Map((nuovo.calendars || []).map(c => [String(c.id), c]));
+  const nome = c => c.name || c.nome || String(c.id).slice(0, 6);
+  const agg = [], eli = [], mod = [], ids = [];
+  for (const [id, b] of B) {
+    const a = A.get(id);
+    if (!a) { agg.push(`+ ${nome(b)}`); ids.push(id); continue; }
+    const cambi = [];
+    for (const k of new Set([...Object.keys(a), ...Object.keys(b)]))
+      if (typeof a[k] !== "function" && typeof b[k] !== "function" && !uguali(a[k], b[k])) cambi.push(`${k}: ${fmtVal(a[k])}→${fmtVal(b[k])}`);
+    if (cambi.length) { mod.push(`~ ${nome(b)}: ${cambi.join("; ")}`); ids.push(id); }
+  }
+  for (const [id, a] of A) if (!B.has(id)) { eli.push(`− ${nome(a)}`); ids.push(id); }
+  if (!agg.length && !eli.length && !mod.length) return null;
+  return {
+    conteggi: { aggiunti: agg.length, eliminati: eli.length, modificati: mod.length },
+    dettagli: [...agg, ...eli, ...mod], ids,
+  };
+}
+
+function registraDifferenzeLocali(prec, nuovo) {
+  try {
+    const remoto = _sorgenteLog === "remoto";
+    _sorgenteLog = "locale"; // vale solo per questo salvataggio
+    const ctx = _contestoLog && (Date.now() - _contestoLog.ts) < 6000 ? _contestoLog.testo : null;
+    const base = remoto ? "Aggiornamento da Supabase" : (ctx || "Salvataggio locale");
+    const blocchi = [];
+    if (prec.events && nuovo.events) { const d = diffEventi(prec, nuovo); if (d) blocchi.push(["Turni", "ev", d]); }
+    if (prec.modelli && nuovo.modelli) { const d = diffModelli(prec, nuovo); if (d) blocchi.push(["Modelli", "mod", d]); }
+    if (prec.calendars && nuovo.calendars) { const d = diffCalendari(prec, nuovo); if (d) blocchi.push(["Calendari", "cal", d]); }
+    for (const [etichetta, cod, d] of blocchi) {
+      registraAttivita(base, testoRiepilogo(etichetta, d.conteggi), {
+        chiave: `${base}|${cod}`, dettagli: d.dettagli, ids: d.ids, conteggi: d.conteggi, etichetta,
+        origine: remoto ? "remoto" : "locale", supabase: remoto ? "n/a" : undefined,
+      });
+    }
+  } catch (e) { console.warn("registraDifferenzeLocali fallito:", e); }
+}
+
+// ── "Salva disposizione": cosa è cambiato rispetto all'ultimo salvataggio ──
+function normRigaDisposizione(v) {
+  return {
+    colore: v.colore || null, colore_custom: (v.colore_custom ?? v.coloreCustom) || null,
+    titolo: v.titolo || "", label: v.label || "", inizio: v.inizio || null, fine: v.fine || null,
+    tempo: v.tempo || "custom", calendar_id: (v.calendar_id ?? v.calendarId) || null,
+    sort_order: (v.sort_order ?? v.sortOrder) || 0,
+  };
+}
+export function diffDisposizione(prec, righe, fasce, coloriExtra, sundayCol, holidayCol) {
+  const idsCambiati = new Set();
+  const dettagli = [];
+  const conteggi = { aggiunti: 0, eliminati: 0, modificati: 0, riordinati: 0 };
+  const vecchi = new Map((prec?.voci || []).map(v => [String(v.modello_id || v.id), v]));
+  const nuovi = new Map(righe.map(r => [String(r.modello_id), r]));
+  const nomeDi = r => r.titolo || r.label || String(r.modello_id || r.id).slice(0, 8);
+  const CAMPI = [["colore", "colore"], ["colore_custom", "colore personalizzato"], ["titolo", "titolo"],
+    ["label", "etichetta"], ["inizio", "inizio"], ["fine", "fine"], ["tempo", "tipo orario"], ["calendar_id", "calendario"]];
+  for (const [id, n] of nuovi) {
+    const v = vecchi.get(id);
+    if (!v) { conteggi.aggiunti++; idsCambiati.add(id); dettagli.push(`+ ${nomeDi(n)} (${n.inizio || "–"}–${n.fine || "–"})`); continue; }
+    const a = normRigaDisposizione(v), b = normRigaDisposizione(n);
+    const cambi = [];
+    for (const [k, etichetta] of CAMPI) if (!uguali(a[k], b[k])) cambi.push(`${etichetta}: ${fmtVal(a[k])}→${fmtVal(b[k])}`);
+    if (cambi.length) { conteggi.modificati++; idsCambiati.add(id); dettagli.push(`~ ${nomeDi(n)}: ${cambi.join("; ")}`); }
+    if (!uguali(a.sort_order, b.sort_order)) {
+      conteggi.riordinati++; idsCambiati.add(id);
+      dettagli.push(`↕ ${nomeDi(n)}: posizione ${a.sort_order}→${b.sort_order}`);
+    }
+  }
+  for (const [id, v] of vecchi) if (!nuovi.has(id)) { conteggi.eliminati++; dettagli.push(`− ${nomeDi(v)} (non più presente)`); }
+  let impostazioniCambiate = false;
+  if (prec) {
+    if (!uguali(prec.fasce ?? null, fasce)) { impostazioniCambiate = true; dettagli.push("~ fasce orarie automatiche modificate"); }
+    if (!uguali(prec.coloriExtra ?? null, coloriExtra)) { impostazioniCambiate = true; dettagli.push(`~ colori extra: ${(prec.coloriExtra || []).length}→${(coloriExtra || []).length}`); }
+    if (!uguali(prec.sundayColor ?? null, sundayCol)) { impostazioniCambiate = true; dettagli.push(`~ colore domeniche: ${fmtVal(prec.sundayColor)}→${fmtVal(sundayCol)}`); }
+    if (!uguali(prec.holidayColor ?? null, holidayCol)) { impostazioniCambiate = true; dettagli.push(`~ colore festivi: ${fmtVal(prec.holidayColor)}→${fmtVal(holidayCol)}`); }
+  }
+  const nessunaModifica = !!prec && idsCambiati.size === 0 && conteggi.eliminati === 0 && !impostazioniCambiate;
+  const parti = [];
+  if (conteggi.aggiunti) parti.push(forma(conteggi.aggiunti, "modello aggiunto", "modelli aggiunti"));
+  if (conteggi.modificati) parti.push(forma(conteggi.modificati, "modello modificato", "modelli modificati"));
+  if (conteggi.riordinati) parti.push(forma(conteggi.riordinati, "riordinato", "riordinati"));
+  if (conteggi.eliminati) parti.push(forma(conteggi.eliminati, "eliminato", "eliminati"));
+  if (impostazioniCambiate) parti.push("impostazioni (fasce/colori)");
+  return { nessunaModifica, idsCambiati, dettagli, conteggi, impostazioniCambiate, riepilogo: parti.join(", ") };
+}
+
+// ── Invio del log a Supabase (tabella log_attivita) ──────────────────
+export function leggiLogDaSincronizzare(max = 100) {
+  return leggiLogErrori().filter(v => v && v._dirty && v.id).slice(0, max);
+}
+export function segnaLogSincronizzato(inviati) {
+  try {
+    const rev = new Map((inviati || []).map(x => [x.id, x.rev]));
+    const log = leggiLogErrori();
+    let cambiato = false;
+    for (const v of log) {
+      if (v && v._dirty && rev.has(v.id) && (v._rev || 0) === rev.get(v.id)) { delete v._dirty; cambiato = true; }
+    }
+    if (cambiato) localStorage.setItem(LS_LOG_ERRORI_KEY, JSON.stringify(log)); // senza notificare: nessun giro a vuoto
+  } catch { /* ignora */ }
+}
+export function voceLogPerSupabase(v, userId) {
+  const { idsAttesa, _dirty, _rev, dettagli, ...resto } = v;
+  const st = statoSupabaseVoce(v);
+  let dati = null;
+  try { dati = JSON.stringify(resto).length < 20000 ? resto : { troncato: true }; } catch { dati = null; }
+  return {
+    id: String(v.id), user_id: userId, ts: v.ts, ts_ultimo: v.tsUltimo || null,
+    tipo: v.tipo || "errore", contesto: String(v.contesto || ""), messaggio: String(v.message || v.messaggio || ""),
+    stato_supabase: st ? st.testo : null, origine: v.origine || "locale", conteggio: v.conteggio || 1,
+    ids_totali: v.idsTotali || 0, ids_in_attesa: (idsAttesa || []).length,
+    dettagli: Array.isArray(dettagli) && dettagli.length ? dettagli : null,
+    dati,
+    dispositivo: typeof navigator !== "undefined" ? String(navigator.userAgent || "").slice(0, 160) : null,
+    versione_app: typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : null,
+    aggiornato_il: new Date().toISOString(),
+  };
 }
 
 // Problemi rilevati durante un import (righe mancanti/sospette): salvati
