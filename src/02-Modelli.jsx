@@ -2382,9 +2382,10 @@ export default function VistaModelli({ C }){
                   const idModelloAttuale = form.modelloId || form.evtModelloId;
                   const modSel = idModelloAttuale && modelli.find(m=>m.id===idModelloAttuale);
                   if(!modSel || modSel.tempo==="h24" || !modSel.inizio) return null;
+                  const evH = (curEvts||[]).find(x=>x.id===form.editId);
                   return (
                     <>
-                      <span style={{fontSize:14,color:T.sub,fontWeight:700}}>{modSel.inizio}{"\u2192"}{calcFineModello(modSel)||modSel.fine||""}</span>
+                      <span style={{fontSize:14,color:T.sub,fontWeight:700}}>{form.offIn!==undefined?form.offIn:((evH&&evH.tIn)||modSel.inizio)}{"\u2192"}{form.offOut!==undefined?form.offOut:((evH&&evH.tOut)||calcFineModello(modSel)||modSel.fine||"")}</span>
                       <span onClick={e=>{e.stopPropagation();setForm(f=>({...f,_apriOrario:!f._apriOrario}));}}
                         style={{fontSize:16,color:T.sub,cursor:"pointer",padding:"2px 6px"}}>{form._apriOrario?"\u25B2":"\u25BC"}</span>
                     </>
@@ -2397,8 +2398,9 @@ export default function VistaModelli({ C }){
               const idm = form.modelloId || form.evtModelloId;
               const ms = idm && modelli.find(m=>m.id===idm);
               if(!ms || ms.tempo==="h24") return null;
-              const inV = form.offIn!==undefined ? form.offIn : (ms.inizio||"");
-              const outV = form.offOut!==undefined ? form.offOut : (calcFineModello(ms)||ms.fine||"");
+              const evC = (curEvts||[]).find(x=>x.id===form.editId);
+              const inV = form.offIn!==undefined ? form.offIn : ((evC&&evC.tIn)||ms.inizio||"");
+              const outV = form.offOut!==undefined ? form.offOut : ((evC&&evC.tOut)||calcFineModello(ms)||ms.fine||"");
               const stile = {width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"};
               return (
@@ -3373,12 +3375,13 @@ export default function VistaModelli({ C }){
                     const evOrig = (curEvts||[]).find(x=>x.id===form.editId);
                     const labelPrima = evOrig ? evOrig.label : (modCollegato.label || modCollegato.titolo);
                     const colorePrima = evOrig ? evOrig.color : (modCollegato.coloreCustom || modCollegato.colore);
-                    const finePrima = calcFineModello(modCollegato) || modCollegato.fine || "";
+                    const inPrima = (evOrig&&evOrig.tIn) || modCollegato.inizio || "";
+                    const finePrima = (evOrig&&evOrig.tOut) || calcFineModello(modCollegato) || modCollegato.fine || "";
                     const cambiaTitolo = !uguali(form.label, labelPrima);
                     const cambiaNomeModello = form.modelloTitolo!==undefined && !uguali(form.modelloTitolo, modCollegato.titolo);
                     const cambiaColore = !!form.colorOvr && String(form.colorOvr).toLowerCase()!==String(colorePrima||"").toLowerCase();
                     const cambiaOrario = modCollegato.tempo!=="h24" &&
-                      ((form.offIn!==undefined && form.offIn!==(modCollegato.inizio||"")) || (form.offOut!==undefined && form.offOut!==finePrima));
+                      ((form.offIn!==undefined && form.offIn!==inPrima) || (form.offOut!==undefined && form.offOut!==finePrima));
                     // Se hai scelto un altro modello con "cambia modello" vale solo per questo evento: niente richiesta.
                     const cambioModello = !!form.modelloId && form.modelloId!==form.evtModelloId;
                     if(!cambioModello && (cambiaTitolo || cambiaNomeModello || cambiaColore || cambiaOrario)){

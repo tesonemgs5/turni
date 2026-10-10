@@ -2023,6 +2023,10 @@ export function useAppCore(session){
           // l'uscita inserita a mano in form.tOut è l'unica fonte, quindi
           // va rispettata invece di essere azzerata a "".
           tOutFinal = mod.fine || form.tOut || "";
+          // Orario del turno cambiato per QUESTO evento (freccia accanto all'orario):
+          // vale per l'evento, il modello non cambia.
+          if(form.offIn) tInFinal = form.offIn;
+          if(form.offOut) tOutFinal = form.offOut;
         }
       }
     } else if(form.shiftId){
