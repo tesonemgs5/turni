@@ -2216,6 +2216,7 @@ export default function VistaModelli({ C }){
                 protPagFine:e.protPagFine||"", protRecFine:e.protRecFine||"",
                 protMenoRecIn:e.protMenoRecIn||"", protMenoRecOut:e.protMenoRecOut||"",
                 categoriaTurno:e.categoriaTurno||"", categoriaAppAuto:e.categoriaAppAuto||"",
+                turnoVuoto:!!e.turnoVuoto, appAutoVuoto:!!e.appAutoVuoto,
                 visibileAncheIn:e.visibileAncheIn||[], visibileAncheInOrig:e.visibileAncheIn||[] });
             }}
             style={{background:e.color,borderRadius:10,padding:"10px 12px",marginBottom:8,cursor:"pointer",
@@ -2344,6 +2345,7 @@ export default function VistaModelli({ C }){
                 protPagFine:e.protPagFine||"",protRecFine:e.protRecFine||"",
                 protMenoRecIn:e.protMenoRecIn||"",protMenoRecOut:e.protMenoRecOut||"",
                 categoriaTurno:e.categoriaTurno||"",categoriaAppAuto:e.categoriaAppAuto||"",
+                turnoVuoto:!!e.turnoVuoto, appAutoVuoto:!!e.appAutoVuoto,
                 visibileAncheIn:e.visibileAncheIn||[], visibileAncheInOrig:e.visibileAncheIn||[],
               });}}
               style={{background:cardTextColor==="#ffffff"?"rgba(0,0,0,0.2)":"rgba(255,255,255,0.35)",border:"none",borderRadius:6,
