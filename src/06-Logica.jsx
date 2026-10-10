@@ -11,6 +11,7 @@ import {
   sameData, saveDatiSessioneLocale, saveToLocalStorage, scriviCodaSync, segnalaErrore, segnalaErroreSoloLog,
   uid, withEventoAggiornato, withEventoAggiunto, withEventoRimosso,
   esportaBackupLocaleCompleto, importaBackupLocaleCompleto, CATEGORIE_BACKUP_LOCALE,
+  applicaOpExtraHols, diffExtraHolsInOps, leggiOpExtraHols, scriviOpExtraHols, saveExtraHolsLocale,
 } from "./04-Rotazione";
 
 // ════════════════════════════════════════════════════════════
@@ -59,6 +60,7 @@ export function useAppCore(session){
   // già presente. Stesso pattern già usato per modelliRef qui sotto.
   const storeRef = useRef(INIT);
   useEffect(()=>{ storeRef.current = store; }, [store]);
+  const flushExtraHolsRef = useRef(false);
   const [loading, setLoading] = useState(true);
   const [riordinaDopoCache, setRiordinaDopoCache] = useState(false);
   const [year,  setYear]  = useState(today.getFullYear());
@@ -907,7 +909,9 @@ export function useAppCore(session){
         });
 
         const theme = settings?.theme||"auto";
-        const extraHols = settings?.extra_hols||[];
+        // Le modifiche ai giorni importanti fatte qui e non ancora arrivate sul server
+        // (es. fatte senza linea) si rimettono sopra l'elenco del server: non scompaiono.
+        const extraHols = applicaOpExtraHols(settings?.extra_hols||[], leggiOpExtraHols());
         const sUrl = settings?.sheets_url || "";
         const sSec = settings?.sheets_secret || "";
         const savedReports = settings?.reports || [];
@@ -1026,6 +1030,7 @@ export function useAppCore(session){
           calEventRows: savedCalEventRows, calRow1Field: savedCalRow1Field, calRow2Field: savedCalRow2Field,
           reports: savedReports, reportSettings: savedReportSettings,
         });
+        sincronizzaExtraHols();
         if(!modelliUguali){
           setModelli(modelliMappati);
         }
@@ -1497,6 +1502,7 @@ export function useAppCore(session){
   // l'errore non è di rete, nel qual caso viene comunque segnalata
   // all'utente (stesso comportamento di sempre per gli errori "veri").
   async function processaCodaSync(){
+    sincronizzaExtraHols();
     const coda = leggiCodaSync();
     if(coda.length===0) return;
     // Se il browser segnala che non c'è connessione, non si tenta nemmeno
@@ -1918,16 +1924,57 @@ export function useAppCore(session){
   }
   function dots(key){ return store.calendars.filter(c=>getEvts(key,c.id).length>0); }
 
-  async function saveSettings(updates={}){
+  // Invia al server le modifiche in coda a giorni importanti / festivi personali.
+  // Legge l'elenco che c'e' ORA sul server, ci applica le sole operazioni in coda (per giorno)
+  // e riscrive: cosi' telefono e PC si sommano, chi arriva prima arriva prima, e nulla si perde.
+  async function sincronizzaExtraHols(){
+    if(flushExtraHolsRef.current) return;
     if(!userId) return;
+    if(typeof navigator!=="undefined" && navigator.onLine===false) return;
+    const ops = leggiOpExtraHols();
+    if(ops.length===0) return;
+    flushExtraHolsRef.current = true;
+    try{
+      const { data, error:errLettura } = await supabase.from("user_settings").select("extra_hols").eq("user_id", userId).maybeSingle();
+      if(errLettura) return;                       // resta in coda, si riprova
+      const unito = applicaOpExtraHols(data?.extra_hols||[], ops);
+      const { error } = await supabase.from("user_settings").upsert({ user_id:userId, extra_hols:unito, updated_at:new Date().toISOString() });
+      if(error){ segnalaErroreSoloLog(error, "Salvataggio giorni importanti (riprovo piu' tardi)"); return; }
+      const inviate = new Set(ops.map(o=>o.id));
+      const restanti = leggiOpExtraHols().filter(o=>!inviate.has(o.id));
+      scriviOpExtraHols(restanti);
+      const finale = applicaOpExtraHols(unito, restanti);
+      saveExtraHolsLocale(finale);
+      setStore(s=>({...s, extraHols: finale}));
+    }catch(e){
+      // rete caduta: le operazioni restano in coda e si riprova al prossimo giro
+    }finally{
+      flushExtraHolsRef.current = false;
+    }
+  }
+
+  async function saveSettings(updates={}){
+    // Giorni importanti / festivi personali: PRIMA in locale, poi in coda verso Supabase (vedi sopra).
+    const { extra_hols: nuovaExtraHols, ...altri } = updates;
+    if(nuovaExtraHols!==undefined){
+      const ops = diffExtraHolsInOps(store.extraHols||[], nuovaExtraHols);
+      if(ops.length>0){
+        scriviOpExtraHols([...leggiOpExtraHols(), ...ops]);
+        saveExtraHolsLocale(nuovaExtraHols);
+        sincronizzaExtraHols();
+      }
+    }
+    if(!userId) return;
+    if(Object.keys(altri).length===0) return;
+    // NB: qui NON si manda piu' extra_hols: un dispositivo non aggiornato non puo' piu'
+    // sovrascrivere i giorni importanti salvati da un altro.
     const { error } = await supabase.from("user_settings").upsert({
       user_id: userId,
       theme: store.theme,
-      extra_hols: store.extraHols,
       cal_event_rows: store.calEventRows,
       cal_row1_field: store.calRow1Field,
       cal_row2_field: store.calRow2Field,
-      ...updates,
+      ...altri,
       updated_at: new Date().toISOString(),
     });
     if(error) segnalaErroreDb(error, "Salvataggio impostazioni");
