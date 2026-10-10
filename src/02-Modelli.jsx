@@ -2091,10 +2091,12 @@ export default function VistaModelli({ C }){
     setStore(s=>({...s,extraHols:newH}));
     saveSettings({theme:store.theme,extra_hols:newH});
   }
+  // Il giorno si riconosce dalla data (non dall'oggetto): resta valido anche se l'elenco viene riallineato col server.
+  const stessoGiorno = (h)=>h&&h.importante&&+h.y===yImp&&+h.m===mImp&&+h.d===dImp;
   function toggleGiornoImportante(){
     const attuali = store.extraHols||[];
     if(voceImportante){
-      salvaExtraHolsImportanti(attuali.filter(h=>h!==voceImportante));
+      salvaExtraHolsImportanti(attuali.filter(h=>!stessoGiorno(h)));
     }else{
       salvaExtraHolsImportanti([...attuali,{importante:true,name:"Giorno importante",y:yImp,m:mImp,d:dImp,nota:""}]);
     }
@@ -2103,7 +2105,7 @@ export default function VistaModelli({ C }){
     if(!voceImportante) return;
     const testo=(nota||"").trim();
     if(testo===(voceImportante.nota||"")) return;
-    salvaExtraHolsImportanti((store.extraHols||[]).map(h=>h===voceImportante?{...h,nota:testo}:h));
+    salvaExtraHolsImportanti((store.extraHols||[]).map(h=>stessoGiorno(h)?{...h,nota:testo}:h));
   }
   const dayModal = dayKey&&(
     <div style={{position:"fixed",top:0,left:0,right:0,bottom:NAV_HEIGHT_CSS,background:"rgba(0,0,0,0.75)",zIndex:200,
@@ -2174,7 +2176,10 @@ export default function VistaModelli({ C }){
           </button>
           {voceImportante&&(
             <input key={dayKey} defaultValue={voceImportante.nota||""}
-              onInput={e=>{const p=e.target.selectionStart;e.target.value=e.target.value.toUpperCase();e.target.setSelectionRange(p,p);}}
+              onInput={e=>{const p=e.target.selectionStart;e.target.value=e.target.value.toUpperCase();e.target.setSelectionRange(p,p);
+                // il motivo si salva mentre scrivi (dopo mezzo secondo di pausa), non solo quando esci dal campo
+                const v=e.target.value; clearTimeout(window.__tNotaStella);
+                window.__tNotaStella=setTimeout(()=>aggiornaNotaGiornoImportante(v),500);}}
               onBlur={e=>aggiornaNotaGiornoImportante(e.target.value)}
               placeholder="Nota (es. visita medica, scadenza...)" maxLength={80}
               style={{width:"100%",boxSizing:"border-box",marginTop:8,background:T.s2,border:`1px solid ${T.border}`,

@@ -620,6 +620,53 @@ export function loadFromLocalStorage() {
   }
 }
 
+// <<EXTRAHOLS_OPS
+// GIORNI IMPORTANTI (stella + motivo) e FESTIVI PERSONALI: prima in locale, poi su Supabase.
+// Ogni modifica viene scritta SUBITO nella cache locale e registrata come "operazione" in coda
+// (per giorno, non per intero elenco). Quando c'e' linea l'operazione viene applicata all'elenco
+// che c'e' sul server in quel momento: cosi' le modifiche fatte da telefono e da PC si sommano
+// invece di sovrascriversi, e nulla va perso se si e' senza connessione.
+const LS_EXTRAHOLS_OPS = "turnipm_extrahols_ops_v1";
+export function leggiOpExtraHols() {
+  try { const v = JSON.parse(localStorage.getItem(LS_EXTRAHOLS_OPS) || "[]"); return Array.isArray(v) ? v : []; }
+  catch { return []; }
+}
+export function scriviOpExtraHols(ops) {
+  try { localStorage.setItem(LS_EXTRAHOLS_OPS, JSON.stringify(ops || [])); } catch { /* storage pieno: non blocca */ }
+}
+export function chiaveVoceExtraHols(h) {
+  if (!h) return "";
+  return h.importante ? `I|${h.y}|${h.m}|${h.d}` : `F|${h.name}|${h.y ?? ""}|${h.m}|${h.d}`;
+}
+export function applicaOpExtraHols(lista, ops) {
+  const l = [...(lista || [])];
+  for (const o of (ops || [])) {
+    const k = chiaveVoceExtraHols(o.voce);
+    const idx = l.findIndex(h => chiaveVoceExtraHols(h) === k);
+    if (o.op === "del") { if (idx >= 0) l.splice(idx, 1); }
+    else if (idx >= 0) l[idx] = o.voce;
+    else l.push(o.voce);
+  }
+  return l;
+}
+export function diffExtraHolsInOps(vecchia, nuova) {
+  const mV = new Map((vecchia || []).map(h => [chiaveVoceExtraHols(h), h]));
+  const mN = new Map((nuova || []).map(h => [chiaveVoceExtraHols(h), h]));
+  const nuovoId = () => `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const ops = [];
+  for (const [k, h] of mN) if (!mV.has(k) || JSON.stringify(mV.get(k)) !== JSON.stringify(h)) ops.push({ id: nuovoId(), op: "set", voce: h, ts: Date.now() });
+  for (const [k, h] of mV) if (!mN.has(k)) ops.push({ id: nuovoId(), op: "del", voce: h, ts: Date.now() });
+  return ops;
+}
+export function saveExtraHolsLocale(extraHols) {
+  try {
+    let precedente = {};
+    try { const raw = localStorage.getItem(LS_CACHE_KEY); if (raw) precedente = JSON.parse(raw) || {}; } catch { /* cache corrotta */ }
+    localStorage.setItem(LS_CACHE_KEY, JSON.stringify({ ...precedente, extraHols, _savedAt: Date.now() }));
+  } catch (e) { console.warn("saveExtraHolsLocale fallito:", e); }
+}
+// EXTRAHOLS_OPS>>
+
 // Salva nella STESSA cache (turnipm_cache_v1, merge come saveToLocalStorage)
 // i dati che prima esistevano SOLO in RAM perché arrivavano unicamente da
 // Supabase ad ogni avvio: rotazioni, colori extra, autocomplete, indennità,
