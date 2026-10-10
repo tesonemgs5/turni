@@ -5,6 +5,7 @@ import {
   normalizzaTestoGrezzoTurni, oraInMinuti, registraProblemiImport, segnalaErroreSoloLog
 } from "./04-Rotazione";
 import { ConfermaEliminazione } from "./05-Comuni";
+import { leggiPdfCalendarioTurni } from "./14-pdf-turni";
 
 // ═══════════════════════════════════════════════════════════════
 // importTurni.jsx — Dialog di importazione turni: da JSON e da
@@ -731,6 +732,35 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
   async function handleFileConGemini(file){
     setErrore("");
     setStep("gemini-ocr");
+
+    // PDF dei turni personali: lettura diretta del testo (pdf.js), senza
+    // OCR e senza AI. Se i conteggi tornano con i totali stampati nel PDF
+    // si importa subito; altrimenti si ripiega su Gemini come prima.
+    if(file.type==="application/pdf" && tipoTabella==="personale"){
+      try{
+        const r = await leggiPdfCalendarioTurni(file);
+        if(r.ok){
+          const righeLocali = [];
+          const mancantiLocali = [];
+          for(const t of r.turni){
+            const mod = trovaModelloPerTesto(t.turno);
+            if(!mod){ mancantiLocali.push({ data:t.data, titolo:t.turno, oraInizio:"", oraFine:"" }); continue; }
+            righeLocali.push({ dateKey: t.data, modelloId: mod.id });
+          }
+          if(righeLocali.length>0){
+            const n = await onConfirm(righeLocali);
+            setNRigheAggiunte(n||0);
+            registraProblemiImport(mancantiLocali, []);
+            setRisultatoImportOcr({ mancanti: mancantiLocali, sospetti: [] });
+            setStep("riepilogo");
+            return;
+          }
+        }
+      }catch(errPdf){
+        segnalaErroreSoloLog(errPdf, "Lettura PDF locale (pdf.js)");
+      }
+    }
+
     try{
       const base64 = await new Promise((res, rej)=>{
         const r = new FileReader();
