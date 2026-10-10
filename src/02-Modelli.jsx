@@ -6,7 +6,7 @@ import {
   oraInMinuti, calcFine6h15, calcFine6h30, calcFineModello, calcDurata, formattaDurataHM,
   isModelloTurnazioneDefault, withEventoAggiunto, saveToLocalStorage,
   loadFromLocalStorage, clearLocalStorageCache, resolveFestivitaCatalogo,
-  leggiLogErrori, leggiErroriSilenziati, impostaSilenziamentoErrore,
+  leggiLogErrori, leggiErroriSilenziati, impostaSilenziamentoErrore, statoSupabaseVoce,
   cancellaLogErrori, segnalaErrore, CATEGORIE_BACKUP_LOCALE,
 } from "./04-Rotazione";
 import { CalBadge, SmartTimeInput, AutocompleteInput, ColorPickerModal,
@@ -89,6 +89,7 @@ export default function VistaModelli({ C }){
   const [confermaEliminaCalId, setConfermaEliminaCalId] = useState(null);
   const [confermaEliminaEvento, setConfermaEliminaEvento] = useState(null); // {dKey, cId, id}
   const [confermaCancellaLogErrori, setConfermaCancellaLogErrori] = useState(false);
+  const [filtroLog, setFiltroLog] = useState("tutto"); // tutto | operazioni | errori
   // Categorie incluse nel backup locale (export): di default TUTTE attive,
   // così senza toccare nulla il comportamento resta "esporta tutto" come
   // prima dei checkbox — l'utente deve deselezionare esplicitamente per
@@ -269,7 +270,7 @@ export default function VistaModelli({ C }){
                   try {
                     const esito = await salvaDisposizioneModelli();
                     setStatoSalvaDisposizione(esito.ok ? "ok" : "errore");
-                    setBanner(esito.ok ? `✅ Disposizione salvata: ${esito.totale} modelli.` : `❌ ${esito.errore||"Errore durante il salvataggio."}`);
+                    setBanner(esito.ok ? (esito.nessunaModifica ? "ℹ️ Nessuna modifica rispetto all'ultimo salvataggio." : `✅ Salvato: ${esito.riepilogo}.`) : `❌ ${esito.errore||"Errore durante il salvataggio."}`);
                   } catch(e){
                     segnalaErrore(e, "Salvataggio disposizione modelli");
                     setStatoSalvaDisposizione("errore");
@@ -1149,7 +1150,7 @@ export default function VistaModelli({ C }){
             setBanner("⏳ Salvataggio in corso...");
             try {
               const esito = await salvaDisposizioneModelli();
-              if(esito.ok) setBanner(`✅ Salvato a 360°: ${esito.totale} modelli.`);
+              if(esito.ok) setBanner(esito.nessunaModifica ? "ℹ️ Nessuna modifica rispetto all'ultimo salvataggio." : `✅ Salvato: ${esito.riepilogo}.`);
               else setBanner(`❌ ${esito.errore||"Errore durante il salvataggio."}`);
             } catch(e){
               segnalaErrore(e, "Salvataggio modelli");
@@ -1185,7 +1186,7 @@ export default function VistaModelli({ C }){
         </button>
       </SecCollapsible>
 
-      <SecCollapsible label="LOG ERRORI" T={T}
+      <SecCollapsible label="LOG ATTIVITÀ ED ERRORI" T={T}
         onToggle={(aperta)=>{
           if(aperta){
             setLogErroriVisibile(leggiLogErrori());
@@ -1193,9 +1194,9 @@ export default function VistaModelli({ C }){
           }
         }}>
         <div style={{fontSize:11,color:T.sub,marginBottom:12}}>
-          Ogni errore dell'app finisce qui, anche quelli minori: quando è successo, in quale
-          punto dell'app (contesto), e il dettaglio tecnico. Utile per capire cosa sistemare
-          e dove, anche se hai scelto di non vederlo più come avviso.
+          Qui finisce tutto: ogni modifica salvata in locale (💾) con l'elenco preciso di cosa è
+          cambiato, la conferma di Supabase (☁️ ✓ salvato, 🕓 in coda, ⚠️ non confermato) e ogni
+          errore. Le voci con più dettagli si aprono con "Mostra dettagli".
         </div>
 
         {erroriSilenziatiVisibile && erroriSilenziatiVisibile.length>0 && (
@@ -1220,21 +1221,68 @@ export default function VistaModelli({ C }){
           </div>
         )}
 
+        <div style={{display:"flex",gap:6,marginBottom:8}}>
+          {[["tutto","Tutto"],["operazioni","Operazioni"],["errori","Errori"]].map(([v,l])=>(
+            <button key={v} onClick={()=>setFiltroLog(v)}
+              style={{flex:1,padding:"7px 4px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:11,
+                background:filtroLog===v?"#6366f1":T.s2,color:filtroLog===v?"#fff":T.sub,
+                border:`1px solid ${filtroLog===v?"#6366f1":T.border}`}}>{l}</button>
+          ))}
+          <button onClick={()=>setLogErroriVisibile(leggiLogErrori())}
+            style={{padding:"7px 10px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:11,
+              background:T.s2,color:T.sub,border:`1px solid ${T.border}`}}>↻</button>
+        </div>
         <div style={{fontSize:11,fontWeight:800,color:T.sub,marginBottom:8}}>
           CRONOLOGIA {logErroriVisibile?.length>0 ? `(${logErroriVisibile.length})` : ""}
         </div>
         {(!logErroriVisibile || logErroriVisibile.length===0) ? (
-          <div style={{fontSize:12,color:T.sub}}>Nessun errore registrato finora.</div>
+          <div style={{fontSize:12,color:T.sub}}>Nessuna voce nel log finora.</div>
         ) : (
           <div style={{maxHeight:340,overflowY:"auto",background:T.s2,borderRadius:10,padding:10,marginBottom:12}}>
-            {logErroriVisibile.slice().reverse().map((voce,i)=>(
-              <div key={i} style={{padding:"7px 0",borderBottom:i<logErroriVisibile.length-1?`1px solid ${T.border}`:"none"}}>
-                <div style={{fontSize:10,color:T.sub,marginBottom:2}}>
-                  {new Date(voce.ts).toLocaleString("it-IT")} — <strong>{voce.contesto}</strong>
-                </div>
-                <div style={{fontSize:12,color:T.text}}>{voce.message || voce.messaggio}</div>
-              </div>
-            ))}
+            {logErroriVisibile
+              .filter(v=>filtroLog==="tutto" || (filtroLog==="operazioni" ? v.tipo==="operazione" : v.tipo!=="operazione"))
+              .slice().reverse().map((voce,i)=>{
+                const st = statoSupabaseVoce(voce);
+                const colSt = st ? (st.colore==="ok" ? "#10b981" : st.colore==="errore" ? "#ef4444" : "#f59e0b") : T.sub;
+                const dett = Array.isArray(voce.dettagli) ? voce.dettagli : [];
+                const op = voce.tipo==="operazione";
+                return (
+                  <div key={voce.id||i} style={{padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
+                    <div style={{fontSize:10,color:T.sub,marginBottom:2}}>
+                      {op ? "💾 " : "⚠️ "}{new Date(voce.ts).toLocaleString("it-IT")} — <strong>{voce.contesto}</strong>
+                    </div>
+                    <div style={{fontSize:12,color:T.text,wordBreak:"break-word"}}>
+                      {voce.message || voce.messaggio}{voce.conteggio>1 && !voce.conteggi ? ` (×${voce.conteggio})` : ""}
+                    </div>
+                    {op && st && (
+                      <div style={{fontSize:11,fontWeight:700,color:colSt,marginTop:2}}>
+                        {voce.origine!=="remoto" ? "💾 locale ✓   " : ""}{st.icona} {st.testo}
+                      </div>
+                    )}
+                    {op && !st && voce.origine!=="remoto" && (
+                      <div style={{fontSize:11,fontWeight:700,color:"#10b981",marginTop:2}}>💾 locale ✓</div>
+                    )}
+                    {dett.length===1 && (
+                      <div style={{fontSize:11,color:T.text,marginTop:3,wordBreak:"break-word"}}>{dett[0]}</div>
+                    )}
+                    {dett.length>1 && (
+                      <details style={{marginTop:4}}>
+                        <summary style={{fontSize:11,color:"#6366f1",cursor:"pointer",fontWeight:700}}>
+                          Mostra {voce.dettagliTotali||dett.length} dettagli
+                        </summary>
+                        <div style={{maxHeight:220,overflowY:"auto",marginTop:4,paddingLeft:6,borderLeft:`2px solid ${T.border}`}}>
+                          {dett.map((d,k)=>(
+                            <div key={k} style={{fontSize:11,color:T.text,padding:"2px 0",wordBreak:"break-word"}}>{d}</div>
+                          ))}
+                          {(voce.dettagliTotali||0)>dett.length && (
+                            <div style={{fontSize:11,color:T.sub,padding:"2px 0"}}>… e altri {voce.dettagliTotali-dett.length} non mostrati</div>
+                          )}
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                );
+              })}
           </div>
         )}
         {logErroriVisibile?.length>0 && (
@@ -1245,7 +1293,7 @@ export default function VistaModelli({ C }){
           </button>
         )}
         {confermaCancellaLogErrori&&(
-          <ConfermaEliminazione T={T} testo="Cancellare tutto il log degli errori?"
+          <ConfermaEliminazione T={T} testo="Cancellare tutto il log (operazioni ed errori)? Le copie già inviate a Supabase restano lì."
             onConferma={()=>{
               setConfermaCancellaLogErrori(false);
               cancellaLogErrori();
@@ -3681,7 +3729,7 @@ export default function VistaModelli({ C }){
               setBanner("⏳ Salvataggio disposizione in corso...");
               try {
                 const esito = await salvaDisposizioneModelli();
-                setBanner(esito.ok ? `✅ Disposizione salvata: ${esito.totale} modelli.` : `❌ ${esito.errore||"Errore durante il salvataggio."}`);
+                setBanner(esito.ok ? (esito.nessunaModifica ? "ℹ️ Nessuna modifica rispetto all'ultimo salvataggio." : `✅ Salvato: ${esito.riepilogo}.`) : `❌ ${esito.errore||"Errore durante il salvataggio."}`);
               } catch(e){
                 segnalaErrore(e, "Salvataggio disposizione modelli");
                 setBanner("❌ Errore durante il salvataggio. Controlla il Log.");
