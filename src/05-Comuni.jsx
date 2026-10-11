@@ -2052,13 +2052,15 @@ export function nomeDelColore(hex, {fasceAutomatiche=[], coloriExtra=[]}={}){
   return hex.toUpperCase();
 }
 
-export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, title="Scegli colore", getNomeColore=null, modelliColore=null, modelliAssegnabili=null}){
+export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, title="Scegli colore", getNomeColore=null, modelliColore=null, modelliAssegnabili=null, calendariPicker=null}){
   const [pos,setPos]=useState(null); // null = centrato di default
   // modelliColore: [{id,label,sub,hex,cal}] di TUTTI i modelli → sotto la griglia compare
   // l'elenco dei modelli che usano il colore toccato. modelliAssegnabili: [{id,label,sub,cal}]
   // → sezione con spunte per associare modelli al colore scelto (onPick riceve gli id come 3° argomento).
   const [selIds,setSelIds]=useState(()=>new Set());
   const [mostraAssegna,setMostraAssegna]=useState(true);
+  const [qAssegna,setQAssegna]=useState("");
+  const [calEsclusi,setCalEsclusi]=useState(()=>new Set()); // calendari nascosti dal filtro
   const stessoHex=(a,b)=>String(a||"").toLowerCase()===String(b||"").toLowerCase();
   const [nomeColoreInput, setNomeColoreInput] = useState("");
   // Modalità del selettore ("preciso" = riquadro 2D+hue+numeri esistente,
@@ -2205,25 +2207,71 @@ export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, tit
               </div>
               <span style={{color:T.sub,fontSize:12}}>{mostraAssegna?"▲":"▼"}</span>
             </div>
-            {mostraAssegna&&modelliAssegnabili.map(m=>{
-              const sel=selIds.has(m.id);
+            {mostraAssegna&&(()=>{
+              const cals = Array.isArray(calendariPicker)?calendariPicker:[];
+              const visibili = modelliAssegnabili.filter(m=>
+                !calEsclusi.has(m.calId) && (qAssegna.trim()==="" || (m.m ? modelloCorrispondeRicerca(m.m,qAssegna) : String(m.label||"").toLowerCase().includes(qAssegna.trim().toLowerCase()))));
+              const gruppi = [];
+              visibili.forEach(m=>{
+                let g = gruppi.find(x=>x.calId===m.calId);
+                if(!g){ g={calId:m.calId, nome:m.cal||"Senza calendario", colore:(cals.find(c=>c.id===m.calId)||{}).color||"#94a3b8", lista:[]}; gruppi.push(g); }
+                g.lista.push(m);
+              });
+              const riga = (m)=>{
+                const sel=selIds.has(m.id);
+                return (
+                  <div key={m.id}
+                    onClick={()=>setSelIds(prev=>{const n=new Set(prev); if(n.has(m.id)) n.delete(m.id); else n.add(m.id); return n;})}
+                    style={{display:"flex",alignItems:"center",gap:8,padding:"6px 2px",cursor:"pointer",borderBottom:`1px solid ${T.border}`}}>
+                    <div style={{width:18,height:18,borderRadius:5,flexShrink:0,
+                      border:`2px solid ${sel?previewColor:T.border}`,background:sel?previewColor:"transparent",
+                      display:"flex",alignItems:"center",justifyContent:"center"}}>
+                      {sel&&<span style={{color:getContrastTextColor(previewColor),fontSize:12,fontWeight:900}}>✓</span>}
+                    </div>
+                    <div style={{width:10,height:10,borderRadius:"50%",background:m.hex||T.border,flexShrink:0}}/>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.label}</div>
+                      {m.orario&&<div style={{fontSize:10,color:T.sub}}>{m.orario}</div>}
+                    </div>
+                  </div>
+                );
+              };
               return (
-                <div key={m.id}
-                  onClick={()=>setSelIds(prev=>{const n=new Set(prev); if(n.has(m.id)) n.delete(m.id); else n.add(m.id); return n;})}
-                  style={{display:"flex",alignItems:"center",gap:8,padding:"6px 2px",cursor:"pointer",borderBottom:`1px solid ${T.border}`}}>
-                  <div style={{width:18,height:18,borderRadius:5,flexShrink:0,
-                    border:`2px solid ${sel?previewColor:T.border}`,background:sel?previewColor:"transparent",
-                    display:"flex",alignItems:"center",justifyContent:"center"}}>
-                    {sel&&<span style={{color:getContrastTextColor(previewColor),fontSize:12,fontWeight:900}}>✓</span>}
-                  </div>
-                  <div style={{width:10,height:10,borderRadius:"50%",background:m.hex||T.border,flexShrink:0}}/>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:13,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.label}</div>
-                    {m.sub&&<div style={{fontSize:10,color:T.sub}}>{m.sub}</div>}
-                  </div>
-                </div>
+                <>
+                  <input value={qAssegna} onChange={e=>setQAssegna(e.target.value)}
+                    placeholder="🔎 Cerca modello o orario..."
+                    style={{width:"100%",boxSizing:"border-box",fontSize:12,color:T.text,background:T.s2,
+                      border:`1px solid ${T.border}`,borderRadius:8,padding:"7px 9px",outline:"none",marginBottom:6}}/>
+                  {cals.length>1&&(
+                    <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:6}}>
+                      {cals.map(c=>{
+                        const attivo=!calEsclusi.has(c.id);
+                        return (
+                          <button key={c.id} type="button"
+                            onClick={()=>setCalEsclusi(prev=>{const n=new Set(prev); if(n.has(c.id)) n.delete(c.id); else n.add(c.id); return n;})}
+                            style={{display:"flex",alignItems:"center",gap:4,cursor:"pointer",
+                              background:attivo?"#eab308":T.s2,border:`1.5px solid ${attivo?"#eab308":T.border}`,
+                              borderRadius:16,padding:"3px 9px 3px 6px"}}>
+                            <div style={{width:7,height:7,borderRadius:"50%",background:c.color}}/>
+                            <span style={{color:attivo?"#0f172a":T.text,fontSize:11,fontWeight:700}}>{c.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {gruppi.length===0&&<div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"10px 0"}}>Nessun modello</div>}
+                  {gruppi.map(g=>(
+                    <div key={g.calId||"__"} style={{marginBottom:6}}>
+                      <div style={{display:"flex",alignItems:"center",gap:5,margin:"4px 0 2px"}}>
+                        <div style={{width:7,height:7,borderRadius:"50%",background:g.colore}}/>
+                        <span style={{fontSize:11,fontWeight:800,color:T.sub,textTransform:"uppercase"}}>{g.nome}</span>
+                      </div>
+                      {g.lista.map(riga)}
+                    </div>
+                  ))}
+                </>
               );
-            })}
+            })()}
           </div>
         )}
 

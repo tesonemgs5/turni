@@ -224,8 +224,9 @@ export default function VistaModelli({ C }){
       return {
         id:m.id, label:m.label||m.titolo||"Senza nome",
         sub:(m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${m.fine?` - ${m.fine}`:""}`:"")+(cal?` · ${cal.name}`:""),
+        orario:(m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${m.fine?` - ${m.fine}`:""}`:""),
         hex:m.coloreCustom||m.colore||null,
-        cal:cal?cal.name:"",
+        cal:cal?cal.name:"", calId:cal?cal.id:null, m,
       };
     });
   }
@@ -754,7 +755,8 @@ export default function VistaModelli({ C }){
           coloriUsati={coloriUsatiTutti()}
           getNomeColore={p=>nomeDelColore(p,{fasceAutomatiche,coloriExtra})}
           modelliColore={datiModelliPicker(false)}
-          modelliAssegnabili={datiModelliPicker(true)}
+          modelliAssegnabili={datiModelliPicker(false)}
+          calendariPicker={store.calendars}
           onPick={async(p,nome,ids)=>{
             addColoreExtra(p,nome);
             setShowAddColorPicker(false);
