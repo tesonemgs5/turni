@@ -9,7 +9,7 @@ import {
   leggiCodaSync, leggiErroriSilenziati, leggiLogErrori, loadFromLocalStorage, clearLocalStorageCache, minsOf,
   minutiTurnoModello, normalizzaOraHHMM, oraInMinuti, registraListenerCodaErrori, registraProblemiImport,
   registraAttivita, confermaSupabase, segnaInCodaSupabase, aggiornaEsitoVoceLog, segnaContestoLog, impostaSorgenteLog,
-  registraListenerLogSync, leggiLogDaSincronizzare, segnaLogSincronizzato, voceLogPerSupabase, diffDisposizione,
+  registraListenerLogSync, leggiLogDaSincronizzare, segnaLogSincronizzato, voceLogPerSupabase, diffDisposizione, impostaDettaglioImport,
   sameData, saveDatiSessioneLocale, saveToLocalStorage, scriviCodaSync, segnalaErrore, segnalaErroreSoloLog,
   uid, withEventoAggiornato, withEventoAggiunto, withEventoRimosso,
   esportaBackupLocaleCompleto, importaBackupLocaleCompleto, CATEGORIE_BACKUP_LOCALE,
@@ -1512,7 +1512,46 @@ export function useAppCore(session){
   // reale stavolta), resta in coda per il prossimo tentativo — tranne se
   // l'errore non è di rete, nel qual caso viene comunque segnalata
   // all'utente (stesso comportamento di sempre per gli errori "veri").
+  // ── Scrittura remota "write-ahead" ────────────────────────────────────
+  // Ogni modifica viene PRIMA scritta in locale (stato + cache del dispositivo) e
+  // messa nella coda persistente del dispositivo (sopravvive anche alla chiusura
+  // dell'app); POI viene inviata a Supabase in background, con retry automatico e
+  // conferma nel Log. Supabase è solo il backup: l'app non aspetta mai la sua risposta.
+  const codaInCorsoRef = useRef(false);
+  const codaRiprovaRef = useRef(false);
+  const codaTimerRef = useRef(null);
+
+  function programmaFlushCoda(ritardoMs=1200){
+    if(codaTimerRef.current) clearTimeout(codaTimerRef.current);
+    codaTimerRef.current = setTimeout(()=>{ codaTimerRef.current = null; processaCodaSync(); }, ritardoMs);
+  }
+  function accodaScrittureRemote(ops){
+    if(!ops?.length) return;
+    const coda = leggiCodaSync();
+    const ts = new Date().toISOString();
+    for(const o of ops) coda.push({ id: generaIdLocale(), ts, match:null, payload:null, onConflict:null, ...o });
+    scriviCodaSync(coda);
+    if(typeof navigator!=="undefined" && navigator.onLine===false){
+      segnaInCodaSupabase(ops.flatMap(o=>[o.payload?.id, o.match?.id]).filter(Boolean));
+    }
+    programmaFlushCoda();
+  }
+  function accodaScritturaRemota(op){ accodaScrittureRemote([op]); }
+
+  // Un solo svuotamento alla volta: se ne arriva un altro mentre il primo lavora,
+  // viene rieseguito subito dopo (evita invii doppi e perdita di operazioni).
   async function processaCodaSync(){
+    if(codaInCorsoRef.current){ codaRiprovaRef.current = true; return; }
+    codaInCorsoRef.current = true;
+    try{
+      do{
+        codaRiprovaRef.current = false;
+        await processaCodaSyncInterno();
+      }while(codaRiprovaRef.current);
+    } finally { codaInCorsoRef.current = false; }
+  }
+
+  async function processaCodaSyncInterno(){
     sincronizzaExtraHols();
     const coda = leggiCodaSync();
     if(coda.length===0) return;
@@ -1542,11 +1581,52 @@ export function useAppCore(session){
     // scrittura (quella con ts più recente) sia quella che resta valida.
     const ordinata = [...codaDeduplicata].sort((a,b)=>(a.ts||"").localeCompare(b.ts||""));
     const rimasti = [];
-    for(const op of ordinata){
+    // Pre-passaggio: inserimenti e cancellazioni di eventi consecutivi, spediti a
+    // blocchi (una richiesta ogni 50-100 righe invece di una per riga).
+    const daElaborare = [];
+    {
+      const eIns = o => o.tipo==="insert" && o.table==="events" && o.payload;
+      const eDel = o => o.tipo==="delete" && o.table==="events" && o.match?.id;
+      let reteGiu = false;
+      let i = 0;
+      while(i<ordinata.length){
+        const op = ordinata[i];
+        if(eIns(op) || eDel(op)){
+          const insieme = eIns(op) ? eIns : eDel;
+          const max = eIns(op) ? 50 : 100;
+          const blocco = [];
+          let j = i;
+          while(j<ordinata.length && blocco.length<max && insieme(ordinata[j])){ blocco.push(ordinata[j]); j++; }
+          if(reteGiu){ rimasti.push(...blocco); i = j; continue; } // rete già caduta in questo giro: non si insiste
+          let errBlocco = null;
+          try{
+            if(eIns(op)){
+              const { error } = await supabase.from("events").insert(blocco.map(o=>o.payload));
+              errBlocco = error || null;
+            } else {
+              const { error } = await supabase.from("events").delete().in("id", blocco.map(o=>o.match.id)).eq("user_id", userId);
+              errBlocco = error || null;
+            }
+          }catch(e){ errBlocco = { message:String(e?.message||e), rete:true }; }
+          if(!errBlocco){
+            confermaSupabase(blocco.map(o=>o.payload?.id || o.match?.id).filter(Boolean));
+          } else if(errBlocco.rete || eRoreDiRete(errBlocco)){
+            reteGiu = true;
+            rimasti.push(...blocco);
+          } else {
+            daElaborare.push(...blocco); // errore non di rete: si riprova una riga alla volta per isolare quella colpevole
+          }
+          i = j; continue;
+        }
+        daElaborare.push(op); i++;
+      }
+    }
+    for(const op of daElaborare){
       async function provaSupabase(payloadCorrente, tentativi=0){
         if(tentativi>=10) return { error:{message:"Troppi tentativi di retry sullo schema"} };
         let q;
         if(op.tipo==="insert") q = supabase.from(op.table).insert(payloadCorrente);
+        else if(op.tipo==="upsert") q = supabase.from(op.table).upsert(payloadCorrente, op.onConflict ? { onConflict: op.onConflict } : undefined);
         else if(op.tipo==="update") q = supabase.from(op.table).update(payloadCorrente).match(op.match);
         else q = supabase.from(op.table).delete().match(op.match);
         const { error } = await q;
@@ -1566,6 +1646,12 @@ export function useAppCore(session){
       const SOGLIA_AVVISO_MS = 15*60*1000; // 15 minuti
       try{
         const res = await provaSupabase(op.payload);
+        if(res.error && op.tipo==="insert" && (res.error.code==="23505" || /duplicate key/i.test(res.error.message||""))){
+          // Già presente su Supabase (invio precedente riuscito ma risposta persa): è fatto.
+          rimasti.push(null);
+          confermaSupabase([op.payload?.id].filter(Boolean));
+          continue;
+        }
         if(res.error){
           if(eRoreDiRete(res.error)){
             // Rete ballerina: la richiesta è arrivata ma è caduta a metà,
@@ -1603,7 +1689,12 @@ export function useAppCore(session){
         }
       }
     }
-    scriviCodaSync(rimasti.filter(Boolean));
+    {
+      // Operazioni accodate MENTRE si svuotava la coda (nuove modifiche dell'utente): vanno conservate.
+      const idIniziali = new Set(coda.map(o=>o.id));
+      const aggiuntiNelFrattempo = leggiCodaSync().filter(o=>!idIniziali.has(o.id));
+      scriviCodaSync([...rimasti.filter(Boolean), ...aggiuntiNelFrattempo]);
+    }
     // Backup su Sheets con l'istantanea corrente (dopo aver smaltito la
     // coda Supabase): un solo invio per l'intero batch, invece di uno per
     // ogni operazione — Sheets riceve sempre lo stato completo, non un
@@ -1980,16 +2071,20 @@ export function useAppCore(session){
     if(Object.keys(altri).length===0) return;
     // NB: qui NON si manda piu' extra_hols: un dispositivo non aggiornato non puo' piu'
     // sovrascrivere i giorni importanti salvati da un altro.
-    const { error } = await supabase.from("user_settings").upsert({
-      user_id: userId,
-      theme: store.theme,
-      cal_event_rows: store.calEventRows,
-      cal_row1_field: store.calRow1Field,
-      cal_row2_field: store.calRow2Field,
-      ...altri,
-      updated_at: new Date().toISOString(),
+    // Locale già aggiornato dal chiamante; l'invio a Supabase è accodato (con retry automatico).
+    accodaScritturaRemota({
+      tipo:"upsert", table:"user_settings",
+      payload:{
+        user_id: userId,
+        theme: store.theme,
+        cal_event_rows: store.calEventRows,
+        cal_row1_field: store.calRow1Field,
+        cal_row2_field: store.calRow2Field,
+        ...altri,
+        updated_at: new Date().toISOString(),
+      },
+      contesto:"Salvataggio impostazioni",
     });
-    if(error) segnalaErroreDb(error, "Salvataggio impostazioni");
   }
 
   // Spostata qui da SEZIONE 18 (Settings View) perché usata anche da
@@ -2783,13 +2878,7 @@ export function useAppCore(session){
   //    preciso dei turni); 2) cancellazione su Supabase a blocchi; se manca la rete
   //    le cancellazioni restano in coda e partono appena torna la linea.
   function accodaCancellazioniEventi(ids, contesto){
-    const coda = leggiCodaSync();
-    const ts = new Date().toISOString();
-    for(const id of ids){
-      coda.push({ id: generaIdLocale(), ts, tipo:"delete", table:"events", payload:null, match:{ id, user_id:userId }, contesto });
-    }
-    scriviCodaSync(coda);
-    segnaInCodaSupabase(ids);
+    accodaScrittureRemote(ids.map(id=>({ tipo:"delete", table:"events", match:{ id, user_id:userId }, contesto })));
   }
 
   async function eliminaEventiLocalFirst({ contesto, idsLocali, aggiorna, queryServer }){
@@ -5321,37 +5410,43 @@ const importsRecenti = useMemo(()=>{
     const tIn = oraInizioOverride!=null ? oraInizioOverride : ((!mod || allDay) ? "" : (mod.inizio || ""));
     const tOut = oraFineOverride!=null ? oraFineOverride : ((!mod || allDay) ? "" : calcFineModello(mod));
 
-    const { data, error } = await creaEventoSupabase({
-      userId, calId: calDest, dateKey, label, color, allDay,
-      tIn, tOut, modelloId: mod?.id || null, rotazioneId,
-      note, collega, auto, importId, protPagFine, protRecFine,
-    });
-
-    if(error) {
-      segnalaErroreDb(error, "Inserimento turno da modello");
-      return;
-    }
-    confermaSupabase([data?.id]);
-
+    // LOCALE PER PRIMO: l'evento nasce subito qui, con un id valido (UUID) generato
+    // in locale; l'invio a Supabase viene accodato e parte subito dopo (o appena
+    // torna la rete). Nessuna attesa della risposta del database.
+    const nuovoId = generaIdLocale();
+    const noteUp = up(note), collegaUp = up(collega), autoUp = up(auto);
     if(!nuoviEventiLocali[dateKey]) nuoviEventiLocali[dateKey] = {};
     if(!nuoviEventiLocali[dateKey][calDest]) nuoviEventiLocali[dateKey][calDest] = [];
     nuoviEventiLocali[dateKey][calDest].push({
-      id: data.id,
+      id: nuovoId,
       color,
       label,
-      allDay: data.all_day,
-      tIn: data.time_in || "",
-      tOut: data.time_out || "",
+      allDay,
+      tIn: tIn || "",
+      tOut: tOut || "",
       place: "",
       map: "",
-      note: data.note || "",
-      modelloId: data.modello_id || null,
-      rotazioneId: data.rotazione_id || null,
-      collega: data.collega || "",
-      auto: data.auto || "",
-      importId: data.import_id || null,
-      protPagFine: data.prot_pag_fine || "",
-      protRecFine: data.prot_rec_fine || "",
+      note: noteUp,
+      modelloId: mod?.id || null,
+      rotazioneId: rotazioneId || null,
+      collega: collegaUp,
+      auto: autoUp,
+      importId: importId || null,
+      protPagFine: protPagFine || "",
+      protRecFine: protRecFine || "",
+    });
+    accodaScritturaRemota({
+      tipo:"insert", table:"events",
+      payload:{
+        id: nuovoId, user_id: userId, calendar_id: calDest, date_key: dateKey,
+        label, color, all_day: allDay, time_in: tIn, time_out: tOut,
+        place: "", map_url: "", note: noteUp,
+        modello_id: mod?.id || null, rotazione_id: rotazioneId,
+        collega: collegaUp, auto: autoUp,
+        prot_pag_fine: protPagFine, prot_rec_fine: protRecFine,
+        import_id: importId,
+      },
+      contesto: importId ? "Importazione turni" : "Inserimento turno da modello",
     });
   }
 
@@ -5565,6 +5660,7 @@ const importsRecenti = useMemo(()=>{
     const sospetti = [];
     let nAggiunti=0, nSostituiti=0, nInvariati=0;
     const sostituzioni = [];
+    const elencoAggiunti = [], elencoInvariati = [];
 
     // Separo le righe di protrazione dalle righe di turno normali: le
     // prime non generano un evento proprio, vengono agganciate al turno
@@ -5613,7 +5709,7 @@ const importsRecenti = useMemo(()=>{
       if(esistente){
         const invariato = up(esistente.note)===up(note) && up(esistente.collega)===up(collega) && up(esistente.auto)===up(auto)
           && up(esistente.protPagFine)===up(protPagFine||"") && up(esistente.protRecFine)===up(protRecFine||"");
-        if(invariato){ nInvariati++; continue; }
+        if(invariato){ nInvariati++; elencoInvariati.push({ data: dateKey, titolo: mod.titolo||"" }); continue; }
         const [yy,mm,dd] = dateKey.split("-").map(Number);
         const giornoSett = NOMI_GIORNI_IT[new Date(yy,mm-1,dd).getDay()];
         // Niente più alert() per ogni singola riga: si accoda il dettaglio
@@ -5637,6 +5733,7 @@ const importsRecenti = useMemo(()=>{
         nSostituiti++;
       } else {
         nAggiunti++;
+        elencoAggiunti.push({ data: dateKey, titolo: mod.titolo||"" });
       }
 
       const [yy,mm,dd] = dateKey.split("-").map(Number);
@@ -5692,11 +5789,6 @@ const importsRecenti = useMemo(()=>{
       if(idsFigliOrfani.length) idsDaCancellare.push(...idsFigliOrfani);
     }
 
-    if(idsDaCancellare.length){
-      const { error: delErr } = await supabase.from("events").delete().in("id", idsDaCancellare).eq("user_id", userId);
-      if(delErr) segnalaErroreDb(delErr, "Sostituzione turni import");
-    }
-
     setStore(prev=>{
       const ns = JSON.parse(JSON.stringify(prev));
       if(idsDaCancellare.length){
@@ -5719,6 +5811,9 @@ const importsRecenti = useMemo(()=>{
       return ns;
     });
 
+    // Cancellazione dei turni sostituiti: DOPO il salvataggio locale, in coda verso Supabase.
+    if(idsDaCancellare.length) accodaCancellazioniEventi(idsDaCancellare, "Sostituzione turni (importazione)");
+
     // Stesso bugfix del caso "Creazione turno": il calendario su cui è stato
     // fatto l'import deve restare visibile dopo il refresh.
     if((nAggiunti||0)>0 || (nSostituiti||0)>0) setSelectedCalIds(prev => prev.length===0 || prev.includes(calId) ? prev : [...prev, calId]);
@@ -5728,7 +5823,7 @@ const importsRecenti = useMemo(()=>{
       `Importazione completata: ${nAggiunti} aggiunti, ${nSostituiti} sostituiti, ${nInvariati} invariati` +
       (((mancanti?.length||0)+(sospetti?.length||0))>0 ? `, ${mancanti?.length||0} mancanti, ${sospetti?.length||0} sospetti` : ""),
       { chiave:`riepilogo-${importId}`, supabase:"n/a" });
-    return { nAggiunti, nSostituiti, nInvariati, mancanti, sospetti, importId, sostituzioni };
+    return { nAggiunti, nSostituiti, nInvariati, mancanti, sospetti, importId, sostituzioni, elencoAggiunti, elencoInvariati };
   }
 
   async function delTuttiEventiImport(importId, cId){
@@ -5758,11 +5853,14 @@ const importsRecenti = useMemo(()=>{
 
   async function importaEventiSingoli(righe, tipoTabella=null){
     segnaContestoLog("Importazione turni");
-    // righe: [{ dateKey, modelloId }] -- righe senza modelloId vengono ignorate
+    // righe: [{ dateKey, modelloId }] -- righe senza modelloId finiscono tra i "non riconosciuti"
     // tipoTabella: "personale" -> calendario FU, "stella" -> calendario COT
     // (nomi in cima al file); altrimenti il calendario attivo.
-    // Restituisce il numero di righe EFFETTIVAMENTE scritte (esclude modelloId
-    // mancante, modello inesistente, e duplicati già presenti sullo stesso giorno).
+    // Restituisce il numero di turni EFFETTIVAMENTE scritti (aggiunti + modificati).
+    // Il dettaglio (aggiunti / modificati / non modificati / non riconosciuti) viene
+    // pubblicato con impostaDettaglioImport e mostrato nel riepilogo del dialog.
+    const dettaglio = { aggiunti:[], modificati:[], invariati:[], errori:[], importId:null };
+    impostaDettaglioImport(dettaglio);
     if(!userId || !righe?.length) return 0;
     const calDest = tipoTabella==="stella" ? calStellaId : tipoTabella==="personale" ? calPersonaleId : calId;
     if(!calDest){
@@ -5771,23 +5869,50 @@ const importsRecenti = useMemo(()=>{
       return 0;
     }
     const importId = `imp_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+    dettaglio.importId = importId;
     const nuoviEventiLocali = {};
+    const idsDaSostituire = [];
+    const modelliInGioco = new Set(righe.filter(r=>r.modelloId).map(r=>r.modelloId));
+    const nomeMod = (id) => { const m = modelli.find(x=>x.id===id); return m ? (m.titolo||m.label||"") : ""; };
     let nScritte = 0;
     for(const r of righe){
-      if(!r.modelloId) continue;
+      if(!r.modelloId){ dettaglio.errori.push({ data:r.dateKey, titolo:"turno non riconosciuto (nessun modello associato)" }); continue; }
       const mod = modelli.find(m=>m.id===r.modelloId);
-      if(!mod) continue;
-      // Se il giorno ha già un evento con lo stesso modello, non duplicare.
+      if(!mod){ dettaglio.errori.push({ data:r.dateKey, titolo:"modello non trovato" }); continue; }
+      // Se il giorno ha già un evento con lo stesso modello: non modificato.
       const eventiEsistenti = store.events?.[r.dateKey]?.[calDest] || [];
-      const giaPresente = eventiEsistenti.some(ev => ev.modelloId === r.modelloId);
-      if(giaPresente) continue;
+      if(eventiEsistenti.some(ev => ev.modelloId === r.modelloId)){
+        dettaglio.invariati.push({ data:r.dateKey, titolo: mod.titolo||mod.label||"" });
+        continue;
+      }
+      // Turni personali: se quel giorno c'è già un ALTRO dei turni importati (es. Primo al
+      // posto di Secondo) il turno è cambiato: il vecchio viene sostituito dal nuovo.
+      const daSostituire = tipoTabella==="personale"
+        ? eventiEsistenti.filter(ev=>ev.modelloId && modelliInGioco.has(ev.modelloId)) : [];
+      if(daSostituire.length){
+        for(const ev of daSostituire) idsDaSostituire.push(ev.id);
+        dettaglio.modificati.push({
+          data:r.dateKey,
+          vecchio: daSostituire.map(ev=>nomeMod(ev.modelloId)||ev.label||"?").join(" + "),
+          nuovo: mod.titolo||mod.label||"",
+        });
+      } else {
+        dettaglio.aggiunti.push({ data:r.dateKey, titolo: mod.titolo||mod.label||"" });
+      }
       const [y,m,d] = r.dateKey.split("-").map(Number);
       const dataEv = new Date(y, m-1, d);
       await inserisciEventoGenerico(mod, dataEv, null, nuoviEventiLocali, null, { importId, calIdOverride: calDest });
       nScritte++;
     }
+    // LOCALE PER PRIMO: stato dell'app + cache del dispositivo (qui nasce la voce nel Log).
     setStore(prev => {
       const ns = JSON.parse(JSON.stringify(prev));
+      if(idsDaSostituire.length){
+        const idSet = new Set(idsDaSostituire.map(String));
+        for(const dKey of Object.keys(ns.events||{})){
+          if(ns.events[dKey]?.[calDest]) ns.events[dKey][calDest] = ns.events[dKey][calDest].filter(e=>!idSet.has(String(e.id)));
+        }
+      }
       for(const [dateKey, calMap] of Object.entries(nuoviEventiLocali)) {
         if(!ns.events[dateKey]) ns.events[dateKey] = {};
         for(const [cid, evts] of Object.entries(calMap)) {
@@ -5799,12 +5924,22 @@ const importsRecenti = useMemo(()=>{
       syncSeAttivo(ns.events, ns.calendars);
       return ns;
     });
+    // POI Supabase: cancellazione dei turni sostituiti in coda (gli inserimenti sono già in coda).
+    if(idsDaSostituire.length) accodaCancellazioniEventi(idsDaSostituire, "Sostituzione turni (importazione)");
     // Il calendario di destinazione deve restare visibile dopo il refresh.
     if(nScritte>0) setSelectedCalIds(prev => prev.length===0 || prev.includes(calDest) ? prev : [...prev, calDest]);
     registraAttivita("Importazione turni",
-      `Importazione completata (${store.calendars.find(c=>c.id===calDest)?.name||"calendario"}): ${nScritte} turni aggiunti su ${righe.length} righe` +
-      ((righe.length-nScritte)>0 ? `, ${righe.length-nScritte} saltati perché già presenti o senza modello` : ""),
-      { chiave:`riepilogo-${importId}`, supabase:"n/a" });
+      `Importazione completata (${store.calendars.find(c=>c.id===calDest)?.name||"calendario"}): ` +
+      `${dettaglio.aggiunti.length} aggiunti, ${dettaglio.modificati.length} modificati, ${dettaglio.invariati.length} non modificati` +
+      (dettaglio.errori.length ? `, ${dettaglio.errori.length} non riconosciuti` : ""),
+      {
+        chiave:`riepilogo-${importId}`, supabase:"n/a",
+        dettagli: [
+          ...dettaglio.modificati.map(x=>`~ ${x.data}: ${x.vecchio} → ${x.nuovo}`),
+          ...dettaglio.invariati.map(x=>`= ${x.data} · ${x.titolo} (non modificato)`),
+          ...dettaglio.errori.map(x=>`✗ ${x.data}: ${x.titolo}`),
+        ],
+      });
     return nScritte;
   }
 
@@ -6706,19 +6841,13 @@ const importsRecenti = useMemo(()=>{
       return ns;
     });
     if(idsAggiornati.length>0){
-      if(typeof patchDb==="function"){
-        // Payload diverso per evento (dipende da cosa l'evento aveva già):
-        // un update separato per ciascuno, tutti in parallelo.
-        const risultati = await Promise.all(idsAggiornati.map(id=>
-          supabase.from("events").update(dbPayloadPerId[id]).eq("id", id).eq("user_id", userId)
-        ));
-        const conErrore = risultati.find(r=>r.error);
-        if(conErrore) segnalaErrore(conErrore.error, `Aggiornamento di massa (${idsAggiornati.length} eventi "${nomeLabel}" ${tInMatch}-${tOutMatch})`);
-      } else {
-        // Stesso payload per tutti: un unico UPDATE in blocco.
-        const { error } = await supabase.from("events").update(patchDb).in("id", idsAggiornati).eq("user_id", userId);
-        if(error) segnalaErrore(error, `Aggiornamento di massa (${idsAggiornati.length} eventi "${nomeLabel}" ${tInMatch}-${tOutMatch})`);
-      }
+      // Locale già salvato sopra; l'invio a Supabase è accodato (con retry automatico).
+      accodaScrittureRemote(idsAggiornati.map(id=>({
+        tipo:"update", table:"events",
+        payload: typeof patchDb==="function" ? dbPayloadPerId[id] : patchDb,
+        match:{ id, user_id:userId },
+        contesto:`Aggiornamento di massa (${nomeLabel} ${tInMatch}-${tOutMatch})`,
+      })));
     }
     return { idsAggiornati };
   }

@@ -1212,6 +1212,7 @@ export function statoSupabaseVoce(v) {
   if (rest === 0) return { icona: "☁️", testo: "Supabase ✓", colore: "ok" };
   const ok = Math.max(0, tot - rest);
   if (v.inCoda) return { icona: "🕓", testo: `Supabase: in coda (${ok}/${tot})`, colore: "attesa" };
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return { icona: "🕓", testo: `Supabase: in coda, senza rete (${ok}/${tot})`, colore: "attesa" };
   if (Date.now() - new Date(v.ts).getTime() > 120000) return { icona: "⚠️", testo: `Supabase: non confermato (${ok}/${tot})`, colore: "errore" };
   return { icona: "☁️", testo: `Supabase: ${ok}/${tot}…`, colore: "attesa" };
 }
@@ -1412,6 +1413,12 @@ export function voceLogPerSupabase(v, userId) {
     aggiornato_il: new Date().toISOString(),
   };
 }
+
+// Dettaglio dell'ultima importazione (aggiunti / modificati / non modificati /
+// non riconosciuti): lo scrive la logica di import, lo legge il riepilogo del dialog.
+let _ultimoDettaglioImport = null;
+export function impostaDettaglioImport(d) { _ultimoDettaglioImport = d || null; }
+export function leggiDettaglioImport() { return _ultimoDettaglioImport; }
 
 // Problemi rilevati durante un import (righe mancanti/sospette): salvati
 // nel Log come voci dedicate, consultabili in Impostazioni -> Log.

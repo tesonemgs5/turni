@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, Fragment } from "react";
 import {
   NOMI_MESI_IT, cancellaRegistroImportProblemi, estraiJsonDaTesto, fmtDataIT,
   getContrastTextColor, leggiRegistroImportProblemi, normalizzaRigheImportGrezzo,
-  normalizzaTestoGrezzoTurni, oraInMinuti, registraProblemiImport, segnalaErroreSoloLog
+  normalizzaTestoGrezzoTurni, oraInMinuti, registraProblemiImport, segnalaErroreSoloLog, leggiDettaglioImport, impostaDettaglioImport
 } from "./04-Rotazione";
 import { ConfermaEliminazione } from "./05-Comuni";
 import { leggiPdfCalendarioTurni } from "./14-pdf-turni";
@@ -15,6 +15,23 @@ import { leggiPdfCalendarioTurni } from "./14-pdf-turni";
 
 // #region SEZIONE 28: IMPORT TURNI DA JSON
 // ═══════════════════════════════════════════════════════════════
+// Elenco apribile di giorni: aggiunti / modificati / non modificati / non riconosciuti.
+function ElencoGiorni({ titolo, lista, aperto=false }) {
+  if (!lista || lista.length===0) return null;
+  return (
+    <details open={aperto} style={{marginBottom:8,background:"#fff",border:"1px solid #ddd",borderRadius:10,padding:"8px 10px"}}>
+      <summary style={{cursor:"pointer",fontWeight:800,fontSize:13,color:"#000"}}>{titolo}: {lista.length}</summary>
+      <div style={{maxHeight:200,overflowY:"auto",marginTop:6}}>
+        {lista.map((x,i)=>(
+          <div key={i} style={{fontSize:13,color:"#000",padding:"4px 0",borderBottom:i<lista.length-1?"1px solid #eee":"none"}}>
+            {x.data ? fmtDataIT(x.data) : "(senza data)"} — {x.vecchio!==undefined ? `${x.vecchio} → ${x.nuovo}` : (x.titolo||"")}
+          </div>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 // Elenco preciso dei turni di un'importazione (si apre toccando la riga).
 function DettaglioImport({ imp, T, titolo }) {
   return (
@@ -285,13 +302,15 @@ Regole: una riga per ogni turno. "data" in formato YYYY-MM-DD. "titolo" esattame
             <div style={{fontSize:16,fontWeight:900,color:T.text,marginBottom:14}}>Importazione completata</div>
             <div style={{fontSize:13,color:T.text,marginBottom:4}}>✅ Aggiunti: <strong>{risultato.nAggiunti}</strong></div>
             <div style={{fontSize:13,color:T.text,marginBottom:4}}>♻️ Sostituiti: <strong>{risultato.nSostituiti}</strong></div>
-            <div style={{fontSize:13,color:T.text,marginBottom:14}}>⏸️ Invariati: <strong>{risultato.nInvariati}</strong></div>
+            <div style={{fontSize:13,color:T.text,marginBottom:10}}>⏸️ Invariati: <strong>{risultato.nInvariati}</strong></div>
+            <ElencoGiorni titolo="✅ Giorni aggiunti" lista={risultato.elencoAggiunti}/>
+            <ElencoGiorni titolo="⏸️ Giorni non modificati" lista={risultato.elencoInvariati}/>
 
             {risultato.mancanti?.length>0 && (
-              <div>
-                <div style={{fontSize:12,fontWeight:800,color:"#ef4444",marginBottom:8}}>
+              <details open>
+                <summary style={{cursor:"pointer",fontSize:12,fontWeight:800,color:"#ef4444",marginBottom:8}}>
                   ⚠️ {risultato.mancanti.length} righe senza modello corrispondente:
-                </div>
+                </summary>
                 <div style={{maxHeight:260,overflowY:"auto",background:"#fff",border:"1px solid #ddd",borderRadius:10,padding:10,marginBottom:14}}>
                   {risultato.mancanti.map((m,i)=>(
                     <div key={i} style={{fontSize:17,color:"#000",padding:"5px 0",
@@ -300,14 +319,14 @@ Regole: una riga per ogni turno. "data" in formato YYYY-MM-DD. "titolo" esattame
                     </div>
                   ))}
                 </div>
-              </div>
+              </details>
             )}
 
             {risultato.sospetti?.length>0 && (
-              <div>
-                <div style={{fontSize:12,fontWeight:800,color:"#f59e0b",marginBottom:8}}>
+              <details open>
+                <summary style={{cursor:"pointer",fontSize:12,fontWeight:800,color:"#f59e0b",marginBottom:8}}>
                   🔶 {risultato.sospetti.length} righe con titolo trovato ma orario non corrispondente:
-                </div>
+                </summary>
                 <div style={{maxHeight:260,overflowY:"auto",background:"#fff",border:"1px solid #ddd",borderRadius:10,padding:10,marginBottom:14}}>
                   {risultato.sospetti.map((m,i)=>(
                     <div key={i} style={{fontSize:17,color:"#000",padding:"5px 0",
@@ -317,14 +336,14 @@ Regole: una riga per ogni turno. "data" in formato YYYY-MM-DD. "titolo" esattame
                     </div>
                   ))}
                 </div>
-              </div>
+              </details>
             )}
 
             {risultato.sostituzioni?.length>0 && (
-              <div>
-                <div style={{fontSize:12,fontWeight:800,color:T.text,marginBottom:8}}>
+              <details>
+                <summary style={{cursor:"pointer",fontSize:12,fontWeight:800,color:T.text,marginBottom:8}}>
                   ♻️ Dettaglio {risultato.sostituzioni.length} sostituzioni:
-                </div>
+                </summary>
                 <div style={{maxHeight:280,overflowY:"auto",background:"#fff",border:"1px solid #ddd",borderRadius:10,padding:10,marginBottom:14}}>
                   {risultato.sostituzioni.map((s,i)=>(
                     <div key={i} style={{fontSize:13,color:"#000",padding:"8px 0",
@@ -354,7 +373,7 @@ Regole: una riga per ogni turno. "data" in formato YYYY-MM-DD. "titolo" esattame
                     </div>
                   ))}
                 </div>
-              </div>
+              </details>
             )}
 
             <button onClick={onClose}
@@ -493,6 +512,10 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
   // persistente condiviso (registraProblemiImport), consultabile in un
   // secondo momento indipendentemente da questa sessione.
   const [risultatoImportOcr, setRisultatoImportOcr] = useState(null);
+  // Il riepilogo mostra il dettaglio dell'ULTIMA importazione: si azzera quando si riparte.
+  useEffect(()=>{
+    if(step!=="riepilogo" && step!=="ocr" && step!=="gemini-ocr") impostaDettaglioImport(null);
+  }, [step]);
   const [registroOcr, setRegistroOcr] = useState(null);
   const [confermaCancellaRegistroOcr, setConfermaCancellaRegistroOcr] = useState(false);
   const [importando, setImportando] = useState(false); // true durante l'elaborazione del JSON incollato, per disabilitare il pulsante e mostrare feedback visivo
@@ -1475,11 +1498,24 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
                 )}
               </div>
 
-              {risultatoImportOcr?.mancanti?.length>0 && (
-                <div style={{marginTop:14}}>
-                  <div style={{fontSize:12,fontWeight:800,color:"#ef4444",marginBottom:8}}>
-                    ⚠️ {risultatoImportOcr.mancanti.length} righe senza modello corrispondente:
+              {step==="riepilogo" && (()=>{
+                const d = leggiDettaglioImport();
+                if(!d) return null;
+                return (
+                  <div style={{marginTop:12}}>
+                    <ElencoGiorni titolo="⚠️ Giorni non riconosciuti" lista={d.errori} aperto/>
+                    <ElencoGiorni titolo="✅ Giorni aggiunti" lista={d.aggiunti}/>
+                    <ElencoGiorni titolo="♻️ Giorni modificati (turno cambiato)" lista={d.modificati} aperto/>
+                    <ElencoGiorni titolo="⏸️ Giorni non modificati (già presenti)" lista={d.invariati}/>
                   </div>
+                );
+              })()}
+
+              {risultatoImportOcr?.mancanti?.length>0 && (
+                <details open style={{marginTop:14}}>
+                  <summary style={{cursor:"pointer",fontSize:12,fontWeight:800,color:"#ef4444",marginBottom:8}}>
+                    ⚠️ {risultatoImportOcr.mancanti.length} righe senza modello corrispondente:
+                  </summary>
                   <div style={{maxHeight:220,overflowY:"auto",background:"#fff",border:"1px solid #ddd",borderRadius:10,padding:10,marginBottom:14}}>
                     {risultatoImportOcr.mancanti.map((m,i)=>(
                       <div key={i} style={{fontSize:13,color:"#000",padding:"5px 0",
@@ -1488,14 +1524,14 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
                       </div>
                     ))}
                   </div>
-                </div>
+                </details>
               )}
 
               {risultatoImportOcr?.sospetti?.length>0 && (
-                <div>
-                  <div style={{fontSize:12,fontWeight:800,color:"#f59e0b",marginBottom:8}}>
+                <details open>
+                  <summary style={{cursor:"pointer",fontSize:12,fontWeight:800,color:"#f59e0b",marginBottom:8}}>
                     🔶 {risultatoImportOcr.sospetti.length} righe con titolo trovato ma orario non corrispondente:
-                  </div>
+                  </summary>
                   <div style={{maxHeight:220,overflowY:"auto",background:"#fff",border:"1px solid #ddd",borderRadius:10,padding:10,marginBottom:14}}>
                     {risultatoImportOcr.sospetti.map((m,i)=>(
                       <div key={i} style={{fontSize:13,color:"#000",padding:"5px 0",
@@ -1505,7 +1541,7 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
                       </div>
                     ))}
                   </div>
-                </div>
+                </details>
               )}
 
               <button onClick={()=>{ onClose(); }}
