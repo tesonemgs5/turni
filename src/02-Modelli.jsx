@@ -120,6 +120,9 @@ export default function VistaModelli({ C }){
   // a solo questo evento, a tutto il modello o da questo evento in poi.
   const [chiediAmbitoVisualizza, setChiediAmbitoVisualizza] = useState(false);
   const [chiediAmbitoModifica, setChiediAmbitoModifica] = useState(false);
+  const [espandiAmbitoTutti, setEspandiAmbitoTutti] = useState(false);
+  const [espandiAmbitoInPoi, setEspandiAmbitoInPoi] = useState(false);
+  useEffect(()=>{ if(!chiediAmbitoModifica){ setEspandiAmbitoTutti(false); setEspandiAmbitoInPoi(false); } },[chiediAmbitoModifica]);
   const {
     today, tipoModelloProtrazione, computeStornoRecupero, computeStornoPI, tipoModelloPI, store, setStore, loading, setLoading, year,
     ripristinaModelliMancanti, ripristinoInCorso, setRipristinoInCorso, ripristinoEsito, setRipristinoEsito,
@@ -2180,22 +2183,20 @@ export default function VistaModelli({ C }){
     };
     return { tutti, inPoi, nomiCal, piuCalendari, fmt };
   }
-  function ElencoGiorniAmbito({ lista, titolo, a }){
+  function ElencoGiorniAmbito({ lista, a }){
     return (
-      <details style={{margin:"-2px 0 10px",background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,padding:"7px 10px"}}>
-        <summary style={{cursor:"pointer",fontSize:12,fontWeight:800,color:T.text}}>
-          {"\uD83D\uDCC5"} {titolo}: {lista.length} {lista.length===1?"evento":"eventi"} {"\u2014"} vedi i giorni
-        </summary>
-        <div style={{maxHeight:150,overflowY:"auto",marginTop:6}}>
+      <div onClick={e=>e.stopPropagation()}
+        style={{marginTop:8,background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,padding:"4px 10px",cursor:"default"}}>
+        <div style={{maxHeight:150,overflowY:"auto"}}>
           {lista.map((x,i)=>(
             <div key={x.e.id||i} style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:11,color:T.text,
-              padding:"3px 0",borderBottom:i<lista.length-1?`1px solid ${T.border}`:"none"}}>
+              padding:"4px 0",borderBottom:i<lista.length-1?`1px solid ${T.border}`:"none"}}>
               <span>{a.fmt(x.dk)}{a.piuCalendari && a.nomiCal[x.cid] ? ` \u00b7 ${a.nomiCal[x.cid]}` : ""}</span>
               <span style={{color:T.sub}}>{x.e.tIn ? `${x.e.tIn}${x.e.tOut?"\u2192"+x.e.tOut:""}` : (x.e.label||"")}</span>
             </div>
           ))}
         </div>
-      </details>
+      </div>
     );
   }
 
@@ -3517,13 +3518,13 @@ export default function VistaModelli({ C }){
                     updateEvt("questo");
                   }} style={{display:"block",width:"100%",background:T.s2,border:`1px solid ${T.border}`,
                     borderRadius:10,color:T.text,padding:"10px 12px",marginBottom:8,cursor:"pointer",
-                    fontWeight:800,fontSize:13,textAlign:"left"}}>
+                    fontWeight:800,fontSize:13,textAlign:"left",boxSizing:"border-box"}}>
                     1. Solo per questo evento
                     <div style={{fontSize:10,fontWeight:600,color:T.sub,marginTop:2}}>Il modello non cambia</div>
                     <div style={{fontSize:11,fontWeight:800,color:accent,marginTop:3}}>Modifica 1 evento {"\u00b7"} {ambitiModificaEventi().fmt(dayKey)}</div>
                   </button>
 
-                  <button onClick={async()=>{
+                  <div role="button" onClick={async()=>{
                     setChiediAmbitoModifica(false);
                     const editCalId = form?.editCid || calId;
                     const modId = form.modelloId || form.evtModelloId;
@@ -3551,14 +3552,14 @@ export default function VistaModelli({ C }){
                     setForm(null); setDayKey(null);
                   }} style={{display:"block",width:"100%",background:T.s2,border:`1px solid ${T.border}`,
                     borderRadius:10,color:T.text,padding:"10px 12px",marginBottom:8,cursor:"pointer",
-                    fontWeight:800,fontSize:13,textAlign:"left"}}>
+                    fontWeight:800,fontSize:13,textAlign:"left",boxSizing:"border-box"}}>
                     2. Per tutti gli eventi
                     <div style={{fontSize:10,fontWeight:600,color:T.sub,marginTop:2}}>Il modello cambia e diventa come viene salvato l'evento</div>
-                    <div style={{fontSize:11,fontWeight:800,color:accent,marginTop:3}}>Modifica {ambitiModificaEventi().tutti.length} {ambitiModificaEventi().tutti.length===1?"evento":"eventi"}</div>
-                  </button>
-                  {ElencoGiorniAmbito({ lista:ambitiModificaEventi().tutti, titolo:"Per tutti", a:ambitiModificaEventi() })}
+                    <div style={{fontSize:11,fontWeight:800,color:accent,marginTop:3,display:"flex",alignItems:"center"}}>Modifica {ambitiModificaEventi().tutti.length} {ambitiModificaEventi().tutti.length===1?"evento":"eventi"}<span onClick={e=>{e.stopPropagation();setEspandiAmbitoTutti(v=>!v);}} title="Vedi i giorni" style={{color:accent,fontSize:15,fontWeight:900,padding:"2px 10px",marginLeft:2,cursor:"pointer",userSelect:"none"}}>{espandiAmbitoTutti?"\u25BE":"\u25B8"}</span></div>
+                    {espandiAmbitoTutti && ElencoGiorniAmbito({ lista:ambitiModificaEventi().tutti, a:ambitiModificaEventi() })}
+                  </div>
 
-                  <button onClick={async()=>{
+                  <div role="button" onClick={async()=>{
                     setChiediAmbitoModifica(false);
                     const editCalId = form?.editCid || calId;
                     const modId = form.modelloId || form.evtModelloId;
@@ -3625,13 +3626,45 @@ export default function VistaModelli({ C }){
                       }
                     }
                   }} style={{display:"block",width:"100%",background:T.s2,border:`1px solid ${T.border}`,
-                    borderRadius:10,color:T.text,padding:"10px 12px",marginBottom:10,cursor:"pointer",
-                    fontWeight:800,fontSize:13,textAlign:"left"}}>
+                    borderRadius:10,color:T.text,padding:"10px 12px",marginBottom:8,cursor:"pointer",
+                    fontWeight:800,fontSize:13,textAlign:"left",boxSizing:"border-box"}}>
                     3. Da questo evento in poi
                     <div style={{fontSize:10,fontWeight:600,color:T.sub,marginTop:2}}>Si crea un nuovo modello così come è salvato l'evento</div>
-                    <div style={{fontSize:11,fontWeight:800,color:accent,marginTop:3}}>Modifica {ambitiModificaEventi().inPoi.length} {ambitiModificaEventi().inPoi.length===1?"evento":"eventi"} dal {ambitiModificaEventi().fmt(dayKey)}</div>
-                  </button>
-                  {ElencoGiorniAmbito({ lista:ambitiModificaEventi().inPoi, titolo:"Da questo evento in poi", a:ambitiModificaEventi() })}
+                    <div style={{fontSize:11,fontWeight:800,color:accent,marginTop:3,display:"flex",alignItems:"center"}}>Modifica {ambitiModificaEventi().inPoi.length} {ambitiModificaEventi().inPoi.length===1?"evento":"eventi"} dal {ambitiModificaEventi().fmt(dayKey)}<span onClick={e=>{e.stopPropagation();setEspandiAmbitoInPoi(v=>!v);}} title="Vedi i giorni" style={{color:accent,fontSize:15,fontWeight:900,padding:"2px 10px",marginLeft:2,cursor:"pointer",userSelect:"none"}}>{espandiAmbitoInPoi?"\u25BE":"\u25B8"}</span></div>
+                    {espandiAmbitoInPoi && ElencoGiorniAmbito({ lista:ambitiModificaEventi().inPoi, a:ambitiModificaEventi() })}
+                  </div>
+
+                  <div role="button" onClick={async()=>{
+                    setChiediAmbitoModifica(false);
+                    const editCalId = form?.editCid || calId;
+                    const modId = form.modelloId || form.evtModelloId;
+                    const mod = modelli.find(m=>m.id===modId);
+                    const nLabel = (form.label || mod?.label || mod?.titolo || "").toUpperCase();
+                    const nTitoloMod = (form.modelloTitolo || mod?.titolo || nLabel).toUpperCase();
+                    const nIn = (mod?.tempo==="h24") ? "" : (form.offIn!==undefined ? form.offIn : (mod?.inizio || ""));
+                    const nOut = (mod?.tempo==="h24") ? "" : (form.offOut!==undefined ? form.offOut : ((mod ? calcFineModello(mod) : "") || mod?.fine || ""));
+                    const nCol = form.colorOvr || mod?.coloreCustom || mod?.colore || (form.dur === "allday" ? COLORE_H24 : colByTime(nIn));
+                    const nTempo = mod?.tempo || "custom";
+                    await saveModello({
+                      ...(mod || {}),
+                      id: null,
+                      titolo: nTitoloMod,
+                      label: nLabel,
+                      inizio: nIn,
+                      fine: nOut,
+                      tempo: nTempo,
+                      coloreCustom: nCol,
+                      colore: nCol,
+                      calendarId: editCalId || calId || mainCalId,
+                    });
+                    setForm(null); setDayKey(null);
+                  }} style={{display:"block",width:"100%",background:T.s2,border:`1px solid ${T.border}`,
+                    borderRadius:10,color:T.text,padding:"10px 12px",marginBottom:10,cursor:"pointer",
+                    fontWeight:800,fontSize:13,textAlign:"left",boxSizing:"border-box"}}>
+                    4. Crea nuovo evento
+                    <div style={{fontSize:10,fontWeight:600,color:T.sub,marginTop:2}}>Si crea un nuovo modello così come è salvato l'evento. Gli eventi esistenti non cambiano</div>
+                    <div style={{fontSize:11,fontWeight:800,color:accent,marginTop:3}}>Crea 1 nuovo modello</div>
+                  </div>
 
                   <button onClick={()=>setChiediAmbitoModifica(false)}
                     style={{display:"block",width:"100%",background:"transparent",border:"none",
