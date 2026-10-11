@@ -760,9 +760,13 @@ export default function VistaModelli({ C }){
           onPick={async(p,nome,ids)=>{
             addColoreExtra(p,nome);
             setShowAddColorPicker(false);
-            for(const id of (ids||[])){
+            for(const id of ((ids&&ids.aggiungi)||[])){
               const m = modelli.find(x=>x.id===id);
               if(m) await saveModello({...m, coloreCustom:p});
+            }
+            for(const id of ((ids&&ids.rimuovi)||[])){
+              const m = modelli.find(x=>x.id===id);
+              if(m) await saveModello({...m, coloreCustom:null});
             }
           }}
           onClose={()=>setShowAddColorPicker(false)}/>
