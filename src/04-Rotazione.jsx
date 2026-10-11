@@ -598,14 +598,20 @@ export function saveToLocalStorage(events, calendars, modelli, calId, extra = {}
       const raw = localStorage.getItem(LS_CACHE_KEY);
       if (raw) precedente = JSON.parse(raw) || {};
     } catch { /* cache corrotta o assente: si riparte da vuoto */ }
+    // Rete di sicurezza: un valore NON passato (undefined) non deve mai cancellare
+    // quello già in cache (prima, un "modelli" undefined azzerava tutti i modelli
+    // salvati sul dispositivo: al riavvio senza rete sparivano).
     const payload = {
-      ...precedente, events, calendars, modelli,
+      ...precedente,
+      ...(events !== undefined ? { events } : {}),
+      ...(calendars !== undefined ? { calendars } : {}),
+      ...(modelli !== undefined ? { modelli } : {}),
       ...(calId !== undefined ? { calId } : {}),
       ...extra, _savedAt: Date.now(),
     };
     // Il Log nasce da qui, nel momento in cui il dato viene salvato in locale:
     // si registra solo ciò che è davvero cambiato rispetto alla cache precedente.
-    registraDifferenzeLocali(precedente, { events, calendars, modelli });
+    registraDifferenzeLocali(precedente, { events: payload.events, calendars: payload.calendars, modelli: payload.modelli });
     localStorage.setItem(LS_CACHE_KEY, JSON.stringify(payload));
   } catch (e) {
     // Storage pieno o non disponibile: non blocchiamo l'app per questo.
@@ -1094,6 +1100,10 @@ export function registraAttivita(contesto, message, extra = {}) {
     const dettagli = Array.isArray(extra.dettagli) ? extra.dettagli : [];
     const ids = Array.isArray(extra.ids) ? extra.ids.map(String) : [];
     const idsAttesa = extra.supabase === "n/a" ? [] : ids.filter(id => !giaConfermato(id));
+    // "Facoltativi": righe che cambiano solo di posizione (rinumerazioni a cascata): se
+    // arriva la conferma di Supabase meglio, ma se non arriva NON è un allarme.
+    const idsFac = Array.isArray(extra.idsFacoltativi) ? extra.idsFacoltativi.map(String).filter(id => !giaConfermato(id)) : [];
+    const nFac = Array.isArray(extra.idsFacoltativi) ? extra.idsFacoltativi.length : 0;
     const log = leggiLogErrori();
     let voce = null;
     for (let i = log.length - 1, n = 0; i >= 0 && n < 8; i--, n++) {
@@ -1108,6 +1118,8 @@ export function registraAttivita(contesto, message, extra = {}) {
       voce.dettagliTotali = (voce.dettagliTotali || 0) + dettagli.length;
       voce.idsAttesa = [...new Set([...(voce.idsAttesa || []), ...idsAttesa])].slice(0, MAX_IDS_ATTESA);
       voce.idsTotali = (voce.idsTotali || 0) + ids.length;
+      voce.idsFacoltativi = [...new Set([...(voce.idsFacoltativi || []), ...idsFac])].slice(0, MAX_IDS_ATTESA);
+      voce.idsFacoltativiTot = (voce.idsFacoltativiTot || 0) + nFac;
       if (voce.conteggi && extra.conteggi) {
         for (const k of Object.keys(extra.conteggi)) voce.conteggi[k] = (voce.conteggi[k] || 0) + extra.conteggi[k];
         voce.message = testoRiepilogo(extra.etichetta || contesto, voce.conteggi);
@@ -1129,6 +1141,8 @@ export function registraAttivita(contesto, message, extra = {}) {
       dettagliTotali: dettagli.length,
       idsAttesa: idsAttesa.slice(0, MAX_IDS_ATTESA),
       idsTotali: ids.length,
+      idsFacoltativi: idsFac.slice(0, MAX_IDS_ATTESA),
+      idsFacoltativiTot: nFac,
       origine: extra.origine || "locale",
       inCoda: false,
       ...(extra.esito ? { esito: extra.esito } : {}),
@@ -1154,11 +1168,15 @@ export function confermaSupabase(ids) {
     let cambiato = false;
     for (let i = log.length - 1, n = 0; i >= 0 && n < 150; i--, n++) {
       const v = log[i];
-      if (!v || v.tipo !== "operazione" || !v.idsAttesa || !v.idsAttesa.length) continue;
-      const restanti = v.idsAttesa.filter(id => !set.has(id));
-      if (restanti.length !== v.idsAttesa.length) {
+      if (!v || v.tipo !== "operazione") continue;
+      const att = v.idsAttesa || [], fac = v.idsFacoltativi || [];
+      if (!att.length && !fac.length) continue;
+      const restanti = att.filter(id => !set.has(id));
+      const facRestanti = fac.filter(id => !set.has(id));
+      if (restanti.length !== att.length || facRestanti.length !== fac.length) {
         v.idsAttesa = restanti;
-        if (!restanti.length) { v.inCoda = false; v.tsSupabase = new Date(ora).toISOString(); }
+        v.idsFacoltativi = facRestanti;
+        if (!restanti.length && restanti.length !== att.length) { v.inCoda = false; v.tsSupabase = new Date(ora).toISOString(); }
         sporca(v); cambiato = true;
       }
     }
@@ -1207,7 +1225,14 @@ export function statoSupabaseVoce(v) {
     return { icona: "☁️", testo: "Supabase: in corso…", colore: "attesa" };
   }
   const tot = v.idsTotali || 0;
-  if (!tot) return null;
+  if (!tot) {
+    if ((v.idsFacoltativiTot || 0) > 0) {
+      return (v.idsFacoltativi || []).length === 0
+        ? { icona: "☁️", testo: "Supabase ✓", colore: "ok" }
+        : { icona: "☁️", testo: "Supabase: riordino non verificato", colore: "attesa" };
+    }
+    return null;
+  }
   const rest = (v.idsAttesa || []).length;
   if (rest === 0) return { icona: "☁️", testo: "Supabase ✓", colore: "ok" };
   const ok = Math.max(0, tot - rest);
@@ -1272,7 +1297,7 @@ function diffModelli(prec, nuovo) {
   const A = new Map((prec.modelli || []).map(m => [String(m.id), m]));
   const B = new Map((nuovo.modelli || []).map(m => [String(m.id), m]));
   const nome = m => m.titolo || m.label || String(m.id).slice(0, 8);
-  const agg = [], eli = [], mod = [], riord = [], ids = [];
+  const agg = [], eli = [], mod = [], riord = [], ids = [], idsFac = [];
   for (const [id, b] of B) {
     const a = A.get(id);
     if (!a) { agg.push(`+ ${nome(b)} (${b.inizio || "–"}–${b.fine || "–"})`); ids.push(id); continue; }
@@ -1281,7 +1306,7 @@ function diffModelli(prec, nuovo) {
     if (cambi.length) { mod.push(`~ ${nome(b)}: ${cambi.join("; ")}`); ids.push(id); }
     if (!uguali(a.sortOrder ?? 0, b.sortOrder ?? 0)) {
       riord.push(`↕ ${nome(b)}: posizione ${fmtVal(a.sortOrder ?? 0)}→${fmtVal(b.sortOrder ?? 0)}`);
-      if (!cambi.length) ids.push(id);
+      if (!cambi.length) idsFac.push(id);
     }
   }
   for (const [id, a] of A) if (!B.has(id)) { eli.push(`− ${nome(a)}`); ids.push(id); }
@@ -1289,7 +1314,7 @@ function diffModelli(prec, nuovo) {
   return {
     conteggi: { aggiunti: agg.length, eliminati: eli.length, modificati: mod.length, riordinati: riord.length },
     dettagli: [...agg, ...eli, ...mod, ...riord],
-    ids,
+    ids, idsFac,
   };
 }
 
@@ -1318,7 +1343,8 @@ function registraDifferenzeLocali(prec, nuovo) {
   try {
     const remoto = _sorgenteLog === "remoto";
     _sorgenteLog = "locale"; // vale solo per questo salvataggio
-    const ctx = _contestoLog && (Date.now() - _contestoLog.ts) < 6000 ? _contestoLog.testo : null;
+    const ctx = _contestoLog && (Date.now() - _contestoLog.ts) < 2000 ? _contestoLog.testo : null;
+    _contestoLog = null; // l'etichetta vale solo per questo salvataggio
     const base = remoto ? "Aggiornamento da Supabase" : (ctx || "Salvataggio locale");
     const blocchi = [];
     if (prec.events && nuovo.events) { const d = diffEventi(prec, nuovo); if (d) blocchi.push(["Turni", "ev", d]); }
@@ -1326,7 +1352,7 @@ function registraDifferenzeLocali(prec, nuovo) {
     if (prec.calendars && nuovo.calendars) { const d = diffCalendari(prec, nuovo); if (d) blocchi.push(["Calendari", "cal", d]); }
     for (const [etichetta, cod, d] of blocchi) {
       registraAttivita(base, testoRiepilogo(etichetta, d.conteggi), {
-        chiave: `${base}|${cod}`, dettagli: d.dettagli, ids: d.ids, conteggi: d.conteggi, etichetta,
+        chiave: `${base}|${cod}`, dettagli: d.dettagli, ids: d.ids, idsFacoltativi: d.idsFac || [], conteggi: d.conteggi, etichetta,
         origine: remoto ? "remoto" : "locale", supabase: remoto ? "n/a" : undefined,
       });
     }

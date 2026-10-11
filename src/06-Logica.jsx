@@ -355,8 +355,22 @@ export function useAppCore(session){
     }
   }
 
+  // Aggiornamenti "di massa" su events (es. cambio colore di un modello: tutti i turni di
+  // quel modello): la conferma di Supabase vale per tutti i turni coinvolti.
+  function idsConfermaPerMatch(table, match){
+    if(table!=="events" || !match) return [];
+    const campi = { modello_id:"modelloId", import_id:"importId", rotazione_id:"rotazioneId" };
+    const chiavi = Object.keys(campi).filter(k=>match[k]!==undefined && match[k]!==null);
+    if(chiavi.length===0) return [];
+    const out = [];
+    for(const calMap of Object.values(store.events||{}))
+      for(const lista of Object.values(calMap||{}))
+        for(const e of (lista||[])) if(chiavi.every(k=>e[campi[k]]===match[k])) out.push(e.id);
+    return out;
+  }
+
   async function scriviConBackup({ tipo, table, payload, matchObj, contesto, ts, eventsPerSheets, calendarsPerSheets, modelliPerSheets, opzioni={} }){
-    const idsOp = [ (payload && !Array.isArray(payload)) ? payload.id : null, matchObj?.id ].filter(Boolean);
+    const idsOp = [ (payload && !Array.isArray(payload)) ? payload.id : null, matchObj?.id, ...idsConfermaPerMatch(table, matchObj) ].filter(Boolean);
     function accodaSilenziosamente(){
       // Locale è già scritto dal chiamante prima di arrivare qui: qui si
       // accoda solo il backup remoto, senza disturbare l'utente. Nessun
@@ -1670,10 +1684,18 @@ export function useAppCore(session){
             // Errore vero (validazione, permessi...): non ha senso
             // ritentarlo all'infinito, si segnala e si scarta.
             segnalaErrore(res.error, `Sincronizzazione in sospeso — ${op.contesto}`);
+            if(op.voceLogId) aggiornaEsitoVoceLog(op.voceLogId, "errore");
           }
         } else {
           rimasti.push(null); // marcato come completato, verrà filtrato sotto
-          confermaSupabase([op.match?.id, op.payload?.id].filter(Boolean));
+          confermaSupabase([op.match?.id, op.payload?.id, ...idsConfermaPerMatch(op.table, op.match)].filter(Boolean));
+          if(op.voceLogId) aggiornaEsitoVoceLog(op.voceLogId, "ok");
+          if(op.marcaSnapshotOk){
+            try{
+              const raw = localStorage.getItem("disposizioneModelliBackup");
+              if(raw){ const pp = JSON.parse(raw); pp.supabaseOk = true; localStorage.setItem("disposizioneModelliBackup", JSON.stringify(pp)); }
+            }catch{}
+          }
         }
       } catch(e){
         // Eccezione di rete (offline di nuovo, timeout...): resta in coda,
@@ -4022,12 +4044,11 @@ const importsRecenti = useMemo(()=>{
   }
 
   async function moveRotazione(id, dir){
-    let prevSnapshot = null, nuovoElenco = null;
-    setRotazioni(prev=>{
-      prevSnapshot = prev;
-      nuovoElenco = spostaRotazionePura(prev, id, dir);
-      return nuovoElenco;
-    });
+    // Calcolo SUBITO dai valori correnti (non dentro l'updater di React, che non è
+    // garantito venga eseguito prima delle righe successive).
+    const prevSnapshot = rotazioni;
+    const nuovoElenco = spostaRotazionePura(prevSnapshot, id, dir);
+    setRotazioni(nuovoElenco);
     if(prevSnapshot && nuovoElenco) await salvaModifichePosizioniRotazioni(prevSnapshot, nuovoElenco);
   }
 
@@ -4174,18 +4195,18 @@ const importsRecenti = useMemo(()=>{
   }
 
   async function ricoloraModelliPerFasciaOraria(){
-    let prevSnapshot = null, modelliDaSalvare = [];
-    setModelli(prev=>{
-      prevSnapshot = prev;
-      const aggiornati = prev.map(m=>{
-        if(m.tempo==="h24") return m; // esplicitamente esclusi
-        const nuovoColore = colByTime(m.inizio);
-        if(m.coloreCustom===null && m.colore===nuovoColore) return m; // già a posto
-        modelliDaSalvare.push({ ...m, colore:nuovoColore, coloreCustom:null });
-        return { ...m, colore:nuovoColore, coloreCustom:null };
-      });
-      return aggiornati;
+    // Calcolo SUBITO dai valori correnti (non dentro l'updater di React).
+    const prevSnapshot = modelli;
+    const modelliDaSalvare = [];
+    const aggiornatiRicolorati = prevSnapshot.map(m=>{
+      if(m.tempo==="h24") return m; // esplicitamente esclusi
+      const nuovoColore = colByTime(m.inizio);
+      if(m.coloreCustom===null && m.colore===nuovoColore) return m; // già a posto
+      modelliDaSalvare.push({ ...m, colore:nuovoColore, coloreCustom:null });
+      return { ...m, colore:nuovoColore, coloreCustom:null };
     });
+    setModelli(aggiornatiRicolorati);
+    if(modelliDaSalvare.length>0) saveToLocalStorage(store.events, store.calendars, aggiornatiRicolorati, calId);
     const ts = new Date().toISOString();
     await Promise.all(modelliDaSalvare.map(m =>
       scriviConBackup({
@@ -4241,17 +4262,17 @@ const importsRecenti = useMemo(()=>{
     const v = valore.trim();
     if(!v) return;
     if((autocompleteValori[campo]||[]).includes(v)) return;
-    try {
-      const { error } = await supabase.from("autocomplete_valori")
-        .insert({ user_id:userId, campo, valore:v });
-      // Violazione unique (valore già presente per un altro motivo, es. race
-      // condition fra dispositivi) non è un errore reale: il valore è comunque lì.
-      if(error && error.code!=="23505") { segnalaErroreSoloLog(error.message||String(error), `Registrazione valore autocomplete (${campo})`); return; }
-      setAutocompleteValori(prev=>({
-        ...prev,
-        [campo]: prev[campo].includes(v) ? prev[campo] : [...prev[campo], v].sort((a,b)=>a.localeCompare(b)),
-      }));
-    } catch(e){ segnalaErroreSoloLog(e?.message||String(e), `Registrazione valore autocomplete (${campo})`); }
+    // LOCALE PER PRIMO: il suggerimento compare subito; l'invio a Supabase è in coda
+    // (un valore già presente su Supabase è trattato come fatto, vedi svuotamento coda).
+    setAutocompleteValori(prev=>({
+      ...prev,
+      [campo]: (prev[campo]||[]).includes(v) ? (prev[campo]||[]) : [...(prev[campo]||[]), v].sort((a,b)=>a.localeCompare(b)),
+    }));
+    accodaScritturaRemota({
+      tipo:"insert", table:"autocomplete_valori",
+      payload:{ user_id:userId, campo, valore:v },
+      contesto:`Registrazione valore autocomplete (${campo})`,
+    });
   }
 
   // Registra più valori insieme (es. il campo collega, multi-riga: ogni riga
@@ -4489,15 +4510,14 @@ const importsRecenti = useMemo(()=>{
       // Subito in locale: nuovo modello inserito + rinumerazione GLOBALE a
       // blocchi contigui (il blocco di questo calendario resta ordinato,
       // gli altri calendari restano invariati nella loro posizione relativa).
-      let modelliAggiornati;
-      setModelli(prev=>{
-        const updated=[...prev, modelloCreato];
-        const calendarsOrdinati = store.calendars.map(c=>c.id);
-        const ordiniPerCalendario = new Map([[targetCalId, riordinato]]);
-        const ricalcolato = ricalcolaPosizioniGlobali(updated, calendarsOrdinati, ordiniPerCalendario, mainCalId);
-        modelliAggiornati = ricalcolato;
-        return ricalcolato;
-      });
+      // Calcolo SUBITO dai valori correnti: prima il risultato veniva letto da una
+      // variabile riempita DENTRO l'updater di React, che non è garantito venga
+      // eseguito in tempo: se non lo era, la cache veniva salvata senza modelli.
+      const updated = [...modelli, modelloCreato];
+      const calendarsOrdinati = store.calendars.map(c=>c.id);
+      const ordiniPerCalendario = new Map([[targetCalId, riordinato]]);
+      const modelliAggiornati = ricalcolaPosizioniGlobali(updated, calendarsOrdinati, ordiniPerCalendario, mainCalId);
+      setModelli(modelliAggiornati);
       // FIX: a differenza del ramo UPDATE, qui la cache locale non veniva
       // mai riscritta con il nuovo modello. Risultato: il modello compariva
       // subito in UI (setModelli) e veniva salvato su Supabase, ma al
@@ -4577,19 +4597,20 @@ const importsRecenti = useMemo(()=>{
     // 1) SUBITO in locale: rimozione + rinumerazione GLOBALE a blocchi
     // contigui, per chiudere il buco lasciato dal modello eliminato nel
     // suo blocco/calendario (gli altri calendari restano invariati).
-    let modelliAggiornati;
     const modelloEliminato = modelli.find(m=>m.id===id);
     const calDelModello = modelloEliminato ? (modelloEliminato.calendarId||mainCalId) : null;
-    setModelli(prev=>{
-      const updated=prev.filter(m=>m.id!==id);
-      if(!calDelModello){ modelliAggiornati = updated; return updated; }
-      const ordineCalendario = calcolaOrdineModelli(updated.filter(m=>(m.calendarId||mainCalId)===calDelModello));
+    // Calcolo SUBITO dai valori correnti (non dentro l'updater di React).
+    const updatedSenza = modelli.filter(m=>m.id!==id);
+    let modelliAggiornati;
+    if(!calDelModello){ modelliAggiornati = updatedSenza; }
+    else {
+      const ordineCalendario = calcolaOrdineModelli(updatedSenza.filter(m=>(m.calendarId||mainCalId)===calDelModello));
       const calendarsOrdinati = store.calendars.map(c=>c.id);
       const ordiniPerCalendario = new Map([[calDelModello, ordineCalendario]]);
-      const ricalcolato = ricalcolaPosizioniGlobali(updated, calendarsOrdinati, ordiniPerCalendario, mainCalId);
-      modelliAggiornati = ricalcolato;
-      return ricalcolato;
-    });
+      modelliAggiornati = ricalcolaPosizioniGlobali(updatedSenza, calendarsOrdinati, ordiniPerCalendario, mainCalId);
+    }
+    setModelli(modelliAggiornati);
+    saveToLocalStorage(store.events, store.calendars, modelliAggiornati, calId);
     // 2) Backup su Supabase (con retry colonna) + Sheets in parallelo,
     // CON verifica post-scrittura (vedi scriviConBackup): se la riga
     // risultasse ancora presente su Supabase dopo la cancellazione,
@@ -4959,7 +4980,6 @@ const importsRecenti = useMemo(()=>{
 
   async function salvaDisposizioneModelli(){
     if(!userId) return { ok:false, errore:"Utente non autenticato" };
-    segnaContestoLog("Salva disposizione modelli");
     const adesso = new Date().toISOString();
     // Snapshot a 360 gradi di ogni modello (ordine, colori, nome, titolo, orari, calendario, etc.).
     const righe = modelli.map(m=>({
@@ -5009,37 +5029,33 @@ const importsRecenti = useMemo(()=>{
       chiave:`salva-disp|${adesso}`, dettagli: cambi.dettagli, esito:"attesa",
     });
 
-    // 2) POI SU SUPABASE: solo le righe cambiate (tutte alla prima copia o se l'invio precedente era fallito)
+    // 2) POI SU SUPABASE, in coda (con retry automatico): solo le righe cambiate
+    //    (tutte alla prima copia o se l'invio precedente era fallito).
     const righeDaInviare = tutte ? righe : righe.filter(r=>cambi.idsCambiati.has(String(r.modello_id)));
-    try{
-      if(righeDaInviare.length>0){
-        const { error } = await supabase.from("modelli_sortorder_backup")
-          .upsert(righeDaInviare, { onConflict:"user_id,modello_id" });
-        if(error){
-          segnalaErroreDb(error, "Salvataggio disposizione modelli");
-          aggiornaEsitoVoceLog(idVoce, "errore");
-          return { ok:false, errore:error.message };
-        }
-      }
-      if(tutte || cambi.impostazioniCambiate){
-        const { error:errImp } = await supabase.from("impostazioni_backup")
-          .upsert({ user_id:userId, fasce_automatiche:fasce, colori_extra:coloriExtraSnap, sunday_color:sundayCol, holiday_color:holidayCol, salvato_il:adesso },
-                  { onConflict:"user_id" });
-        if(errImp){
-          segnalaErroreDb(errImp, "Salvataggio fasce/colori nel backup disposizione");
-          aggiornaEsitoVoceLog(idVoce, "errore");
-          return { ok:false, errore:errImp.message };
-        }
-      }
+    const ops = [];
+    for(let k=0; k<righeDaInviare.length; k+=100){
+      ops.push({ tipo:"upsert", table:"modelli_sortorder_backup", payload:righeDaInviare.slice(k,k+100),
+        onConflict:"user_id,modello_id", contesto:"Salva disposizione modelli" });
+    }
+    if(tutte || cambi.impostazioniCambiate){
+      ops.push({ tipo:"upsert", table:"impostazioni_backup",
+        payload:{ user_id:userId, fasce_automatiche:fasce, colori_extra:coloriExtraSnap, sunday_color:sundayCol, holiday_color:holidayCol, salvato_il:adesso },
+        onConflict:"user_id", contesto:"Salva disposizione modelli" });
+    }
+    if(ops.length===0){
+      // niente da inviare (es. solo modelli non più presenti): la copia locale è già completa
       try{ localStorage.setItem("disposizioneModelliBackup", JSON.stringify({ ...snapshot, supabaseOk:true })); }catch{}
       aggiornaEsitoVoceLog(idVoce, "ok");
-      annullaTimerSalvaDisposizione();
-      return { ok:true, totale: righeDaInviare.length, riepilogo };
-    }catch(e){
-      segnalaErroreDb(e, "Salvataggio disposizione modelli");
-      aggiornaEsitoVoceLog(idVoce, "errore");
-      return { ok:false, errore:String(e) };
+    } else {
+      // L'ultima operazione, quando va a buon fine, completa la spunta ☁️ del Log
+      // e segna la copia locale come "inviata".
+      ops[ops.length-1].voceLogId = idVoce;
+      ops[ops.length-1].marcaSnapshotOk = true;
+      accodaScrittureRemote(ops);
+      aggiornaEsitoVoceLog(idVoce, (typeof navigator!=="undefined" && navigator.onLine===false) ? "coda" : "attesa");
     }
+    annullaTimerSalvaDisposizione();
+    return { ok:true, totale: righeDaInviare.length, riepilogo };
   }
 
   async function ripristinaDisposizioneModelli(sorgente=null){
@@ -5948,9 +5964,15 @@ const importsRecenti = useMemo(()=>{
     const rot = rotazioni.find(r=>r.id===rotId);
     if(!rot) return;
 
-    const { error } = await dbUpdate("rotazioni", {data_inizio:startDayKey, n_settimane:numRipetizioni}, {id:rotId, user_id:userId}, "Applicazione rotazione", {soloLog:true});
-    if(error) segnalaErrore("La rotazione è stata applicata al calendario ma il salvataggio della configurazione potrebbe non essere andato a buon fine.", "Applicazione rotazione");
+    // LOCALE PER PRIMO: la rotazione risulta subito applicata; la configurazione
+    // (data inizio e numero settimane) va a Supabase in coda, con retry automatico.
     setRotazioni(prev=>prev.map(r=>r.id===rotId?{...r,dataInizio:startDayKey,nSettimane:numRipetizioni}:r));
+    accodaScritturaRemota({
+      tipo:"update", table:"rotazioni",
+      payload:{ data_inizio:startDayKey, n_settimane:numRipetizioni },
+      match:{ id:rotId, user_id:userId },
+      contesto:"Applicazione rotazione",
+    });
 
     const nuoviEventiLocali = {};
 
@@ -6817,29 +6839,29 @@ const importsRecenti = useMemo(()=>{
     if(!userId) return { idsAggiornati: [] };
     const idsAggiornati = [];
     const dbPayloadPerId = {};
-    setStore(prev=>{
-      const eventsBase = prev?.events||{};
-      const nextEvents = {};
-      for(const [dk, calMap] of Object.entries(eventsBase)){
-        const nextCalMap = {};
-        for(const [cid, evts] of Object.entries(calMap)){
-          nextCalMap[cid] = evts.map(e=>{
-            if(e.label===nomeLabel && (e.tIn||"")===(tInMatch||"") && (e.tOut||"")===(tOutMatch||"")){
-              idsAggiornati.push(e.id);
-              const patch = typeof patchEvento==="function" ? patchEvento(e) : patchEvento;
-              const nuovoEvt = {...e, ...patch};
-              dbPayloadPerId[e.id] = typeof patchDb==="function" ? patchDb(nuovoEvt) : patchDb;
-              return nuovoEvt;
-            }
-            return e;
-          });
-        }
-        nextEvents[dk] = nextCalMap;
+    // Calcolo SUBITO dai valori correnti (non dentro l'updater di React: l'elenco degli
+    // id veniva letto subito dopo, ma l'updater non è garantito venga eseguito in tempo,
+    // e in quel caso gli aggiornamenti verso Supabase venivano saltati in silenzio).
+    const eventsBase = store?.events||{};
+    const nextEvents = {};
+    for(const [dk, calMap] of Object.entries(eventsBase)){
+      const nextCalMap = {};
+      for(const [cid, evts] of Object.entries(calMap)){
+        nextCalMap[cid] = evts.map(e=>{
+          if(e.label===nomeLabel && (e.tIn||"")===(tInMatch||"") && (e.tOut||"")===(tOutMatch||"")){
+            idsAggiornati.push(e.id);
+            const patch = typeof patchEvento==="function" ? patchEvento(e) : patchEvento;
+            const nuovoEvt = {...e, ...patch};
+            dbPayloadPerId[e.id] = typeof patchDb==="function" ? patchDb(nuovoEvt) : patchDb;
+            return nuovoEvt;
+          }
+          return e;
+        });
       }
-      const ns = {...prev, events: nextEvents};
-      saveToLocalStorage(ns.events, ns.calendars, modelli);
-      return ns;
-    });
+      nextEvents[dk] = nextCalMap;
+    }
+    setStore(prev=>({...prev, events: nextEvents}));
+    saveToLocalStorage(nextEvents, store.calendars, modelli);
     if(idsAggiornati.length>0){
       // Locale già salvato sopra; l'invio a Supabase è accodato (con retry automatico).
       accodaScrittureRemote(idsAggiornati.map(id=>({
