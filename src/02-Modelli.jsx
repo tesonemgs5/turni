@@ -18,6 +18,7 @@ import { ModelloCard, ModelForm, RotazioneCard, RotazioneForm, ModelloSelector,
   GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView, ReperibilitaView } from "./04-Rotazione";
 import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
 import { ImpostazioniAggiornamenti, inApk } from "./12-avviso-aggiornamento";
+import { QuartineSection } from "./16-QuartineSection";
 
 // Riga della lista Colori: mostra il pallino colore, etichetta, sottotitolo,
 // contatore di modelli che lo usano e (se applicabile) pulsanti per
@@ -182,7 +183,7 @@ export default function VistaModelli({ C }){
     computeTurnazioneForReport, computeConteggio, computeIndennita, activeReports, inactiveTypes, addReport,
     removeReport, renameReport, moveReport, getConteggioConfig, updateConteggioConfig,
     applicaReportOverrideATuttiGliEventi, totaleTurni,
-    setPrevGrid, REPORT_TEMPLATES, calcolaOrdineModelli, updateFascia, session,
+    setPrevGrid, REPORT_TEMPLATES, calcolaOrdineModelli, updateFascia, session, salvaQuartine,
   } = C;
 
   // Qualsiasi menu a tendina espandibile aperto nel form Modifica Evento
@@ -2111,6 +2112,8 @@ export default function VistaModelli({ C }){
         </div>
       </SecCollapsible>
       </SecCollapsible>
+      <QuartineSection T={T} accent={accent} dark={dark} store={store} salvaQuartine={salvaQuartine}
+        fasceAutomatiche={fasceAutomatiche} coloriExtra={coloriExtra}/>
       {inApk()&&(
         <SecCollapsible label="AGGIORNAMENTI APP" T={T}>
           <ImpostazioniAggiornamenti T={T}/>

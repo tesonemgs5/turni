@@ -2109,6 +2109,21 @@ export function useAppCore(session){
     });
   }
 
+  // ── Quartine (I-IV): salvate dentro report_settings.quartine (colonna già esistente, nessuna modifica al DB).
+  // coloreQuartina(key): colore di sfondo del giorno se appartiene a una quartina con "Visualizza" acceso.
+  function coloreQuartina(key){
+    const q = store.reportSettings?.quartine;
+    if(!q || !q.date) return null;
+    const n = q.date[key];
+    if(!n || !q.visibili?.[n]) return null;
+    return q.colori?.[n] || null;
+  }
+  function salvaQuartine(nuova){
+    const nuove = {...(store.reportSettings||{}), quartine: nuova};
+    setStore(s=>({...s, reportSettings: {...(s.reportSettings||{}), quartine: nuova}}));
+    saveSettings({report_settings: nuove});
+  }
+
   // Spostata qui da SEZIONE 18 (Settings View) perché usata anche da
   // Modelli View: aggiorna una fascia oraria automatica (label/colore/orario).
   function updateFascia(key, updates){
@@ -7112,6 +7127,8 @@ const importsRecenti = useMemo(()=>{
     sundayColor,
     holidayColor,
     redBg,
+    coloreQuartina,
+    salvaQuartine,
     getEvts,
     allEvts,
     dots,

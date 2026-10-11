@@ -67,7 +67,7 @@ export default function VistaCalendario({ C }){
     setShowReportModelliPicker, editFascia, setEditFascia, showFasciaColorPicker, setShowFasciaColorPicker, userId,
     isInitialized, processaCodaSync, sysDark, dark, T, activeCal,
     mainCal, mainCalId, calFuId, accent, accentText, hols, fasceAutomatiche,
-    colByTime, colLabel, isRed, sundayColor, holidayColor, redBg,
+    colByTime, colLabel, isRed, sundayColor, holidayColor, redBg, coloreQuartina,
     getEvts, allEvts, dots, saveSettings, addCalendar, updateCalendar,
     deleteCalendar, computeEventFields, saveEvt, updateEvt, delEvt, delEvtiRotazioneDaData,
     delTutteEvtiRotazione, cancellaTuttiEventiMese, calcMinuti, saveToSheets, syncSeAttivo, loadFromSheets,
@@ -505,7 +505,7 @@ export default function VistaCalendario({ C }){
                 if(quickModeModello){ applyQuickModello(key); return; }
                 setDayKey(key); setForm(null); setPal(null);
               }}
-              style={{background:isT?(dark?"#1a2f50":"#dbeafe"):(redBg(isSun,isH)||T.surface),
+              style={{background:isT?(dark?"#1a2f50":"#dbeafe"):(coloreQuartina(key)||redBg(isSun,isH)||T.surface),
                 cursor:"pointer",display:"flex",flexDirection:"column",overflow:"hidden",
                 borderTop:"none"}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:2,padding:"2px 3px 0",flexShrink:0}}>
