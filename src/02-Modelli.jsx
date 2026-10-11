@@ -212,6 +212,23 @@ export default function VistaModelli({ C }){
   // dito). Il nuovo ordine si vede alla riapertura, cioè dopo aver premuto
   // "Fatto". Se il colore viene cambiato a schermata aperta (Cambia
   // colore) lo snapshot resta valido: i modelli passano tutti al nuovo colore.
+  // Dati per il selettore colori: elenco modelli con colore e calendario.
+  // soloCalendarioAperto=true → solo i modelli del calendario aperto (per le spunte di assegnazione).
+  function datiModelliPicker(soloCalendarioAperto){
+    const base = (soloCalendarioAperto && calId!==null)
+      ? modelliOrdinati.filter(m=>modelloVisibileInCalendario(m, calId, mainCalId))
+      : modelliOrdinati;
+    return base.map(m=>{
+      const cid = m.calendarId || mainCalId;
+      const cal = (store.calendars||[]).find(c=>c.id===cid);
+      return {
+        id:m.id, label:m.label||m.titolo||"Senza nome",
+        sub:(m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${m.fine?` - ${m.fine}`:""}`:"")+(cal?` · ${cal.name}`:""),
+        hex:m.coloreCustom||m.colore||null,
+        cal:cal?cal.name:"",
+      };
+    });
+  }
   const snapSelColoreRef = useRef({aperto:false, ids:null});
   {
     const apertoOra = !!showColorAssignPicker;
@@ -736,7 +753,16 @@ export default function VistaModelli({ C }){
         <ColorPickerModal T={T} cur="#3b82f6" title="Aggiungi colore"
           coloriUsati={coloriUsatiTutti()}
           getNomeColore={p=>nomeDelColore(p,{fasceAutomatiche,coloriExtra})}
-          onPick={(p,nome)=>{addColoreExtra(p,nome);setShowAddColorPicker(false);}}
+          modelliColore={datiModelliPicker(false)}
+          modelliAssegnabili={datiModelliPicker(true)}
+          onPick={async(p,nome,ids)=>{
+            addColoreExtra(p,nome);
+            setShowAddColorPicker(false);
+            for(const id of (ids||[])){
+              const m = modelli.find(x=>x.id===id);
+              if(m) await saveModello({...m, coloreCustom:p});
+            }
+          }}
           onClose={()=>setShowAddColorPicker(false)}/>
       )}
 
@@ -825,6 +851,11 @@ export default function VistaModelli({ C }){
                     })(),
                   }))
                   .filter(g=>g.modelli.length>0);
+                // Modelli che non risultano in nessun calendario esistente: prima sparivano dalla lista.
+                if(colorAssignCalFiltro===null){
+                  const orfani = filtra(modelliOrdinati.filter(m=>!store.calendars.some(c=>modelloVisibileInCalendario(m, c.id, mainCalId))));
+                  if(orfani.length>0) gruppiColorePerCalendario.push({cal:{id:"__senza_cal",name:"Senza calendario",color:"#94a3b8"}, modelli:orfani});
+                }
                 if(gruppiColorePerCalendario.length===0) return <NessunModello T={T}/>;
                 return (
                   <div style={{display:"flex",flexDirection:"column",gap:14}}>
@@ -889,6 +920,7 @@ export default function VistaModelli({ C }){
         <ColorPickerModal T={T} cur={showEditFasciaColor} title="Cambia colore"
           coloriUsati={coloriUsatiTutti().filter(h=>String(h).toLowerCase()!==String(showEditFasciaColor).toLowerCase())}
           getNomeColore={p=>nomeDelColore(p,{fasceAutomatiche,coloriExtra})}
+          modelliColore={datiModelliPicker(false)}
           onPick={async(p, nome)=>{
             const old = showEditFasciaColor;
             if(String(old).toLowerCase()===String(p).toLowerCase()){

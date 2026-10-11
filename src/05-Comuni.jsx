@@ -2052,8 +2052,14 @@ export function nomeDelColore(hex, {fasceAutomatiche=[], coloriExtra=[]}={}){
   return hex.toUpperCase();
 }
 
-export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, title="Scegli colore", getNomeColore=null}){
+export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, title="Scegli colore", getNomeColore=null, modelliColore=null, modelliAssegnabili=null}){
   const [pos,setPos]=useState(null); // null = centrato di default
+  // modelliColore: [{id,label,sub,hex,cal}] di TUTTI i modelli → sotto la griglia compare
+  // l'elenco dei modelli che usano il colore toccato. modelliAssegnabili: [{id,label,sub,cal}]
+  // → sezione con spunte per associare modelli al colore scelto (onPick riceve gli id come 3° argomento).
+  const [selIds,setSelIds]=useState(()=>new Set());
+  const [mostraAssegna,setMostraAssegna]=useState(true);
+  const stessoHex=(a,b)=>String(a||"").toLowerCase()===String(b||"").toLowerCase();
   const [nomeColoreInput, setNomeColoreInput] = useState("");
   // Modalità del selettore ("preciso" = riquadro 2D+hue+numeri esistente,
   // "griglia" = pallini precalcolati): PERSISTENTE e GLOBALE in localStorage,
@@ -2190,7 +2196,56 @@ export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, tit
           </div>
         )}
 
+        {Array.isArray(modelliAssegnabili)&&modelliAssegnabili.length>0&&(
+          <div style={{marginTop:12,borderTop:`1px solid ${T.border}`,paddingTop:8}}>
+            <div onClick={()=>setMostraAssegna(v=>!v)}
+              style={{display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",marginBottom:6}}>
+              <div style={{fontSize:11,fontWeight:800,color:T.sub}}>
+                ASSEGNA MODELLI A QUESTO COLORE{selIds.size>0?` (${selIds.size})`:""}
+              </div>
+              <span style={{color:T.sub,fontSize:12}}>{mostraAssegna?"▲":"▼"}</span>
+            </div>
+            {mostraAssegna&&modelliAssegnabili.map(m=>{
+              const sel=selIds.has(m.id);
+              return (
+                <div key={m.id}
+                  onClick={()=>setSelIds(prev=>{const n=new Set(prev); if(n.has(m.id)) n.delete(m.id); else n.add(m.id); return n;})}
+                  style={{display:"flex",alignItems:"center",gap:8,padding:"6px 2px",cursor:"pointer",borderBottom:`1px solid ${T.border}`}}>
+                  <div style={{width:18,height:18,borderRadius:5,flexShrink:0,
+                    border:`2px solid ${sel?previewColor:T.border}`,background:sel?previewColor:"transparent",
+                    display:"flex",alignItems:"center",justifyContent:"center"}}>
+                    {sel&&<span style={{color:getContrastTextColor(previewColor),fontSize:12,fontWeight:900}}>✓</span>}
+                  </div>
+                  <div style={{width:10,height:10,borderRadius:"50%",background:m.hex||T.border,flexShrink:0}}/>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:13,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.label}</div>
+                    {m.sub&&<div style={{fontSize:10,color:T.sub}}>{m.sub}</div>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         </div>
+
+        {(()=>{
+          const usano=Array.isArray(modelliColore)?modelliColore.filter(x=>stessoHex(x.hex,previewColor)):[];
+          if(usano.length===0) return null;
+          return (
+            <div style={{marginTop:8,paddingTop:6,borderTop:`1px solid ${T.border}`,flexShrink:0}}>
+              <div style={{fontSize:10,fontWeight:800,color:T.sub,marginBottom:3}}>MODELLI CON QUESTO COLORE ({usano.length})</div>
+              <div style={{maxHeight:84,overflowY:"auto",display:"flex",flexWrap:"wrap",gap:4}}>
+                {usano.map(x=>(
+                  <span key={x.id} style={{fontSize:11,fontWeight:700,color:T.text,background:T.s2,
+                    border:`1px solid ${T.border}`,borderRadius:8,padding:"2px 7px"}}>
+                    {x.label}{x.cal?<span style={{color:T.sub,fontWeight:600}}> · {x.cal}</span>:null}
+                  </span>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
 
         {modalitaPicker==='griglia'&&(()=>{
           const c=hexToRgbObj(previewColor||"#000000");
@@ -2237,7 +2292,7 @@ export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, tit
             Annulla
           </button>
           <button onClick={()=>{
-              onPick(previewColor, nomeColoreInput.trim() ? nomeColoreInput.trim().toUpperCase() : null);
+              onPick(previewColor, nomeColoreInput.trim() ? nomeColoreInput.trim().toUpperCase() : null, Array.isArray(modelliAssegnabili)?Array.from(selIds):null);
               onClose();
             }}
             style={{flex:1,background:previewColor,border:"none",borderRadius:10,
