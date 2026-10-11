@@ -1835,7 +1835,7 @@ export function ModelForm({
   reports = [], getConteggioConfig, updateConteggioConfig,
   suggerimentiTitolo = [], suggerimentiNomeVis = [], onRimuoviSuggerimento,
   onSave,
-  calendari = [], onCopia, onColoreNome,
+  calendari = [], onCopia, onColoreNome, coloriUsatiTutti = null,
 }) {
   const [mostraSuggTitolo, setMostraSuggTitolo] = useState(false);
   const [mostraCopia, setMostraCopia] = useState(false);
@@ -2031,7 +2031,7 @@ export function ModelForm({
           </div>
           {showColorPicker && (
             <ColorPickerModal T={T} cur={coloreAnteprima} title="Colore modello"
-              coloriUsati={coloriUsati}
+              coloriUsati={coloriUsatiTutti && coloriUsatiTutti.length ? coloriUsatiTutti : coloriUsati}
               getNomeColore={nomeDelColore}
               onPick={(c, nome) => { sceltaColore(c); if (nome && onColoreNome) onColoreNome(c, nome); }}
               onClose={() => setShowColorPicker(false)} />

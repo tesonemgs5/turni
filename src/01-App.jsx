@@ -162,7 +162,7 @@ function AppInterno({ session }){
     setShowReportModelliPicker, editFascia, setEditFascia, showFasciaColorPicker, setShowFasciaColorPicker, userId,
     isInitialized, processaCodaSync, sysDark, dark, T, activeCal,
     mainCal, mainCalId, accent, accentText, hols, fasceAutomatiche,
-    colByTime, colLabel, isRed, sundayColor, holidayColor, redBg,
+    colByTime, colLabel, isRed, sundayColor, holidayColor, redBg, coloriUsatiTutti,
     getEvts, allEvts, dots, saveSettings, addCalendar, updateCalendar,
     deleteCalendar, computeEventFields, saveEvt, updateEvt, delEvt, delEvtiRotazioneDaData,
     delTutteEvtiRotazione, cancellaTuttiEventiMese, cancellaEventiMeseSelezione, calcMinuti, saveToSheets, syncSeAttivo, loadFromSheets,
@@ -445,7 +445,7 @@ function AppInterno({ session }){
               <div style={{width:32}}/>
             </div>
             <ModelForm T={T} form={modelForm} setForm={setModelForm} accent={accent} dark={dark}
-              fasceAutomatiche={fasceAutomatiche} modelli={modelli} coloriExtra={coloriExtra}
+              fasceAutomatiche={fasceAutomatiche} modelli={modelli} coloriExtra={coloriExtra} coloriUsatiTutti={coloriUsatiTutti()}
               onColoreNome={ensureColoreRegistrato}
               reports={store.reports||[]} getConteggioConfig={getConteggioConfig} updateConteggioConfig={updateConteggioConfig}
               suggerimentiTitolo={autocompleteValori.titolo} suggerimentiNomeVis={autocompleteValori.nome_visualizzato}

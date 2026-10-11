@@ -14,7 +14,7 @@ function etichettaData(k){
   return `${GIORNI[new Date(y,m-1,d).getDay()]} ${pad(d)}/${pad(m)}/${y}`;
 }
 
-export function QuartineSection({ T, accent, dark, store, salvaQuartine, fasceAutomatiche=[], coloriExtra=[] }){
+export function QuartineSection({ T, accent, dark, store, salvaQuartine, fasceAutomatiche=[], coloriExtra=[], coloriUsati=[] }){
   const base = quartineVuote(dark);
   const salvata = store.reportSettings?.quartine || {};
   const cfg = {
@@ -113,7 +113,7 @@ export function QuartineSection({ T, accent, dark, store, salvaQuartine, fasceAu
               <div onClick={e=>{e.stopPropagation(); setPal(pal===q?null:q);}}
                 style={{width:26,height:26,borderRadius:"50%",background:cfg.colori[q],border:`2px solid ${T.border}`,cursor:"pointer"}}/>
               {pal===q && <ColorPickerModal T={T} cur={cfg.colori[q]} title={`Colore quartina ${q}`}
-                coloriUsati={QUARTINE.map(x=>cfg.colori[x])}
+                coloriUsati={(()=>{ const v=new Set(); return [...coloriUsati, ...QUARTINE.map(x=>cfg.colori[x])].filter(h=>{ const k=String(h).toLowerCase(); if(!h||v.has(k)) return false; v.add(k); return true; }); })()}
                 getNomeColore={p=>nomeDelColore(p,{fasceAutomatiche,coloriExtra})}
                 onPick={p=>salvaQuartine({...cfg, colori:{...cfg.colori,[q]:p}})}
                 onClose={()=>setPal(null)}/>}

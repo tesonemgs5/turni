@@ -99,7 +99,7 @@ function getContrastTextColor(hex){
 
 // #region SEZIONE 21: CAL BADGE
 // ═══════════════════════════════════════════════════════════════
-export function CalBadge({ calId, calAttivo, coloreCal, testoContrasto, T, store, setStore, updateCalendar, accent, setCalId, fasceAutomatiche=[], coloriExtra=[] }){
+export function CalBadge({ calId, calAttivo, coloreCal, testoContrasto, T, store, setStore, updateCalendar, accent, setCalId, fasceAutomatiche=[], coloriExtra=[], coloriUsatiTutti=null }){
   const [showCalPal, setShowCalPal] = useState(false);
   const [showCalSwitch, setShowCalSwitch] = useState(false);
   if(!calId||!calAttivo) return null;
@@ -116,7 +116,7 @@ export function CalBadge({ calId, calAttivo, coloreCal, testoContrasto, T, store
         </div>
         {showCalPal&&(
           <ColorPickerModal T={T} cur={coloreCal} title={`Colore ${calAttivo.name||"calendario"}`}
-            coloriUsati={[...new Set(store.calendars.map(cc=>cc.color).filter(Boolean))]}
+            coloriUsati={coloriUsatiTutti || [...new Set(store.calendars.map(cc=>cc.color).filter(Boolean))]}
             getNomeColore={p=>nomeDelColore(p,{fasceAutomatiche,coloriExtra})}
             onPick={p=>{
               const newCals=JSON.parse(JSON.stringify(store.calendars));
