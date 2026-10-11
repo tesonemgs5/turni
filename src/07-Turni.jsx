@@ -1341,7 +1341,7 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
               <label style={{display:"block",marginTop:10,border:`2px dashed ${accent}`,borderRadius:12,
                 padding:"14px 16px",textAlign:"center",cursor:"pointer",color:"#1a1a1a",fontSize:13,fontWeight:700,
                 background:"#ffffff"}}>
-                🤖 Interpreta direttamente con l'AI (foto o PDF)
+                🤖 Importa da PDF o foto
                 <input type="file" accept="image/*,application/pdf" style={{display:"none"}}
                   onChange={e=>{ const f=e.target.files?.[0]; if(f){ pendingFile.current=f; setImgPreviewUrl(f.type.startsWith("image")?URL.createObjectURL(f):null); handleFileConGemini(f); } }}/>
               </label>
