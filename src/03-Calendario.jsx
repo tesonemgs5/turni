@@ -492,6 +492,13 @@ export default function VistaCalendario({ C }){
         {cells.map((d,i)=>{
           if(!d) return <div key={i} style={{background:T.bg}}/>;
           const key=dkey(year,month,d);
+          const bgGiorno=(k,sun,fest)=>{
+            const q=coloreQuartina(k);
+            if(!q) return redBg(sun,fest);
+            if(!sun&&!fest) return q;
+            if(sun&&fest) return `linear-gradient(to bottom, ${q} 34%, ${sundayColor} 34% 67%, ${holidayColor} 67%)`;
+            return `linear-gradient(to bottom, ${q} 50%, ${sun?sundayColor:holidayColor} 50%)`;
+          };
           const evts=allEvts(key);
           const ds=dots(key);
           const isT=d===today.getDate()&&month===today.getMonth()&&year===today.getFullYear();
@@ -505,7 +512,7 @@ export default function VistaCalendario({ C }){
                 if(quickModeModello){ applyQuickModello(key); return; }
                 setDayKey(key); setForm(null); setPal(null);
               }}
-              style={{background:isT?(dark?"#1a2f50":"#dbeafe"):(coloreQuartina(key)||redBg(isSun,isH)||T.surface),
+              style={{background:isT?(dark?"#1a2f50":"#dbeafe"):(bgGiorno(key,isSun,isH)||T.surface),
                 cursor:"pointer",display:"flex",flexDirection:"column",overflow:"hidden",
                 borderTop:"none"}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:2,padding:"2px 3px 0",flexShrink:0}}>

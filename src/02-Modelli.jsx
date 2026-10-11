@@ -698,8 +698,8 @@ export default function VistaModelli({ C }){
             if(b.reg) return 1;
             return 0;
           });
-          // In un calendario si vedono solo i colori usati dai suoi modelli.
-          if(calId!==null){ for(let k=righeTutte.length-1;k>=0;k--){ if(righeTutte[k].count===0) righeTutte.splice(k,1); } }
+          // In un calendario si vedono i colori usati dai suoi modelli + quelli registrati ma non usati da nessun modello (eliminabili col cestino).
+          if(calId!==null){ for(let k=righeTutte.length-1;k>=0;k--){ const r=righeTutte[k]; const usatoAltrove = modelli.some(m=>eqHex(hexModello(m),r.hex)); if(r.count===0 && (usatoAltrove || !r.reg)) righeTutte.splice(k,1); } }
           const ordineVisibile = righeTutte.filter(r=>r.reg).map(r=>r.reg.hex);
           return (
             <div style={{paddingBottom:80}}>

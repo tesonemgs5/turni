@@ -643,7 +643,7 @@ function AppInterno({ session }){
             </div>
             {showModelloPicker==="quick"&&!quickModeModello?(
               <div style={{display:"flex",gap:6}}>
-                <button onClick={()=>setShowImportaFotoDialog(true)}
+                <button onClick={()=>setShowImportaFotoDialog(true)} title="Importa da PDF o foto"
                   style={{background:"none",border:"none",color:accent,fontSize:20,cursor:"pointer",width:32}}>📷</button>
                 <button onClick={()=>setShowImportaTurniJsonDialog(true)}
                   style={{background:"none",border:"none",color:accent,fontSize:20,cursor:"pointer",width:32}}>📋</button>

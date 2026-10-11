@@ -1194,7 +1194,7 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
         onClick={e=>e.stopPropagation()}>
 
         <div style={{padding:"18px 20px 12px",borderBottom:`1px solid ${T.border}`}}>
-          <div style={{fontSize:16,fontWeight:900,color:T.text}}>📷 Importa da foto</div>
+          <div style={{fontSize:16,fontWeight:900,color:T.text}}>📷 Importa da PDF o foto</div>
           <div style={{fontSize:12,color:"#444444",marginTop:2}}>
             Mese in corso: {NOMI_MESI_IT[month]} {year}.{" "}
             {tipoTabella==="stella"
