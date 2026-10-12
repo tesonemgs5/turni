@@ -6909,6 +6909,7 @@ const importsRecenti = useMemo(()=>{
   // non solo quando cambia qualcosa nei dati.
   const [widgetTick, setWidgetTick] = useState(0);
   const widgetErroreSegnalatoRef = useRef(false);
+  const widgetStatoLoggatoRef = useRef(false);
   useEffect(()=>{
     const quandoVisibile = ()=>{ if(document.visibilityState==="visible") setWidgetTick(t=>t+1); };
     document.addEventListener("visibilitychange", quandoVisibile);
@@ -6917,8 +6918,19 @@ const importsRecenti = useMemo(()=>{
   // Prepara i dati dei prossimi giorni (turni, quartine, festivi) e li passa al widget nativo.
   // Vale solo dentro l'APK; sul sito/PC non fa nulla. Invio ritardato di 1,5 s per non ripeterlo a ogni modifica.
   useEffect(()=>{
-    if(!widgetDisponibile()) return;
+    // Diagnosi (una sola riga per sessione nel Log): dice perche' il widget viene saltato.
+    if(!widgetDisponibile()){
+      if(!widgetStatoLoggatoRef.current){
+        widgetStatoLoggatoRef.current = true;
+        registraAttivita("Widget Android", `Widget NON attivo in questa app: ${descriviStatoWidget()}`, { chiave:"widget-stato", supabase:"n/a" });
+      }
+      return;
+    }
     if(!store.calendars || store.calendars.length===0) return;   // dati non ancora caricati
+    if(!widgetStatoLoggatoRef.current){
+      widgetStatoLoggatoRef.current = true;
+      registraAttivita("Widget Android", `Widget attivo, preparo i dati: ${descriviStatoWidget()}`, { chiave:"widget-stato", supabase:"n/a" });
+    }
     const timer = setTimeout(()=>{
       try{
         const giorni = {};
