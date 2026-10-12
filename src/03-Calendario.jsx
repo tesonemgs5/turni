@@ -542,8 +542,11 @@ export default function VistaCalendario({ C }){
                 cursor:"pointer",display:"flex",flexDirection:"column",overflow:"hidden",position:"relative",
                 borderTop:"none"}}>
               {qNum&&!isT&&(
+                // Numero romano della quartina: in basso nella casella (gli eventi si impilano
+                // dall'alto) e SOPRA gli eventi (zIndex 2), così resta sempre visibile anche
+                // nei giorni con uno o più eventi.
                 <div style={{position:"absolute",left:0,right:0,top:0,bottom:(isH?"50%":0),
-                  display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none",zIndex:0,
+                  display:"flex",alignItems:"flex-end",justifyContent:"center",paddingBottom:4,pointerEvents:"none",zIndex:2,
                   fontSize:isH?22:30,fontWeight:900,letterSpacing:1,lineHeight:1,color:romanoSuQuartina(qCol)}}>{qNum}</div>
               )}
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:2,padding:"2px 3px 0",flexShrink:0,position:"relative",zIndex:1}}>
