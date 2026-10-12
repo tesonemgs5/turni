@@ -1,6 +1,7 @@
     import { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "./11-supabase";
 import { calcolaAllineamentoColori } from "./13-allinea-colori";
+import { widgetDisponibile, inviaAlWidget } from "./17-widget";
 import {
   FASCE_AUTOMATICHE_DEFAULT, FESTIVITA_DEFAULT_ATTIVE, MONTHS, NOMI_GIORNI_IT, PALETTE, COLORE_H24,
   calcFine6h15, calcFine6h30, calcFineModello, categoriaAppAutoAutomatica, categoriaTurnoAutomatica,
@@ -6902,6 +6903,50 @@ const importsRecenti = useMemo(()=>{
     }
     return { idsAggiornati };
   }
+
+  // ── Widget Android (2 settimane) ──
+  // Prepara i dati dei prossimi giorni (turni, quartine, festivi) e li passa al widget nativo.
+  // Vale solo dentro l'APK; sul sito/PC non fa nulla. Invio ritardato di 1,5 s per non ripeterlo a ogni modifica.
+  useEffect(()=>{
+    if(!isInitialized || !widgetDisponibile()) return;
+    const timer = setTimeout(()=>{
+      try{
+        const giorni = {};
+        const cacheFest = {};
+        const festiviAnno = (y)=> cacheFest[y] || (cacheFest[y] = italianHols(y, store.nationalHolsEnabled));
+        const campo2 = store.calEventRows===2 ? (store.calRow2Field||"---") : "---";
+        const riga2 = (e)=>{
+          switch(campo2){
+            case "titolo": return e.label||"";
+            case "inizio": return e.tIn||"";
+            case "fine":   return e.tOut||"";
+            case "note":   return e.note||"";
+            default: return "";
+          }
+        };
+        const oggi = new Date(); oggi.setHours(12,0,0,0);
+        for(let i=-7;i<=60;i++){
+          const dt = new Date(oggi); dt.setDate(dt.getDate()+i);
+          const y = dt.getFullYear(), m = dt.getMonth()+1, dd = dt.getDate();
+          const key = dkey(y, m-1, dd);
+          const festivo = festiviAnno(y).some(h=>h.m===m && h.d===dd) ||
+            (store.extraHols||[]).some(h=>!h.importante && +h.m===m && +h.d===dd && (h.y==null || +h.y===y));
+          const g = {};
+          const ev = allEvts(key).map(e=>({ a:e.label||"", b:riga2(e), c:e.color||"" }));
+          if(ev.length) g.e = ev;
+          const qc = coloreQuartina(key);
+          if(qc){ g.q = store.reportSettings?.quartine?.date?.[key] || ""; g.qc = qc; }
+          if(festivo) g.h = 1;
+          if(Object.keys(g).length) giorni[key] = g;
+        }
+        inviaAlWidget({ v:1, dark: !!dark, sunday: sundayColor, holiday: holidayColor, giorni });
+      }catch(err){ console.warn("Widget: preparazione dati non riuscita", err); }
+    }, 1500);
+    return ()=>clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isInitialized, store.events, store.reportSettings, store.sundayColor, store.holidayColor,
+      store.calEventRows, store.calRow2Field, store.calendars, store.extraHols, store.nationalHolsEnabled,
+      dark, selectedCalIds]);
 
   return {
     today,
