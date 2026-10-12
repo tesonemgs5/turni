@@ -54,6 +54,9 @@ export default defineConfig({
   base: './',
   define: {
     __APP_VERSION__: JSON.stringify(calcolaVersioneBuild()),
+    // Numero della build "Build APK #NN" di GitHub Actions (variabile impostata in automatico da GitHub).
+    // Fuori da GitHub (PC, Vercel) resta vuoto e non viene mostrato.
+    __BUILD_NUM__: JSON.stringify(process.env.GITHUB_RUN_NUMBER || ''),
   },
   build: {
     minify: 'terser',
