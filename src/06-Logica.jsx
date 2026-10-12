@@ -1,7 +1,7 @@
     import { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "./11-supabase";
 import { calcolaAllineamentoColori } from "./13-allinea-colori";
-import { widgetDisponibile, inviaAlWidget } from "./17-widget";
+import { widgetDisponibile, inviaAlWidget, descriviStatoWidget } from "./17-widget";
 import {
   FASCE_AUTOMATICHE_DEFAULT, FESTIVITA_DEFAULT_ATTIVE, MONTHS, NOMI_GIORNI_IT, PALETTE, COLORE_H24,
   calcFine6h15, calcFine6h30, calcFineModello, categoriaAppAutoAutomatica, categoriaTurnoAutomatica,
@@ -6905,10 +6905,20 @@ const importsRecenti = useMemo(()=>{
   }
 
   // ── Widget Android (2 settimane) ──
+  // widgetTick sale ogni volta che l'app torna visibile: cosi' il widget si aggiorna APPENA APRI L'APP,
+  // non solo quando cambia qualcosa nei dati.
+  const [widgetTick, setWidgetTick] = useState(0);
+  const widgetErroreSegnalatoRef = useRef(false);
+  useEffect(()=>{
+    const quandoVisibile = ()=>{ if(document.visibilityState==="visible") setWidgetTick(t=>t+1); };
+    document.addEventListener("visibilitychange", quandoVisibile);
+    return ()=>document.removeEventListener("visibilitychange", quandoVisibile);
+  }, []);
   // Prepara i dati dei prossimi giorni (turni, quartine, festivi) e li passa al widget nativo.
   // Vale solo dentro l'APK; sul sito/PC non fa nulla. Invio ritardato di 1,5 s per non ripeterlo a ogni modifica.
   useEffect(()=>{
-    if(!isInitialized || !widgetDisponibile()) return;
+    if(!widgetDisponibile()) return;
+    if(!store.calendars || store.calendars.length===0) return;   // dati non ancora caricati
     const timer = setTimeout(()=>{
       try{
         const giorni = {};
@@ -6939,12 +6949,25 @@ const importsRecenti = useMemo(()=>{
           if(festivo) g.h = 1;
           if(Object.keys(g).length) giorni[key] = g;
         }
-        inviaAlWidget({ v:1, dark: !!dark, sunday: sundayColor, holiday: holidayColor, giorni });
-      }catch(err){ console.warn("Widget: preparazione dati non riuscita", err); }
-    }, 1500);
+        inviaAlWidget({ v:1, dark: !!dark, sunday: sundayColor, holiday: holidayColor, giorni }).then(esito=>{
+          // L'esito finisce nel Log dell'app (Impostazioni): cosi' si vede cosa succede sul telefono.
+          if(esito.ok){
+            registraAttivita("Widget Android", `Widget aggiornato: ${Object.keys(giorni).length} giorni con dati`, { chiave:"widget", supabase:"n/a" });
+          } else if(!esito.saltato && !widgetErroreSegnalatoRef.current){
+            widgetErroreSegnalatoRef.current = true;
+            segnalaErroreSoloLog({ message:`${esito.errore} (${esito.stato})` }, "Widget Android: invio dei dati non riuscito");
+          }
+        });
+      }catch(err){
+        if(!widgetErroreSegnalatoRef.current){
+          widgetErroreSegnalatoRef.current = true;
+          segnalaErroreSoloLog(err, `Widget Android: preparazione dei dati non riuscita (${descriviStatoWidget()})`);
+        }
+      }
+    }, 300);
     return ()=>clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isInitialized, store.events, store.reportSettings, store.sundayColor, store.holidayColor,
+  }, [widgetTick, store.events, store.reportSettings, store.sundayColor, store.holidayColor,
       store.calEventRows, store.calRow2Field, store.calendars, store.extraHols, store.nationalHolsEnabled,
       dark, selectedCalIds]);
 
