@@ -38,7 +38,20 @@ const mediana = (v)=>{ const s=[...v].sort((a,b)=>a-b); return s.length ? s[Math
 // Funzione pura: da elementi di testo con posizione [{s, x, y}] (x,y = centro; y cresce verso il basso)
 // a { ok, motivo, anno, entries:[{mese:1..13, giorno, q}], avvisi, metodo }.
 export function quartineDaItems(itemsGrezzi){
-  const items = (itemsGrezzi||[]).map(i=>({ s:String(i.s||"").trim(), x:i.x, y:i.y })).filter(i=>i.s);
+  // pdf.js (v5+) può fondere parole vicine in un solo elemento ("MAGGIO GIUGNO LUGLIO ...").
+  // Qui li riduco a parole singole, ripartendo la larghezza in proporzione ai caratteri.
+  const items = [];
+  for(const i of (itemsGrezzi||[])){
+    const testo = String(i.s||"").replace(/\u00a0/g," ");
+    const parti = testo.trim().split(/\s+/).filter(Boolean);
+    if(parti.length <= 1 || !(i.w > 0)){ const s = testo.trim(); if(s) items.push({ s, x:i.x, y:i.y }); continue; }
+    const tot = testo.trim().length; let pos = 0; const x0 = i.x - i.w/2;
+    for(const p of parti){
+      const ini = testo.trim().indexOf(p, pos);
+      items.push({ s:p, x: x0 + i.w * (ini + p.length/2) / tot, y:i.y });
+      pos = ini + p.length;
+    }
+  }
   const avvisi = [];
 
   // 1) intestazioni dei mesi (12 colonne + l'ultimo gennaio, dell'anno dopo)
@@ -114,6 +127,23 @@ export function quartineDaItems(itemsGrezzi){
     }
   }
 
+  // 7) controlli di coerenza (solo avvisi, i dati restano come nel PDF):
+  //    ogni domenica dell'anno deve essere presente, e le domeniche scorrono nel ciclo I-II-III-IV.
+  if(anno){
+    const ymd = (d)=>`${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`;
+    const presenti = new Set(entries.map(e=>`${e.mese>12?anno+1:anno}-${e.mese>12?e.mese-12:e.mese}-${e.giorno}`));
+    const mancanti = [];
+    for(let d=new Date(anno,0,1); d.getFullYear()===anno; d.setDate(d.getDate()+1)){
+      if(d.getDay()===0 && !presenti.has(ymd(d))) mancanti.push(`${d.getDate()}/${d.getMonth()+1}`);
+    }
+    if(mancanti.length) avvisi.push(`Domeniche non trovate nel PDF: ${mancanti.join(", ")}. Controlla se un numero è stato scritto male.`);
+    const dom = entries.filter(e=>e.mese<=12 && new Date(anno,e.mese-1,e.giorno).getDay()===0);
+    for(let k=1;k<dom.length;k++){
+      const att = QUARTINE[(QUARTINE.indexOf(dom[k-1].q)+1)%4];
+      if(dom[k].q!==att) avvisi.push(`Domenica ${dom[k].giorno}/${dom[k].mese}: quartina ${dom[k].q}, ma dopo la ${dom[k-1].q} era attesa la ${att}.`);
+    }
+  }
+
   return { ok:true, motivo:"", anno, entries, avvisi, metodo };
 }
 
@@ -138,7 +168,7 @@ export async function leggiPdfQuartine(file){
   const H = pagina.getViewport({ scale:1 }).height;
   const c = await pagina.getTextContent();
   const items = c.items.filter(i=>i.str && i.str.trim())
-    .map(i=>({ s:i.str, x:i.transform[4] + (i.width||0)/2, y:H - i.transform[5] }));
+    .map(i=>({ s:i.str, x:i.transform[4] + (i.width||0)/2, y:H - i.transform[5], w:i.width||0 }));
   return quartineDaItems(items);
 }
 

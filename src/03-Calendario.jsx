@@ -17,6 +17,29 @@ import { ModelloCard, ModelForm, RotazioneCard, RotazioneForm, ModelloSelector,
   GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView } from "./04-Rotazione";
 import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
 
+// ── Quartine: colori derivati dallo sfondo della quartina ──
+// Luminosità percepita (0 scuro … 1 chiaro) di un colore #rrggbb / #rgb.
+function lumQ(hex){
+  let h=String(hex||"").replace("#","");
+  if(h.length===3) h=h.split("").map(c=>c+c).join("");
+  if(!/^[0-9a-fA-F]{6}$/.test(h)) return 1;
+  const r=parseInt(h.slice(0,2),16), g=parseInt(h.slice(2,4),16), b=parseInt(h.slice(4,6),16);
+  return (0.299*r+0.587*g+0.114*b)/255;
+}
+// Mescola il colore con bianco o nero (t = 0…1).
+function mixQ(hex,to,t){
+  let h=String(hex||"").replace("#","");
+  if(h.length===3) h=h.split("").map(c=>c+c).join("");
+  if(!/^[0-9a-fA-F]{6}$/.test(h)) return hex;
+  const c=[0,2,4].map(i=>parseInt(h.slice(i,i+2),16));
+  const m=c.map(v=>Math.round(v+(to-v)*t));
+  return "#"+m.map(v=>v.toString(16).padStart(2,"0")).join("");
+}
+// Numero del giorno a contrasto con lo sfondo della quartina.
+const giornoSuQuartina = (q)=> lumQ(q)<0.6 ? "#ffffff" : "#111827";
+// Numero romano "colore su colore": stessa tinta dello sfondo, più chiara se lo sfondo è scuro e viceversa.
+const romanoSuQuartina = (q)=> lumQ(q)<0.6 ? mixQ(q,255,0.38) : mixQ(q,0,0.30);
+
 // ═══════════════════════════════════════════════════════════════
 // core1.jsx — Calendario ed Eventi: qui dentro trovi tutto quello
 // che riguarda la VISTA CALENDARIO e la VISTA REPORT (mesi, giorni,
@@ -495,11 +518,14 @@ export default function VistaCalendario({ C }){
           const bgGiorno=(k,sun,fest)=>{
             const q=coloreQuartina(k);
             if(!q) return redBg(sun,fest);
-            if(!sun&&!fest) return q;
-            if(sun&&fest) return `linear-gradient(to bottom, ${q} 34%, ${sundayColor} 34% 67%, ${holidayColor} 67%)`;
-            return `linear-gradient(to bottom, ${q} 50%, ${sun?sundayColor:holidayColor} 50%)`;
+            // domenica e giorni normali: tutta la casella del colore della quartina
+            if(!fest) return q;
+            // festivo (anche se cade di domenica): metà quartina, metà colore festivo
+            return `linear-gradient(to bottom, ${q} 50%, ${holidayColor} 50%)`;
           };
-          const evts=allEvts(key);
+          const qCol=coloreQuartina(key);
+          const qNum=qCol ? (store.reportSettings?.quartine?.date?.[key]||"") : "";
+          const evts=allEvts(key).filter(e=>!(qCol && String(e.label||"").trim().toUpperCase()==="QUART"));
           const ds=dots(key);
           const isT=d===today.getDate()&&month===today.getMonth()&&year===today.getFullYear();
           const isSun=(i%7)===6;
@@ -513,9 +539,14 @@ export default function VistaCalendario({ C }){
                 setDayKey(key); setForm(null); setPal(null);
               }}
               style={{background:isT?(dark?"#1a2f50":"#dbeafe"):(bgGiorno(key,isSun,isH)||T.surface),
-                cursor:"pointer",display:"flex",flexDirection:"column",overflow:"hidden",
+                cursor:"pointer",display:"flex",flexDirection:"column",overflow:"hidden",position:"relative",
                 borderTop:"none"}}>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:2,padding:"2px 3px 0",flexShrink:0}}>
+              {qNum&&!isT&&(
+                <div style={{position:"absolute",left:0,right:0,top:0,bottom:(isH?"50%":0),
+                  display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none",zIndex:0,
+                  fontSize:isH?22:30,fontWeight:900,letterSpacing:1,lineHeight:1,color:romanoSuQuartina(qCol)}}>{qNum}</div>
+              )}
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:2,padding:"2px 3px 0",flexShrink:0,position:"relative",zIndex:1}}>
                 {giornoImportante?(
                   <span title={giornoImportante.nota||"Giorno importante"}
                     style={{display:"inline-flex",alignItems:"center",justifyContent:"center",
@@ -523,13 +554,13 @@ export default function VistaCalendario({ C }){
                       fontSize:13,fontWeight:900,lineHeight:1,color:"#ffffff",flexShrink:0}}>{d}</span>
                 ):(
                   <span style={{fontSize:20,fontWeight:isT?900:500,lineHeight:1,
-                    color:isT?accent:red?"#ef4444":T.sub}}>{d}</span>
+                    color:isT?accent:(qCol?giornoSuQuartina(qCol):(red?"#ef4444":T.sub))}}>{d}</span>
                 )}
                 <div style={{display:"flex",alignItems:"center",gap:3,flexShrink:0}}>
                   {evts.length>maxEvtSlots&&<span style={{fontSize:11,fontWeight:800,color:T.sub}}>+{evts.length-maxEvtSlots}</span>}
                 </div>
               </div>
-              <div style={{flex:1,overflow:"hidden",display:"grid",
+              <div style={{flex:1,overflow:"hidden",display:"grid",position:"relative",zIndex:1,
                 gridTemplateRows:righeSlot(Math.floor(i/7)===Math.ceil(cells.length/7)-1),
                 gap:"1px",padding:"0 1px 0"}}>
                 {evts.slice(0,maxEvtSlots).map((e,ei)=>(
