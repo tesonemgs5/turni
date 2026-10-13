@@ -2124,15 +2124,12 @@ export function useAppCore(session){
   // Elenco unico di TUTTI i colori usati dall'app (per la sezione "USATI" di ogni selettore colore):
   // colori con nome, fasce orarie, modelli, domeniche/festivi, calendari e turni, quartine. Senza doppioni.
   function coloriUsatiTutti(){
+    // Solo colori che hanno un gruppo in Modelli > Colori: usati da almeno un modello oppure registrati (coloriExtra).
+    // Colori di calendari, turni, fasce, domeniche e quartine senza modelli NON compaiono (né in "USATI" né sottolineati).
     const visti = new Set(); const out = [];
     const add = (h)=>{ if(!h) return; const k=String(h).toLowerCase(); if(visti.has(k)) return; visti.add(k); out.push(h); };
     (coloriExtra||[]).forEach(c=>add(c&&c.hex));
-    (fasceAutomatiche||[]).forEach(f=>add(f&&f.color));
-    (modelli||[]).forEach(m=>add(m.coloreCustom||m.colore||(m.tempo==="h24"?COLORE_H24:colByTime(m.inizio))));
-    add(store.sundayColor); add(store.holidayColor);
-    (store.calendars||[]).forEach(c=>{ add(c.color); (c.shifts||[]).forEach(x=>add(x&&x.color)); });
-    const qc = store.reportSettings?.quartine?.colori;
-    if(qc) ["I","II","III","IV"].forEach(n=>add(qc[n]));
+    (modelli||[]).forEach(m=>add(m.coloreCustom||m.colore));
     return out;
   }
   function salvaQuartine(nuova){
