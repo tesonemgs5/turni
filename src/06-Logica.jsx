@@ -2124,11 +2124,10 @@ export function useAppCore(session){
   // Elenco unico di TUTTI i colori usati dall'app (per la sezione "USATI" di ogni selettore colore):
   // colori con nome, fasce orarie, modelli, domeniche/festivi, calendari e turni, quartine. Senza doppioni.
   function coloriUsatiTutti(){
-    // Solo colori che hanno un gruppo in Modelli > Colori: usati da almeno un modello oppure registrati (coloriExtra).
+    // Solo colori che hanno un gruppo in Modelli > Colori: usati da almeno un modello (i colori registrati ma vuoti non compaiono).
     // Colori di calendari, turni, fasce, domeniche e quartine senza modelli NON compaiono (né in "USATI" né sottolineati).
     const visti = new Set(); const out = [];
     const add = (h)=>{ if(!h) return; const k=String(h).toLowerCase(); if(visti.has(k)) return; visti.add(k); out.push(h); };
-    (coloriExtra||[]).forEach(c=>add(c&&c.hex));
     (modelli||[]).forEach(m=>add(m.coloreCustom||m.colore));
     return out;
   }
