@@ -1775,10 +1775,12 @@ export function useAppCore(session){
     surface: dark?"#0f172a":"#ffffff",
     s2:      dark?"#1e293b":"#f1f5f9",
     border:  dark?"#334155":"#e2e8f0",
-    text:    "#000000",
-    sub:     "#000000",
+    text:    dark?"#f1f5f9":"#000000",
+    sub:     dark?"#cbd5e1":"#000000",
     gap:     dark?"#1e293b":"#e2e8f0",
   };
+
+  useEffect(()=>{ document.documentElement.style.background=T.bg; document.body.style.background=T.bg; document.documentElement.style.colorScheme=dark?"dark":"light"; },[dark]);
 
   const activeCal = store.calendars.find(c=>c.id===calId)||null;
   const mainCal   = store.calendars.find(c=>c.isMain)||null;

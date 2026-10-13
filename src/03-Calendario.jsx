@@ -296,13 +296,13 @@ export default function VistaCalendario({ C }){
         touchStartX.current=null; touchStartY.current=null;
       }}
       style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden",position:"relative"}}>
-      <div style={{background:"#ffffff",display:"flex",alignItems:"center",
+      <div style={{background:dark?T.surface:"#ffffff",display:"flex",alignItems:"center",
         gap:5,padding:"1px 8px",overflowX:"auto",scrollbarWidth:"none",flexShrink:0,
-        borderBottom:"1px solid #e2e8f0"}}>
+        borderBottom:dark?`1px solid ${T.border}`:"1px solid #e2e8f0"}}>
         <button onClick={()=>month===0?(setYear(y=>y-1),setMonth(11)):setMonth(m=>m-1)}
-          style={{...NB, color:"rgba(15,23,42,0.8)", lineHeight:1, padding:"0 6px"}}>‹</button>
+          style={{...NB, color:dark?"rgba(241,245,249,0.85)":"rgba(15,23,42,0.8)", lineHeight:1, padding:"0 6px"}}>‹</button>
         <select value={month} onChange={e=>setMonth(Number(e.target.value))}
-          style={{...selectStyle, maxWidth:80, background:"#f1f5f9", color:"#0f172a", border:"1px solid #e2e8f0"}}>
+          style={{...selectStyle, maxWidth:80, background:dark?T.s2:"#f1f5f9", color:dark?"#f1f5f9":"#0f172a", border:dark?`1px solid ${T.border}`:"1px solid #e2e8f0"}}>
           {MONTHS.map((mn,i)=>(
             <option key={i} value={i} style={{background:"#1e293b",color:"#fff"}}>
               {mn.toUpperCase()}
@@ -310,14 +310,14 @@ export default function VistaCalendario({ C }){
           ))}
         </select>
         <select value={year} onChange={e=>setYear(Number(e.target.value))}
-          style={{...selectStyle, maxWidth:50, background:"#f1f5f9", color:"#0f172a", border:"1px solid #e2e8f0"}}>
+          style={{...selectStyle, maxWidth:50, background:dark?T.s2:"#f1f5f9", color:dark?"#f1f5f9":"#0f172a", border:dark?`1px solid ${T.border}`:"1px solid #e2e8f0"}}>
           {Array.from({length:21},(_,i)=>2023+i).map(y=>(
             <option key={y} value={y} style={{background:"#1e293b",color:"#fff"}}>{y}</option>
           ))}
         </select>
-        {bgSyncing&&<span style={{color:"rgba(15,23,42,0.7)",fontSize:11}}>🔄</span>}
+        {bgSyncing&&<span style={{color:dark?"rgba(241,245,249,0.8)":"rgba(15,23,42,0.7)",fontSize:11}}>🔄</span>}
         <button onClick={()=>month===11?(setYear(y=>y+1),setMonth(0)):setMonth(m=>m+1)}
-          style={{...NB, color:"rgba(15,23,42,0.8)", lineHeight:1, padding:"0 6px"}}>›</button>
+          style={{...NB, color:dark?"rgba(241,245,249,0.85)":"rgba(15,23,42,0.8)", lineHeight:1, padding:"0 6px"}}>›</button>
         <div style={{flex:1}}/>
         {(()=>{
           const modAttivo = quickModeModello ? modelli.find(m=>m.id===quickModeModello) : null;
@@ -330,19 +330,19 @@ export default function VistaCalendario({ C }){
                 setShowModelloPicker("quick");
               }}
               title={quickAttivo?"Riempimento rapido attivo: tocca per disattivare":"Applica un modello a più giorni"}
-              style={{background:quickAttivo?"#0f172a":"#f1f5f9",
-                border:`1.5px solid ${quickAttivo?"#0f172a":"#e2e8f0"}`,
+              style={{background:quickAttivo?(dark?"#e2e8f0":"#0f172a"):(dark?T.s2:"#f1f5f9"),
+                border:`1.5px solid ${quickAttivo?(dark?"#e2e8f0":"#0f172a"):(dark?T.border:"#e2e8f0")}`,
                 borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,
-                color:quickAttivo?"#ffffff":"#0f172a",flexShrink:0,
+                color:quickAttivo?(dark?"#0f172a":"#ffffff"):(dark?"#f1f5f9":"#0f172a"),flexShrink:0,
                 filter:quickAttivo?"grayscale(1) brightness(2.2)":"none"}}>
               ✏️
             </button>
             {quickAttivo&&(
               <div title={`Modello attivo: ${modAttivo.label||modAttivo.titolo||""}`}
                 style={{display:"flex",alignItems:"center",gap:5,flexShrink:0,
-                  background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:20,padding:"2px 10px"}}>
+                  background:dark?T.s2:"#f1f5f9",border:dark?`1px solid ${T.border}`:"1px solid #e2e8f0",borderRadius:20,padding:"2px 10px"}}>
                 <div style={{width:10,height:10,borderRadius:"50%",background:cModAttivo,flexShrink:0}}/>
-                <span style={{fontSize:11,fontWeight:800,color:"#0f172a",whiteSpace:"nowrap"}}>{modAttivo.label||modAttivo.titolo||"Senza nome"}</span>
+                <span style={{fontSize:11,fontWeight:800,color:dark?"#f1f5f9":"#0f172a",whiteSpace:"nowrap"}}>{modAttivo.label||modAttivo.titolo||"Senza nome"}</span>
               </div>
             )}
           </>);
@@ -363,10 +363,10 @@ export default function VistaCalendario({ C }){
             });
           }}
           title={editMode?"Modifica attiva — tocca per tornare alla consultazione multipla":"Modifica singola — tocca per attivare la modifica su un singolo calendario"}
-          style={{background:editMode?"#0f172a":"#f1f5f9",
-            border:`1.5px solid ${editMode?"#0f172a":"#e2e8f0"}`,
+          style={{background:editMode?(dark?"#e2e8f0":"#0f172a"):(dark?T.s2:"#f1f5f9"),
+            border:`1.5px solid ${editMode?(dark?"#e2e8f0":"#0f172a"):(dark?T.border:"#e2e8f0")}`,
             borderRadius:20,padding:"2px 10px",cursor:"pointer",flexShrink:0}}>
-          <span style={{color:editMode?"#ffffff":"#0f172a",fontSize:11,fontWeight:800}}>M</span>
+          <span style={{color:editMode?(dark?"#0f172a":"#ffffff"):(dark?"#f1f5f9":"#0f172a"),fontSize:11,fontWeight:800}}>M</span>
         </button>
         <button onClick={()=>{
           // Refresh "leggero": NON tocca la cache locale (a differenza di
@@ -378,8 +378,8 @@ export default function VistaCalendario({ C }){
           window.location.reload();
         }}
           title="Aggiorna (ricarica i dati)"
-          style={{background:"#f1f5f9",border:"1px solid #e2e8f0",
-            borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:"#0f172a",flexShrink:0}}>
+          style={{background:dark?T.s2:"#f1f5f9",border:dark?`1px solid ${T.border}`:"1px solid #e2e8f0",
+            borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:14,color:dark?"#f1f5f9":"#0f172a",flexShrink:0}}>
           🔄
         </button>
 
@@ -387,17 +387,17 @@ export default function VistaCalendario({ C }){
           const next = syncMode==='on'?'off':'on';
           setSyncMode(next);
           localStorage.setItem('syncMode', next);
-        }} style={{background:"#f1f5f9",border:"1px solid #e2e8f0",
-          borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:10,fontWeight:800,color:"#0f172a",flexShrink:0}}>
+        }} style={{background:dark?T.s2:"#f1f5f9",border:dark?`1px solid ${T.border}`:"1px solid #e2e8f0",
+          borderRadius:20,padding:"2px 8px",cursor:"pointer",fontSize:10,fontWeight:800,color:dark?"#f1f5f9":"#0f172a",flexShrink:0}}>
           {syncMode==='on'?(isOnline?'🟢 SYNC':'🔴 OFFLINE'):'⏸️ SYNC OFF'}
         </button>
       </div>
-      <div style={{background:"#ffffff",display:"flex",alignItems:"center",padding:"1px 4px",borderBottom:"1px solid #e2e8f0",flexShrink:0}}>
+      <div style={{background:dark?T.surface:"#ffffff",display:"flex",alignItems:"center",padding:"1px 4px",borderBottom:dark?`1px solid ${T.border}`:"1px solid #e2e8f0",flexShrink:0}}>
         <button onClick={()=>calBarRef.current?.scrollBy({left:-160, behavior:"smooth"})}
           title="Scorri calendari a sinistra"
-          style={{background:"#f1f5f9",border:"1px solid #cbd5e1",borderRadius:20,
+          style={{background:dark?T.s2:"#f1f5f9",border:dark?`1px solid ${T.border}`:"1px solid #cbd5e1",borderRadius:20,
             width:20,height:20,display:"flex",alignItems:"center",justifyContent:"center",
-            cursor:"pointer",fontSize:14,fontWeight:900,color:"#0f172a",flexShrink:0,marginRight:3}}>
+            cursor:"pointer",fontSize:14,fontWeight:900,color:dark?"#f1f5f9":"#0f172a",flexShrink:0,marginRight:3}}>
           ‹
         </button>
 
@@ -410,7 +410,7 @@ export default function VistaCalendario({ C }){
           style={{flex:1,display:"flex",alignItems:"center",gap:5,overflowX:"auto",
             scrollbarWidth:"none",msOverflowStyle:"none",WebkitOverflowScrolling:"touch"}}>
           {store.calendars.length===0
-            ? <span style={{color:"rgba(15,23,42,0.6)",fontSize:10,fontStyle:"italic"}}>→ Impostazioni</span>
+            ? <span style={{color:dark?"rgba(241,245,249,0.7)":"rgba(15,23,42,0.6)",fontSize:10,fontStyle:"italic"}}>→ Impostazioni</span>
             : store.calendars.map(c=>{
               const visibile = selectedCalIds.includes(c.id);
               const attivoEdit = editMode && calId===c.id;
@@ -425,9 +425,9 @@ export default function VistaCalendario({ C }){
                 }}
                 title={editMode?`Tocca per selezionare esclusivamente "${c.name}" per la modifica`:undefined}
                 style={{display:"flex",alignItems:"center",gap:4,flexShrink:0,cursor:"pointer",
-                  background:visibile ? "#0f172a" : "#ffffff",
-                  color:visibile ? "#ffffff" : "#64748b",
-                  border:`2px solid ${attivoEdit ? "#38bdf8" : (visibile ? "#0f172a" : "#cbd5e1")}`,
+                  background:visibile ? (dark?"#e2e8f0":"#0f172a") : (dark?T.surface:"#ffffff"),
+                  color:visibile ? (dark?"#0f172a":"#ffffff") : (dark?"#94a3b8":"#64748b"),
+                  border:`2px solid ${attivoEdit ? "#38bdf8" : (visibile ? (dark?"#e2e8f0":"#0f172a") : (dark?T.border:"#cbd5e1"))}`,
                   boxShadow:visibile ? "0 2px 6px rgba(15,23,42,0.25)" : "none",
                   opacity:visibile ? 1 : 0.6,
                   borderRadius:20,padding:"1px 9px 1px 6px",
@@ -450,11 +450,11 @@ export default function VistaCalendario({ C }){
         </button>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",
-        background: !isOnline ? "#ef4444" : (editMode?T.s2:"#ffffff"),
-        borderBottom:`1px solid ${!isOnline ? "#b91c1c" : (editMode?T.border:"#000000")}`,flexShrink:0}}>
+        background: !isOnline ? "#ef4444" : (editMode?T.s2:(dark?T.surface:"#ffffff")),
+        borderBottom:`1px solid ${!isOnline ? "#b91c1c" : (editMode?T.border:(dark?T.border:"#000000"))}`,flexShrink:0}}>
         {DAYS.map((d,i)=>(
           <div key={i} style={{textAlign:"center",fontSize:11,fontWeight:800,lineHeight:1,
-            padding:"2px 0",color: !isOnline ? "#ffffff" : (i===6?"#ef4444":(editMode?T.sub:"#0f172a"))}}>{d}</div>
+            padding:"2px 0",color: !isOnline ? "#ffffff" : (i===6?"#ef4444":(editMode?T.sub:(dark?"#f1f5f9":"#0f172a")))}}>{d}</div>
         ))}
       </div>
       {!isOnline && (
