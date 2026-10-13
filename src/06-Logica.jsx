@@ -853,6 +853,15 @@ export function useAppCore(session){
         // banner: l'assenza di connessione non è un errore, è uno stato
         // normale di attesa — riparte da sola quando la linea torna
         // (vedi il retry periodico e l'evento 'online' più sotto nel file).
+        // REGOLA: i dati dell'app sono SOLO quelli locali. Supabase e' solo un backup e scrive nell'app
+        // esclusivamente dopo Impostazioni -> "Importa da Supabase" (che imposta questo flag prima di ricaricare).
+        let importaDaSupabase = false;
+        try{ importaDaSupabase = localStorage.getItem("turnipm_pull_da_supabase")==="1"; localStorage.removeItem("turnipm_pull_da_supabase"); }catch(e){}
+        if(!importaDaSupabase){
+          isInitialized.current = true;
+          setLoading(false);
+          return;
+        }
         if(typeof navigator!=="undefined" && navigator.onLine===false){
           setLoading(false);
           return;
@@ -3529,6 +3538,7 @@ export function useAppCore(session){
         segnalaErrore(`${erroriRiscontrati} elementi non sono stati ripristinati correttamente (dettaglio nel Log). Il resto del backup è stato importato.`, "Ripristino backup");
       }
       setSyncMsg("✅ Importazione completata — ricarico l'app...");
+      try{ localStorage.setItem("turnipm_pull_da_supabase","1"); }catch(e){}
       setTimeout(()=>window.location.reload(), 1500);
     } catch(e){ segnalaErrore(e, "Ripristino backup (sovrascrittura dati)"); setSyncMsg("❌ Errore durante l'importazione: "+e.message); }
   }
