@@ -1835,13 +1835,17 @@ export function ModelForm({
   reports = [], getConteggioConfig, updateConteggioConfig,
   suggerimentiTitolo = [], suggerimentiNomeVis = [], onRimuoviSuggerimento,
   onSave,
-  calendari = [], onCopia, onColoreNome, coloriUsatiTutti = null,
+  calendari = [], onCopia, onSposta, onColoreNome, coloriUsatiTutti = null,
 }) {
   const [mostraSuggTitolo, setMostraSuggTitolo] = useState(false);
   const [mostraCopia, setMostraCopia] = useState(false);
   const [calDestinazione, setCalDestinazione] = useState([]);
   const [copiaInCorso, setCopiaInCorso] = useState(false);
   const [esitoCopia, setEsitoCopia] = useState("");
+  const [mostraSposta, setMostraSposta] = useState(false);
+  const [calSposta, setCalSposta] = useState(null);
+  const [spostaInCorso, setSpostaInCorso] = useState(false);
+  const [esitoSposta, setEsitoSposta] = useState("");
   const [mostraVisualizza, setMostraVisualizza] = useState(false);
   const [reportListaAperta, setReportListaAperta] = useState(false);
   const [reportEspanso, setReportEspanso] = useState(null);
@@ -2252,7 +2256,7 @@ export function ModelForm({
                 <span> · copia già presente anche in: <b style={{ color: T.text }}>{giaPresentiIn.map(c => c.name).join(", ")}</b></span>
               )}
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button onClick={onSave}
                 style={{ flex: 1, background: accent, color: accentText, border: "none", borderRadius: 10,
                   padding: "9px 0", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
@@ -2270,7 +2274,59 @@ export function ModelForm({
                   📋 Copia
                 </button>
               )}
+              {onSposta && (
+                <button type="button" onClick={() => { setEsitoSposta(""); setCalSposta(null); setMostraSposta(v => !v); }}
+                  style={{ flex: 1, background: T.s2, color: T.text, border: `1px solid ${T.border}`, borderRadius: 10,
+                    padding: "9px 0", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
+                  ↔️ Sposta
+                </button>
+              )}
             </div>
+            {mostraSposta && onSposta && (
+              <div style={{ marginTop: 10, background: T.s2, border: `1px solid ${T.border}`, borderRadius: 10, padding: 10 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: T.text, marginBottom: 8 }}>
+                  Sposta questo modello in (lascia il calendario attuale):
+                </div>
+                {altriCalendari.length === 0 ? (
+                  <div style={{ fontSize: 12, color: T.sub }}>Non ci sono altri calendari.</div>
+                ) : altriCalendari.map(c => {
+                  const scelto = calSposta === c.id;
+                  return (
+                    <button key={c.id} type="button" onClick={() => setCalSposta(scelto ? null : c.id)}
+                      style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left",
+                        background: scelto ? `${accent}22` : "transparent",
+                        border: `1px solid ${scelto ? accent : T.border}`, borderRadius: 8,
+                        padding: "8px 10px", marginBottom: 6, cursor: "pointer", color: T.text, fontSize: 13, fontWeight: 700 }}>
+                      <span>{scelto ? "◉" : "○"}</span>
+                      <span style={{ flex: 1 }}>{c.name}</span>
+                    </button>
+                  );
+                })}
+                {esitoSposta && (
+                  <div style={{ fontSize: 12, color: T.text, margin: "4px 0 8px" }}>{esitoSposta}</div>
+                )}
+                {altriCalendari.length > 0 && (
+                  <button type="button" disabled={!calSposta || spostaInCorso}
+                    onClick={async () => {
+                      setSpostaInCorso(true); setEsitoSposta("");
+                      try {
+                        const esito = await onSposta(calSposta);
+                        setEsitoSposta(esito || "");
+                        setCalSposta(null);
+                      } catch (e) {
+                        setEsitoSposta("❌ Errore durante lo spostamento: " + (e?.message || e));
+                      }
+                      setSpostaInCorso(false);
+                    }}
+                    style={{ width: "100%", background: !calSposta || spostaInCorso ? T.border : accent,
+                      color: !calSposta || spostaInCorso ? T.sub : accentText,
+                      border: "none", borderRadius: 8, padding: "9px 0", fontWeight: 800, fontSize: 13,
+                      cursor: !calSposta || spostaInCorso ? "not-allowed" : "pointer" }}>
+                    {spostaInCorso ? "⏳ Spostamento…" : (calSposta ? `Sposta in ${(calendari || []).find(c => c.id === calSposta)?.name || ""}` : "Sposta")}
+                  </button>
+                )}
+              </div>
+            )}
             {mostraVisualizza && (
               <div style={{ marginTop: 10, background: T.s2, border: `1px solid ${T.border}`, borderRadius: 10, padding: 10 }}>
                 <div style={{ fontSize: 12, fontWeight: 800, color: T.text, marginBottom: 8 }}>

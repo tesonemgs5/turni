@@ -4361,7 +4361,11 @@ const importsRecenti = useMemo(()=>{
   async function saveModelloInterno(data){
     if(!userId) return;
     const coloreEff=data.coloreCustom||(data.tempo==="h24"?"#64748b":colByTime(data.inizio));
-    const targetCalId = data.calendarId||calId||mainCalId;
+    // Se il form non porta un calendarId, si conserva quello già salvato sul
+    // modello (prima si ripiegava sul calendario aperto o su quello principale,
+    // spostando di fatto il modello senza che l'utente lo volesse).
+    const calEsistente = data.id ? (modelli.find(m=>m.id===data.id)?.calendarId||null) : null;
+    const targetCalId = data.calendarId||calEsistente||calId||mainCalId;
     // GUARDIA: senza un calendario di destinazione valido, il modello
     // finirebbe "orfano" (calendar_id nullo o sbagliato) e sparirebbe dai
     // filtri per calendario, dando l'impressione di "non essere stato

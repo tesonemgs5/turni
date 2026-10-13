@@ -468,6 +468,20 @@ function AppInterno({ session }){
                 }
                 return (ok.length?`✅ Copiato in: ${ok.join(", ")}. `:"")+(errori.length?`❌ Errore in: ${errori.join(", ")}.`:"");
               }}
+              onSposta={editModello?async(cid)=>{
+                // Sposta (non copia): cambia il calendario proprietario del modello
+                // esistente. Gli eventi già inseriti restano nei loro calendari.
+                const nomeCal = store.calendars.find(c=>c.id===cid)?.name || cid;
+                try{
+                  const vis = (modelForm.visibileAncheIn||[]).filter(x=>x!==cid);
+                  const esito = await saveModello({...modelForm,id:editModello.id,calendarId:cid,visibileAncheIn:vis,silenzioso:true});
+                  if(esito?.ok){
+                    setModelForm(f=>({...f,calendarId:cid,visibileAncheIn:vis,visibileAncheInOrig:vis}));
+                    return `✅ Spostato in: ${nomeCal}.`;
+                  }
+                  return `❌ Errore nello spostamento in ${nomeCal}.`;
+                }catch(e){ return `❌ Errore: ${e?.message||e}`; }
+              }:null}
               onSave={async()=>{
                 // try/catch qui: un ErrorBoundary React NON intercetta le
                 // eccezioni dentro handler async come questo (sono fuori dal
