@@ -177,7 +177,7 @@ export default function VistaModelli({ C }){
     versioniAutomatiche, sorgenteDisposizione, setSorgenteDisposizione, aggiornaVersioniAutomatiche, caricaVersioneAutomatica,
     salvaDisposizioneModelli, ripristinaDisposizioneModelli,
     showSalvaDisposizionePopup, setShowSalvaDisposizionePopup, annullaTimerSalvaDisposizione,
-    removeColoreExtra, updateColoreExtraLabel, replaceColoreEverywhere, saveRotazione, deleteRotazione, updateGrigliaRotazione,
+    removeColoreExtra, updateColoreExtraLabel, replaceColoreEverywhere, assegnaColoreAModelli, saveRotazione, deleteRotazione, updateGrigliaRotazione,
     inserisciEventoGenerico, normOrarioImport, trovaModelloPerTitoloOrario, isRigaProtrazione, tipoProtrazione, importaTurniPdfJson,
     delTuttiEventiImport, importaEventiSingoli, applyRotazione, getReportRange, splitColleghi, computeConteggioForReport,
     computeTurnazioneForReport, computeConteggio, computeIndennita, activeReports, inactiveTypes, addReport,
@@ -215,9 +215,17 @@ export default function VistaModelli({ C }){
   // Dati per il selettore colori: elenco modelli con colore e calendario.
   // soloCalendarioAperto=true → solo i modelli del calendario aperto (per le spunte di assegnazione).
   function datiModelliPicker(soloCalendarioAperto){
-    const base = (soloCalendarioAperto && calId!==null)
-      ? modelliOrdinati.filter(m=>modelloVisibileInCalendario(m, calId, mainCalId))
-      : modelliOrdinati;
+    // Stesso ordine della lista Modelli > Turni: calendario per calendario (quello aperto
+    // per primo), ciascuno ordinato con calcolaOrdineModelli come nella lista.
+    let base;
+    if(soloCalendarioAperto && calId!==null){
+      base = modelliOrdinati.filter(m=>modelloVisibileInCalendario(m, calId, mainCalId));
+    } else {
+      const cals = (store.calendars||[]).slice().sort((a,b)=>(a.id===calId?-1:0)-(b.id===calId?-1:0));
+      const perCal = cals.flatMap(c=>calcolaOrdineModelli((modelli||[]).filter(m=>m && (m.calendarId||mainCalId)===c.id)));
+      const visti = new Set(perCal.map(m=>m.id));
+      base = perCal.concat((modelli||[]).filter(m=>m && !visti.has(m.id)));
+    }
     return base.map(m=>{
       const cid = m.calendarId || mainCalId;
       const cal = (store.calendars||[]).find(c=>c.id===cid);
@@ -716,8 +724,8 @@ export default function VistaModelli({ C }){
             if(b.reg) return 1;
             return 0;
           });
-          // In un calendario si vedono i colori usati dai suoi modelli + quelli registrati ma non usati da nessun modello (eliminabili col cestino).
-          if(calId!==null){ for(let k=righeTutte.length-1;k>=0;k--){ const r=righeTutte[k]; const usatoAltrove = modelli.some(m=>eqHex(hexModello(m),r.hex)); if(r.count===0 && (usatoAltrove || !r.reg)) righeTutte.splice(k,1); } }
+          // In un calendario si vedono SOLO i colori usati dai suoi modelli. I gruppi vuoti (registrati ma senza modelli) si vedono e si eliminano dalla vista TUTTI.
+          if(calId!==null){ for(let k=righeTutte.length-1;k>=0;k--){ if(righeTutte[k].count===0) righeTutte.splice(k,1); } }
           const ordineVisibile = righeTutte.filter(r=>r.reg).map(r=>r.reg.hex);
           return (
             <div style={{paddingBottom:80}}>
@@ -760,14 +768,21 @@ export default function VistaModelli({ C }){
           onPick={async(p,nome,ids)=>{
             addColoreExtra(p,nome);
             setShowAddColorPicker(false);
-            for(const id of ((ids&&ids.aggiungi)||[])){
-              const m = modelli.find(x=>x.id===id);
-              if(m) await saveModello({...m, coloreCustom:p});
+            const agg = (ids&&ids.aggiungi)||[];
+            const rim = (ids&&ids.rimuovi)||[];
+            let n = 0;
+            if(agg.length>0 || rim.length>0){
+              setBanner("⏳ Applico il colore ai modelli…");
+              try{
+                const r = await assegnaColoreAModelli(agg, rim, p);
+                n = (r&&r.n)||0;
+              }catch(e){
+                segnalaErrore(e, "Aggiungi colore");
+                setBanner("❌ Errore nell'assegnazione del colore. Controlla il Log.");
+                return;
+              }
             }
-            for(const id of ((ids&&ids.rimuovi)||[])){
-              const m = modelli.find(x=>x.id===id);
-              if(m) await saveModello({...m, coloreCustom:null});
-            }
+            setBanner(`✅ Colore ${nome||String(p).toUpperCase()} aggiunto${n>0?` · ${n} ${n===1?"modello aggiornato":"modelli aggiornati"}`:""}.`);
           }}
           onClose={()=>setShowAddColorPicker(false)}/>
       )}

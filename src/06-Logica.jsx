@@ -5370,6 +5370,65 @@ const importsRecenti = useMemo(()=>{
     })();
   }
 
+  // Assegna un colore a PIU' modelli in un colpo solo (e toglie il colore ad altri,
+  // che tornano al colore automatico per orario). Prima "Aggiungi colore" salvava un
+  // modello alla volta in un ciclo: ogni salvataggio partiva dalla lista non ancora
+  // aggiornata dal precedente, quindi ne cambiava visibilmente uno solo.
+  // Come replaceColoreEverywhere: una sola scrittura locale, una sola propagazione agli
+  // eventi, scritture su Supabase in background. Poi ricompatta i modelli dello stesso
+  // colore (stessa regola del salvataggio dal form). Ritorna { ok, n }.
+  async function assegnaColoreAModelli(idsAggiungi, idsRimuovi, hex){
+    if(!userId || !hex) return { ok:false, n:0 };
+    const aggiungi = new Set(idsAggiungi||[]);
+    const rimuovi = new Set((idsRimuovi||[]).filter(id=>!aggiungi.has(id)));
+    if(aggiungi.size===0 && rimuovi.size===0) return { ok:true, n:0 };
+    segnalaModificaOrdineModelli();
+    const mappaColori = {};
+    const modificati = [];
+    let modelliAggiornati = modelli.map(m=>{
+      if(!m) return m;
+      let nuovo = null;
+      if(aggiungi.has(m.id)) nuovo = hex;
+      else if(rimuovi.has(m.id)) nuovo = (m.tempo==="h24" ? COLORE_H24 : colByTime(m.inizio));
+      if(!nuovo || stessoHexColore(m.coloreCustom||m.colore, nuovo)) return m;
+      mappaColori[m.id] = nuovo;
+      modificati.push({ id:m.id, titolo:m.titolo, colore:nuovo });
+      return { ...m, coloreCustom:nuovo, colore:nuovo };
+    });
+    if(modificati.length===0) return { ok:true, n:0 };
+    const prima = modelli;
+    try{
+      const calAffetti = new Set(modelliAggiornati.filter(m=>m && mappaColori[m.id]).map(m=>m.calendarId||mainCalId));
+      const calendarsOrdinati = (store.calendars||[]).map(c=>c.id);
+      const ordini = new Map();
+      calAffetti.forEach(cid=>{
+        ordini.set(cid, raggruppaPerColore(calcolaOrdineModelli(modelliAggiornati.filter(m=>m && (m.calendarId||mainCalId)===cid))));
+      });
+      modelliAggiornati = ricalcolaPosizioniGlobali(modelliAggiornati, calendarsOrdinati, ordini, mainCalId);
+    }catch(e){ segnalaErroreSoloLog(e?.message||String(e), "Assegnazione colore (riordino)"); }
+    modelliRef.current = modelliAggiornati;
+    setModelli(modelliAggiornati);
+    const eventiAggiornati = await propagaColoreModelliAgliEventi(mappaColori);
+    saveToLocalStorage(eventiAggiornati||store.events, store.calendars, modelliAggiornati);
+    try{ await salvaModifichePosizioni(prima, modelliAggiornati); }catch(e){ segnalaErroreSoloLog(e?.message||String(e), "Assegnazione colore (posizioni)"); }
+    const ts = new Date().toISOString();
+    (async()=>{
+      let errori = 0;
+      for(const x of modificati){
+        const ris = await scriviConBackup({
+          tipo:"update", table:"modelli", payload:{ colore_custom:x.colore, colore:x.colore },
+          matchObj:{ id:x.id, user_id:userId },
+          contesto:`Assegnazione colore su modello "${x.titolo||x.id}"`, ts,
+          opzioni:{ soloLog:true },
+        });
+        if(ris?.errore) errori++;
+      }
+      if(errori>0) segnalaErroreSoloLog(`${errori} modelli non salvati su Supabase durante l'assegnazione del colore`, "Assegnazione colore");
+      syncSeAttivo(eventiAggiornati||store.events, store.calendars, modelliAggiornati);
+    })();
+    return { ok:true, n:modificati.length };
+  }
+
   async function saveRotazione(data){
     if(!userId) return;
     // reperibilitaTurnoPartenza non ha una colonna dedicata su Supabase:
@@ -7291,6 +7350,7 @@ const importsRecenti = useMemo(()=>{
     removeColoreExtra,
     updateColoreExtraLabel,
     replaceColoreEverywhere,
+    assegnaColoreAModelli,
     saveRotazione,
     deleteRotazione,
     updateGrigliaRotazione,
