@@ -65,12 +65,13 @@ jobs:
         run: |
           APK=$(ls release-builds/*/*.apk | tail -1)
           VERSION=$(grep -oP 'versionName "\K[^"]+' android/app/build.gradle)
+          BUILD=$(git rev-list --count HEAD)
           TAG="v$VERSION"
           cp "$APK" turni.apk
           gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
           gh release create "$TAG" turni.apk \
             --target "$GITHUB_SHA" \
-            --title "Turni $VERSION" \
+            --title "Turni $VERSION#$BUILD" \
             --notes "Build automatica dal commit ${GITHUB_SHA::7}" \
             --latest
           gh release list --limit 100 --json tagName,createdAt \

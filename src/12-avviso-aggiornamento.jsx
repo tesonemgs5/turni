@@ -33,6 +33,13 @@ function salvaModo(m) {
 function versioneInstallata() {
   return typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : null
 }
+// Versione completa mostrata all'utente: stessa stringa di Impostazioni (es. 6.286.2151#1028)
+function versioneCompleta() {
+  const v = versioneInstallata()
+  if (!v) return null
+  const n = typeof __BUILD_NUM__ !== "undefined" ? __BUILD_NUM__ : ""
+  return n ? `${v}#${n}` : v
+}
 function parti(v) { return String(v || "").replace(/^v/, "").split(".").map(n => parseInt(n, 10) || 0) }
 function piuNuova(a, b) { // true se a > b
   const x = parti(a), y = parti(b)
@@ -70,11 +77,14 @@ export function controllaAggiornamenti({ forza = false } = {}) {
       ultimo = Date.now()
       daRiprovare = false
       const versione = String(dati.tag_name || "").replace(/^v/, "")
+      // Il numero di build della release e' nel titolo ("Turni 6.286.2151#1028"); il tag resta senza.
+      const numBuild = (String(dati.name || "").match(/#(\d+)/) || [])[1]
+      const versioneMostrata = numBuild ? `${versione}#${numBuild}` : versione
       if (versione && piuNuova(versione, corrente)) {
-        if (mostraPopup) mostraPopup(versione)
-        return { esito: "nuova", versione }
+        if (mostraPopup) mostraPopup(versioneMostrata)
+        return { esito: "nuova", versione: versioneMostrata }
       }
-      return { esito: "aggiornato", versione: corrente }
+      return { esito: "aggiornato", versione: versioneCompleta() || corrente }
     } catch {
       daRiprovare = true   // riprova al ritorno del segnale o alla prossima apertura
       return { esito: "errore" }
@@ -111,7 +121,7 @@ export default function AvvisoAggiornamento() {
   }, [])
 
   if (!nuova) return null
-  const corrente = versioneInstallata() || ""
+  const corrente = versioneCompleta() || ""
   return (
     <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.65)",
       display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
@@ -167,7 +177,7 @@ export function ImpostazioniAggiornamenti({ T }) {
     <div>
       <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
         Scegli quando l'app controlla se c'e' una versione nuova. Se c'e', compare un pop-up con
-        "Scarica ora" oppure "Dopo". Versione installata: <b>{versioneInstallata() || "dev"}</b>
+        "Scarica ora" oppure "Dopo". Versione installata: <b>{versioneCompleta() || "dev"}</b>
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>
         {OPZIONI.map(([v, titolo, sub]) => {

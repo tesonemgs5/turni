@@ -45,6 +45,33 @@ function calcolaVersioneBuild() {
   return `${cifraAnno}.${giornoAnno}.${parti.hour}${parti.minute}`;
 }
 
+// Numero di build = quanti commit ci sono fino a quello compilato. E' IDENTICO
+// su Vercel (web), GitHub Actions (APK) e in locale, perche' dipende solo dal
+// commit. Vercel clona in modo "shallow": si recupera lo storico completo e,
+// se non riesce, si chiede il conteggio all'API pubblica di GitHub.
+// Se nessun metodo funziona resta vuoto (la versione si mostra senza #numero).
+function calcolaNumeroBuild() {
+  const sh = (cmd) => execSync(cmd, { stdio: ['ignore', 'pipe', 'ignore'], timeout: 90000 }).toString().trim();
+  try {
+    let shallow = sh('git rev-parse --is-shallow-repository') === 'true';
+    if (shallow) {
+      try { sh('git fetch --unshallow --quiet'); } catch {}
+      shallow = sh('git rev-parse --is-shallow-repository') === 'true';
+    }
+    if (!shallow) {
+      const n = parseInt(sh('git rev-list --count HEAD'), 10);
+      if (Number.isFinite(n) && n > 0) return String(n);
+    }
+  } catch {}
+  try {
+    const sha = sh('git rev-parse HEAD');
+    const head = sh(`curl -sI -m 20 "https://api.github.com/repos/tesonemgs5/turni/commits?per_page=1&sha=${sha}"`);
+    const m = head.match(/[?&]page=(\d+)>; rel="last"/);
+    if (m) return m[1];
+  } catch {}
+  return '';
+}
+
 export default defineConfig({
   // Path relativi negli asset generati (dist/index.html usa "./assets/..."
   // invece di "/assets/..."), indispensabile perché l'app Electron carica
@@ -54,9 +81,8 @@ export default defineConfig({
   base: './',
   define: {
     __APP_VERSION__: JSON.stringify(calcolaVersioneBuild()),
-    // Numero della build "Build APK #NN" di GitHub Actions (variabile impostata in automatico da GitHub).
-    // Fuori da GitHub (PC, Vercel) resta vuoto e non viene mostrato.
-    __BUILD_NUM__: JSON.stringify(process.env.GITHUB_RUN_NUMBER || ''),
+    // Numero di build: conteggio dei commit, uguale su web, APK e popup di aggiornamento.
+    __BUILD_NUM__: JSON.stringify(calcolaNumeroBuild()),
   },
   build: {
     minify: 'terser',
