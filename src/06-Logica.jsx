@@ -3470,16 +3470,119 @@ export function useAppCore(session){
     }
   }
 
+  // ESPORTA SU SUPABASE = copia esatta di ciò che c'è SUL TELEFONO dentro Supabase.
+  // (Prima salvava solo una copia di quello che Supabase conteneva già: per questo non cambiava nulla.)
+  // 1) paracadute: salva in "backups" lo stato attuale di Supabase;
+  // 2) scrive (upsert per id) calendari, rotazioni, modelli, eventi, colori dal locale;
+  // 3) toglie da Supabase le righe che sul telefono non esistono (doppioni);
+  // 4) rilegge i conteggi e li confronta col locale.
   async function handleExportSupabase(){
+    if(!userId){ setSyncMsg("❌ Accedi per esportare"); return; }
+    if(typeof navigator!=="undefined" && navigator.onLine===false){ setSyncMsg("❌ Sei offline: impossibile esportare"); return; }
     setSyncMsg("⏳ Esportazione in corso...");
     try {
-      const backup = await buildBackupPayload();
-      const {error:insErr} = await supabase.from("backups").insert({
-        user_id:userId, data:backup,
+      const loc = storeRef.current || store;
+      const cals = loc.calendars||[];
+      const evLocali = [];
+      Object.entries(loc.events||{}).forEach(([dateKey,byCal])=>{
+        Object.entries(byCal||{}).forEach(([cId,lst])=>{
+          (Array.isArray(lst)?lst:[]).forEach(e=>{ if(e && e.id) evLocali.push({e, dateKey, cId}); });
+        });
       });
+      const mods = modelliRef.current && modelliRef.current.length ? modelliRef.current : modelli;
+      const rots = rotazioni||[];
+      // Protezione: se sul telefono non c'è nulla, non tocco Supabase.
+      if(cals.length===0 || (evLocali.length===0 && mods.length===0)){
+        setSyncMsg("❌ Esportazione annullata: sul telefono non ci sono dati da esportare");
+        return;
+      }
+
+      // 1) paracadute
+      setSyncMsg("⏳ 1/4 Salvo copia di sicurezza di Supabase...");
+      const backup = await buildBackupPayload();
+      const {error:insErr} = await supabase.from("backups").insert({ user_id:userId, data:backup });
       if(insErr) throw insErr;
-      setSyncMsg("✅ Backup salvato su Supabase");
-    } catch(e){ segnalaErrore(e, "Esportazione backup su Supabase"); setSyncMsg("❌ Errore durante l'esportazione: "+e.message); }
+
+      const blocchi = (arr, n)=>{ const r=[]; for(let i=0;i<arr.length;i+=n) r.push(arr.slice(i,i+n)); return r; };
+      const scrivi = async (tabella, righe, onConflict)=>{
+        for(const bl of blocchi(righe, 200)){
+          const {error} = await supabase.from(tabella).upsert(bl, {onConflict: onConflict||"id"});
+          if(error) throw new Error(`${tabella}: ${error.message}`);
+        }
+      };
+      const nn = v => (v===""||v===undefined) ? null : v;
+
+      // 2) scrittura dal locale (ordine: prima ciò da cui gli altri dipendono)
+      setSyncMsg("⏳ 2/4 Scrivo i dati del telefono su Supabase...");
+      await scrivi("calendars", cals.map((c,i)=>({
+        id:c.id, user_id:userId, name:c.name||"", color:c.color||null,
+        is_main:!!c.isMain, shifts:c.shifts||[], sort_order:i,
+      })));
+      await scrivi("rotazioni", rots.map((r,i)=>({
+        id:r.id, user_id:userId, tipo:r.tipo||"personalizzata", titolo:r.titolo||"",
+        data_inizio:nn(r.dataInizio), n_settimane:r.nSettimane??52,
+        modello_lavoro_id:nn(r.modellaLavoroId), modello_nl_id:nn(r.modelloNLId), modello_rs_id:nn(r.modelloRSId),
+        griglia:r.griglia||{}, sort_order:r.sortOrder??i,
+      })));
+      await scrivi("modelli", mods.map(m=>({
+        id:m.id, user_id:userId, titolo:m.titolo||"", tempo:m.tempo||"personalizzato",
+        inizio:nn(m.inizio), fine:nn(m.fine), colore:m.colore||"#64748b", colore_custom:nn(m.coloreCustom),
+        posizione:nn(m.posizione), sort_order:m.sortOrder||0, calendar_id:nn(m.calendarId),
+        label:m.label||"", categoria:nn(m.categoria), categoria_app_auto:nn(m.categoriaAppAuto),
+        categoria_turno_vuoto:!!m.turnoVuoto, categoria_app_auto_vuoto:!!m.appAutoVuoto,
+        visibile_anche_in:m.visibileAncheIn||[],
+      })));
+      await scrivi("events", evLocali.map(({e,dateKey,cId})=>({
+        id:e.id, user_id:userId, calendar_id:cId, date_key:dateKey,
+        label:e.label||"", color:nn(e.color), all_day:e.allDay??true,
+        time_in:e.tIn||"", time_out:e.tOut||"", place:e.place||"", map_url:e.map||"", note:e.note||"",
+        auto:e.auto||"", collega:nn(e.collega), modello_id:nn(e.modelloId), parent_id:nn(e.parentId),
+        rotazione_id:nn(e.rotazioneId), import_id:nn(e.importId),
+        prot_pag_fine:nn(e.protPagFine), prot_rec_fine:nn(e.protRecFine),
+        prot_meno_rec_in:nn(e.protMenoRecIn), prot_meno_rec_out:nn(e.protMenoRecOut),
+        categoria_turno:nn(e.categoriaTurno), categoria_app_auto:nn(e.categoriaAppAuto),
+        time_in_note:nn(e.tInNote), time_out_note:nn(e.tOutNote),
+        report_overrides:e.reportOverrides||null,
+        categoria_turno_vuoto:!!e.turnoVuoto, categoria_app_auto_vuoto:!!e.appAutoVuoto,
+        visibile_anche_in:e.visibileAncheIn||[],
+      })));
+      const visti = new Set();
+      const colLocali = (coloriExtra||[]).filter(c=>{
+        if(!c || !/^#[0-9a-f]{6}$/i.test(c.hex||"")) return false;
+        const k = c.hex.toUpperCase(); if(visti.has(k)) return false; visti.add(k); return true;
+      });
+      if(colLocali.length){
+        await scrivi("colori", colLocali.map((c,i)=>({ user_id:userId, hex:c.hex, label:nn(c.label), sort_order:c.sortOrder??i })), "user_id,hex");
+      }
+
+      // 3) tolgo da Supabase ciò che sul telefono non esiste (prima figli, poi padri)
+      setSyncMsg("⏳ 3/4 Elimino da Supabase i doppioni...");
+      const idsLocali = {
+        events:new Set(evLocali.map(x=>x.e.id)), modelli:new Set(mods.map(m=>m.id)),
+        rotazioni:new Set(rots.map(r=>r.id)), calendars:new Set(cals.map(c=>c.id)),
+      };
+      let eliminati = 0;
+      for(const t of ["events","modelli","rotazioni","calendars"]){
+        const {data:esistenti, error:eSel} = await dbSelectTutto(t, {matchObj:{user_id:userId}, contesto:`Esporta — ${t}`, colonne:"id"});
+        if(eSel) throw new Error(`${t}: ${eSel.message||eSel}`);
+        const daTogliere = (esistenti||[]).map(r=>r.id).filter(id=>!idsLocali[t].has(id));
+        for(const bl of blocchi(daTogliere, 100)){
+          const {error} = await supabase.from(t).delete().eq("user_id",userId).in("id", bl);
+          if(error) throw new Error(`${t} (eliminazione): ${error.message}`);
+        }
+        eliminati += daTogliere.length;
+      }
+
+      // 4) verifica: conteggi su Supabase = conteggi sul telefono?
+      setSyncMsg("⏳ 4/4 Verifico...");
+      const conta = async t=>{ const {count,error}=await supabase.from(t).select("id",{count:"exact",head:true}).eq("user_id",userId); if(error) throw error; return count; };
+      const [nE,nM,nC,nR] = await Promise.all([conta("events"),conta("modelli"),conta("calendars"),conta("rotazioni")]);
+      const attesi = {E:evLocali.length, M:mods.length, C:cals.length, R:rots.length};
+      const ok = nE===attesi.E && nM===attesi.M && nC===attesi.C && nR===attesi.R;
+      const riga = `Supabase: ${nE} eventi, ${nM} modelli, ${nC} calendari, ${nR} rotazioni (telefono: ${attesi.E}, ${attesi.M}, ${attesi.C}, ${attesi.R})`;
+      registraAttivita("Esporta su Supabase", (ok?"✅ ":"⚠️ ")+riga+(eliminati?` — rimossi ${eliminati} doppioni`:""), { chiave:"esporta-supabase", supabase: ok?"ok":"errore" });
+      setSyncMsg(ok ? `✅ Esportato: ${riga}` : `⚠️ Esportazione incompleta. ${riga}`);
+    } catch(e){ segnalaErrore(e, "Esportazione su Supabase"); setSyncMsg("❌ Errore durante l'esportazione: "+(e?.message||e)); }
   }
 
   // Controllo struttura Supabase (tabelle/funzione mancanti). Manuale da Impostazioni; automatico 1 volta a settimana.
