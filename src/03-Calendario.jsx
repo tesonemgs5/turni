@@ -546,7 +546,7 @@ export default function VistaCalendario({ C }){
                 // (zIndex 2), così resta sempre visibile anche nei giorni con eventi.
                 <div style={{position:"absolute",left:0,right:0,top:0,bottom:0,
                   display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none",zIndex:2,
-                  fontSize:30,fontWeight:900,letterSpacing:1,lineHeight:1,color:"#ffffff",mixBlendMode:"difference",opacity:0.35}}>{qNum}</div>
+                  fontSize:30,fontWeight:900,letterSpacing:1,lineHeight:1,color:"#ffffff",mixBlendMode:"difference",opacity:0.5}}>{qNum}</div>
               )}
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:2,padding:"2px 3px 0",flexShrink:0,position:"relative",zIndex:1}}>
                 {giornoImportante?(
