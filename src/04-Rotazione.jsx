@@ -1038,6 +1038,54 @@ export function segnalaErroreSoloLog(error, contesto) {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// CONTROLLO STRUTTURA SUPABASE
+// Verifica (in sola lettura) che tutte le tabelle usate dall'app e la
+// funzione get_user_data esistano. Le tabelle mancanti sono una causa di
+// conflitti di sincronizzazione. Risultato nel Log (contesto "Controllo Supabase").
+// ─────────────────────────────────────────────────────────────────────
+export const CONTESTO_CONTROLLO_SUPABASE = "Controllo Supabase";
+export const TABELLE_SUPABASE_ATTESE = [
+  "calendars","events","modelli","rotazioni","user_settings","backups","usage_stats",
+  "autocomplete_valori","disposizione_auto","log_attivita","modelli_sortorder_backup",
+  "impostazioni_backup","colori",
+];
+function classificaErroreSupabase(err){
+  const code = String(err?.code||""); const msg = String(err?.message||"");
+  if(code==="42P01" || code==="PGRST205" || code==="PGRST202" || /does not exist|could not find the (table|function)/i.test(msg)) return "mancante";
+  if(code==="42501" || /permission denied|row-level security/i.test(msg)) return "permessi";
+  return "errore";
+}
+export async function verificaStrutturaSupabase(supabase, userId, { popup=true } = {}){
+  const problemi = []; // { nome, tipo, dettaglio }
+  for(const t of TABELLE_SUPABASE_ATTESE){
+    try{
+      const { error } = await supabase.from(t).select("*", { head:true }).limit(1);
+      if(error) problemi.push({ nome:t, tipo:classificaErroreSupabase(error), dettaglio:error.message||error.code||"" });
+    }catch(e){ problemi.push({ nome:t, tipo:"errore", dettaglio:e?.message||String(e) }); }
+  }
+  try{
+    const { error } = await supabase.rpc("get_user_data", { p_user_id:userId }, { head:true });
+    if(error) problemi.push({ nome:"get_user_data (funzione)", tipo:classificaErroreSupabase(error), dettaglio:error.message||error.code||"" });
+  }catch(e){ problemi.push({ nome:"get_user_data (funzione)", tipo:"errore", dettaglio:e?.message||String(e) }); }
+
+  try{ localStorage.setItem("turnipm_check_struttura_ts", String(Date.now())); }catch(e){}
+  const ts = new Date().toISOString();
+  if(problemi.length===0){
+    scriviLogErrori({ id:generaIdLocale(), ts, contesto:CONTESTO_CONTROLLO_SUPABASE, tipo:"controllo",
+      message:`✅ Struttura OK: ${TABELLE_SUPABASE_ATTESE.length} tabelle + funzione get_user_data presenti.` });
+    return { ok:true, problemi };
+  }
+  const icona = {mancante:"❌ mancante", permessi:"⚠️ senza permessi", errore:"⚠️ errore"};
+  const righe = problemi.map(x=>`${icona[x.tipo]||x.tipo}: ${x.nome}${x.dettaglio?` — ${x.dettaglio}`:""}`);
+  problemi.forEach(x=>{
+    scriviLogErrori({ id:generaIdLocale(), ts, contesto:CONTESTO_CONTROLLO_SUPABASE,
+      message:`${icona[x.tipo]||x.tipo}: ${x.nome}${x.dettaglio?` — ${x.dettaglio}`:""}` });
+  });
+  if(popup) segnalaErrore(new Error(`Supabase: struttura incompleta (${problemi.length}).\n`+righe.join("\n")), CONTESTO_CONTROLLO_SUPABASE);
+  return { ok:false, problemi };
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // REGISTRO DELLE OPERAZIONI (log attività)
 // Nasce nel momento in cui un dato viene SALVATO IN LOCALE: saveToLocalStorage
 // confronta la cache precedente con quella nuova e scrive nel Log solo ciò che

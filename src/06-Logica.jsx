@@ -12,6 +12,7 @@ import {
   registraAttivita, confermaSupabase, segnaInCodaSupabase, aggiornaEsitoVoceLog, segnaContestoLog, impostaSorgenteLog,
   registraListenerLogSync, leggiLogDaSincronizzare, segnaLogSincronizzato, voceLogPerSupabase, diffDisposizione, impostaDettaglioImport,
   sameData, saveDatiSessioneLocale, saveToLocalStorage, scriviCodaSync, segnalaErrore, segnalaErroreSoloLog,
+  verificaStrutturaSupabase,
   uid, withEventoAggiornato, withEventoAggiunto, withEventoRimosso,
   esportaBackupLocaleCompleto, importaBackupLocaleCompleto, CATEGORIE_BACKUP_LOCALE,
   applicaOpExtraHols, diffExtraHolsInOps, leggiOpExtraHols, scriviOpExtraHols, saveExtraHolsLocale,
@@ -3411,6 +3412,27 @@ export function useAppCore(session){
       setSyncMsg("✅ Backup salvato su Supabase");
     } catch(e){ segnalaErrore(e, "Esportazione backup su Supabase"); setSyncMsg("❌ Errore durante l'esportazione: "+e.message); }
   }
+
+  // Controllo struttura Supabase (tabelle/funzione mancanti). Manuale da Impostazioni; automatico 1 volta a settimana.
+  async function handleVerificaSupabase(){
+    if(!userId){ setSyncMsg("⚠️ Accedi per verificare Supabase"); return; }
+    if(typeof navigator!=="undefined" && navigator.onLine===false){ setSyncMsg("⚠️ Sei offline: impossibile verificare Supabase"); return; }
+    setSyncMsg("🔎 Verifica struttura Supabase...");
+    const r = await verificaStrutturaSupabase(supabase, userId, { popup:true });
+    setSyncMsg(r.ok ? "✅ Supabase: struttura OK" : `⚠️ Supabase: ${r.problemi.length} problemi (vedi Log)`);
+    setTimeout(()=>setSyncMsg(""), 4000);
+  }
+  useEffect(()=>{
+    if(!userId) return;
+    let ultimo = 0;
+    try{ ultimo = Number(localStorage.getItem("turnipm_check_struttura_ts")||0); }catch(e){}
+    if(Date.now()-ultimo < 7*24*3600*1000) return;
+    const t = setTimeout(()=>{
+      if(typeof navigator!=="undefined" && navigator.onLine===false) return;
+      verificaStrutturaSupabase(supabase, userId, { popup:true }).catch(()=>{});
+    }, 10000);
+    return ()=>clearTimeout(t);
+  },[userId]);
 
   async function handleOpenImportSupabase(){
     setSyncMsg("⏳ Carico elenco backup...");
@@ -7322,6 +7344,7 @@ const importsRecenti = useMemo(()=>{
     buildBackupPayload,
     handleExportSupabase,
     handleOpenImportSupabase,
+    handleVerificaSupabase,
     handleRestoreBackup,
     handleEsportaBackupLocale,
     handleFileSelezionatoImportLocale,

@@ -90,7 +90,7 @@ export default function VistaModelli({ C }){
   const [confermaEliminaCalId, setConfermaEliminaCalId] = useState(null);
   const [confermaEliminaEvento, setConfermaEliminaEvento] = useState(null); // {dKey, cId, id}
   const [confermaCancellaLogErrori, setConfermaCancellaLogErrori] = useState(false);
-  const [filtroLog, setFiltroLog] = useState("tutto"); // tutto | operazioni | errori
+  const [filtroLog, setFiltroLog] = useState("tutto"); // tutto | operazioni | errori | supabase
   // Categorie incluse nel backup locale (export): di default TUTTE attive,
   // così senza toccare nulla il comportamento resta "esporta tutto" come
   // prima dei checkbox — l'utente deve deselezionare esplicitamente per
@@ -168,7 +168,7 @@ export default function VistaModelli({ C }){
     deleteCalendar, computeEventFields, saveEvt, updateEvt, delEvt, delEvtiRotazioneDaData,
     delTutteEvtiRotazione, cancellaTuttiEventiMese, calcMinuti, saveToSheets, syncSeAttivo, loadFromSheets,
     syncFromSheets, handleSave, handleLoad, handleSaveSheetsConfig, handleViewDbData, buildBackupPayload,
-    handleExportSupabase, handleOpenImportSupabase, handleRestoreBackup, handleLogout, eseguiNormalizzazione, normalizzaModelliTempo,
+    handleExportSupabase, handleOpenImportSupabase, handleVerificaSupabase, handleRestoreBackup, handleLogout, eseguiNormalizzazione, normalizzaModelliTempo,
     normalizzaEventiTempo, modelliOrdinati, importsRecenti, modelliDelCalendario, rinumeraSottoinsieme, spostaModelloPuro,
     trascinaModelloPuro, salvaModifichePosizioni, moveH24, reorderModelli, moveRotazione, moveColoreExtra, ricoloraModelliPerFasciaOraria, ensureColoreRegistrato, registraValoreAutocomplete,
     registraValoriAutocomplete, rimuoviValoreAutocomplete, supabaseUpsertConRetry, saveModello, deleteModello, addColoreExtra,
@@ -1281,7 +1281,7 @@ export default function VistaModelli({ C }){
         )}
 
         <div style={{display:"flex",gap:6,marginBottom:8}}>
-          {[["tutto","Tutto"],["operazioni","Operazioni"],["errori","Errori"]].map(([v,l])=>(
+          {[["tutto","Tutto"],["operazioni","Operazioni"],["errori","Errori"],["supabase","Supabase"]].map(([v,l])=>(
             <button key={v} onClick={()=>setFiltroLog(v)}
               style={{flex:1,padding:"7px 4px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:11,
                 background:filtroLog===v?"#6366f1":T.s2,color:filtroLog===v?"#fff":T.sub,
@@ -1299,7 +1299,7 @@ export default function VistaModelli({ C }){
         ) : (
           <div style={{maxHeight:340,overflowY:"auto",background:T.s2,borderRadius:10,padding:10,marginBottom:12}}>
             {logErroriVisibile
-              .filter(v=>filtroLog==="tutto" || (filtroLog==="operazioni" ? v.tipo==="operazione" : v.tipo!=="operazione"))
+              .filter(v=>filtroLog==="tutto" || (filtroLog==="operazioni" ? v.tipo==="operazione" : filtroLog==="supabase" ? v.contesto==="Controllo Supabase" : (v.tipo!=="operazione" && v.tipo!=="controllo")))
               .slice().reverse().map((voce,i)=>{
                 const st = statoSupabaseVoce(voce);
                 const colSt = st ? (st.colore==="ok" ? "#10b981" : st.colore==="errore" ? "#ef4444" : "#f59e0b") : T.sub;
@@ -1758,6 +1758,11 @@ export default function VistaModelli({ C }){
             📥 Importa da Supabase
           </button>
         </div>
+        <button onClick={handleVerificaSupabase}
+          style={{width:"100%",marginTop:8,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
+            color:T.text,padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
+          🔎 Verifica struttura Supabase
+        </button>
       </SecCollapsible>
 
       <SecCollapsible label="BACKUP LOCALE (TELEFONO)" T={T}>
