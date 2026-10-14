@@ -2489,7 +2489,7 @@ export default function VistaModelli({ C }){
               const modelloDiQuestoEvento = e.modelloId ? modelli.find(m=>m.id===e.modelloId) : null;
               const orarioModello = (modelloDiQuestoEvento && modelloDiQuestoEvento.tempo!=="h24" && modelloDiQuestoEvento.inizio)
                 ? `${modelloDiQuestoEvento.inizio}→${calcFineModello(modelloDiQuestoEvento)||modelloDiQuestoEvento.fine||""}`
-                : ((modelloDiQuestoEvento && e.tIn) ? `${e.tIn}→${e.tOut||""}` : null);
+                : ((modelloDiQuestoEvento && e.tIn) ? `${e.tIn}→${e.tOut||""}` : ((modelloDiQuestoEvento && modelloDiQuestoEvento.tempo==="h24") ? "00:00→24:00" : null));
               return (
               <>
             <div style={{flex:1}}>
@@ -2590,7 +2590,7 @@ export default function VistaModelli({ C }){
                   const evH = (curEvts||[]).find(x=>x.id===form.editId);
                   return (
                     <>
-                      <span style={{fontSize:14,color:T.sub,fontWeight:700}}>{(()=>{ const i=form.offIn!==undefined?form.offIn:((evH&&evH.tIn)||modSel.inizio||""); const o=form.offOut!==undefined?form.offOut:((evH&&evH.tOut)||calcFineModello(modSel)||modSel.fine||""); return (i||o) ? `${i}\u2192${o}` : "orario"; })()}</span>
+                      <span style={{fontSize:14,color:T.sub,fontWeight:700}}>{(()=>{ const i=form.offIn!==undefined?form.offIn:((evH&&evH.tIn)||modSel.inizio||""); const o=form.offOut!==undefined?form.offOut:((evH&&evH.tOut)||calcFineModello(modSel)||modSel.fine||""); return (i||o) ? `${i}\u2192${o}` : (modSel.tempo==="h24" ? "00:00\u219224:00" : "orario"); })()}</span>
                       <span onClick={e=>{e.stopPropagation();setForm(f=>({...f,_apriOrario:!f._apriOrario}));}}
                         style={{fontSize:16,color:T.sub,cursor:"pointer",padding:"2px 6px"}}>{form._apriOrario?"\u25B2":"\u25BC"}</span>
                     </>
@@ -2604,8 +2604,8 @@ export default function VistaModelli({ C }){
               const ms = idm && modelli.find(m=>m.id===idm);
               if(!ms) return null;
               const evC = (curEvts||[]).find(x=>x.id===form.editId);
-              const inV = form.offIn!==undefined ? form.offIn : ((evC&&evC.tIn)||ms.inizio||"");
-              const outV = form.offOut!==undefined ? form.offOut : ((evC&&evC.tOut)||calcFineModello(ms)||ms.fine||"");
+              const inV = form.offIn!==undefined ? form.offIn : ((evC&&evC.tIn)||ms.inizio||(ms.tempo==="h24"?"00:00":""));
+              const outV = form.offOut!==undefined ? form.offOut : ((evC&&evC.tOut)||calcFineModello(ms)||ms.fine||(ms.tempo==="h24"?"24:00":""));
               const stile = {width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"7px 8px",color:T.text,fontSize:13,outline:"none"};
               return (
