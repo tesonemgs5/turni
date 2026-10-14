@@ -3515,6 +3515,20 @@ export function useAppCore(session){
         return;
       }
 
+      // PROTEZIONE: se il telefono ha MOLTO meno dati di Supabase (meno dell'80%),
+      // probabilmente è un dispositivo con dati vecchi/incompleti: mi fermo senza toccare nulla,
+      // perché l'esportazione toglierebbe da Supabase ciò che sul telefono non c'è.
+      avvisa("⏳ Controllo i dati prima di esportare...");
+      const contaSrv = async t=>{ const {count,error}=await supabase.from(t).select("id",{count:"exact",head:true}).eq("user_id",userId); if(error) throw error; return count||0; };
+      const [sE,sM,sC] = await Promise.all([contaSrv("events"),contaSrv("modelli"),contaSrv("calendars")]);
+      const troppoPoco = (loc, srv)=> srv>=10 && loc < srv*0.8;
+      if(troppoPoco(evLocali.length,sE) || troppoPoco(mods.length,sM) || troppoPoco(cals.length,sC)){
+        const msg = `🛑 Esportazione FERMATA per proteggere i dati. Questo dispositivo ha meno dati di Supabase: telefono ${evLocali.length} eventi, ${mods.length} modelli, ${cals.length} calendari; Supabase ${sE} eventi, ${sM} modelli, ${sC} calendari. Non è stato modificato nulla. Se il telefono giusto è un altro, esporta da quello.`;
+        registraAttivita("Esporta su Supabase", msg, { chiave:"esporta-supabase", supabase:"errore" });
+        avvisa(msg, "fine", false);
+        return;
+      }
+
       // 1) paracadute
       avvisa("⏳ 1/4 Salvo copia di sicurezza di Supabase...");
       const backup = await buildBackupPayload();
