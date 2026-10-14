@@ -542,11 +542,11 @@ export default function VistaCalendario({ C }){
                 cursor:"pointer",display:"flex",flexDirection:"column",overflow:"hidden",position:"relative",isolation:"isolate",
                 borderTop:"none"}}>
               {qNum&&!isT&&(
-                // Numero romano "camaleonte" (mix-blend-mode: exclusion con grigio chiaro = inversione morbida): colore opposto, meno vistoso, a ciò che sta sotto. Al CENTRO della casella e SOPRA gli eventi
+                // Numero romano "camaleonte" tono su tono: inversione (mix-blend-mode: difference) con trasparenza (opacity) = vira lo sfondo verso il suo opposto, visibile ma non troppo. Al CENTRO e SOPRA gli eventi
                 // (zIndex 2), così resta sempre visibile anche nei giorni con eventi.
                 <div style={{position:"absolute",left:0,right:0,top:0,bottom:0,
                   display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none",zIndex:2,
-                  fontSize:30,fontWeight:900,letterSpacing:1,lineHeight:1,color:"#dcdcdc",mixBlendMode:"exclusion"}}>{qNum}</div>
+                  fontSize:30,fontWeight:900,letterSpacing:1,lineHeight:1,color:"#ffffff",mixBlendMode:"difference",opacity:0.35}}>{qNum}</div>
               )}
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:2,padding:"2px 3px 0",flexShrink:0,position:"relative",zIndex:1}}>
                 {giornoImportante?(
