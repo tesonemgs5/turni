@@ -3414,13 +3414,17 @@ export function useAppCore(session){
   }
 
   // Controllo struttura Supabase (tabelle/funzione mancanti). Manuale da Impostazioni; automatico 1 volta a settimana.
+  const [esitoVerificaSupabase, setEsitoVerificaSupabase] = useState(null); // null | {stato:"corso"} | {stato:"fine", ok, problemi}
   async function handleVerificaSupabase(){
-    if(!userId){ setSyncMsg("⚠️ Accedi per verificare Supabase"); return; }
-    if(typeof navigator!=="undefined" && navigator.onLine===false){ setSyncMsg("⚠️ Sei offline: impossibile verificare Supabase"); return; }
-    setSyncMsg("🔎 Verifica struttura Supabase...");
-    const r = await verificaStrutturaSupabase(supabase, userId, { popup:true });
-    setSyncMsg(r.ok ? "✅ Supabase: struttura OK" : `⚠️ Supabase: ${r.problemi.length} problemi (vedi Log)`);
-    setTimeout(()=>setSyncMsg(""), 4000);
+    if(!userId){ setEsitoVerificaSupabase({stato:"fine", ok:false, problemi:[{nome:"Accesso", tipo:"errore", dettaglio:"Accedi per verificare Supabase."}]}); return; }
+    if(typeof navigator!=="undefined" && navigator.onLine===false){ setEsitoVerificaSupabase({stato:"fine", ok:false, problemi:[{nome:"Connessione", tipo:"errore", dettaglio:"Sei offline: impossibile verificare Supabase."}]}); return; }
+    setEsitoVerificaSupabase({stato:"corso"});
+    try{
+      const r = await verificaStrutturaSupabase(supabase, userId, { popup:false });
+      setEsitoVerificaSupabase({stato:"fine", ok:r.ok, problemi:r.problemi});
+    }catch(e){
+      setEsitoVerificaSupabase({stato:"fine", ok:false, problemi:[{nome:"Controllo", tipo:"errore", dettaglio:e?.message||String(e)}]});
+    }
   }
   useEffect(()=>{
     if(!userId) return;
@@ -7345,6 +7349,7 @@ const importsRecenti = useMemo(()=>{
     handleExportSupabase,
     handleOpenImportSupabase,
     handleVerificaSupabase,
+    esitoVerificaSupabase, setEsitoVerificaSupabase,
     handleRestoreBackup,
     handleEsportaBackupLocale,
     handleFileSelezionatoImportLocale,
