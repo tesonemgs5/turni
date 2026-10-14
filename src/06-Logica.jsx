@@ -3416,15 +3416,30 @@ export function useAppCore(session){
       // (store.events), altrimenti il messaggio mostrerebbe il totale non
       // filtrato anche quando il file scaricato ne contiene di meno.
       const filtroAttivo = !!(backup._filtroPeriodo || backup._filtroCategorie);
-      const eventsPerConteggio = filtroAttivo
-        ? (backup.localStorage?.["turnipm_cache_v1"]?.json?.events || {})
-        : (store.events||{});
-      const nEventiTotali = Object.values(eventsPerConteggio).reduce((sum,calMap)=>
+      // CONTROLLO AUTOMATICO: i numeri vengono letti DAL FILE appena creato
+      // e (senza filtri) confrontati con ciò che c'è ora nell'app.
+      const cacheFile = backup.localStorage?.["turnipm_cache_v1"]?.json || {};
+      const contaEv = ev => Object.values(ev||{}).reduce((sum,calMap)=>
         sum + Object.values(calMap||{}).reduce((s2,arr)=>s2+(arr?.length||0), 0), 0);
+      const nelFile = { E:contaEv(cacheFile.events), C:(cacheFile.calendars||[]).length, M:(cacheFile.modelli||[]).length, R:(cacheFile.rotazioni||[]).length };
+      const nellApp = { E:contaEv(storeRef.current?.events||store.events), C:(storeRef.current?.calendars||store.calendars||[]).length,
+                        M:(modelliRef.current?.length ? modelliRef.current.length : (modelli?.length||0)), R:(rotazioni?.length||0) };
+      const coincide = nelFile.E===nellApp.E && nelFile.C===nellApp.C && nelFile.M===nellApp.M && nelFile.R===nellApp.R;
       const etichettaPeriodo = backup._filtroPeriodo
         ? ` — periodo ${backup._filtroPeriodo.dataInizio||"inizio"} → ${backup._filtroPeriodo.dataFine||"oggi"}`
         : "";
-      setEsitoBackupLocale({tipo:"ok", messaggio:`Backup locale scaricato${etichettaPeriodo} — ${nEventiTotali} eventi, ${store.calendars?.length||0} calendari, ${modelli?.length||0} modelli, ${rotazioni?.length||0} rotazioni (in ${backup._numeroChiavi} categorie di dati).`});
+      const riga = `${nelFile.E} eventi, ${nelFile.C} calendari, ${nelFile.M} modelli, ${nelFile.R} rotazioni`;
+      let messaggio, tipo="ok";
+      if(filtroAttivo){
+        messaggio = `Backup locale scaricato${etichettaPeriodo} (con filtro) — il file contiene ${riga}.`;
+      } else if(coincide){
+        messaggio = `✅ Backup locale scaricato e VERIFICATO: il file contiene ${riga}, gli stessi dati dell'app.`;
+      } else {
+        tipo = "errore";
+        messaggio = `⚠️ Backup locale scaricato ma NON coincide con l'app. File: ${riga}. App: ${nellApp.E} eventi, ${nellApp.C} calendari, ${nellApp.M} modelli, ${nellApp.R} rotazioni.`;
+      }
+      registraAttivita("Backup locale", messaggio, { chiave:"backup-locale", supabase:"n/a" });
+      setEsitoBackupLocale({tipo, messaggio});
     } catch(e){
       segnalaErrore(e, "Esportazione backup locale");
       setEsitoBackupLocale({tipo:"errore", messaggio:"Errore durante l'esportazione: "+(e?.message||e)});
