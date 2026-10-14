@@ -783,6 +783,7 @@ export default function VistaModelli({ C }){
               }
             }
             setBanner(`✅ Colore ${nome||String(p).toUpperCase()} aggiunto${n>0?` · ${n} ${n===1?"modello aggiornato":"modelli aggiornati"}`:""}.`);
+            setTimeout(()=>setBanner(null), 500); // breve: il dettaglio resta nel Log
           }}
           onClose={()=>setShowAddColorPicker(false)}/>
       )}

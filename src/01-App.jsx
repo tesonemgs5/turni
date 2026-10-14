@@ -325,7 +325,7 @@ function AppInterno({ session }){
           if(showReportModelliPicker) setShowReportModelliPicker(false);
           if(showFasciaColorPicker) setShowFasciaColorPicker(false);
         }} />
-      {banner&&<div style={{position:"fixed",bottom:`calc(${NAV_HEIGHT_CSS} + 12px)`,left:"50%",transform:"translateX(-50%)",
+      {banner&&<div style={{position:"fixed",bottom:`calc(${NAV_HEIGHT_CSS} + 84px)`,left:"50%",transform:"translateX(-50%)",
         background:"rgba(0,0,0,0.75)",color:"#fff",padding:"6px 16px",
         borderRadius:20,fontSize:12,zIndex:9999,pointerEvents:"none"}}>{banner}</div>}
       {confermaCancellaEventiMese&&(()=>{
