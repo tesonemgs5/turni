@@ -6,7 +6,7 @@ import {
   oraInMinuti, calcFine6h15, calcFine6h30, calcFineModello, calcDurata, formattaDurataHM,
   isModelloTurnazioneDefault, withEventoAggiunto, saveToLocalStorage,
   loadFromLocalStorage, clearLocalStorageCache, resolveFestivitaCatalogo,
-  leggiLogErrori, leggiErroriSilenziati, impostaSilenziamentoErrore, statoSupabaseVoce,
+  leggiLogErrori, leggiErroriSilenziati, impostaSilenziamentoErrore, statoSupabaseVoce, statoSheetsVoce,
   cancellaLogErrori, segnalaErrore, CATEGORIE_BACKUP_LOCALE,
 } from "./04-Rotazione";
 import { CalBadge, SmartTimeInput, AutocompleteInput, ColorPickerModal,
@@ -1322,6 +1322,8 @@ export default function VistaModelli({ C }){
                         {voce.origine!=="remoto" ? "💾 locale ✓   " : ""}{st.icona} {st.testo}
                       </div>
                     )}
+                    {op && (()=>{ const sh = statoSheetsVoce(voce, syncMode==='on' && !!sheetsUrl); if(!sh) return null;
+                      return <div style={{fontSize:11,fontWeight:700,marginTop:2,color:sh.colore==="ok"?"#10b981":sh.colore==="errore"?"#ef4444":"#f59e0b"}}>{sh.icona} {sh.testo}</div>; })()}
                     {op && !st && voce.origine!=="remoto" && (
                       <div style={{fontSize:11,fontWeight:700,color:"#10b981",marginTop:2}}>💾 locale ✓</div>
                     )}

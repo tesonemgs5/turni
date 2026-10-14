@@ -10,7 +10,7 @@ import {
   getContrastTextColor, getShiftBand, isFestivo, isModelloTurnazioneDefault, italianHols,
   leggiCodaSync, leggiErroriSilenziati, leggiLogErrori, loadFromLocalStorage, clearLocalStorageCache, minsOf,
   minutiTurnoModello, normalizzaOraHHMM, oraInMinuti, registraListenerCodaErrori, registraProblemiImport,
-  registraAttivita, confermaSupabase, segnaInCodaSupabase, aggiornaEsitoVoceLog, segnaContestoLog, impostaSorgenteLog,
+  registraAttivita, confermaSupabase, segnaInCodaSupabase, segnaEsitoSheets, aggiornaEsitoVoceLog, segnaContestoLog, impostaSorgenteLog,
   registraListenerLogSync, leggiLogDaSincronizzare, segnaLogSincronizzato, voceLogPerSupabase, diffDisposizione, impostaDettaglioImport,
   sameData, saveDatiSessioneLocale, saveToLocalStorage, scriviCodaSync, segnalaErrore, segnalaErroreSoloLog,
   verificaStrutturaSupabase,
@@ -389,6 +389,7 @@ export function useAppCore(session){
     // nemmeno la scrittura: si accoda direttamente. Provare e fallire non
     // aggiunge informazione, aggiunge solo un giro a vuoto e rischio di
     // popup.
+    programmaSheets(); // Sheets riceve SEMPRE l'ultimo stato (anche per modelli/posizioni/colori), in background
     if(typeof navigator!=="undefined" && navigator.onLine===false){
       return accodaSilenziosamente();
     }
@@ -409,10 +410,7 @@ export function useAppCore(session){
       return { error, payloadUsato:payloadCorrente };
     }
     try{
-      const [risSupabase] = await Promise.all([
-        provaSupabase(payload),
-        (eventsPerSheets!==undefined) ? syncSeAttivo(eventsPerSheets, calendarsPerSheets, modelliPerSheets) : Promise.resolve(),
-      ]);
+      const risSupabase = await provaSupabase(payload);
       if(risSupabase.error){
         // Se l'errore sembra di rete (connessione ballerina che ha lasciato
         // cadere questa singola richiesta, anche se navigator.onLine
@@ -493,6 +491,7 @@ export function useAppCore(session){
       import_id: importId,
     }).select().maybeSingle();
   }
+  const sheetsTimerRef = useRef(null);
   const [sheetsUrl, setSheetsUrl] = useState("");
   const [sheetsSecret, setSheetsSecret] = useState("");
   const [stats, setStats] = useState(null);
@@ -3158,25 +3157,53 @@ export function useAppCore(session){
 
 // #region SEZIONE 12: SYNC GOOGLE SHEETS + SUPABASE BACKUP
 // ═══════════════════════════════════════════════════════════════
+  // Nell'APK "/api/sheets" NON esiste (è una funzione del sito web): lì si chiama
+  // direttamente lo script Google. Sul sito web resta il proxy.
+  function inApk(){
+    try{ return !!(window.Capacitor && typeof window.Capacitor.isNativePlatform==="function" && window.Capacitor.isNativePlatform()); }catch(e){ return false; }
+  }
+  async function postSheets(customUrl, body){
+    const res = inApk()
+      ? await fetch(customUrl, { method:"POST", headers:{"Content-Type":"text/plain"}, body: JSON.stringify(body) })
+      : await fetch("/api/sheets", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
+    if(!res.ok) throw new Error(`Risposta ${res.status} da Sheets`);
+    let j=null; try{ j = await res.json(); }catch(e){}
+    if(j && (j.error || j.ok===false || j.success===false)) throw new Error(String(j.error||j.message||"Sheets ha risposto con un errore"));
+    return j;
+  }
   async function saveToSheets(events, calendars, customUrl=sheetsUrl, customSecret=sheetsSecret, modelliToSave=modelli){
-    if(!customUrl) return "⚠️ Sheets non configurato";
+    if(!customUrl) return "⚠️ Sheets non configurato";
     if(!isInitialized.current) return;
     try {
-      await fetch("/api/sheets", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ secret: customSecret, action:"save", events, calendars, userId }),
-      });
-      await fetch("/api/sheets", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ secret: customSecret, action:"save_modelli", modelli: modelliToSave.map(m=>({
-          ...m,
-          fine: (m.tempo==="6h15"||m.tempo==="6h 15m")&&m.inizio ? calcFine6h15(m.inizio) : (m.tempo==="6h30"||m.tempo==="6h 30m")&&m.inizio ? calcFine6h30(m.inizio) : m.fine||"",
-        }))}),
-      });
+      await postSheets(customUrl, { secret: customSecret, action:"save", events, calendars, userId });
+      await postSheets(customUrl, { secret: customSecret, action:"save_modelli", modelli: modelliToSave.map(m=>({
+        ...m,
+        fine: (m.tempo==="6h15"||m.tempo==="6h 15m")&&m.inizio ? calcFine6h15(m.inizio) : (m.tempo==="6h30"||m.tempo==="6h 30m")&&m.inizio ? calcFine6h30(m.inizio) : m.fine||"",
+      }))});
       return "✅ Esportato su Sheets";
-    } catch(e){ return "❌ Errore connessione Sheets"; }
+    } catch(e){
+      segnalaErroreSoloLog(e?.message||String(e), "Salvataggio su Google Sheets");
+      return "❌ Errore connessione Sheets";
+    }
+  }
+
+  // Salvataggio automatico su Sheets: raggruppa le modifiche ravvicinate (3 s) e
+  // invia l'ultimo stato completo. Segna l'esito (✓ / errore / in coda) nel Log.
+  function programmaSheets(){
+    if(syncMode!=='on' || !sheetsUrl) return;
+    clearTimeout(sheetsTimerRef.current);
+    sheetsTimerRef.current = setTimeout(eseguiSheetsInAttesa, 3000);
+  }
+  async function eseguiSheetsInAttesa(){
+    if(typeof navigator!=="undefined" && navigator.onLine===false){
+      segnaEsitoSheets("coda");
+      const ripr = ()=>{ window.removeEventListener("online", ripr); eseguiSheetsInAttesa(); };
+      window.addEventListener("online", ripr);
+      return;
+    }
+    const esito = await saveToSheets(storeRef.current.events, storeRef.current.calendars, sheetsUrl, sheetsSecret, modelliRef.current);
+    if(esito===undefined) return;
+    segnaEsitoSheets(String(esito).startsWith("✅") ? "ok" : "errore");
   }
 
   // Wrapper unico per il sync "automatico" dopo un CRUD: prima erano 15 punti

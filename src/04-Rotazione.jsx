@@ -1248,6 +1248,33 @@ export function segnaInCodaSupabase(ids) {
   } catch { /* ignora */ }
 }
 
+// Esito del salvataggio su Google Sheets: segna le operazioni recenti ancora senza esito.
+export function segnaEsitoSheets(esito) {
+  try {
+    const log = leggiLogErrori();
+    const ora = Date.now();
+    let cambiato = false;
+    for (let i = log.length - 1, n = 0; i >= 0 && n < 150; i--, n++) {
+      const v = log[i];
+      if (!v || v.tipo !== "operazione" || v.origine === "remoto") continue;
+      if (ora - new Date(v.ts).getTime() > 600000) break;
+      if (v.sheets === "ok" || v.sheets === esito) continue;
+      v.sheets = esito; sporca(v); cambiato = true;
+    }
+    if (cambiato) salvaLogCompleto(log);
+  } catch { /* il log non deve mai bloccare l'app */ }
+}
+
+// Testo della terza spunta (📊) per una voce del log. "attivo" = Sheets configurato e sync acceso.
+export function statoSheetsVoce(v, attivo) {
+  if (!v || v.tipo !== "operazione" || v.origine === "remoto") return null;
+  if (v.sheets === "ok") return { icona: "📊", testo: "Sheets ✓", colore: "ok" };
+  if (v.sheets === "coda") return { icona: "🕓", testo: "Sheets: in coda, senza rete", colore: "attesa" };
+  if (v.sheets === "errore") return { icona: "⚠️", testo: "Sheets: NON salvato", colore: "errore" };
+  if (attivo && Date.now() - new Date(v.ts).getTime() < 90000) return { icona: "📊", testo: "Sheets: in corso…", colore: "attesa" };
+  return null;
+}
+
 // Per le operazioni senza elenco di righe (es. Salva disposizione): esito esplicito.
 export function aggiornaEsitoVoceLog(idVoce, esito) {
   try {
