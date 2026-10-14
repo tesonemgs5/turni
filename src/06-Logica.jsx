@@ -3340,6 +3340,7 @@ export function useAppCore(session){
       const bollino = new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
       const esitoFile = await scaricaFileTesto(`turnipm_backup_locale_${bollino}.json`, JSON.stringify(backup, null, 2));
       if(!esitoFile.ok){ segnalaErrore(esitoFile.errore, "Backup locale (salvataggio file)"); return; }
+      if(esitoFile.annullato) return; // dialogo chiuso senza salvare
       // "_numeroChiavi" conta le CATEGORIE di dati in localStorage (cache
       // principale, log errori, coda sync, impostazioni...), non i singoli
       // eventi: con tutto dentro poche chiavi (es. tutti gli eventi in

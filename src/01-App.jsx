@@ -2,6 +2,7 @@ import { useState, useRef, useMemo, Fragment, Component } from "react";
 import { useAppCore } from "./06-Logica";
 import VistaCalendario from "./03-Calendario";
 import VistaModelli from "./02-Modelli";
+import { DialogoScarica } from "./19-dialogo-scarica";
 import { ModaleErroriMultipli, NAV_HEIGHT, NAV_HEIGHT_CSS, ConfermaEliminazione, CercaModelli, NessunModello } from "./05-Comuni";
 import {
   getContrastTextColor, NOMI_MESI_IT, calcFine6h15, calcFine6h30, calcDurata, formattaDurataHM, calcFineModello,
@@ -328,6 +329,7 @@ function AppInterno({ session }){
       {banner&&<div style={{position:"fixed",bottom:`calc(${NAV_HEIGHT_CSS} + 84px)`,left:"50%",transform:"translateX(-50%)",
         background:"rgba(0,0,0,0.75)",color:"#fff",padding:"6px 16px",
         borderRadius:20,fontSize:12,zIndex:9999,pointerEvents:"none"}}>{banner}</div>}
+      <DialogoScarica T={T}/>
       {confermaCancellaEventiMese&&(()=>{
         // Scelta multipla di CALENDARI e TURNI (modelli) da eliminare nel mese
         // aperto. I turni elencati sono quelli realmente presenti nei calendari

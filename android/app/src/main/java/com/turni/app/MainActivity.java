@@ -9,6 +9,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         // il plugin del widget va registrato PRIMA di super.onCreate
         registerPlugin(TurniWidgetPlugin.class);
+        registerPlugin(TurniFilePlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
