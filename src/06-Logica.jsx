@@ -3918,33 +3918,76 @@ function calcolaOrdineRiordinoFasce(sottoinsieme){
 //   calendario 6                   -> 6001-6999
 // e così via. 999 posizioni utili per calendario: margine ampio per
 // crescere senza mai far sconfinare un blocco nell'altro.
-const BLOCCO_POSIZIONI_CALENDARIO = 1000;
+const BLOCCO_POSIZIONI_CALENDARIO = 1000000;
+// Distanza "normale" tra due modelli vicini: lascia buchi per inserire in mezzo.
+const PASSO_POSIZIONI = 1000;
+
+// Assegna le posizioni a un calendario lasciando dei BUCHI tra i numeri.
+// "ordine" = modelli del calendario nell'ordine desiderato. I modelli che
+// hanno già un numero valido e coerente con l'ordine NON vengono toccati;
+// solo quelli spostati/nuovi ricevono un numero a metà tra i vicini
+// (spostare un modello = 1 sola modifica). Se i buchi finiscono in un punto,
+// si rinumera solo quel calendario con il passo normale.
+function assegnaPosizioniConBuchi(ordine, base){
+  const n = ordine.length;
+  const fine = base + BLOCCO_POSIZIONI_CALENDARIO - 1;
+  const valido = v => Number.isInteger(v) && v>=base && v<=fine;
+  const vals = ordine.map(m=>m.sortOrder);
+  // sottosequenza crescente più lunga tra i valori validi (i "fermi")
+  const len = new Array(n).fill(0), pre = new Array(n).fill(-1);
+  let best=-1;
+  for(let i=0;i<n;i++){
+    if(!valido(vals[i])) continue;
+    len[i]=1;
+    for(let j=0;j<i;j++){
+      if(valido(vals[j]) && vals[j]<vals[i] && len[j]+1>len[i]){ len[i]=len[j]+1; pre[i]=j; }
+    }
+    if(best===-1 || len[i]>len[best]) best=i;
+  }
+  const fermo = new Array(n).fill(false);
+  for(let i=best;i>=0;i=pre[i]) fermo[i]=true;
+  const out = new Array(n);
+  const rinumeraTutto = ()=>{
+    const passo = Math.max(1, Math.min(PASSO_POSIZIONI, Math.floor((BLOCCO_POSIZIONI_CALENDARIO-1)/(n+1))));
+    return ordine.map((m,i)=>base + passo*(i+1));
+  };
+  let i=0;
+  while(i<n){
+    if(fermo[i]){ out[i]=vals[i]; i++; continue; }
+    let j=i; while(j<n && !fermo[j]) j++;           // blocco i..j-1 da assegnare
+    const k=j-i;
+    const loBound = i===0, hiBound = j===n;
+    const lo = loBound ? base-1 : out[i-1];
+    const hi = hiBound ? fine+1 : vals[j];
+    let passo = Math.floor((hi-lo)/(k+1));
+    if((loBound||hiBound) && passo>PASSO_POSIZIONI) passo=PASSO_POSIZIONI;
+    if(passo<1) return rinumeraTutto();
+    for(let x=0;x<k;x++){
+      out[i+x] = loBound && !hiBound ? hi - passo*(k-x) : lo + passo*(x+1);
+    }
+    i=j;
+  }
+  return out;
+}
 
 function ricalcolaPosizioniGlobali(prev, calendarsOrdinati, ordiniPerCalendario, mainCalId){
   const idsTutti = new Set(calendarsOrdinati);
   // Aggiungo in coda eventuali calendari presenti nei modelli ma assenti
-  // dall'elenco Impostazioni (caso limite: calendario cancellato o dati
-  // orfani), così nessun modello resta senza una posizione assegnata.
+  // dall'elenco Impostazioni (caso limite), così nessun modello resta senza posizione.
   prev.forEach(m=>{
     const cId = m.calendarId||mainCalId;
     if(!idsTutti.has(cId)){ idsTutti.add(cId); calendarsOrdinati = [...calendarsOrdinati, cId]; }
   });
-  // BUG FIX: prima qui c'era un cursore UNICO e progressivo (1,2,3...) che
-  // attraversava tutti i calendari senza soluzione di continuità — un
-  // calendario finiva a 194, il successivo ripartiva da 195 invece che dal
-  // suo blocco dedicato. Ora ogni calendario riceve SEMPRE lo stesso range
-  // fisso, indipendente da quanti modelli contiene.
   const nuoviValori = new Map();
   for(let i=0; i<calendarsOrdinati.length; i++){
-    const numeroCalendario = i+1; // il primo calendario è il numero 1, non 0
+    const numeroCalendario = i+1; // il primo calendario è il numero 1
     const cId = calendarsOrdinati[i];
     const ordineBlocco = ordiniPerCalendario.has(cId)
       ? ordiniPerCalendario.get(cId)
       : calcolaOrdineModelli(prev.filter(m=>(m.calendarId||mainCalId)===cId));
-    const basePosizione = numeroCalendario*BLOCCO_POSIZIONI_CALENDARIO + 1;
-    ordineBlocco.forEach((m, indiceNelBlocco)=>{
-      nuoviValori.set(m.id, basePosizione + indiceNelBlocco);
-    });
+    const base = numeroCalendario*BLOCCO_POSIZIONI_CALENDARIO;
+    const valori = assegnaPosizioniConBuchi(ordineBlocco, base);
+    ordineBlocco.forEach((m, idx)=>{ nuoviValori.set(m.id, valori[idx]); });
   }
   return prev.map(m=> nuoviValori.has(m.id) ? {...m, sortOrder:nuoviValori.get(m.id)} : m);
 }
