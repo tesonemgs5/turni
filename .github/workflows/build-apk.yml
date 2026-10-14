@@ -16,6 +16,9 @@ jobs:
   apk:
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    env:
+      # Numero build dell'APK (contatore delle esecuzioni di questo workflow): finisce nella versione #N.
+      APK_BUILD_NUM: ${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -65,7 +68,7 @@ jobs:
         run: |
           APK=$(ls release-builds/*/*.apk | tail -1)
           VERSION=$(grep -oP 'versionName "\K[^"]+' android/app/build.gradle)
-          BUILD=$(git rev-list --count HEAD)
+          BUILD=$APK_BUILD_NUM
           TAG="v$VERSION"
           cp "$APK" turni.apk
           gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true

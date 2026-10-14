@@ -51,6 +51,8 @@ function calcolaVersioneBuild() {
 // se non riesce, si chiede il conteggio all'API pubblica di GitHub.
 // Se nessun metodo funziona resta vuoto (la versione si mostra senza #numero).
 function calcolaNumeroBuild() {
+  // Build dell'APK (GitHub Actions): usa il contatore delle build APK, non il conteggio commit.
+  if (/^\d+$/.test(process.env.APK_BUILD_NUM || '')) return process.env.APK_BUILD_NUM;
   const sh = (cmd) => execSync(cmd, { stdio: ['ignore', 'pipe', 'ignore'], timeout: 90000 }).toString().trim();
   try {
     let shallow = sh('git rev-parse --is-shallow-repository') === 'true';
