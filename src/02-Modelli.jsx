@@ -184,7 +184,7 @@ export default function VistaModelli({ C }){
     computeTurnazioneForReport, computeConteggio, computeIndennita, activeReports, inactiveTypes, addReport,
     removeReport, renameReport, moveReport, getConteggioConfig, updateConteggioConfig,
     applicaReportOverrideATuttiGliEventi, totaleTurni,
-    setPrevGrid, REPORT_TEMPLATES, calcolaOrdineModelli, updateFascia, session, salvaQuartine, coloriUsatiTutti,
+    setPrevGrid, REPORT_TEMPLATES, calcolaOrdineModelli, updateFascia, session, salvaQuartine, coloriUsatiTutti, riordinaColoriUsati,
   } = C;
 
   // Qualsiasi menu a tendina espandibile aperto nel form Modifica Evento
@@ -762,6 +762,7 @@ export default function VistaModelli({ C }){
       {showAddColorPicker&&(
         <ColorPickerModal T={T} cur="#3b82f6" title="Aggiungi colore"
           coloriUsati={coloriUsatiTutti()}
+          onRiordinaUsati={riordinaColoriUsati}
           getNomeColore={p=>nomeDelColore(p,{fasceAutomatiche,coloriExtra})}
           modelliColore={datiModelliPicker(false)}
           modelliAssegnabili={datiModelliPicker(false)}
@@ -942,6 +943,7 @@ export default function VistaModelli({ C }){
       {showEditFasciaColor&&(
         <ColorPickerModal T={T} cur={showEditFasciaColor} title="Cambia colore"
           coloriUsati={coloriUsatiTutti().filter(h=>String(h).toLowerCase()!==String(showEditFasciaColor).toLowerCase())}
+          onRiordinaUsati={riordinaColoriUsati}
           getNomeColore={p=>nomeDelColore(p,{fasceAutomatiche,coloriExtra})}
           modelliColore={datiModelliPicker(false)}
           onPick={async(p, nome)=>{
@@ -1391,6 +1393,7 @@ export default function VistaModelli({ C }){
                   onClick={e=>{e.stopPropagation();setPal(pal===("fascia-"+f.key)?null:("fascia-"+f.key));}}/>
                 {pal===("fascia-"+f.key)&&<ColorPickerModal T={T} cur={f.color} title={`Colore ${f.label||"fascia"}`}
                   coloriUsati={coloriUsatiTutti()}
+                  onRiordinaUsati={riordinaColoriUsati}
                   getNomeColore={p=>nomeDelColore(p,{fasceAutomatiche,coloriExtra})}
                   onPick={p=>{
                     // Stesso colore in Impostazioni e in Modelli > Colori: il cambio
@@ -1444,6 +1447,7 @@ export default function VistaModelli({ C }){
                   onClick={e=>{e.stopPropagation();setPal(pal==="sunday-color"?null:"sunday-color");}}/>
                 {pal==="sunday-color"&&<ColorPickerModal T={T} cur={sundayColor} title="Colore domeniche"
                   coloriUsati={coloriUsatiTutti()}
+                  onRiordinaUsati={riordinaColoriUsati}
                   getNomeColore={p=>nomeDelColore(p,{fasceAutomatiche,coloriExtra})}
                   onPick={p=>{
                     const vecchio = sundayColor;
@@ -1465,6 +1469,7 @@ export default function VistaModelli({ C }){
                   onClick={e=>{e.stopPropagation();setPal(pal==="holiday-color"?null:"holiday-color");}}/>
                 {pal==="holiday-color"&&<ColorPickerModal T={T} cur={holidayColor} title="Colore festivi"
                   coloriUsati={coloriUsatiTutti()}
+                  onRiordinaUsati={riordinaColoriUsati}
                   getNomeColore={p=>nomeDelColore(p,{fasceAutomatiche,coloriExtra})}
                   onPick={p=>{
                     const vecchio = holidayColor;
@@ -1561,6 +1566,7 @@ export default function VistaModelli({ C }){
                   onClick={e=>{e.stopPropagation();setPal(pal===c.id?null:c.id);}}/>
                 {pal===c.id&&<ColorPickerModal T={T} cur={c.color} title={`Colore ${c.name||"calendario"}`}
                   coloriUsati={coloriUsatiTutti()}
+                  onRiordinaUsati={riordinaColoriUsati}
                   getNomeColore={p=>nomeDelColore(p,{fasceAutomatiche,coloriExtra})}
                   onPick={p=>{
                   const newCals=JSON.parse(JSON.stringify(store.calendars));
@@ -1620,6 +1626,7 @@ export default function VistaModelli({ C }){
                         onClick={e=>{e.stopPropagation();setPal(pal===sh.id?null:sh.id);}}/>
                       {pal===sh.id&&<ColorPickerModal T={T} cur={sh.color} title={`Colore ${sh.label||"turno"}`}
                         coloriUsati={coloriUsatiTutti()}
+                        onRiordinaUsati={riordinaColoriUsati}
                         getNomeColore={p=>nomeDelColore(p,{fasceAutomatiche,coloriExtra})}
                         onPick={p=>{
                         const newCals=JSON.parse(JSON.stringify(store.calendars));
@@ -1648,6 +1655,7 @@ export default function VistaModelli({ C }){
                       onClick={e=>{e.stopPropagation();setPal(pal==="ns"?null:"ns");}}/>
                     {pal==="ns"&&<ColorPickerModal T={T} cur={nsColor} title="Colore nuovo turno"
                       coloriUsati={coloriUsatiTutti()}
+                      onRiordinaUsati={riordinaColoriUsati}
                       getNomeColore={p=>nomeDelColore(p,{fasceAutomatiche,coloriExtra})}
                       onPick={p=>setNsColor(p)}
                       onClose={()=>setPal(null)}/>}
@@ -1676,6 +1684,7 @@ export default function VistaModelli({ C }){
               onClick={e=>{e.stopPropagation();setPal(pal==="nc"?null:"nc");}}/>
             {pal==="nc"&&<ColorPickerModal T={T} cur={ncColor} title="Colore nuovo calendario"
               coloriUsati={coloriUsatiTutti()}
+              onRiordinaUsati={riordinaColoriUsati}
               getNomeColore={p=>nomeDelColore(p,{fasceAutomatiche,coloriExtra})}
               onPick={p=>setNcColor(p)}
               onClose={()=>setPal(null)}/>}
@@ -2793,6 +2802,7 @@ export default function VistaModelli({ C }){
                         }}
                         onClose={()=>setPal(null)}
                         coloriUsati={coloriUsatiTutti()}
+                        onRiordinaUsati={riordinaColoriUsati}
                         getNomeColore={p=>nomeDelColore(p,{fasceAutomatiche,coloriExtra})}/>}
                     </>
                   );

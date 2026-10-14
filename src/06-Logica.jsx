@@ -2149,8 +2149,45 @@ export function useAppCore(session){
     // Colori di calendari, turni, fasce, domeniche e quartine senza modelli NON compaiono (né in "USATI" né sottolineati).
     const visti = new Set(); const out = [];
     const add = (h)=>{ if(!h) return; const k=String(h).toLowerCase(); if(visti.has(k)) return; visti.add(k); out.push(h); };
-    (modelli||[]).forEach(m=>add(m.coloreCustom||m.colore));
-    return out;
+    (modelliOrdinati||modelli||[]).forEach(m=>add(m.coloreCustom||m.colore));
+    // Stesso ordine dei gruppi in Modelli > Colori: prima i colori registrati (per posizione),
+    // poi gli altri nell'ordine dei modelli.
+    const eq = (a,b)=>String(a||"").toLowerCase()===String(b||"").toLowerCase();
+    return out.map((h,i)=>({h,i,r:(coloriExtra||[]).find(c=>eq(c.hex,h))})).sort((a,b)=>{
+      if(a.r&&b.r) return (a.r.sortOrder||0)-(b.r.sortOrder||0);
+      if(a.r) return -1;
+      if(b.r) return 1;
+      return a.i-b.i;
+    }).map(x=>x.h);
+  }
+  // Riordino dei colori dal selettore (tieni premuto e trascina): salva la posizione dei gruppi
+  // di Modelli > Colori (coloriExtra.sortOrder), cosi' USATI e lista Colori hanno lo stesso ordine.
+  // Accetta anche un elenco parziale: gli altri colori restano dove sono.
+  async function riordinaColoriUsati(nuovoOrdine){
+    if(!userId || !Array.isArray(nuovoOrdine) || nuovoOrdine.length===0) return;
+    const eq = (a,b)=>String(a||"").toLowerCase()===String(b||"").toLowerCase();
+    const attuale = coloriUsatiTutti();
+    const insieme = new Set(nuovoOrdine.map(h=>String(h).toLowerCase()));
+    let k = 0;
+    const completo = attuale.map(h=> insieme.has(String(h).toLowerCase()) && k<nuovoOrdine.length ? nuovoOrdine[k++] : h);
+    const prev = coloriExtra||[];
+    const nuovi = []; const daInserire = [];
+    completo.forEach((h,i)=>{
+      const r = prev.find(c=>eq(c.hex,h));
+      if(r) nuovi.push({...r, sortOrder:i});
+      else { const n = {hex:h, label:null, sortOrder:i}; nuovi.push(n); daInserire.push(n); }
+    });
+    prev.filter(c=>!completo.some(h=>eq(h,c.hex))).sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0))
+      .forEach((c,j)=>nuovi.push({...c, sortOrder:completo.length+j}));
+    setColoriExtra(nuovi);
+    const ts = new Date().toISOString();
+    for(const n of daInserire){
+      await scriviConBackup({
+        tipo:"insert", table:"colori", payload:{ user_id:userId, hex:n.hex, sort_order:n.sortOrder }, matchObj:null,
+        contesto:"Riordino colori (registrazione colore)", ts, opzioni:{ soloLog:true },
+      });
+    }
+    await salvaModifichePosizioniColori(prev, nuovi.filter(c=>!daInserire.includes(c)));
   }
   function salvaQuartine(nuova){
     const nuove = {...(store.reportSettings||{}), quartine: nuova};
@@ -7328,6 +7365,7 @@ const importsRecenti = useMemo(()=>{
     coloreQuartina,
     salvaQuartine,
     coloriUsatiTutti,
+    riordinaColoriUsati,
     getEvts,
     allEvts,
     dots,

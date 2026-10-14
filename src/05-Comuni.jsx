@@ -1958,7 +1958,7 @@ const GRID_COLS = GRID_PALETTE[0].length;
 // disattivata) non vanno più applicate alla griglia.
 try{ localStorage.removeItem('gridColorOverrides'); }catch(e){}
 
-function GridColorPicker({T, value, onChange, coloriUsati=[]}){
+function GridColorPicker({T, value, onChange, coloriUsati=[], aperta=true, onToggle=null}){
   const righe = GRID_PALETTE;
   const selRef = useRef(null);
 
@@ -2018,9 +2018,13 @@ function GridColorPicker({T, value, onChange, coloriUsati=[]}){
 
   return (
     <div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+      <div onClick={onToggle||undefined}
+        style={{display:"flex",justifyContent:"flex-start",alignItems:"center",gap:8,marginBottom:aperta?8:0,
+          cursor:onToggle?"pointer":"default",userSelect:"none",padding:onToggle?"4px 0":0}}>
         <div style={{fontSize:10,color:T.sub}}>{GRID_PALETTE.length-1} tonalità + neutri × {GRID_COLS} sfumature</div>
+        {onToggle&&<span style={{color:T.sub,fontSize:13,fontWeight:800}}>{aperta?"▲":"▼"}</span>}
       </div>
+      {aperta&&(
       <div>
         {righe.map((riga,ri)=>(
           <div key={ri} style={{display:"grid",gridTemplateColumns:`repeat(${GRID_COLS},1fr)`,gap:5,marginBottom:5}}>
@@ -2028,6 +2032,7 @@ function GridColorPicker({T, value, onChange, coloriUsati=[]}){
           </div>
         ))}
       </div>
+      )}
     </div>
   );
 }
@@ -2052,7 +2057,7 @@ export function nomeDelColore(hex, {fasceAutomatiche=[], coloriExtra=[]}={}){
   return hex.toUpperCase();
 }
 
-export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, title="Scegli colore", getNomeColore=null, modelliColore=null, modelliAssegnabili=null, calendariPicker=null}){
+export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, title="Scegli colore", getNomeColore=null, modelliColore=null, modelliAssegnabili=null, calendariPicker=null, onRiordinaUsati=null}){
   const [pos,setPos]=useState(null); // null = centrato di default
   // modelliColore: [{id,label,sub,hex,cal}] di TUTTI i modelli → sotto la griglia compare
   // l'elenco dei modelli che usano il colore toccato. modelliAssegnabili: [{id,label,sub,cal}]
@@ -2079,6 +2084,85 @@ export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, tit
     setModalitaPicker(m);
     try{ localStorage.setItem('colorPickerModalita', m); }catch(e){}
   }
+  // Griglia colori espandibile (la scelta resta memorizzata).
+  const [grigliaAperta,setGrigliaAperta]=useState(()=>{ try{ return localStorage.getItem('colorPickerGrigliaAperta')!=='0'; }catch(e){ return true; } });
+  function toggleGriglia(){ setGrigliaAperta(v=>{ const n=!v; try{ localStorage.setItem('colorPickerGrigliaAperta', n?'1':'0'); }catch(e){} return n; }); }
+
+  // Riordino dei colori USATI: tieni premuto 250 ms su un colore e trascinalo.
+  const MS_PRESSIONE_RIORDINO = 250;
+  const [ordineUsati,setOrdineUsati]=useState(null);   // ordine provvisorio durante il trascinamento
+  const [trascinato,setTrascinato]=useState(null);     // colore che si sta trascinando
+  const [fantasma,setFantasma]=useState(null);         // posizione del dito
+  const usatiRefs = useRef({});
+  const pressRef = useRef(null);
+  const dragAttivo = useRef(false);
+  const ordineRef = useRef(null);
+  const originaleRef = useRef([]);
+  const trascinatoRef = useRef(null);
+  const clickBloccato = useRef(false);
+  const onRiordinaRef = useRef(null);
+  onRiordinaRef.current = onRiordinaUsati;
+  function annullaPressione(){ if(pressRef.current){ clearTimeout(pressRef.current.timer); pressRef.current=null; } }
+  function inizioPressione(e, hex){
+    if(!onRiordinaUsati || (e.pointerType==="mouse" && e.button!==0)) return;
+    annullaPressione();
+    const x=e.clientX, y=e.clientY;
+    const lista=[...(coloriUsati||[])];
+    pressRef.current = { x, y, timer: setTimeout(()=>{
+      pressRef.current = null;
+      dragAttivo.current = true; clickBloccato.current = true;
+      trascinatoRef.current = hex; originaleRef.current = lista; ordineRef.current = [...lista];
+      setOrdineUsati([...lista]); setTrascinato(hex); setFantasma({x,y});
+      try{ if(navigator.vibrate) navigator.vibrate(20); }catch(_){}
+    }, MS_PRESSIONE_RIORDINO) };
+  }
+  useEffect(()=>{
+    function muovi(e){
+      if(!dragAttivo.current){
+        const p = pressRef.current;
+        // dito spostato prima dei 250 ms: e' uno scorrimento, non un riordino
+        if(p && Math.hypot(e.clientX-p.x, e.clientY-p.y) > 10) annullaPressione();
+        return;
+      }
+      setFantasma({x:e.clientX, y:e.clientY});
+      const ord = ordineRef.current || [];
+      let bersaglio=null, dMin=Infinity;
+      ord.forEach(h=>{
+        const el = usatiRefs.current[h]; if(!el) return;
+        const r = el.getBoundingClientRect();
+        const d = Math.hypot(e.clientX-(r.left+r.width/2), e.clientY-(r.top+r.height/2));
+        if(d<dMin){ dMin=d; bersaglio=h; }
+      });
+      const dragH = trascinatoRef.current;
+      if(bersaglio && bersaglio!==dragH && dMin<70){
+        const da = ord.indexOf(dragH), a = ord.indexOf(bersaglio);
+        if(da>=0 && a>=0){ const n=[...ord]; n.splice(da,1); n.splice(a,0,dragH); ordineRef.current=n; setOrdineUsati(n); }
+      }
+    }
+    function fine(){
+      annullaPressione();
+      if(!dragAttivo.current) return;
+      dragAttivo.current = false;
+      const nuovo = ordineRef.current, orig = originaleRef.current || [];
+      setTrascinato(null); setFantasma(null);
+      if(nuovo && onRiordinaRef.current && nuovo.join("|")!==orig.join("|")) onRiordinaRef.current(nuovo);
+      setOrdineUsati(null);
+      setTimeout(()=>{ clickBloccato.current=false; }, 350);
+    }
+    function blocca(e){ if(dragAttivo.current && e.cancelable) e.preventDefault(); } // niente scorrimento mentre si trascina
+    window.addEventListener("pointermove", muovi);
+    window.addEventListener("pointerup", fine);
+    window.addEventListener("pointercancel", fine);
+    window.addEventListener("touchmove", blocca, {passive:false});
+    return ()=>{
+      window.removeEventListener("pointermove", muovi);
+      window.removeEventListener("pointerup", fine);
+      window.removeEventListener("pointercancel", fine);
+      window.removeEventListener("touchmove", blocca);
+      annullaPressione();
+    };
+  }, []);
+
   const [previewColor,setPreviewColor]=useState(cur);
   // Modelli che hanno GIÀ il colore toccato: partono selezionati e restano in cima.
   const giaAssegnati = Array.isArray(modelliAssegnabili)
@@ -2129,7 +2213,12 @@ export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, tit
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:900,boxSizing:"border-box",
       display:pos?"block":"flex",alignItems:"center",justifyContent:"center",
       padding:"16px 16px calc(84px + env(safe-area-inset-bottom, 0px))"}}
-      onClick={onClose}>
+      onClick={()=>{ if(clickBloccato.current) return; onClose(); }}>
+      {trascinato&&fantasma&&(
+        <div style={{position:"fixed",left:fantasma.x-24,top:fantasma.y-24,width:48,height:48,borderRadius:"50%",
+          background:trascinato,border:"3px solid #fff",boxShadow:"0 6px 18px rgba(0,0,0,0.45)",
+          pointerEvents:"none",zIndex:100003}}/>
+      )}
       <div ref={boxRef}
         style={{background:T.surface,borderRadius:16,width:"100%",maxWidth:340,
           maxHeight:"calc(100vh - 100px - env(safe-area-inset-bottom, 0px))",display:"flex",flexDirection:"column",
@@ -2147,11 +2236,17 @@ export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, tit
         <div style={{flex:1,minHeight:0,overflowY:"auto",paddingRight:2}}>
         {coloriUsati&&coloriUsati.length>0&&(
           <>
-            <div style={{fontSize:12,color:T.sub,fontWeight:700,marginBottom:8}}>USATI</div>
+            <div style={{fontSize:12,color:T.sub,fontWeight:700,marginBottom:onRiordinaUsati?2:8}}>USATI</div>
+            {onRiordinaUsati&&<div style={{fontSize:10,color:T.sub,marginBottom:8}}>Tieni premuto un colore per spostarlo</div>}
             <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:16}}>
-              {coloriUsati.map(p=>(
-                <div key={p} onClick={()=>setPreviewColor(p)}
-                  style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3,cursor:"pointer",width:52}}>
+              {(ordineUsati||coloriUsati).map(p=>(
+                <div key={p} ref={el=>{ if(el) usatiRefs.current[p]=el; }}
+                  onPointerDown={e=>inizioPressione(e,p)}
+                  onClick={()=>{ if(clickBloccato.current) return; setPreviewColor(p); }}
+                  onContextMenu={e=>{ if(onRiordinaUsati) e.preventDefault(); }}
+                  style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3,cursor:onRiordinaUsati?"grab":"pointer",width:52,
+                    userSelect:"none",WebkitUserSelect:"none",WebkitTouchCallout:"none",
+                    opacity:trascinato===p?0.3:1,transition:"opacity 0.1s"}}>
                   <div style={{width:32,height:32,borderRadius:"50%",background:p,
                     outline:previewColor===p?`3px solid ${T.text}`:"none",outlineOffset:2,flexShrink:0}}/>
                   {getNomeColore&&(
@@ -2200,7 +2295,7 @@ export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, tit
           </>
         ):(
           <div data-hex-picker>
-            <GridColorPicker T={T} value={previewColor} onChange={setPreviewColor} coloriUsati={coloriUsati||[]}/>
+            <GridColorPicker T={T} value={previewColor} onChange={setPreviewColor} coloriUsati={coloriUsati||[]} aperta={grigliaAperta} onToggle={toggleGriglia}/>
           </div>
         )}
 
