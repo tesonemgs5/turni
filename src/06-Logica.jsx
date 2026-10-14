@@ -3644,17 +3644,31 @@ export function useAppCore(session){
       let erroriRiscontrati = 0;
       const contaErrore = ({error}) => { if(error) erroriRiscontrati++; };
 
-      contaErrore(await dbDelete("events", {user_id:userId}, "Ripristino backup — pulizia eventi esistenti", {soloLog:true}));
-      contaErrore(await dbDelete("calendars", {user_id:userId}, "Ripristino backup — pulizia calendari esistenti", {soloLog:true}));
-      contaErrore(await dbDelete("modelli", {user_id:userId}, "Ripristino backup — pulizia modelli esistenti", {soloLog:true}));
-      contaErrore(await dbDelete("rotazioni", {user_id:userId}, "Ripristino backup — pulizia rotazioni esistenti", {soloLog:true}));
-      contaErrore(await dbDelete("colori", {user_id:userId}, "Ripristino backup — pulizia colori esistenti", {soloLog:true}));
-      contaErrore(await dbDelete("autocomplete_valori", {user_id:userId}, "Ripristino backup — pulizia autocomplete esistenti", {soloLog:true}));
+      // Paracadute: prima di sovrascrivere salvo lo stato attuale di Supabase.
+      try{
+        const attuale = await buildBackupPayload();
+        const {error:errPar} = await supabase.from("backups").insert({ user_id:userId, data:attuale });
+        if(errPar) throw errPar;
+      }catch(e){
+        throw new Error("Copia di sicurezza non riuscita, ripristino annullato (nessun dato toccato): "+(e?.message||e));
+      }
+
+      // Cancellazione nell'ORDINE giusto (prima chi dipende dagli altri):
+      // eventi -> rotazioni -> modelli -> calendari. Se anche UNA cancellazione
+      // fallisce mi fermo SUBITO, senza inserire nulla: così non nascono doppioni.
+      const cancellazioni = [
+        ["events","eventi"],["rotazioni","rotazioni"],["modelli","modelli"],["calendars","calendari"],
+        ["colori","colori"],["autocomplete_valori","autocomplete"],
+      ];
+      for(const [tab, nome] of cancellazioni){
+        const r = await dbDelete(tab, {user_id:userId}, `Ripristino backup — pulizia ${nome} esistenti`, {soloLog:true});
+        if(r?.error) throw new Error(`Pulizia ${nome} non riuscita (${r.error.message||r.error}). Ripristino interrotto prima di scrivere: nessun doppione creato.`);
+      }
 
       const calIdMap = {};
       for(const c of (backup.calendars||[])){
         const {data, error:errC} = await dbInsert("calendars", {
-          user_id:userId, name:c.name, color:c.color, is_main:c.is_main, shifts:c.shifts||[],
+          id:c.id, user_id:userId, name:c.name, color:c.color, is_main:c.is_main, shifts:c.shifts||[], sort_order:c.sort_order||0,
         }, `Ripristino backup — calendario "${c.name}"`, {soloLog:true});
         if(errC) erroriRiscontrati++;
         if(data?.[0]) calIdMap[c.id] = data[0].id;
@@ -3662,7 +3676,7 @@ export function useAppCore(session){
       const modIdMap = {};
       for(const m of (backup.modelli||[])){
         const {data, error:errM} = await dbInsert("modelli", {
-          user_id:userId, titolo:m.titolo, tempo:m.tempo, inizio:m.inizio, fine:m.fine,
+          id:m.id, user_id:userId, titolo:m.titolo, tempo:m.tempo, inizio:m.inizio, fine:m.fine,
           colore:m.colore, colore_custom:m.colore_custom, posizione:m.posizione||"", // flag "manuale"/vuoto, non un id: nessun rimapping necessario
           sort_order:m.sort_order, calendar_id: calIdMap[m.calendar_id]||null,
           visibile_anche_in:m.visibile_anche_in||null,
@@ -3673,7 +3687,7 @@ export function useAppCore(session){
       const rotIdMap = {};
       for(const r of (backup.rotazioni||[])){
         const {data, error:errR} = await dbInsert("rotazioni", {
-          user_id:userId, tipo:r.tipo, titolo:r.titolo, data_inizio:r.data_inizio,
+          id:r.id, user_id:userId, tipo:r.tipo, titolo:r.titolo, data_inizio:r.data_inizio,
           n_settimane:r.n_settimane,
           modello_lavoro_id: modIdMap[r.modello_lavoro_id]||null,
           modello_nl_id: modIdMap[r.modello_nl_id]||null,
@@ -3702,7 +3716,7 @@ export function useAppCore(session){
       const eventiOrdinatiPerInserimento = [...(backup.events||[])].sort((a,b)=>(a.parent_id?1:0)-(b.parent_id?1:0));
       for(const e of eventiOrdinatiPerInserimento){
         const {data, error:errE} = await dbInsert("events", {
-          user_id:userId, calendar_id: calIdMap[e.calendar_id]||e.calendar_id,
+          id:e.id, user_id:userId, calendar_id: calIdMap[e.calendar_id]||e.calendar_id,
           date_key:e.date_key, label:e.label, color:e.color, all_day:e.all_day,
           time_in:e.time_in, time_out:e.time_out, place:e.place, map_url:e.map_url,
           time_in_note:e.time_in_note, time_out_note:e.time_out_note,
@@ -3720,7 +3734,10 @@ export function useAppCore(session){
         if(errE) erroriRiscontrati++;
         if(data?.[0] && e.id) idEvtMap[e.id] = data[0].id;
       }
+      const coloriVisti = new Set(); // un colore ripetuto nel backup violerebbe il vincolo di unicità
       for(const c of (backup.colori||[])){
+        const kCol = String(c.hex||"").toUpperCase();
+        if(coloriVisti.has(kCol)) continue; coloriVisti.add(kCol);
         const {error:errCol} = await dbInsert("colori", {
           user_id:userId, hex:c.hex, label:c.label||null, sort_order:c.sort_order||0,
         }, `Ripristino backup — colore "${c.hex}"`, {soloLog:true});
