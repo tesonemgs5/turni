@@ -19,6 +19,7 @@ import { ModelloCard, ModelForm, RotazioneCard, RotazioneForm, ModelloSelector,
 import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
 import { ImpostazioniAggiornamenti, inApk } from "./12-avviso-aggiornamento";
 import { QuartineSection } from "./16-QuartineSection";
+import { scaricaFileTesto } from "./18-scarica-file";
 
 // Riga della lista Colori: mostra il pallino colore, etichetta, sottotitolo,
 // contatore di modelli che lo usano e (se applicabile) pulsanti per
@@ -318,7 +319,7 @@ export default function VistaModelli({ C }){
                 {statoSalvaDisposizione==="salvando"?"⏳":statoSalvaDisposizione==="ok"?"✅":statoSalvaDisposizione==="errore"?"❌":"💾"}
               </button>
               )}
-              <button onClick={()=>{
+              <button onClick={async()=>{
                 let dati, nomeFile;
                 if(modelliTab==="turni"){
                   dati = modelli;
@@ -330,12 +331,12 @@ export default function VistaModelli({ C }){
                   dati = coloriExtra;
                   nomeFile = "modelli_colori.json";
                 }
-                const blob = new Blob([JSON.stringify(dati,null,2)], {type:"application/json"});
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url; a.download = nomeFile;
-                document.body.appendChild(a); a.click(); document.body.removeChild(a);
-                URL.revokeObjectURL(url);
+                const r = await scaricaFileTesto(nomeFile, JSON.stringify(dati,null,2));
+                if(!r.ok){
+                  segnalaErrore(r.errore, "Scarica dati pagina");
+                  setBanner("❌ Impossibile salvare il file: "+r.errore);
+                  setTimeout(()=>setBanner(null), 5000);
+                }
               }}
                 title="Scarica i dati di questa pagina"
                 style={{background:T.s2,border:`1.5px solid ${T.border}`,borderRadius:8,

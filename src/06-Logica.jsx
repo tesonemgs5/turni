@@ -2,6 +2,7 @@
 import { supabase } from "./11-supabase";
 import { calcolaAllineamentoColori } from "./13-allinea-colori";
 import { widgetDisponibile, inviaAlWidget, descriviStatoWidget } from "./17-widget";
+import { scaricaFileTesto } from "./18-scarica-file";
 import {
   FASCE_AUTOMATICHE_DEFAULT, FESTIVITA_DEFAULT_ATTIVE, MONTHS, NOMI_GIORNI_IT, PALETTE, COLORE_H24,
   calcFine6h15, calcFine6h30, calcFineModello, categoriaAppAutoAutomatica, categoriaTurnoAutomatica,
@@ -764,6 +765,16 @@ export function useAppCore(session){
 
   const userId = session?.user?.id;
   const isInitialized = useRef(false);
+  // I dati dell'app sono quelli LOCALI (Supabase e' solo backup). Ogni cambio dei modelli
+  // (riordino, colori, spostamenti...) viene scritto nel salvataggio locale: prima il riordino
+  // restava solo in memoria + Supabase e al riavvio tornava alla posizione precedente.
+  const primaPersistenzaModelli = useRef(true);
+  useEffect(()=>{
+    if(primaPersistenzaModelli.current){ primaPersistenzaModelli.current = false; return; }
+    if(!isInitialized.current || !Array.isArray(modelli) || modelli.length===0) return;
+    const t = setTimeout(()=>{ try{ saveToLocalStorage(undefined, undefined, modelli); }catch(e){} }, 300);
+    return ()=>clearTimeout(t);
+  }, [modelli]);
 
   useEffect(()=>{
 // #endregion
@@ -3313,7 +3324,7 @@ export function useAppCore(session){
   // scarica sul proprio dispositivo. A differenza del backup su Supabase
   // (handleExportSupabase sotto), questo non fa nessuna chiamata di rete:
   // legge solo ciò che è già salvato sul dispositivo in quel momento.
-  function handleEsportaBackupLocale(categorieSelezionate){
+  async function handleEsportaBackupLocale(categorieSelezionate){
     try {
       // categorieSelezionate: array di id (vedi CATEGORIE_BACKUP_LOCALE in
       // 04-Rotazione.jsx) scelto nell'interfaccia (02-Modelli.jsx). Se
@@ -3326,16 +3337,9 @@ export function useAppCore(session){
           ? categorieSelezionate
           : null;
       const backup = esportaBackupLocaleCompleto({ dataInizio: backupPeriodoDa, dataFine: backupPeriodoA, categorie: filtroCategorieDaPassare });
-      const blob = new Blob([JSON.stringify(backup, null, 2)], {type:"application/json"});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
       const bollino = new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
-      a.href = url;
-      a.download = `turnipm_backup_locale_${bollino}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(()=>URL.revokeObjectURL(url), 5000);
+      const esitoFile = await scaricaFileTesto(`turnipm_backup_locale_${bollino}.json`, JSON.stringify(backup, null, 2));
+      if(!esitoFile.ok){ segnalaErrore(esitoFile.errore, "Backup locale (salvataggio file)"); return; }
       // "_numeroChiavi" conta le CATEGORIE di dati in localStorage (cache
       // principale, log errori, coda sync, impostazioni...), non i singoli
       // eventi: con tutto dentro poche chiavi (es. tutti gli eventi in
@@ -4054,6 +4058,7 @@ const importsRecenti = useMemo(()=>{
     if(nuovo===prev) return;
     modelliRef.current = nuovo;
     setModelli(nuovo);
+    saveToLocalStorage(undefined, undefined, nuovo); // il riordino deve restare dopo il riavvio
     segnalaModificaOrdineModelli();
     await salvaModifichePosizioni(prev, nuovo);
   }
@@ -4064,6 +4069,7 @@ const importsRecenti = useMemo(()=>{
     if(nuovo===prev) return;
     modelliRef.current = nuovo;
     setModelli(nuovo);
+    saveToLocalStorage(undefined, undefined, nuovo); // il riordino deve restare dopo il riavvio
     segnalaModificaOrdineModelli();
     await salvaModifichePosizioni(prev, nuovo);
   }
