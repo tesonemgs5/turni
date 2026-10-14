@@ -2237,7 +2237,7 @@ export function useAppCore(session){
         // in un evento diverso "AUTO 13:51-20:06"). Chi vuole tracciare uno
         // scostamento reale usa i campi dedicati "Entrata/Uscita effettiva"
         // sotto PROTRAZIONE A RECUPERO, pensati apposta per questo.
-        if(mod.tempo==="h24"){ tInFinal=""; tOutFinal=""; }
+        if(mod.tempo==="h24"){ tInFinal=form.offIn||""; tOutFinal=form.offOut||""; } // H24: orario facoltativo (solo etichetta accanto al nome, l'evento resta allDay)
         else {
           tInFinal = mod.inizio||"";
           // Se il modello ha una fine propria, quella resta "ufficiale" e

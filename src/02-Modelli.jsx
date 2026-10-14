@@ -2488,7 +2488,8 @@ export default function VistaModelli({ C }){
               const labelDaMostrare = (modelloCollegato ? (modelloCollegato.label||modelloCollegato.titolo||e.label) : e.label);
               const modelloDiQuestoEvento = e.modelloId ? modelli.find(m=>m.id===e.modelloId) : null;
               const orarioModello = (modelloDiQuestoEvento && modelloDiQuestoEvento.tempo!=="h24" && modelloDiQuestoEvento.inizio)
-                ? `${modelloDiQuestoEvento.inizio}→${calcFineModello(modelloDiQuestoEvento)||modelloDiQuestoEvento.fine||""}` : null;
+                ? `${modelloDiQuestoEvento.inizio}→${calcFineModello(modelloDiQuestoEvento)||modelloDiQuestoEvento.fine||""}`
+                : ((modelloDiQuestoEvento && e.tIn) ? `${e.tIn}→${e.tOut||""}` : null);
               return (
               <>
             <div style={{flex:1}}>
@@ -2585,11 +2586,11 @@ export default function VistaModelli({ C }){
                 {(()=>{
                   const idModelloAttuale = form.modelloId || form.evtModelloId;
                   const modSel = idModelloAttuale && modelli.find(m=>m.id===idModelloAttuale);
-                  if(!modSel || modSel.tempo==="h24" || !modSel.inizio) return null;
+                  if(!modSel) return null;
                   const evH = (curEvts||[]).find(x=>x.id===form.editId);
                   return (
                     <>
-                      <span style={{fontSize:14,color:T.sub,fontWeight:700}}>{form.offIn!==undefined?form.offIn:((evH&&evH.tIn)||modSel.inizio)}{"\u2192"}{form.offOut!==undefined?form.offOut:((evH&&evH.tOut)||calcFineModello(modSel)||modSel.fine||"")}</span>
+                      <span style={{fontSize:14,color:T.sub,fontWeight:700}}>{(()=>{ const i=form.offIn!==undefined?form.offIn:((evH&&evH.tIn)||modSel.inizio||""); const o=form.offOut!==undefined?form.offOut:((evH&&evH.tOut)||calcFineModello(modSel)||modSel.fine||""); return (i||o) ? `${i}\u2192${o}` : "orario"; })()}</span>
                       <span onClick={e=>{e.stopPropagation();setForm(f=>({...f,_apriOrario:!f._apriOrario}));}}
                         style={{fontSize:16,color:T.sub,cursor:"pointer",padding:"2px 6px"}}>{form._apriOrario?"\u25B2":"\u25BC"}</span>
                     </>
@@ -2601,7 +2602,7 @@ export default function VistaModelli({ C }){
             {form.editId&&form._apriOrario&&(()=>{
               const idm = form.modelloId || form.evtModelloId;
               const ms = idm && modelli.find(m=>m.id===idm);
-              if(!ms || ms.tempo==="h24") return null;
+              if(!ms) return null;
               const evC = (curEvts||[]).find(x=>x.id===form.editId);
               const inV = form.offIn!==undefined ? form.offIn : ((evC&&evC.tIn)||ms.inizio||"");
               const outV = form.offOut!==undefined ? form.offOut : ((evC&&evC.tOut)||calcFineModello(ms)||ms.fine||"");
