@@ -3491,10 +3491,13 @@ export function useAppCore(session){
   // 2) scrive (upsert per id) calendari, rotazioni, modelli, eventi, colori dal locale;
   // 3) toglie da Supabase le righe che sul telefono non esistono (doppioni);
   // 4) rilegge i conteggi e li confronta col locale.
+  const [esitoExportSupabase, setEsitoExportSupabase] = useState(null); // null | {stato:"corso"|"fine", ok, messaggio}
   async function handleExportSupabase(){
-    if(!userId){ setSyncMsg("❌ Accedi per esportare"); return; }
-    if(typeof navigator!=="undefined" && navigator.onLine===false){ setSyncMsg("❌ Sei offline: impossibile esportare"); return; }
-    setSyncMsg("⏳ Esportazione in corso...");
+    // Ogni passaggio e l'esito finale compaiono in una FINESTRA grande (non solo in una scritta piccola).
+    const avvisa = (msg, stato="corso", ok=true)=>{ setSyncMsg(msg); setEsitoExportSupabase({stato, ok, messaggio:msg}); };
+    if(!userId){ avvisa("❌ Accedi per esportare","fine",false); return; }
+    if(typeof navigator!=="undefined" && navigator.onLine===false){ avvisa("❌ Sei offline: impossibile esportare","fine",false); return; }
+    avvisa("⏳ Esportazione in corso...");
     try {
       const loc = storeRef.current || store;
       const cals = loc.calendars||[];
@@ -3508,12 +3511,12 @@ export function useAppCore(session){
       const rots = rotazioni||[];
       // Protezione: se sul telefono non c'è nulla, non tocco Supabase.
       if(cals.length===0 || (evLocali.length===0 && mods.length===0)){
-        setSyncMsg("❌ Esportazione annullata: sul telefono non ci sono dati da esportare");
+        avvisa("❌ Esportazione annullata: sul telefono non ci sono dati da esportare","fine",false);
         return;
       }
 
       // 1) paracadute
-      setSyncMsg("⏳ 1/4 Salvo copia di sicurezza di Supabase...");
+      avvisa("⏳ 1/4 Salvo copia di sicurezza di Supabase...");
       const backup = await buildBackupPayload();
       const {error:insErr} = await supabase.from("backups").insert({ user_id:userId, data:backup });
       if(insErr) throw insErr;
@@ -3528,7 +3531,7 @@ export function useAppCore(session){
       const nn = v => (v===""||v===undefined) ? null : v;
 
       // 2) scrittura dal locale (ordine: prima ciò da cui gli altri dipendono)
-      setSyncMsg("⏳ 2/4 Scrivo i dati del telefono su Supabase...");
+      avvisa("⏳ 2/4 Scrivo i dati del telefono su Supabase...");
       await scrivi("calendars", cals.map((c,i)=>({
         id:c.id, user_id:userId, name:c.name||"", color:c.color||null,
         is_main:!!c.isMain, shifts:c.shifts||[], sort_order:i,
@@ -3571,7 +3574,7 @@ export function useAppCore(session){
       }
 
       // 3) tolgo da Supabase ciò che sul telefono non esiste (prima figli, poi padri)
-      setSyncMsg("⏳ 3/4 Elimino da Supabase i doppioni...");
+      avvisa("⏳ 3/4 Elimino da Supabase i doppioni...");
       const idsLocali = {
         events:new Set(evLocali.map(x=>x.e.id)), modelli:new Set(mods.map(m=>m.id)),
         rotazioni:new Set(rots.map(r=>r.id)), calendars:new Set(cals.map(c=>c.id)),
@@ -3589,15 +3592,15 @@ export function useAppCore(session){
       }
 
       // 4) verifica: conteggi su Supabase = conteggi sul telefono?
-      setSyncMsg("⏳ 4/4 Verifico...");
+      avvisa("⏳ 4/4 Verifico...");
       const conta = async t=>{ const {count,error}=await supabase.from(t).select("id",{count:"exact",head:true}).eq("user_id",userId); if(error) throw error; return count; };
       const [nE,nM,nC,nR] = await Promise.all([conta("events"),conta("modelli"),conta("calendars"),conta("rotazioni")]);
       const attesi = {E:evLocali.length, M:mods.length, C:cals.length, R:rots.length};
       const ok = nE===attesi.E && nM===attesi.M && nC===attesi.C && nR===attesi.R;
       const riga = `Supabase: ${nE} eventi, ${nM} modelli, ${nC} calendari, ${nR} rotazioni (telefono: ${attesi.E}, ${attesi.M}, ${attesi.C}, ${attesi.R})`;
       registraAttivita("Esporta su Supabase", (ok?"✅ ":"⚠️ ")+riga+(eliminati?` — rimossi ${eliminati} doppioni`:""), { chiave:"esporta-supabase", supabase: ok?"ok":"errore" });
-      setSyncMsg(ok ? `✅ Esportato: ${riga}` : `⚠️ Esportazione incompleta. ${riga}`);
-    } catch(e){ segnalaErrore(e, "Esportazione su Supabase"); setSyncMsg("❌ Errore durante l'esportazione: "+(e?.message||e)); }
+      avvisa(ok ? `✅ Esportato e verificato: ${riga}` : `⚠️ Esportazione incompleta. ${riga}`,"fine",ok);
+    } catch(e){ segnalaErrore(e, "Esportazione su Supabase"); avvisa("❌ Errore durante l'esportazione: "+(e?.message||e),"fine",false); }
   }
 
   // Controllo struttura Supabase (tabelle/funzione mancanti). Manuale da Impostazioni; automatico 1 volta a settimana.
@@ -7599,7 +7602,7 @@ const importsRecenti = useMemo(()=>{
     handleExportSupabase,
     handleOpenImportSupabase,
     handleVerificaSupabase,
-    esitoVerificaSupabase, setEsitoVerificaSupabase,
+    esitoVerificaSupabase, setEsitoVerificaSupabase, esitoExportSupabase, setEsitoExportSupabase,
     handleRestoreBackup,
     handleEsportaBackupLocale,
     handleFileSelezionatoImportLocale,

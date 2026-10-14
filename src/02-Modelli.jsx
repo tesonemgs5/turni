@@ -169,7 +169,7 @@ export default function VistaModelli({ C }){
     deleteCalendar, computeEventFields, saveEvt, updateEvt, delEvt, delEvtiRotazioneDaData,
     delTutteEvtiRotazione, cancellaTuttiEventiMese, calcMinuti, saveToSheets, syncSeAttivo, loadFromSheets,
     syncFromSheets, handleSave, handleLoad, handleSaveSheetsConfig, handleViewDbData, buildBackupPayload,
-    handleExportSupabase, handleOpenImportSupabase, handleVerificaSupabase, esitoVerificaSupabase, setEsitoVerificaSupabase, handleRestoreBackup, handleLogout, eseguiNormalizzazione, normalizzaModelliTempo,
+    handleExportSupabase, handleOpenImportSupabase, handleVerificaSupabase, esitoVerificaSupabase, setEsitoVerificaSupabase, esitoExportSupabase, setEsitoExportSupabase, handleRestoreBackup, handleLogout, eseguiNormalizzazione, normalizzaModelliTempo,
     normalizzaEventiTempo, modelliOrdinati, importsRecenti, modelliDelCalendario, rinumeraSottoinsieme, spostaModelloPuro,
     trascinaModelloPuro, salvaModifichePosizioni, moveH24, reorderModelli, moveRotazione, moveColoreExtra, ricoloraModelliPerFasciaOraria, ensureColoreRegistrato, registraValoreAutocomplete,
     registraValoriAutocomplete, rimuoviValoreAutocomplete, supabaseUpsertConRetry, saveModello, deleteModello, addColoreExtra,
@@ -1776,6 +1776,22 @@ export default function VistaModelli({ C }){
             color:T.text,padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
           🔎 Verifica struttura Supabase
         </button>
+        {esitoExportSupabase && (
+          <div onClick={()=>esitoExportSupabase.stato!=="corso" && setEsitoExportSupabase(null)}
+            style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.65)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+            <div onClick={e=>e.stopPropagation()}
+              style={{background:T.surface,border:`1px solid ${esitoExportSupabase.stato==="corso"?T.border:(esitoExportSupabase.ok?"#10b981":"#ef4444")}`,borderRadius:16,color:T.text,
+                width:"100%",maxWidth:380,maxHeight:"80vh",overflowY:"auto",padding:"22px 20px",textAlign:"center"}}>
+              <div style={{fontSize:34,marginBottom:6}}>{esitoExportSupabase.stato==="corso"?"📤":(esitoExportSupabase.ok?"✅":"⚠️")}</div>
+              <div style={{fontSize:16,fontWeight:800,marginBottom:8}}>{esitoExportSupabase.stato==="corso"?"Esportazione su Supabase in corso…":(esitoExportSupabase.ok?"Esportazione completata":"Esportazione NON riuscita")}</div>
+              <div style={{fontSize:13,color:T.sub,lineHeight:1.5,wordBreak:"break-word"}}>{esitoExportSupabase.messaggio}</div>
+              {esitoExportSupabase.stato!=="corso" && (
+                <button onClick={()=>setEsitoExportSupabase(null)}
+                  style={{marginTop:16,width:"100%",background:"#2563eb",border:"none",borderRadius:10,color:"#fff",padding:"12px 0",fontWeight:800,fontSize:14,cursor:"pointer"}}>Chiudi</button>
+              )}
+            </div>
+          </div>
+        )}
         {esitoVerificaSupabase && (
           <div onClick={()=>esitoVerificaSupabase.stato!=="corso" && setEsitoVerificaSupabase(null)}
             style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.65)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
