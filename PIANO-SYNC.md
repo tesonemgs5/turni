@@ -207,6 +207,8 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - **Effetto**: il trigger aggiorna `updated_at`; i dispositivi che hanno ancora `false` ricevono il valore con la sincronizzazione; il dispositivo con i dati giusti coincide già, quindi non cambia nulla.
 - **Annullamento**: stessa `update` con `categoria_turno_vuoto = false` (prima erano tutti `false`).
 - **Limite dichiarato**: `true` è dedotto dai log, non letto dal telefono. Se sul telefono risultasse altro, un "Esporta su Supabase" dal dispositivo giusto lo riallinea.
+- **Eseguito** (15/10): un solo `update`, 104 righe.
+- **Verificato**: 104 su 104 eventi QUARTINA con `categoria_turno_vuoto = true` e `categoria_app_auto_vuoto = false`; gli eventi aggiornati negli ultimi 5 minuti sono solo quei 104 (nessun altro toccato); totali invariati: 1417 eventi, 225 modelli, registro eliminazioni vuoto. Altri 10 eventi avevano già un flag attivo dall'uso normale dell'app, e non sono stati toccati.
 
 ### Passo 5b — Backup settimanale dentro Supabase + anti-pausa
 - **Da fare, non ancora iniziato.** Prima di scrivere su Supabase descrivo qui: dove viene salvato (tabella `backups`, già esistente), quanti ne tengo (ultimi N), con quale pianificazione (una volta a settimana) e come evito la pausa del piano gratuito.
