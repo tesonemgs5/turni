@@ -13,7 +13,7 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 | 2c | "Sincronizza ora": scarica solo le righe cambiate dall'ultima volta | App | ✅ pubblicato 15/10 (da provare sui telefoni) |
 | 3a | Funzione `applica_modifiche`: molte modifiche in UNA richiesta, tutto-o-niente | DB | ✅ fatto 15/10 |
 | 3b | L'app la usa per le raffiche (riordino modelli/rotazioni/colori, cambio colore dei gruppi) | App | ✅ pubblicato 15/10 (da provare sui telefoni) |
-| 3c | Le altre raffiche (eventi in blocco, import) | App | ⏳ |
+| 3c | Le altre raffiche (propagazione colori agli eventi, normalizzazioni, creazione modello, ripristino disposizione) | App | ✅ pubblicato 15/10 (da provare sui telefoni) |
 | 4 | Vincoli: ordine di invio, colori in inserisci-o-aggiorna, riferimenti che si azzerano | DB + App | ⏳ |
 | 5 | Backup automatico giornaliero + copia fuori da Supabase + keep-alive | DB/App | ⏳ |
 
@@ -139,5 +139,27 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - **Dopo il primo spostamento di modello** l'app rinumera una volta tutti i modelli (numerazione con buchi, commit 13b3403): prima era una raffica di circa 225 richieste, ora è **una richiesta sola**.
 - Restano scritture "una per una" per le singole modifiche (un evento, un modello) e le raffiche sugli eventi (passo 3c).
 
-### Passo 3c — altre raffiche (eventi in blocco, import)
-- **Da fare, non ancora iniziato.**
+### Passo 3c — altre raffiche ✅
+- **Già a posto, non lo tocco**: l'inserimento e la cancellazione di MOLTI eventi (import, cancellazioni di massa) passano già dalla coda dell'app, che li spedisce a blocchi di 50-100 righe.
+- **Punti a raffica trovati che migro in questo push** (tutti scrivono "una richiesta per riga", spesso in sequenza):
+  1. `propagaColoreModelliAgliEventi` — ogni cambio colore di un modello ricolora i suoi eventi: una richiesta per modello, in sequenza, ognuna con la sua lettura di controllo. Qui una modifica può toccare 0 righe (modello senza eventi): è normale, non è un errore.
+  2. Normalizza colori degli eventi (a gruppi di 20 in parallelo).
+  3. "Visualizza eventi del modello" (a gruppi di 20 in parallelo).
+  4. Creazione di un modello: rinumerazione degli altri modelli, una richiesta ciascuno in sequenza.
+  5. Normalizzazione colore dei modelli (ciclo in sequenza).
+  6. Ripristino disposizione 360° (ciclo in sequenza, più colonne per modello).
+  7. Migrazione una tantum "colore esplicito sul modello" (parte all'avvio dopo un Importa).
+  8. Riordino dei colori: registrazione dei colori nuovi.
+- **Aggiunta alla funzione**: un'operazione può dichiarare "0 righe va bene" (`zeroOk`), così il controllo non segnala falsi errori.
+- **Resta com'è, di proposito**: le singole modifiche (un evento, un modello, una rotazione), il "ripristino modello orfano" (caso raro, ogni riga ha il suo esito) e "Rimozione colore" (ciclo che passa da `saveModello`, rischio di cambiarlo > beneficio).
+- **Prima del push**: provo sul DB le forme nuove (modifica di eventi per `modello_id` con 0 righe, modifica con `visibile_anche_in` a elenco, più colonne insieme), con test annullati.
+- Annullamento: ripristinare il commit precedente.
+- **Pubblicato** (push + nuova APK): gli 8 punti elencati ora usano `scriviBatchConBackup`; aggiunta l'opzione `zeroOk`.
+- **Verificato prima del push** (test annullati sul DB, forme identiche a quelle dell'app):
+  1. modifica di eventi per `modello_id`: 2 righe per un modello con eventi, **0 righe** per uno senza (normale: per questo serve `zeroOk`);
+  2. colore + `modello_id` insieme su un evento: 1 riga;
+  3. `visibile_anche_in` come elenco (salvato come elenco) e come `null` (salvato `NULL`);
+  4. modello con 8 colonne insieme (ripristino disposizione 360°): 1 riga.
+  Dopo i test: nessuna modifica rimasta.
+- **Come provarlo**: cambia il colore di un modello che ha eventi nel calendario → gli eventi si ricolorano e nel Log compare ☁️ ✓ senza raffiche di richieste; poi dimmelo e leggo Supabase.
+- **Riepilogo scrittura a blocchi (3a+3b+3c)**: ora le raffiche sono UNA richiesta; restano "una per una" solo le singole modifiche, il ripristino modello orfano e la rimozione colore.

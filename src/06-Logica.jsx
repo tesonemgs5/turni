@@ -510,7 +510,7 @@ export function useAppCore(session){
         continue;
       }
       blocco.forEach((o,k)=>{
-        if(o.tipo==="update" && data?.[k]?.righe===0){
+        if(o.tipo==="update" && !o.zeroOk && data?.[k]?.righe===0){
           errori++;
           segnalaErroreSoloLog(`Modifica su ${o.table} non trovata su Supabase (0 righe toccate)`, `${o.contesto||contesto} (controllo dopo il salvataggio)`);
         }
@@ -1140,15 +1140,18 @@ export function useAppCore(session){
         try{
           const tsMig = new Date().toISOString();
           const righeSenzaColore = new Map((modelliDb||[]).filter(r=>!r.colore_custom).map(r=>[r.id,r]));
-          modelliMappati.filter(m=>righeSenzaColore.has(m.id)).forEach(m=>{
-            scriviConBackup({
-              tipo:"update", table:"modelli",
-              payload:{ colore:m.coloreCustom, colore_custom:m.coloreCustom },
-              matchObj:{ id:m.id, user_id:userId },
-              contesto:"Migrazione: colore esplicito sul modello", ts:tsMig,
-              opzioni:{ soloLog:true },
+          const daMigrare = modelliMappati.filter(m=>righeSenzaColore.has(m.id));
+          if(daMigrare.length>0){
+            scriviBatchConBackup({
+              ops: daMigrare.map(m=>({
+                tipo:"update", table:"modelli",
+                payload:{ colore:m.coloreCustom, colore_custom:m.coloreCustom },
+                matchObj:{ id:m.id, user_id:userId },
+                contesto:"Migrazione: colore esplicito sul modello",
+              })),
+              contesto:"Migrazione: colore esplicito sul modello", ts:tsMig, opzioni:{ soloLog:true },
             });
-          });
+          }
         }catch(eMig){ segnalaErroreSoloLog(eMig?.message||String(eMig), "Migrazione colore esplicito modelli"); }
         setColoriExtra((coloriDb||[]).map(c=>({hex:c.hex, label:c.label||null, sortOrder:c.sort_order||0}))
           .sort((a,b)=>{
@@ -2237,12 +2240,13 @@ export function useAppCore(session){
       .forEach((c,j)=>nuovi.push({...c, sortOrder:completo.length+j}));
     setColoriExtra(nuovi);
     const ts = new Date().toISOString();
-    for(const n of daInserire){
-      await scriviConBackup({
+    await scriviBatchConBackup({
+      ops: daInserire.map(n=>({
         tipo:"insert", table:"colori", payload:{ user_id:userId, hex:n.hex, sort_order:n.sortOrder }, matchObj:null,
-        contesto:"Riordino colori (registrazione colore)", ts, opzioni:{ soloLog:true },
-      });
-    }
+        contesto:"Riordino colori (registrazione colore)",
+      })),
+      contesto:"Riordino colori (registrazione colore)", ts, opzioni:{ soloLog:true },
+    });
     await salvaModifichePosizioniColori(prev, nuovi.filter(c=>!daInserire.includes(c)));
   }
   function salvaQuartine(nuova){
@@ -2927,14 +2931,14 @@ export function useAppCore(session){
           opzioni:{ soloLog:true },
         });
       }
-      for(let i=0;i<idsAltri.length;i+=20){
-        await Promise.all(idsAltri.slice(i,i+20).map(idEv=>scriviConBackup({
+      await scriviBatchConBackup({
+        ops: idsAltri.map(idEv=>({
           tipo:"update", table:"events", payload:{ visibile_anche_in: valoreDb },
           matchObj:{ id: idEv, user_id: userId },
-          contesto:"Visualizza eventi del modello", ts:ts2,
-          opzioni:{ soloLog:true },
-        })));
-      }
+          contesto:"Visualizza eventi del modello",
+        })),
+        contesto:"Visualizza eventi del modello", ts:ts2, opzioni:{ soloLog:true },
+      });
     }
 
     // 3) Sincronizzo (crea/aggiorna/rimuove) gli eventi "figli" di
@@ -4712,21 +4716,16 @@ const importsRecenti = useMemo(()=>{
     setStore(s=>({...s, events:nuovoStore.events})); // solo gli eventi: non riporta indietro fasce e altro
     const ts = new Date().toISOString();
     (async()=>{
-      // Un update per colore distinto (non per modello) per ridurre le chiamate.
-      const perColore = {};
-      ids.forEach(id=>{ (perColore[mappaColori[id]] = perColore[mappaColori[id]]||[]).push(id); });
-      for(const [colore, idsModelli] of Object.entries(perColore)){
-        for(const idMod of idsModelli){
-          const ris = await scriviConBackup({
-            tipo:"update", table:"events", payload:{ color: colore },
-            matchObj:{ modello_id:idMod, user_id:userId },
-            contesto:"Cambio colore modello — propagazione agli eventi già in calendario", ts,
-            eventsPerSheets: nuovoStore.events, calendarsPerSheets: nuovoStore.calendars, modelliPerSheets: modelli,
-            opzioni:{soloLog:true},
-          });
-          if(ris?.errore) segnalaErroreDb(ris.errore, "Propagazione colore agli eventi");
-        }
-      }
+      // UNA sola richiesta per tutti i modelli (0 righe = modello senza eventi: normale).
+      const risB = await scriviBatchConBackup({
+        ops: ids.map(idMod=>({
+          tipo:"update", table:"events", payload:{ color: mappaColori[idMod] },
+          matchObj:{ modello_id:idMod, user_id:userId },
+          contesto:"Cambio colore modello — propagazione agli eventi già in calendario", zeroOk:true,
+        })),
+        contesto:"Cambio colore modello — propagazione agli eventi", ts, opzioni:{soloLog:true},
+      });
+      if(risB?.errori>0) segnalaErroreSoloLog(`${risB.errori} modifiche non confermate durante la propagazione del colore agli eventi`, "Propagazione colore agli eventi");
     })();
     return nuovoStore.events;
   }
@@ -4754,17 +4753,16 @@ const importsRecenti = useMemo(()=>{
     if(storeRef.current) storeRef.current = {...storeRef.current, events:eventiNuovi};
     const ts = new Date().toISOString();
     (async()=>{
-      let errori = 0;
-      for(let i=0;i<lista.length;i+=20){
-        await Promise.all(lista.slice(i,i+20).map(async x=>{
-          const payload = x.collega ? { color:x.coloreNuovo, modello_id:x.collega } : { color:x.coloreNuovo };
-          const ris = await scriviConBackup({
-            tipo:"update", table:"events", payload, matchObj:{ id:x.id, user_id:userId },
-            contesto:"Normalizza colori: allineo evento al suo modello", ts, opzioni:{ soloLog:true },
-          });
-          if(ris?.errore) errori++;
-        }));
-      }
+      const risB = await scriviBatchConBackup({
+        ops: lista.map(x=>({
+          tipo:"update", table:"events",
+          payload: x.collega ? { color:x.coloreNuovo, modello_id:x.collega } : { color:x.coloreNuovo },
+          matchObj:{ id:x.id, user_id:userId },
+          contesto:"Normalizza colori: allineo evento al suo modello",
+        })),
+        contesto:"Normalizza colori: allineo evento al suo modello", ts, opzioni:{ soloLog:true },
+      });
+      const errori = risB?.errori||0;
       if(errori>0) segnalaErroreSoloLog(`${errori} eventi non salvati su Supabase durante la normalizzazione colori`, "Normalizzazione colori");
     })();
     return eventiNuovi;
@@ -5134,14 +5132,13 @@ const importsRecenti = useMemo(()=>{
             return prima && prima.sortOrder!==m.sortOrder;
           })
           .map(m=>({id:m.id, nuovoVal:m.sortOrder}));
-        for(const {id,nuovoVal} of rinumerazioniApplicate){
-          await scriviConBackup({
+        await scriviBatchConBackup({
+          ops: rinumerazioniApplicate.map(({id,nuovoVal})=>({
             tipo:"update", table:"modelli", payload:{sort_order:nuovoVal}, matchObj:{id, user_id:userId},
-            contesto:"Creazione modello — rinumerazione posizioni esistenti", ts,
-            eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelliAggiornati,
-            opzioni:{soloLog:true},
-          });
-        }
+            contesto:"Creazione modello — rinumerazione posizioni esistenti",
+          })),
+          contesto:"Creazione modello — rinumerazione posizioni esistenti", ts, opzioni:{soloLog:true},
+        });
         return risInsert;
       }
 
@@ -5494,17 +5491,16 @@ const importsRecenti = useMemo(()=>{
     // Backup remoto: una scrittura alla volta, solo log (niente raffica di popup).
     const ts = new Date().toISOString();
     (async()=>{
-      let errori = 0;
-      for(const c of candidati){
-        const ris = await scriviConBackup({
+      const risB = await scriviBatchConBackup({
+        ops: candidati.map(c=>({
           tipo:"update", table:"modelli",
           payload:{ colore_custom:c.coloreNuovo, colore:c.coloreNuovo },
           matchObj:{id:c.id, user_id:userId},
-          contesto:`Normalizzazione colore su modello "${c.titolo||c.id}"`, ts,
-          opzioni:{ soloLog:true },
-        });
-        if(ris?.errore) errori++;
-      }
+          contesto:`Normalizzazione colore su modello "${c.titolo||c.id}"`,
+        })),
+        contesto:"Normalizzazione colore modelli", ts, opzioni:{ soloLog:true },
+      });
+      const errori = risB?.errori||0;
       if(errori>0) segnalaErroreSoloLog(`${errori} modelli non salvati su Supabase durante la normalizzazione`, "Normalizzazione colori");
       syncSeAttivo(eventiAggiornati||store.events, store.calendars, modelliAggiornati);
     })();
@@ -5732,17 +5728,16 @@ const importsRecenti = useMemo(()=>{
 
     // 4) Backup su Supabase
     const ts = new Date().toISOString();
-    for(const m of daRiscrivere){
-      const ris = await scriviConBackup({
+    const risB = await scriviBatchConBackup({
+      ops: daRiscrivere.map(m=>({
         tipo:"update", table:"modelli",
         payload:{ colore:m.colore, colore_custom:m.coloreCustom||null, titolo:m.titolo, label:m.label, inizio:m.inizio, fine:m.fine, tempo:m.tempo, sort_order:m.sortOrder },
         matchObj:{ id:m.id, user_id:userId },
-        contesto:"Ripristino disposizione 360°", ts,
-        eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelliRicalcolati,
-        opzioni:{soloLog:true},
-      });
-      if(ris?.errore) segnalaErroreDb(ris.errore, "Ripristino modelli");
-    }
+        contesto:"Ripristino disposizione 360°",
+      })),
+      contesto:"Ripristino disposizione 360°", ts, opzioni:{soloLog:true},
+    });
+    if(risB?.errori>0) segnalaErroreSoloLog(`${risB.errori} modelli non confermati su Supabase durante il ripristino`, "Ripristino modelli");
 
     // 5) Allinea gli eventi già in calendario al colore effettivo del modello
     const mappaColori = {};
