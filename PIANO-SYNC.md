@@ -199,5 +199,14 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
   4. Dimmelo e controllo il Log di Supabase.
 - Tempo atteso: fino a ~60 s con l'app aperta su B; subito alla riapertura o al ritorno in primo piano. Per l'istantaneo vero (Realtime) si decide dopo.
 
+### Correzione dati — flag mancanti sui 104 eventi QUARTINA
+- **Problema**: il 14/10 (~09:48 UTC) "Tutti gli eventi di QUARTINA" mandava a Supabase due colonne che non esistono (`turno_vuoto`, `app_auto_vuoto`). L'app riprovava togliendo una colonna alla volta: `categoria_turno` e `categoria_app_auto` sono arrivate, i due flag no. Erano 104 eventi x 2 rifiuti = i "208 respinti". Il codice è già corretto (commit 1295eba, nomi `categoria_turno_vuoto` / `categoria_app_auto_vuoto`); nel file `02-Modelli.jsx` le due vecchie parole restano solo in un commento che racconta la correzione.
+- **Stato verificato su Supabase prima di scrivere** (sola lettura, 15/10): 104 eventi con titolo QUARTINA, orari vuoti (H24), dal 23/07/2023 al 08/09/2030; tutti con `categoria_turno_vuoto = false` e `categoria_app_auto_vuoto = false`; `categoria_turno` e `categoria_app_auto` nulli.
+- **Valori da scrivere** (dedotti dalle dimensioni delle richieste nei log: 50 / 69 / 92 byte = base + `"turno_vuoto":true` + `"app_auto_vuoto":false`; inoltre QUARTINA è H24 e per gli H24 la sezione APP/AUTO non c'è): `categoria_turno_vuoto = true`; `categoria_app_auto_vuoto` resta `false`.
+- **Cosa farò (una sola scrittura)**: un `update` su `events` con filtro rigido (utente, titolo = QUARTINA, orari vuoti, flag ancora `false`, categorie nulle). Atteso: 104 righe.
+- **Effetto**: il trigger aggiorna `updated_at`; i dispositivi che hanno ancora `false` ricevono il valore con la sincronizzazione; il dispositivo con i dati giusti coincide già, quindi non cambia nulla.
+- **Annullamento**: stessa `update` con `categoria_turno_vuoto = false` (prima erano tutti `false`).
+- **Limite dichiarato**: `true` è dedotto dai log, non letto dal telefono. Se sul telefono risultasse altro, un "Esporta su Supabase" dal dispositivo giusto lo riallinea.
+
 ### Passo 5b — Backup settimanale dentro Supabase + anti-pausa
 - **Da fare, non ancora iniziato.** Prima di scrivere su Supabase descrivo qui: dove viene salvato (tabella `backups`, già esistente), quanti ne tengo (ultimi N), con quale pianificazione (una volta a settimana) e come evito la pausa del piano gratuito.
