@@ -10,7 +10,7 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 | 1 | Chiudere `get_user_data` (solo utenti loggati, solo i propri dati) | DB | ✅ fatto 14/10 |
 | 2a | Aggiungere `updated_at` (automatico) e `deleted_at` a eventi, modelli, calendari, rotazioni, colori. Solo aggiunte | DB | ✅ fatto 15/10 |
 | 2b | **Cambiato**: invece di cambiare tutte le cancellazioni dell'app, il DB registra da solo le righe eliminate (tabella `eliminati`) e offre la funzione `get_changes` (solo le differenze) | DB | ✅ fatto 15/10 |
-| 2c | "Sincronizza ora": scarica solo le righe cambiate dall'ultima volta | App | ⏳ |
+| 2c | "Sincronizza ora": scarica solo le righe cambiate dall'ultima volta | App | ✅ pubblicato 15/10 (da provare sui telefoni) |
 | 3 | Scrittura a blocchi: poche richieste invece di centinaia | App | ⏳ |
 | 4 | Vincoli: ordine di invio, colori in inserisci-o-aggiorna, riferimenti che si azzerano | DB + App | ⏳ |
 | 5 | Backup automatico giornaliero + copia fuori da Supabase + keep-alive | DB/App | ⏳ |
@@ -61,5 +61,34 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - Limite noto del test: dentro un'unica transazione l'orologio del DB è fermo; nell'uso reale ogni scrittura è una transazione separata, quindi nessun problema.
 - Nessun push dell'app in questo passo.
 
-### Passo 2c — "Sincronizza ora" nell'app (solo differenze)
-- **Da fare, non ancora iniziato.** Prima di toccare il codice scrivo qui: dove vive il cursore (localStorage), come si fondono le righe ricevute con quelle locali (vince `updated_at` più recente; nessuna cancellazione di dati locali non ancora inviati), e come si mostra l'esito (finestra grande, come per Esporta).
+### Passo 2c — "Sincronizza ora" nell'app (solo differenze) ✅
+- **Progetto, scritto prima di toccare il codice** (un solo push, poi nuova APK):
+  1. **Pulsante nuovo** "🔄 Sincronizza ora" in Impostazioni → Database Cloud Supabase. Nessun avvio automatico: parte solo se lo premi. Nessun popup di conferma; l'esito compare nella finestra grande (come Esporta).
+  2. **Cursore**: orario del SERVER dell'ultima sincronizzazione, salvato sul dispositivo (`turnipm_sync_cursore`). Si imposta (a) a fine "Esporta su Supabase" riuscito, (b) dopo un "Importa da Supabase" riuscito. Senza cursore il pulsante non fa nulla di rischioso: dice di fare prima Esporta (se questo è il dispositivo giusto) o Importa.
+  3. **Cosa chiede al server**: `get_changes(utente, cursore − 5 secondi)`. La sovrapposizione di 5 s serve a non perdere righe; riapplicare una riga uguale è innocuo.
+  4. **Come si fonde con i dati del telefono**:
+     - le righe arrivate sostituiscono quelle con lo stesso id (calendari, modelli, rotazioni, colori) o vengono aggiunte; gli eventi si spostano se è cambiata data o calendario;
+     - le eliminazioni tolgono la riga con quell'id;
+     - **non scrive NULLA su Supabase** (solo lettura, niente effetto rimbalzo);
+     - le righe che non sono nell'elenco ricevuto **non vengono toccate**: non cancella mai "per differenza".
+  5. **Protezioni**:
+     - se ci sono modifiche del telefono non ancora inviate (coda offline non vuota) si ferma e lo dice: prima devono arrivare su Supabase;
+     - se le eliminazioni ricevute sono più del 30% degli eventi locali (e almeno 5) si ferma e lo dice;
+     - se manca la linea o il server risponde con errore: nessuna modifica locale e messaggio chiaro.
+  6. **Esito**: finestra grande con "Aggiornato: N eventi, M modelli… cambiati, K eliminati" oppure "Già aggiornato". Registrato nel Log.
+- Non cambia: l'avvio dell'app (parte sempre dal locale), Importa/Esporta, la scrittura verso Supabase.
+- Limite dichiarato: non posso provarlo su un telefono reale; lo verifico leggendo Supabase dopo i tuoi test.
+- Annullamento: il pulsante si può togliere senza effetti sui dati; il cursore è solo un valore salvato sul dispositivo.
+- **Pubblicato** (push + nuova APK): pulsante "🔄 Sincronizza ora (solo novità)" in Impostazioni → Database Cloud Supabase, come da progetto qui sopra.
+- **Dettagli di realizzazione**: il cursore viene impostato a fine "Esporta su Supabase" riuscito e dopo "Importa da Supabase"; i calendari ricevono anche il loro ordine (si rilegge `sort_order`); i colori, che nell'app non hanno id, si rileggono per intero se cambiano.
+- **Come provarlo (2 telefoni, A e B)**:
+  1. Su A: "Esporta su Supabase" (imposta il punto di partenza). Su B: "Importa da Supabase" (imposta il punto di partenza).
+  2. Su A fai una modifica (es. un turno) e aspetta che la spunta ☁️ Supabase sia ✓ nel Log.
+  3. Su B premi "Sincronizza ora": deve dire "Aggiornato. Cambiati: 1 evento".
+  4. Ripremi: deve dire "Già aggiornato".
+  5. Su A elimina quel turno; su B "Sincronizza ora": "eliminati: 1".
+- **Dopo la tua prova** leggo Supabase e ti dico se coincide.
+- Non fatto di proposito: avvio automatico all'apertura (si decide dopo averlo provato), sincronizzazione delle impostazioni generali (`user_settings`).
+
+### Passo 3 — Scrittura a blocchi 
+- **Da fare, non ancora iniziato.**

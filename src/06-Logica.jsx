@@ -1127,6 +1127,7 @@ export function useAppCore(session){
         saveToLocalStorage(events, calendars, modelliMappati, cached?.calId);
         isInitialized.current = true;
         setLoading(false);
+        aggiornaCursoreSync(); // dopo Importa: dispositivo e Supabase sono allineati
         try{ if(localStorage.getItem("turnipm_riordina_dopo_cache")==="1") setRiordinaDopoCache(true); }catch(e){}
 
         // ── Da qui in giù: sola manutenzione in background. Non serve per
@@ -3491,10 +3492,200 @@ export function useAppCore(session){
   // 2) scrive (upsert per id) calendari, rotazioni, modelli, eventi, colori dal locale;
   // 3) toglie da Supabase le righe che sul telefono non esistono (doppioni);
   // 4) rilegge i conteggi e li confronta col locale.
-  const [esitoExportSupabase, setEsitoExportSupabase] = useState(null); // null | {stato:"corso"|"fine", ok, messaggio}
+  const [esitoExportSupabase, setEsitoExportSupabase] = useState(null); // null | {titolo, stato:"corso"|"fine", ok, messaggio}
+
+  // ───────── SINCRONIZZA ORA (solo differenze, in sola lettura da Supabase) ─────────
+  const CURSORE_SYNC_KEY = "turnipm_sync_cursore";
+  async function leggiOrarioServer(){
+    try{
+      const {data,error} = await supabase.rpc("get_changes", { p_user_id:userId, p_since:"2999-01-01T00:00:00Z" });
+      if(error) return null;
+      return data?.server_now || null;
+    }catch(e){ return null; }
+  }
+  // Imposta il "punto di partenza" = orario del SERVER ora. Va chiamato solo quando questo
+  // dispositivo e Supabase contengono gli stessi dati (dopo Esporta o dopo Importa riusciti).
+  async function aggiornaCursoreSync(){
+    const t = await leggiOrarioServer();
+    if(t){ try{ localStorage.setItem(CURSORE_SYNC_KEY, t); }catch(e){} }
+  }
+  async function sincronizzaOra(){
+    const avvisa = (msg, stato="corso", ok=true)=>setEsitoExportSupabase({ titolo:"Sincronizza ora", stato, ok, messaggio:msg });
+    if(!userId){ avvisa("❌ Accedi per sincronizzare","fine",false); return; }
+    if(typeof navigator!=="undefined" && navigator.onLine===false){ avvisa("❌ Sei offline: impossibile sincronizzare. I tuoi dati locali non sono stati toccati.","fine",false); return; }
+    let cursore=null; try{ cursore=localStorage.getItem(CURSORE_SYNC_KEY); }catch(e){}
+    if(!cursore){
+      avvisa("ℹ️ Manca il punto di partenza. Se QUESTO dispositivo ha i dati giusti, premi prima «Esporta su Supabase». Se ha dati vecchi, premi «Importa da Supabase». Poi «Sincronizza ora» scaricherà solo le novità.","fine",false);
+      return;
+    }
+    let inCoda=0; try{ inCoda=(leggiCodaSync()||[]).length; }catch(e){}
+    if(inCoda>0){
+      avvisa(`🕓 Ci sono ${inCoda} modifiche di questo dispositivo non ancora inviate a Supabase. Aspetta che partano (serve linea) e riprova: così non si rischia di perderle.`,"fine",false);
+      return;
+    }
+    avvisa("⏳ Controllo le novità su Supabase...");
+    try{
+      const da = new Date(new Date(cursore).getTime()-5000).toISOString(); // 5 s di sovrapposizione
+      const {data:ch, error:errCh} = await supabase.rpc("get_changes", { p_user_id:userId, p_since:da });
+      if(errCh) throw errCh;
+      if(!ch?.server_now) throw new Error("Risposta del server non valida");
+
+      const loc = storeRef.current || store;
+      const nCal=(ch.calendars||[]).length, nEvC=(ch.events||[]).length, nMod=(ch.modelli||[]).length,
+            nRot=(ch.rotazioni||[]).length, nCol=(ch.colori||[]).length;
+      const elim = ch.eliminati||[];
+      const elimDi = t=>elim.filter(x=>x.tabella===t).map(x=>String(x.id));
+
+      // ── EVENTI ──
+      let events = {...(loc.events||{})};
+      const idx = new Map();
+      Object.entries(events).forEach(([dk,byc])=>Object.entries(byc||{}).forEach(([cid,lst])=>(lst||[]).forEach(e=>idx.set(e.id,{dk,cid}))));
+      const nEvLocali = idx.size;
+      const elimEv = elimDi("events");
+      if(nEvLocali>=5 && elimEv.length >= Math.max(5, nEvLocali*0.3)){
+        avvisa(`🛑 Sincronizzazione FERMATA per sicurezza: Supabase segnala ${elimEv.length} eventi eliminati su ${nEvLocali} presenti qui. Non è stato modificato nulla su questo dispositivo.`,"fine",false);
+        return;
+      }
+      const togli = id=>{
+        const pos=idx.get(id); if(!pos) return;
+        const byc={...(events[pos.dk]||{})};
+        byc[pos.cid]=(byc[pos.cid]||[]).filter(e=>e.id!==id);
+        if(!byc[pos.cid].length) delete byc[pos.cid];
+        if(Object.keys(byc).length) events[pos.dk]=byc; else delete events[pos.dk];
+        idx.delete(id);
+      };
+      const metti = (dk,cid,ev)=>{
+        const byc={...(events[dk]||{})};
+        byc[cid]=[...(byc[cid]||[]),ev];
+        events[dk]=byc; idx.set(ev.id,{dk,cid});
+      };
+      elimEv.forEach(togli);
+      (ch.events||[]).forEach(e=>{
+        togli(e.id);
+        metti(e.date_key, e.calendar_id, {
+          id:e.id, label:e.label, color:e.color, allDay:e.all_day,
+          tIn:e.time_in||"", tOut:e.time_out||"", place:e.place||"",
+          tInNote:e.time_in_note||"", tOutNote:e.time_out_note||"",
+          map:e.map_url||"", note:e.note||"",
+          modelloId:e.modello_id||null, rotazioneId:e.rotazione_id||null, collega:e.collega||null,
+          auto:e.auto||"", parentId:e.parent_id||null,
+          protPagFine:e.prot_pag_fine||"", protRecFine:e.prot_rec_fine||"",
+          protMenoRecIn:e.prot_meno_rec_in||"", protMenoRecOut:e.prot_meno_rec_out||"",
+          categoriaTurno:e.categoria_turno||"", categoriaAppAuto:e.categoria_app_auto||"",
+          turnoVuoto:!!e.categoria_turno_vuoto, appAutoVuoto:!!e.categoria_app_auto_vuoto,
+          reportOverrides:e.report_overrides||{}, importId:e.import_id||null,
+          visibileAncheIn:e.visibile_anche_in||[],
+        });
+      });
+
+      // ── CALENDARI ── (se cambiano, rileggo anche l'ordine: sono pochi)
+      let calendars = loc.calendars||[];
+      const elimCal = new Set(elimDi("calendars"));
+      if(nCal>0 || elimCal.size>0){
+        calendars = calendars.filter(c=>!elimCal.has(String(c.id)));
+        (ch.calendars||[]).forEach(c=>{
+          const nuovo = { id:c.id, name:c.name, color:c.color, isMain:c.is_main, shifts:c.shifts||[] };
+          const i = calendars.findIndex(x=>x.id===c.id);
+          if(i>=0) calendars[i]=nuovo; else calendars=[...calendars, nuovo];
+        });
+        const {data:ordRows, error:errOrd} = await supabase.from("calendars").select("id,sort_order").eq("user_id",userId);
+        if(errOrd) throw errOrd;
+        const ord = new Map((ordRows||[]).map(r=>[r.id, r.sort_order==null?1e9:r.sort_order]));
+        calendars = [...calendars].sort((a,b)=>{ const d=(ord.get(a.id)??1e9)-(ord.get(b.id)??1e9); return d!==0 ? d : String(a.id).localeCompare(String(b.id)); });
+      }
+
+      // ── MODELLI ──
+      let modelliNuovi = modelliRef.current && modelliRef.current.length ? modelliRef.current : modelli;
+      const elimMod = new Set(elimDi("modelli"));
+      if(nMod>0 || elimMod.size>0){
+        const fasce = loc.fasceAutomatiche || FASCE_AUTOMATICHE_DEFAULT;
+        modelliNuovi = modelliNuovi.filter(m=>!elimMod.has(String(m.id)));
+        (ch.modelli||[]).forEach(m=>{
+          const nuovo = {
+            id:m.id, titolo:m.titolo, label:m.label||"", tempo:m.tempo,
+            inizio:m.inizio||"", fine:m.fine||"", colore:m.colore,
+            coloreCustom:m.colore_custom || (m.tempo==="h24" ? COLORE_H24 : getColorByTime(m.inizio||"", fasce)),
+            posizione:m.posizione||"", sortOrder:m.sort_order||0, calendarId:m.calendar_id||null,
+            categoria:(m.categoria==="primo"||m.categoria==="secondo")?m.categoria:"",
+            categoriaAppAuto:(m.categoria_app_auto==="app"||m.categoria_app_auto==="auto")?m.categoria_app_auto:((m.categoria==="app"||m.categoria==="auto")?m.categoria:""),
+            turnoVuoto:!!m.categoria_turno_vuoto, appAutoVuoto:!!m.categoria_app_auto_vuoto,
+            visibileAncheIn:m.visibile_anche_in||[],
+          };
+          const i = modelliNuovi.findIndex(x=>x.id===m.id);
+          if(i>=0){ modelliNuovi=[...modelliNuovi]; modelliNuovi[i]=nuovo; } else modelliNuovi=[...modelliNuovi, nuovo];
+        });
+        modelliNuovi = [...modelliNuovi].sort((a,b)=>{
+          const sa=a.sortOrder||0, sb=b.sortOrder||0;
+          if(sa!==sb) return sa-sb;
+          const fa=classificaFasciaOrariaModello(a), fb=classificaFasciaOrariaModello(b);
+          if(fa!==fb) return fa-fb;
+          const ma=a.tempo==="h24"?99999:(oraInMinuti(a.inizio||"")??99999);
+          const mb=b.tempo==="h24"?99999:(oraInMinuti(b.inizio||"")??99999);
+          if(ma!==mb) return ma-mb;
+          return (a.titolo||"").localeCompare(b.titolo||"");
+        });
+      }
+
+      // ── ROTAZIONI ──
+      let rotNuove = rotazioni||[];
+      const elimRot = new Set(elimDi("rotazioni"));
+      if(nRot>0 || elimRot.size>0){
+        rotNuove = rotNuove.filter(r=>!elimRot.has(String(r.id)));
+        (ch.rotazioni||[]).forEach(r=>{
+          const nuova = {
+            id:r.id, tipo:r.tipo, titolo:r.titolo, dataInizio:r.data_inizio||"", nSettimane:r.n_settimane||52,
+            modellaLavoroId:r.modello_lavoro_id||null, modelloNLId:r.modello_nl_id||null, modelloRSId:r.modello_rs_id||null,
+            modelloG3Id:(r.griglia||{}).__modelloG3Id||null, modelloG4Id:(r.griglia||{}).__modelloG4Id||null,
+            griglia:r.griglia||{}, reperibilitaTurnoPartenza:(r.griglia||{}).__reperibilitaTurnoPartenza||"14-24",
+            sortOrder:r.sort_order||0,
+          };
+          const i = rotNuove.findIndex(x=>x.id===r.id);
+          if(i>=0){ rotNuove=[...rotNuove]; rotNuove[i]=nuova; } else rotNuove=[...rotNuove, nuova];
+        });
+        rotNuove = [...rotNuove].sort((a,b)=> a.sortOrder!==b.sortOrder ? a.sortOrder-b.sortOrder : String(a.id).localeCompare(String(b.id)));
+      }
+
+      // ── COLORI ── (nell'app non hanno id: se cambiano, rileggo l'elenco intero, sono pochi)
+      let coloriNuovi = null;
+      if(nCol>0 || elimDi("colori").length>0){
+        const {data:colRows, error:errCol} = await supabase.from("colori").select("hex,label,sort_order").eq("user_id",userId);
+        if(errCol) throw errCol;
+        coloriNuovi = (colRows||[]).map(c=>({hex:c.hex, label:c.label||null, sortOrder:c.sort_order||0}))
+          .sort((a,b)=> a.sortOrder!==b.sortOrder ? a.sortOrder-b.sortOrder : String(a.hex).localeCompare(String(b.hex)));
+      }
+
+      const totElim = elim.length;
+      const nessunaNovita = nCal+nEvC+nMod+nRot+nCol===0 && totElim===0;
+      if(!nessunaNovita){
+        impostaSorgenteLog("remoto");
+        setStore(s=>({ ...s, calendars, events }));
+        if(nMod>0 || elimMod.size>0) setModelli(modelliNuovi);
+        if(nRot>0 || elimRot.size>0) setRotazioni(rotNuove);
+        if(coloriNuovi) setColoriExtra(coloriNuovi);
+        saveToLocalStorage(events, calendars, modelliNuovi, calId);
+        setTimeout(()=>impostaSorgenteLog("locale"), 1500);
+      }
+      try{ localStorage.setItem(CURSORE_SYNC_KEY, ch.server_now); }catch(e){}
+
+      const parti=[];
+      if(nEvC) parti.push(`${nEvC} ${nEvC===1?"evento":"eventi"}`);
+      if(nMod) parti.push(`${nMod} ${nMod===1?"modello":"modelli"}`);
+      if(nCal) parti.push(`${nCal} ${nCal===1?"calendario":"calendari"}`);
+      if(nRot) parti.push(`${nRot} ${nRot===1?"rotazione":"rotazioni"}`);
+      if(nCol) parti.push(`${nCol} ${nCol===1?"colore":"colori"}`);
+      const msg = nessunaNovita
+        ? "✅ Già aggiornato: nessuna novità su Supabase."
+        : `✅ Aggiornato. Cambiati: ${parti.join(", ")||"nessuno"}${totElim?` · eliminati: ${totElim}`:""}.`;
+      registraAttivita("Sincronizza ora", msg, { chiave:"sync-ora", supabase:"n/a" });
+      avvisa(msg,"fine",true);
+    }catch(e){
+      segnalaErrore(e, "Sincronizza ora");
+      avvisa("❌ Sincronizzazione non riuscita: "+(e?.message||e)+". Nessun dato di questo dispositivo è stato modificato.","fine",false);
+    }
+  }
   async function handleExportSupabase(){
     // Ogni passaggio e l'esito finale compaiono in una FINESTRA grande (non solo in una scritta piccola).
-    const avvisa = (msg, stato="corso", ok=true)=>{ setSyncMsg(msg); setEsitoExportSupabase({stato, ok, messaggio:msg}); };
+    const avvisa = (msg, stato="corso", ok=true)=>{ setSyncMsg(msg); setEsitoExportSupabase({titolo:"Esportazione su Supabase", stato, ok, messaggio:msg}); };
     if(!userId){ avvisa("❌ Accedi per esportare","fine",false); return; }
     if(typeof navigator!=="undefined" && navigator.onLine===false){ avvisa("❌ Sei offline: impossibile esportare","fine",false); return; }
     avvisa("⏳ Esportazione in corso...");
@@ -3612,6 +3803,7 @@ export function useAppCore(session){
       const attesi = {E:evLocali.length, M:mods.length, C:cals.length, R:rots.length};
       const ok = nE===attesi.E && nM===attesi.M && nC===attesi.C && nR===attesi.R;
       const riga = `Supabase: ${nE} eventi, ${nM} modelli, ${nC} calendari, ${nR} rotazioni (telefono: ${attesi.E}, ${attesi.M}, ${attesi.C}, ${attesi.R})`;
+      if(ok) await aggiornaCursoreSync();
       registraAttivita("Esporta su Supabase", (ok?"✅ ":"⚠️ ")+riga+(eliminati?` — rimossi ${eliminati} doppioni`:""), { chiave:"esporta-supabase", supabase: ok?"ok":"errore" });
       avvisa(ok ? `✅ Esportato e verificato: ${riga}` : `⚠️ Esportazione incompleta. ${riga}`,"fine",ok);
     } catch(e){ segnalaErrore(e, "Esportazione su Supabase"); avvisa("❌ Errore durante l'esportazione: "+(e?.message||e),"fine",false); }
@@ -7616,7 +7808,7 @@ const importsRecenti = useMemo(()=>{
     handleExportSupabase,
     handleOpenImportSupabase,
     handleVerificaSupabase,
-    esitoVerificaSupabase, setEsitoVerificaSupabase, esitoExportSupabase, setEsitoExportSupabase,
+    esitoVerificaSupabase, setEsitoVerificaSupabase, esitoExportSupabase, setEsitoExportSupabase, sincronizzaOra,
     handleRestoreBackup,
     handleEsportaBackupLocale,
     handleFileSelezionatoImportLocale,
