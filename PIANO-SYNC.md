@@ -16,7 +16,7 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 | 3c | Le altre raffiche (propagazione colori agli eventi, normalizzazioni, creazione modello, ripristino disposizione) | App | ✅ pubblicato 15/10 (da provare sui telefoni) |
 | 4 | Vincoli e rifiuti del server: analisi + correzione del nome di colonna sbagliato | App (DB invariato) | ✅ pubblicato 15/10 |
 | 5a | **Sincronizzazione automatica** (prima del backup, come deciso): A modifica → B la trova da solo | App | ✅ pubblicato 15/10 (da provare su 2 telefoni) |
-| 5b | Backup settimanale dentro Supabase + controllo anti-pausa del piano gratuito | DB | ⏳ |
+| 5b | Backup settimanale dentro Supabase + controllo anti-pausa del piano gratuito | DB | 🔄 |
 | 5c | Copia fuori da Supabase (da decidere insieme) | — | ⏳ |
 
 ## Garanzie
@@ -210,5 +210,16 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - **Eseguito** (15/10): un solo `update`, 104 righe.
 - **Verificato**: 104 su 104 eventi QUARTINA con `categoria_turno_vuoto = true` e `categoria_app_auto_vuoto = false`; gli eventi aggiornati negli ultimi 5 minuti sono solo quei 104 (nessun altro toccato); totali invariati: 1417 eventi, 225 modelli, registro eliminazioni vuoto. Altri 10 eventi avevano già un flag attivo dall'uso normale dell'app, e non sono stati toccati.
 
-### Passo 5b — Backup settimanale dentro Supabase + anti-pausa
-- **Da fare, non ancora iniziato.** Prima di scrivere su Supabase descrivo qui: dove viene salvato (tabella `backups`, già esistente), quanti ne tengo (ultimi N), con quale pianificazione (una volta a settimana) e come evito la pausa del piano gratuito.
+### Passo 5b — Backup settimanale dentro Supabase + anti-pausa 🔄
+- **Obiettivo**: (1) ogni settimana una copia completa dei tuoi dati dentro Supabase, senza che serva aprire l'app; (2) evitare che il piano gratuito metta in pausa il progetto dopo 7 giorni senza richieste, e avere un avviso se Supabase non risponde.
+- **Stato verificato prima di scrivere** (sola lettura, 15/10): tabella `backups` con colonne `id, user_id, created_at, data`; 12 backup, tutti manuali, ognuno ~150-300 kB (tabella intera ~2 MB); estensione `pg_cron` disponibile (versione 1.6.4) ma non installata; 1 solo utente con dati. Formato di un backup (identico a quello di "Esporta"): `exported_at`, `calendars`, `events`, `modelli`, `rotazioni`, `colori`, `autocomplete_valori` (elenchi di righe) e `user_settings` (la riga intera).
+- **Parte 1 — database, solo aggiunte**:
+  1. colonna `backups.tipo` (testo, predefinito `manuale`): i 12 backup esistenti restano `manuale` e **non vengono mai toccati**;
+  2. funzione `crea_backup_automatico()`: per ogni utente con dati scrive UNA riga in `backups` con le stesse chiavi dell'esportazione manuale (quindi il "Ripristino backup" dell'app la legge come le altre) e `tipo = auto_settimanale`; poi tiene solo gli **ultimi 8 automatici** per utente. Guardie: salta chi non ha né eventi né modelli, e salta se gli eventi sono meno della metà dell'ultimo automatico (per non far uscire i buoni a favore di una copia danneggiata); le vecchie si cancellano **solo dopo** che la nuova è stata scritta;
+  3. permessi: la funzione non è eseguibile da `anon` né da `authenticated`, solo dal sistema;
+  4. `pg_cron`: lavoro `backup-automatico-settimanale` ogni domenica alle 03:00 UTC che chiama la funzione.
+- **Parte 2 — anti-pausa, fuori dall'app**: file `.github/workflows/anti-pausa-supabase.yml`, ogni giorno alle 06:17 UTC (e a richiesta). Fa una richiesta all'API di Supabase con la chiave pubblica che l'app già usa (secrets già presenti); se la risposta non è 200 il lavoro **fallisce** e GitHub manda la mail di avviso al proprietario del repo. Non tocca l'app e non fa partire la build (`[skip ci]`).
+- **Effetto sull'app**: nessuno, nessuna nuova APK. Il vecchio "Ripristino backup" elenca anche i nuovi automatici (stessa tabella).
+- **Rischi e limiti**: (a) non so se il lavoro interno di `pg_cron` conti come "attività" per evitare la pausa: per questo l'anti-pausa è il controllo esterno di GitHub; (b) GitHub spegne i lavori programmati dopo 60 giorni senza attività nel repo (qui il repo è attivo); (c) questo **non** è ancora la copia fuori da Supabase (passo 5c).
+- **Provo prima di dichiarare fatto**: eseguo `crea_backup_automatico()` una volta a mano e confronto i conteggi del nuovo backup con le tabelle (è un backup vero e resta); controllo che `anon` non possa eseguirla; lancio una volta il lavoro di GitHub e leggo l'esito.
+- **Annullamento**: `select cron.unschedule('backup-automatico-settimanale'); drop function public.crea_backup_automatico(); alter table public.backups drop column tipo;` (prima `delete from public.backups where tipo='auto_settimanale';`) e cancellare il file del workflow.
