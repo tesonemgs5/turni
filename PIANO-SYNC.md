@@ -9,7 +9,7 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 |---|-------|-------|-------|
 | 1 | Chiudere `get_user_data` (solo utenti loggati, solo i propri dati) | DB | ✅ fatto 14/10 |
 | 2a | Aggiungere `updated_at` (automatico) e `deleted_at` a eventi, modelli, calendari, rotazioni, colori. Solo aggiunte | DB | ✅ fatto 15/10 |
-| 2b | L'app scrive/legge i nuovi campi (cancellazione logica al posto di cancellare davvero) | App | ⏳ |
+| 2b | **Cambiato**: invece di cambiare tutte le cancellazioni dell'app, il DB registra da solo le righe eliminate (tabella `eliminati`) e offre la funzione `get_changes` (solo le differenze) | DB | ✅ fatto 15/10 |
 | 2c | "Sincronizza ora": scarica solo le righe cambiate dall'ultima volta | App | ⏳ |
 | 3 | Scrittura a blocchi: poche richieste invece di centinaia | App | ⏳ |
 | 4 | Vincoli: ordine di invio, colori in inserisci-o-aggiorna, riferimenti che si azzerano | DB + App | ⏳ |
@@ -42,5 +42,24 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - Nota: gli eventi sono 1417 e non 1416 (come nel backup delle 13:07): 1 evento è stato aggiunto dal telefono dopo il ripristino. Normale.
 - Nessun push dell'app in questo passo (solo questo file, senza build).
 
-### Passo 2b — App usa `deleted_at` 
-- **Da fare, non ancora iniziato.** Prima di toccare il codice scrivo qui l'elenco preciso dei punti in cui l'app cancella (eventi, modelli, calendari, rotazioni, colori) e di quelli in cui legge, poi cambio un punto alla volta.
+### Passo 2b — Registro eliminazioni + `get_changes` (solo DB) ✅
+- **Perché ho cambiato metodo**: la cancellazione logica (`deleted_at`) obbligherebbe a cambiare ogni punto dell'app che cancella e ogni punto che legge, e un colore cancellato "logicamente" bloccherebbe il rinserimento dello stesso colore (vincolo di unicità). Rischio alto di rompere l'app. Soluzione più sicura: **l'app continua a cancellare come ora**, e il database annota da solo ogni riga eliminata. Le colonne `deleted_at` restano, inutilizzate (si possono togliere più avanti).
+- **Prima di scrivere su Supabase, cosa farò (solo aggiunte):**
+  1. Tabella `eliminati` (utente, tabella, id riga, quando). Nessun accesso diretto dall'app (RLS attiva, nessuna regola): la legge solo la funzione.
+  2. Trigger "dopo cancellazione" su `events`, `modelli`, `calendars`, `rotazioni`, `colori`: scrive in `eliminati`.
+  3. Funzione `get_changes(p_user_id, p_since)`: restituisce, per l'utente che chiama, solo righe con `updated_at > p_since` + le eliminazioni successive. Controlla login e `auth.uid()`, come `get_user_data`. Se una riga è stata eliminata e poi ricreata (es. ripristino backup) l'eliminazione viene ignorata.
+  4. Il "cursore" è l'orario del server restituito dalla funzione (non quello del telefono); l'app lo userà con 5 secondi di sovrapposizione per non perdere righe (le scritture ripetute sono innocue).
+- Effetto sull'app attuale: nessuno (sola aggiunta). Dati invariati.
+- Annullamento: `drop function get_changes(uuid,timestamptz); drop trigger trg_registra_eliminazione on <t>; drop function registra_eliminazione(); drop table eliminati;`
+- **Eseguito** (15/10): tabella `eliminati` (RLS attiva, nessun accesso diretto), 5 trigger "dopo cancellazione", funzione `get_changes`.
+- **Verificato con test annullati** (simulando il tuo login):
+  - senza cursore restituisce tutto: 1417 eventi, 225 modelli, 5 calendari;
+  - subito dopo il cursore: 0 differenze;
+  - dopo 1 cancellazione + 1 modifica: 1 eliminazione (l'id coincide con quello cancellato) + 1 modello cambiato;
+  - senza login: rifiutata. `anon` non può eseguirla, `authenticated` sì.
+- **Dopo i test**: dati invariati (1417 eventi, 225 modelli) e registro `eliminati` vuoto: i test non hanno lasciato tracce.
+- Limite noto del test: dentro un'unica transazione l'orologio del DB è fermo; nell'uso reale ogni scrittura è una transazione separata, quindi nessun problema.
+- Nessun push dell'app in questo passo.
+
+### Passo 2c — "Sincronizza ora" nell'app (solo differenze)
+- **Da fare, non ancora iniziato.** Prima di toccare il codice scrivo qui: dove vive il cursore (localStorage), come si fondono le righe ricevute con quelle locali (vince `updated_at` più recente; nessuna cancellazione di dati locali non ancora inviati), e come si mostra l'esito (finestra grande, come per Esporta).
