@@ -256,7 +256,7 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - **Perché Importa/Sincronizza/Esporta "non funzionavano"**: Supabase era danneggiato (69 eventi) e le protezioni dell'app rifiutavano di proposito i dati incompleti. Ora Supabase è corretto: dopo l'aggiornamento APK, "Sincronizza ora" dovrebbe dire "identico a Supabase" o mostrare le differenze reali.
 - **Da NON fare**: sul telefono con dati dubbi non premere "Importa" prima di aver controllato i numeri.
 
-### Impostazioni backup: frequenza, quanti tenerne, cancellazione e spazio 🔄
+### Impostazioni backup: frequenza, quanti tenerne, cancellazione e spazio ✅
 - **Stato prima (verificato)**: il backup automatico c'è ma è fisso: ogni domenica 03:00 UTC, si tengono gli ultimi 8 automatici. Nell'app non si poteva né scegliere né cancellare nulla.
 - **Cosa aggiungo**:
   1. **DB (solo aggiunte)**: tabella `backup_config` (per utente: `frequenza` = disattivato / giornaliero / settimanale / mensile, `max_automatici` da 1 a 60; di partenza settimanale e 8); funzioni `backup_config_leggi`, `backup_config_salva` (applica subito anche la pulizia), `backup_elenco` (data, tipo, eventi, modelli e **peso in kB**, senza scaricare i dati), `backup_elimina(ids)` (mai tutti: ne resta sempre almeno 1) e `backup_tieni_ultimi(n)`. Tutte richiedono login e toccano solo i tuoi backup.
@@ -265,3 +265,9 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - **Regole di sicurezza**: nessun backup si cancella senza conferma; non si può cancellare l'ultimo rimasto; i backup manuali non vengono mai toccati dalla pulizia automatica (solo quando li cancelli tu o usi "Tieni solo gli ultimi N").
 - **Provo prima**: test annullati (config, elenco, cancellazione, rifiuto di cancellare tutto, senza login).
 - Annullamento: `drop function` delle 5 funzioni, `drop table backup_config`, ripristinare `crea_backup_automatico` e il lavoro cron settimanale, ripristinare il commit dell'app.
+- **Eseguito** (15/10, sera): DB e app.
+  - **DB**: tabella `backup_config` e 5 funzioni (`backup_config_leggi`, `backup_config_salva`, `backup_elenco`, `backup_elimina`, `backup_tieni_ultimi`), tutte solo per utenti loggati e solo sui propri backup. `crea_backup_automatico()` ora legge frequenza e numero da tenere di ogni utente. Il lavoro cron è passato da "ogni domenica" a **"ogni giorno alle 03:00 UTC"** (`backup-automatico`): la funzione decide se è il momento (giornaliero ≥20 h dall'ultimo, settimanale ≥6 giorni, mensile ≥27 giorni).
+  - **Verificato con test annullati** (login simulato): configurazione di partenza (settimanale, 8); salvataggio e rilettura; frequenza non valida e "0 backup" **rifiutati**; elenco con tipo, eventi, modelli e kB; **cancellare tutti i backup rifiutato**; cancellazione di un backup manuale ok (15 kB liberati); "tieni gli ultimi 5": eliminati 21, liberati ~4 MB; senza login rifiutato. Dopo i test: 27 backup (circa 4,9 MB), nessuna configurazione salvata.
+  - **App** (nuova APK): Impostazioni → Database Cloud Supabase → blocco **"🗄️ Backup automatici"** (Ogni quanto: Disattivato / giorno / settimana / mese; Quanti tenerne: 1–60). La finestra "Importa da Supabase" ora mostra per ogni backup data, tipo, eventi, modelli e peso, con 🗑️ per cancellarlo (con conferma) e, in alto, il totale dello spazio e **"Libera spazio: tieni solo gli ultimi N"**.
+  - **Regole**: non si può cancellare l'ultimo backup rimasto; i manuali non vengono toccati dalla pulizia automatica; "tieni gli ultimi N" invece vale per tutti i tipi, con conferma.
+- **Backup attuali**: 27, ~4,9 MB (circa 180 kB l'uno). Con il piano gratuito non è un problema, ma "tieni gli ultimi 10" porterebbe a ~2 MB.

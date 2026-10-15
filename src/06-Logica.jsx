@@ -4019,22 +4019,68 @@ export function useAppCore(session){
     return ()=>clearTimeout(t);
   },[userId]);
 
+  // ── Backup: configurazione, elenco con peso, cancellazione ──
+  const [backupConfig, setBackupConfig] = useState({ frequenza:"settimanale", max_automatici:8 });
+  const [backupTieniN, setBackupTieniN] = useState(10);
+  async function caricaBackupConfig(){
+    try{
+      const { data, error } = await supabase.rpc("backup_config_leggi");
+      if(!error && data) setBackupConfig({ frequenza:data.frequenza, max_automatici:data.max_automatici });
+    }catch(e){}
+  }
+  useEffect(()=>{ if(userId) caricaBackupConfig(); }, [userId]);
+  const avvisoBreve = (testo)=>{ setBanner(testo); setTimeout(()=>setBanner(b=>b===testo?null:b), 3500); };
+  async function salvaBackupConfig(frequenza, max){
+    const prima = backupConfig;
+    setBackupConfig({ frequenza, max_automatici:max });
+    try{
+      const { data, error } = await supabase.rpc("backup_config_salva", { p_frequenza:frequenza, p_max:max });
+      if(error) throw error;
+      const tolti = data?.automatici_eliminati||0;
+      avvisoBreve(`✅ Backup: ${frequenza==="disattivato"?"disattivati":"ogni "+({giornaliero:"giorno",settimanale:"settimana",mensile:"mese"}[frequenza])}, ne tengo ${max}${tolti?` (eliminati ${tolti} in eccesso)`:""}`);
+    }catch(e){
+      setBackupConfig(prima);
+      segnalaErroreSoloLog(e?.message||String(e), "Salvataggio impostazioni backup");
+      avvisoBreve("❌ Impostazioni backup non salvate: "+(e?.message||e));
+    }
+  }
   async function handleOpenImportSupabase(){
     setSyncMsg("⏳ Carico elenco backup...");
     try {
-      // Alzato da 20 a 100: 20 backup (spesso uno al giorno o meno)
-      // scadevano dopo poche settimane di utilizzo, facendo sparire dalla
-      // lista backup vecchi ma ancora potenzialmente utili da recuperare.
-      const {data, error} = await supabase.from("backups")
-        .select("id, created_at")
-        .eq("user_id", userId)
-        .order("created_at", {ascending:false})
-        .limit(100);
-      if(error) throw error;
-      setBackupsList(data||[]);
+      let elenco = null;
+      const { data:viaRpc, error:errRpc } = await supabase.rpc("backup_elenco");
+      if(!errRpc && Array.isArray(viaRpc)) elenco = viaRpc;
+      else {
+        // ripiego: elenco semplice (senza peso)
+        const {data, error} = await supabase.from("backups").select("id, created_at").eq("user_id", userId).order("created_at", {ascending:false}).limit(100);
+        if(error) throw error;
+        elenco = data||[];
+      }
+      setBackupsList(elenco);
       setShowBackupsModal(true);
       setSyncMsg("");
     } catch(e){ segnalaErrore(e, "Caricamento elenco backup"); setSyncMsg("❌ Errore nel caricare i backup: "+e.message); }
+  }
+  async function eliminaBackup(id){
+    if(!window.confirm("Eliminare questo backup? L'operazione non si può annullare.")) return;
+    try{
+      const { data, error } = await supabase.rpc("backup_elimina", { p_ids:[id] });
+      if(error) throw error;
+      if(data?.ok===false && data?.motivo==="ultimo_backup"){ avvisoBreve("🛑 Non posso eliminare l'unico backup rimasto."); return; }
+      avvisoBreve(`🗑️ Backup eliminato (liberati ${data?.kb_liberati||0} kB)`);
+      const { data:el } = await supabase.rpc("backup_elenco"); if(Array.isArray(el)) setBackupsList(el);
+    }catch(e){ segnalaErroreSoloLog(e?.message||String(e), "Eliminazione backup"); avvisoBreve("❌ Backup non eliminato: "+(e?.message||e)); }
+  }
+  async function tieniUltimiBackup(n){
+    const tot = (backupsList||[]).length;
+    if(tot<=n){ avvisoBreve(`Hai già solo ${tot} backup: niente da eliminare.`); return; }
+    if(!window.confirm(`Eliminare i ${tot-n} backup più vecchi e tenere solo gli ultimi ${n}? Vale anche per quelli manuali. Non si può annullare.`)) return;
+    try{
+      const { data, error } = await supabase.rpc("backup_tieni_ultimi", { p_n:n });
+      if(error) throw error;
+      avvisoBreve(`🗑️ Eliminati ${data?.eliminati||0} backup (liberati ${Math.round((data?.kb_liberati||0)/1024*10)/10} MB)`);
+      const { data:el } = await supabase.rpc("backup_elenco"); if(Array.isArray(el)) setBackupsList(el);
+    }catch(e){ segnalaErroreSoloLog(e?.message||String(e), "Pulizia backup"); avvisoBreve("❌ Pulizia non riuscita: "+(e?.message||e)); }
   }
 
   // RIPRISTINO BACKUP — una sola richiesta, TUTTO-O-NIENTE, dentro il database (funzione ripristina_backup).
@@ -7659,7 +7705,7 @@ const importsRecenti = useMemo(()=>{
     syncMsg,
     setSyncMsg,
     backupsList,
-    setBackupsList,
+    setBackupsList, backupConfig, salvaBackupConfig, eliminaBackup, tieniUltimiBackup, backupTieniN, setBackupTieniN,
     showBackupsModal,
     setShowBackupsModal,
     showLocalDataModal,

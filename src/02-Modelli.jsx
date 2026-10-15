@@ -169,7 +169,7 @@ export default function VistaModelli({ C }){
     deleteCalendar, computeEventFields, saveEvt, updateEvt, delEvt, delEvtiRotazioneDaData,
     delTutteEvtiRotazione, cancellaTuttiEventiMese, calcMinuti, saveToSheets, syncSeAttivo, loadFromSheets,
     syncFromSheets, handleSave, handleLoad, handleSaveSheetsConfig, handleViewDbData, buildBackupPayload,
-    handleExportSupabase, handleOpenImportSupabase, handleVerificaSupabase, esitoVerificaSupabase, setEsitoVerificaSupabase, esitoExportSupabase, setEsitoExportSupabase, sincronizzaOra, syncAuto, impostaSyncAuto, handleRestoreBackup, handleLogout, eseguiNormalizzazione, normalizzaModelliTempo,
+    handleExportSupabase, handleOpenImportSupabase, handleVerificaSupabase, esitoVerificaSupabase, setEsitoVerificaSupabase, esitoExportSupabase, setEsitoExportSupabase, sincronizzaOra, syncAuto, impostaSyncAuto, backupConfig, salvaBackupConfig, eliminaBackup, tieniUltimiBackup, backupTieniN, setBackupTieniN, handleRestoreBackup, handleLogout, eseguiNormalizzazione, normalizzaModelliTempo,
     normalizzaEventiTempo, modelliOrdinati, importsRecenti, modelliDelCalendario, rinumeraSottoinsieme, spostaModelloPuro,
     trascinaModelloPuro, salvaModifichePosizioni, moveH24, reorderModelli, moveRotazione, moveColoreExtra, ricoloraModelliPerFasciaOraria, ensureColoreRegistrato, registraValoreAutocomplete,
     registraValoriAutocomplete, rimuoviValoreAutocomplete, supabaseUpsertConRetry, saveModello, deleteModello, addColoreExtra,
@@ -1784,6 +1784,27 @@ export default function VistaModelli({ C }){
         <div style={{fontSize:10.5,color:T.sub,marginTop:4,lineHeight:1.4}}>
           {syncAuto?"Le novità fatte su altri dispositivi arrivano da sole (solo lettura da Supabase).":"Le novità arrivano solo quando premi «Sincronizza ora»."}
         </div>
+        <div style={{marginTop:12,padding:"10px 12px",background:T.s2,border:`1px solid ${T.border}`,borderRadius:10}}>
+          <div style={{fontSize:12,fontWeight:800,color:T.text,marginBottom:8}}>🗄️ Backup automatici (dentro Supabase)</div>
+          <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:6}}>
+            <span style={{fontSize:11.5,color:T.sub,flex:1}}>Ogni quanto</span>
+            <select value={backupConfig.frequenza} onChange={e=>salvaBackupConfig(e.target.value, backupConfig.max_automatici)}
+              style={{background:T.surface,color:T.text,border:`1px solid ${T.border}`,borderRadius:8,padding:"6px 8px",fontSize:12,fontWeight:700}}>
+              <option value="disattivato">Disattivato</option>
+              <option value="giornaliero">Ogni giorno</option>
+              <option value="settimanale">Ogni settimana</option>
+              <option value="mensile">Ogni mese</option>
+            </select>
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <span style={{fontSize:11.5,color:T.sub,flex:1}}>Quanti tenerne</span>
+            <select value={backupConfig.max_automatici} onChange={e=>salvaBackupConfig(backupConfig.frequenza, parseInt(e.target.value,10))}
+              style={{background:T.surface,color:T.text,border:`1px solid ${T.border}`,borderRadius:8,padding:"6px 8px",fontSize:12,fontWeight:700}}>
+              {[1,2,3,5,8,10,14,20,30,45,60].map(n=><option key={n} value={n}>{n}</option>)}
+            </select>
+          </div>
+          <div style={{fontSize:10.5,color:T.sub,marginTop:6,lineHeight:1.4}}>Dei backup automatici restano solo gli ultimi che scegli; i più vecchi vengono eliminati da soli. I backup manuali e quelli fatti prima di un ripristino restano finché non li elimini tu (tocca «Importa da Supabase» per vederli, con il cestino).</div>
+        </div>
         <button onClick={handleVerificaSupabase}
           style={{width:"100%",marginTop:8,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
             color:T.text,padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
@@ -2041,18 +2062,42 @@ export default function VistaModelli({ C }){
               <button onClick={()=>setShowBackupsModal(false)}
                 style={{background:"none",border:"none",color:T.sub,fontSize:22,cursor:"pointer"}}>×</button>
             </div>
+            {backupsList.length>0&&(
+              <div style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 12px",marginBottom:10}}>
+                <div style={{fontSize:12,color:T.text,fontWeight:800}}>
+                  {backupsList.length} backup · {backupsList[0]&&backupsList[0].kb!=null?`${(Math.round(backupsList.reduce((a,x)=>a+(x.kb||0),0)/1024*10)/10)} MB di spazio`:""}
+                </div>
+                <div style={{display:"flex",gap:8,alignItems:"center",marginTop:8}}>
+                  <span style={{fontSize:11.5,color:T.sub,flex:1}}>Libera spazio: tieni solo gli ultimi</span>
+                  <select value={backupTieniN} onChange={e=>setBackupTieniN(parseInt(e.target.value,10))}
+                    style={{background:T.surface,color:T.text,border:`1px solid ${T.border}`,borderRadius:8,padding:"6px 8px",fontSize:12,fontWeight:700}}>
+                    {[1,3,5,10,20,30].map(n=><option key={n} value={n}>{n}</option>)}
+                  </select>
+                  <button onClick={()=>tieniUltimiBackup(backupTieniN)}
+                    style={{background:"#dc2626",border:"none",borderRadius:8,color:"#fff",padding:"7px 10px",fontSize:12,fontWeight:800,cursor:"pointer"}}>🗑️ Pulisci</button>
+                </div>
+              </div>
+            )}
             {backupsList.length===0?(
               <div style={{textAlign:"center",padding:"24px",color:T.sub,fontSize:13}}>
                 Nessun backup trovato. Usa "Esporta su Supabase" per crearne uno.
               </div>
             ):(
               backupsList.map(b=>(
-                <button key={b.id} onClick={()=>handleRestoreBackup(b.id)}
-                  style={{display:"block",width:"100%",textAlign:"left",background:T.s2,
-                    border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",
-                    marginBottom:8,cursor:"pointer",color:T.text,fontSize:13,fontWeight:700}}>
-                  📦 {new Date(b.created_at).toLocaleString("it-IT")}
-                </button>
+                <div key={b.id} style={{display:"flex",gap:6,alignItems:"stretch",marginBottom:8}}>
+                  <button onClick={()=>handleRestoreBackup(b.id)}
+                    style={{flex:1,textAlign:"left",background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 12px",cursor:"pointer",color:T.text}}>
+                    <div style={{fontSize:13,fontWeight:700}}>📦 {new Date(b.created_at).toLocaleString("it-IT")}</div>
+                    <div style={{fontSize:11,color:T.sub,marginTop:2}}>
+                      {({manuale:"Manuale",auto_settimanale:"Automatico",pre_ripristino:"Prima di un ripristino"})[b.tipo]||b.tipo||""}
+                      {b.eventi!=null?` · ${b.eventi} eventi, ${b.modelli} modelli`:""}{b.kb!=null?` · ${b.kb} kB`:""}
+                    </div>
+                  </button>
+                  {b.kb!=null&&(
+                    <button onClick={()=>eliminaBackup(b.id)} aria-label="Elimina backup"
+                      style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,padding:"0 12px",cursor:"pointer",fontSize:16}}>🗑️</button>
+                  )}
+                </div>
               ))
             )}
           </div>
