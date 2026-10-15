@@ -223,3 +223,14 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - **Rischi e limiti**: (a) non so se il lavoro interno di `pg_cron` conti come "attività" per evitare la pausa: per questo l'anti-pausa è il controllo esterno di GitHub; (b) GitHub spegne i lavori programmati dopo 60 giorni senza attività nel repo (qui il repo è attivo); (c) questo **non** è ancora la copia fuori da Supabase (passo 5c).
 - **Provo prima di dichiarare fatto**: eseguo `crea_backup_automatico()` una volta a mano e confronto i conteggi del nuovo backup con le tabelle (è un backup vero e resta); controllo che `anon` non possa eseguirla; lancio una volta il lavoro di GitHub e leggo l'esito.
 - **Annullamento**: `select cron.unschedule('backup-automatico-settimanale'); drop function public.crea_backup_automatico(); alter table public.backups drop column tipo;` (prima `delete from public.backups where tipo='auto_settimanale';`) e cancellare il file del workflow.
+
+### Recupero dei dati su Supabase (15/10, sera) 🔄
+- **Cosa è successo (dal Log e dai registri di Supabase, solo lettura)**:
+  - 09:36–09:42 UTC: un "Ripristino backup" da un telefono Android è partito più volte e **si è interrotto a metà** (errori "Failed to fetch" e "duplicate key events_pkey"): il ripristino scrive riga per riga, ~1400 richieste una dopo l'altra, e basta una caduta di rete per lasciare Supabase mezzo vuoto;
+  - 13:13 UTC: un altro ripristino ha rimesso una copia piccola (69 eventi, 30 modelli), quella lasciata dal tentativo fallito;
+  - risultato: **Supabase ha 69 eventi e 30 modelli** invece di 1417 e 225. È per questo che Importa e Sincronizza "non funzionano": ricevono dati incompleti e la protezione dell'app li **rifiuta di proposito** (PC: "69 eventi contro 1415 in locale: NON applicata"). I dati locali del PC sono integri.
+  - Esporta non andava a buon fine perché partiva da un dispositivo con dati incompleti oppure veniva fermato dalla protezione.
+- **Copia scelta per il recupero**: backup `08f747a6` del 15/10 09:41:01 UTC. Verificata: 1417 eventi, 225 modelli, 5 calendari, 4 rotazioni, 29 colori, **104 QUARTINA con i flag corretti** (ieri erano 0). Rispetto al backup di ieri: 2 eventi nuovi e 1 in meno (tue modifiche).
+- **Cosa farò su Supabase (una sola operazione tutto-o-niente, dentro il database, senza passare dalla rete del telefono)**: cancellare le righe del tuo utente in eventi, rotazioni, modelli, calendari, colori e autocomplete; reinserirle da quel backup con gli stessi id; `updated_at` riparte da adesso (così gli altri dispositivi vedono le righe come novità). Non tocco gli altri utenti.
+- **Poi**: conteggi e impronte di controllo; il vecchio "Ripristino backup" dell'app resta da **non usare** finché non lo rendo atomico (è la causa del danno).
+- Annullamento: i backup `d22626fe` (13:13) e `c927a543` (09:41:37) conservano lo stato precedente.
