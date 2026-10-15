@@ -11,7 +11,9 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 | 2a | Aggiungere `updated_at` (automatico) e `deleted_at` a eventi, modelli, calendari, rotazioni, colori. Solo aggiunte | DB | ✅ fatto 15/10 |
 | 2b | **Cambiato**: invece di cambiare tutte le cancellazioni dell'app, il DB registra da solo le righe eliminate (tabella `eliminati`) e offre la funzione `get_changes` (solo le differenze) | DB | ✅ fatto 15/10 |
 | 2c | "Sincronizza ora": scarica solo le righe cambiate dall'ultima volta | App | ✅ pubblicato 15/10 (da provare sui telefoni) |
-| 3 | Scrittura a blocchi: poche richieste invece di centinaia | App | ⏳ |
+| 3a | Funzione `applica_modifiche`: molte modifiche in UNA richiesta, tutto-o-niente | DB | ✅ fatto 15/10 |
+| 3b | L'app la usa per le raffiche (colori dei gruppi, riordino modelli) | App | ⏳ |
+| 3c | Le altre raffiche (eventi in blocco, import) | App | ⏳ |
 | 4 | Vincoli: ordine di invio, colori in inserisci-o-aggiorna, riferimenti che si azzerano | DB + App | ⏳ |
 | 5 | Backup automatico giornaliero + copia fuori da Supabase + keep-alive | DB/App | ⏳ |
 
@@ -90,5 +92,30 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - **Dopo la tua prova** leggo Supabase e ti dico se coincide.
 - Non fatto di proposito: avvio automatico all'apertura (si decide dopo averlo provato), sincronizzazione delle impostazioni generali (`user_settings`).
 
-### Passo 3 — Scrittura a blocchi 
-- **Da fare, non ancora iniziato.**
+### Passo 3 — Scrittura a blocchi 🔄
+- **Cosa ho visto nel codice**: ogni modifica è una richiesta a sé + una lettura di controllo (+ 2 richieste "CORS" del browser). Ci sono 43 punti che scrivono; molti sono in un ciclo (un colore di gruppo cambiato su 9 modelli = 9 scritture; un riordino = fino a 200). Per questo le raffiche da 200-430 richieste all'ora e i "Failed to fetch".
+- **Scelta**: NON cambio in blocco tutti i 43 punti. Prima la funzione sul DB (3a), poi migro i punti a raffica uno alla volta (3b, 3c). Le singole modifiche restano come ora.
+
+### Passo 3a — `applica_modifiche` (solo DB) ✅
+- **Prima di scrivere su Supabase, cosa farò (solo aggiunta):** funzione `applica_modifiche(p_ops jsonb)`:
+  - riceve un elenco (max 500) di operazioni `{tipo: insert|update|delete, table, payload, match}`;
+  - le applica **tutte in una sola transazione**: se una fallisce, **nessuna** viene applicata (tutto-o-niente) e torna l'errore;
+  - ripetibile senza effetti doppi: gli inserimenti con id già presente non duplicano;
+  - **sicurezza**: richiede login; il `user_id` è sempre forzato a quello di chi chiama (non si può toccare dati di altri); solo le 5 tabelle dei dati; nel filtro `match` una colonna inesistente dà errore (così un filtro non si "allarga" per sbaglio); nel `payload` una colonna inesistente viene ignorata, come fa già l'app;
+  - restituisce per ogni operazione quante righe ha toccato (serve all'app per verificare, al posto della lettura di controllo).
+- Effetto sull'app attuale: nessuno (non la usa ancora). Dati invariati.
+- Provo con test **annullati** (simulando il login): inserimento, modifica, cancellazione, tutto-o-niente, utente forzato, colonna sbagliata.
+- Annullamento: `drop function public.applica_modifiche(jsonb);`
+- **Eseguito** (15/10): funzione creata; `anon` non può eseguirla, `authenticated` sì.
+- **Verificato con test annullati** (simulando il login):
+  1. insert + update in una sola richiesta: 1 riga + 1 riga; la colonna inesistente nel contenuto viene ignorata;
+  2. ripetibile: lo stesso insert una seconda volta tocca 0 righe, nessun doppione;
+  3. `user_id` forzato: puntando a un altro utente agisce solo sul mio;
+  4. modifica del `sort_order` di un modello: 1 riga;
+  5. tutto-o-niente: con la seconda operazione sbagliata la prima non resta (colori 29 prima, 29 dopo);
+  6. senza login: rifiutata.
+- **Dopo i test**: nessuna traccia (29 colori, 0 colori di test, 1417 eventi, 225 modelli, registro eliminazioni vuoto).
+- Nessun push dell'app in questo passo.
+
+### Passo 3b — l'app usa `applica_modifiche` per le raffiche
+- **Da fare, non ancora iniziato.** Prima di toccare il codice scrivo qui: l'elenco dei punti a raffica, quale migrare per primo, e come si comporta senza linea (le operazioni finiscono nella coda offline una per una, come ora) e in caso di errore (si torna alla scrittura una per una, così i messaggi restano quelli di oggi).
