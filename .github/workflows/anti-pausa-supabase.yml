@@ -1,0 +1,26 @@
+name: Anti-pausa Supabase
+
+# Una richiesta al giorno a Supabase: evita la pausa del piano gratuito per inattività
+# e, se Supabase non risponde, il lavoro fallisce e GitHub manda un avviso.
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+jobs:
+  controllo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Richiesta a Supabase
+        env:
+          SUPA_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPA_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SUPA_URL" ] || [ -z "$SUPA_KEY" ]; then echo "Secrets mancanti"; exit 1; fi
+          CODE=$(curl -s -o /tmp/risposta.txt -w "%{http_code}" \
+            -H "apikey: $SUPA_KEY" -H "Authorization: Bearer $SUPA_KEY" \
+            "$SUPA_URL/rest/v1/colori?select=id&limit=1")
+          echo "Risposta di Supabase: HTTP $CODE"
+          if [ "$CODE" -lt 200 ] || [ "$CODE" -ge 300 ]; then
+            echo "Supabase non risponde come previsto"; head -c 300 /tmp/risposta.txt; exit 1
+          fi
