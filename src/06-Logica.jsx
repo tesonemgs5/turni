@@ -4037,134 +4037,36 @@ export function useAppCore(session){
     } catch(e){ segnalaErrore(e, "Caricamento elenco backup"); setSyncMsg("❌ Errore nel caricare i backup: "+e.message); }
   }
 
-  async function handleRestoreBackup(backupId){
-    if(!window.confirm("Questo SOVRASCRIVERÀ tutti i dati attuali con quelli del backup selezionato. Continuare?")) return;
-    setSyncMsg("⏳ Importazione in corso...");
+  // RIPRISTINO BACKUP — una sola richiesta, TUTTO-O-NIENTE, dentro il database (funzione ripristina_backup).
+  // Prima il ripristino scriveva ~1400 righe una alla volta: una caduta di rete lasciava Supabase a metà.
+  // Ora: la funzione salva lo stato attuale come copia di sicurezza, poi sostituisce i dati; se qualcosa
+  // va storto non cambia nulla. Rifiuta una copia con molti meno eventi di quelli attuali (salvo conferma).
+  async function handleRestoreBackup(backupId, forza=false){
+    const avvisa = (msg, stato="corso", ok=true)=>{ setSyncMsg(msg); setEsitoExportSupabase({ titolo:"Ripristino backup", stato, ok, messaggio:msg }); };
+    if(!forza && !window.confirm("Questo SOSTITUIRÀ tutti i dati attuali su Supabase con quelli del backup selezionato. Prima viene salvata una copia dello stato attuale. Continuare?")) return;
     setShowBackupsModal(false);
+    if(typeof navigator!=="undefined" && navigator.onLine===false){ avvisa("❌ Sei offline: impossibile ripristinare. Nulla è stato modificato.","fine",false); return; }
+    avvisa("⏳ Ripristino in corso (una sola operazione, tutto-o-niente)...");
     try {
-      const {data:row, error} = await supabase.from("backups").select("data").eq("id", backupId).eq("user_id", userId).maybeSingle();
+      const { data, error } = await supabase.rpc("ripristina_backup", { p_backup_id: backupId, p_forza: !!forza });
       if(error) throw error;
-      if(!row?.data) throw new Error("Backup non trovato");
-      const backup = row.data;
-
-      // Ogni fallimento qui sotto viene contato (prima erano ignorati in
-      // silenzio): se qualcosa non si cancella o non si inserisce, l'utente
-      // lo sa a fine ripristino invece di scoprire dati incoerenti dopo.
-      let erroriRiscontrati = 0;
-      const contaErrore = ({error}) => { if(error) erroriRiscontrati++; };
-
-      // Paracadute: prima di sovrascrivere salvo lo stato attuale di Supabase.
-      try{
-        const attuale = await buildBackupPayload();
-        const {error:errPar} = await supabase.from("backups").insert({ user_id:userId, data:attuale });
-        if(errPar) throw errPar;
-      }catch(e){
-        throw new Error("Copia di sicurezza non riuscita, ripristino annullato (nessun dato toccato): "+(e?.message||e));
+      if(data && data.ok===false && data.motivo==="backup_piu_piccolo"){
+        avvisa(`🛑 Ripristino FERMATO: questo backup ha ${data.eventi_backup} eventi, ma ora su Supabase ne hai ${data.eventi_attuali}. Ripristinarlo ti farebbe perdere dati. Non è stato modificato nulla.`,"fine",false);
+        if(window.confirm(`Questo backup ha MOLTI MENO eventi (${data.eventi_backup}) di quelli attuali (${data.eventi_attuali}). Vuoi ripristinarlo lo stesso? I dati attuali verranno prima salvati in una copia di sicurezza.`)){
+          return handleRestoreBackup(backupId, true);
+        }
+        return;
       }
-
-      // Cancellazione nell'ORDINE giusto (prima chi dipende dagli altri):
-      // eventi -> rotazioni -> modelli -> calendari. Se anche UNA cancellazione
-      // fallisce mi fermo SUBITO, senza inserire nulla: così non nascono doppioni.
-      const cancellazioni = [
-        ["events","eventi"],["rotazioni","rotazioni"],["modelli","modelli"],["calendars","calendari"],
-        ["colori","colori"],["autocomplete_valori","autocomplete"],
-      ];
-      for(const [tab, nome] of cancellazioni){
-        const r = await dbDelete(tab, {user_id:userId}, `Ripristino backup — pulizia ${nome} esistenti`, {soloLog:true});
-        if(r?.error) throw new Error(`Pulizia ${nome} non riuscita (${r.error.message||r.error}). Ripristino interrotto prima di scrivere: nessun doppione creato.`);
-      }
-
-      const calIdMap = {};
-      for(const c of (backup.calendars||[])){
-        const {data, error:errC} = await dbInsert("calendars", {
-          id:c.id, user_id:userId, name:c.name, color:c.color, is_main:c.is_main, shifts:c.shifts||[], sort_order:c.sort_order||0,
-        }, `Ripristino backup — calendario "${c.name}"`, {soloLog:true});
-        if(errC) erroriRiscontrati++;
-        if(data?.[0]) calIdMap[c.id] = data[0].id;
-      }
-      const modIdMap = {};
-      for(const m of (backup.modelli||[])){
-        const {data, error:errM} = await dbInsert("modelli", {
-          id:m.id, user_id:userId, titolo:m.titolo, tempo:m.tempo, inizio:m.inizio, fine:m.fine,
-          colore:m.colore, colore_custom:m.colore_custom, posizione:m.posizione||"", // flag "manuale"/vuoto, non un id: nessun rimapping necessario
-          sort_order:m.sort_order, calendar_id: calIdMap[m.calendar_id]||null,
-          visibile_anche_in:m.visibile_anche_in||null,
-        }, `Ripristino backup — modello "${m.titolo}"`, {soloLog:true});
-        if(errM) erroriRiscontrati++;
-        if(data?.[0]) modIdMap[m.id] = data[0].id;
-      }
-      const rotIdMap = {};
-      for(const r of (backup.rotazioni||[])){
-        const {data, error:errR} = await dbInsert("rotazioni", {
-          id:r.id, user_id:userId, tipo:r.tipo, titolo:r.titolo, data_inizio:r.data_inizio,
-          n_settimane:r.n_settimane,
-          modello_lavoro_id: modIdMap[r.modello_lavoro_id]||null,
-          modello_nl_id: modIdMap[r.modello_nl_id]||null,
-          modello_rs_id: modIdMap[r.modello_rs_id]||null,
-          griglia:r.griglia||{},
-        }, `Ripristino backup — rotazione "${r.titolo}"`, {soloLog:true});
-        if(errR) erroriRiscontrati++;
-        if(data?.[0]) rotIdMap[r.id] = data[0].id;
-      }
-      // Eventi: PRIMA passata per creare tutte le righe (con tutti i campi
-      // della tabella — in precedenza qui ne mancavano molti, es. note
-      // orario, luogo, protrazioni, categoria turno, report overrides:
-      // venivano scaricati dal backup ma persi in silenzio al ripristino).
-      // rotazione_id e parent_id sono rimappati come calendar_id/modello_id:
-      // puntano rispettivamente a una rotazione e a UN ALTRO EVENTO del
-      // backup, quindi senza rimappaggio punterebbero a id del vecchio
-      // account/sessione, ormai inesistenti dopo la cancellazione sopra.
-      // parent_id referenzia un id-evento del backup stesso: per questo
-      // serve una mappa vecchioId->nuovoId costruita mano a mano (idEvtMap),
-      // quindi gli eventi vanno inseriti in un ordine che garantisca che
-      // il genitore (parent_id null o già mappato) sia processato prima
-      // del figlio — qui li ordiniamo mettendo prima gli eventi senza
-      // parent_id, poi il resto, sufficiente per la profondità 1 usata
-      // dalle protrazioni in questa app.
-      const idEvtMap = {};
-      const eventiOrdinatiPerInserimento = [...(backup.events||[])].sort((a,b)=>(a.parent_id?1:0)-(b.parent_id?1:0));
-      for(const e of eventiOrdinatiPerInserimento){
-        const {data, error:errE} = await dbInsert("events", {
-          id:e.id, user_id:userId, calendar_id: calIdMap[e.calendar_id]||e.calendar_id,
-          date_key:e.date_key, label:e.label, color:e.color, all_day:e.all_day,
-          time_in:e.time_in, time_out:e.time_out, place:e.place, map_url:e.map_url,
-          time_in_note:e.time_in_note, time_out_note:e.time_out_note,
-          note:e.note, modello_id: modIdMap[e.modello_id]||null,
-          rotazione_id: rotIdMap[e.rotazione_id]||null,
-          collega:e.collega, auto:e.auto,
-          parent_id: e.parent_id ? (idEvtMap[e.parent_id]||null) : null,
-          prot_pag_fine:e.prot_pag_fine, prot_rec_fine:e.prot_rec_fine,
-          prot_meno_rec_in:e.prot_meno_rec_in, prot_meno_rec_out:e.prot_meno_rec_out,
-          categoria_turno:e.categoria_turno, categoria_app_auto:e.categoria_app_auto,
-          categoria_turno_vuoto:e.categoria_turno_vuoto, categoria_app_auto_vuoto:e.categoria_app_auto_vuoto,
-          report_overrides:e.report_overrides||{}, import_id:e.import_id||null,
-          visibile_anche_in:e.visibile_anche_in||null,
-        }, `Ripristino backup — evento "${e.label}" (${e.date_key})`, {soloLog:true});
-        if(errE) erroriRiscontrati++;
-        if(data?.[0] && e.id) idEvtMap[e.id] = data[0].id;
-      }
-      const coloriVisti = new Set(); // un colore ripetuto nel backup violerebbe il vincolo di unicità
-      for(const c of (backup.colori||[])){
-        const kCol = String(c.hex||"").toUpperCase();
-        if(coloriVisti.has(kCol)) continue; coloriVisti.add(kCol);
-        const {error:errCol} = await dbInsert("colori", {
-          user_id:userId, hex:c.hex, label:c.label||null, sort_order:c.sort_order||0,
-        }, `Ripristino backup — colore "${c.hex}"`, {soloLog:true});
-        if(errCol) erroriRiscontrati++;
-      }
-      for(const a of (backup.autocomplete_valori||[])){
-        const {error:errAc} = await dbInsert("autocomplete_valori", {
-          user_id:userId, campo:a.campo, valore:a.valore,
-        }, `Ripristino backup — autocomplete "${a.campo}"`, {soloLog:true});
-        if(errAc) erroriRiscontrati++;
-      }
-      if(erroriRiscontrati>0){
-        segnalaErrore(`${erroriRiscontrati} elementi non sono stati ripristinati correttamente (dettaglio nel Log). Il resto del backup è stato importato.`, "Ripristino backup");
-      }
-      setSyncMsg("✅ Importazione completata — ricarico l'app...");
+      if(!data || data.ok!==true) throw new Error("Risposta inattesa dal server");
+      const riga = `${data.eventi} eventi, ${data.modelli} modelli, ${data.calendari} calendari, ${data.rotazioni} rotazioni, ${data.colori} colori`;
+      registraAttivita("Ripristino backup", `✅ Ripristinato su Supabase: ${riga}`, { chiave:"ripristino-backup", supabase:"ok" });
+      avvisa(`✅ Ripristino completato su Supabase: ${riga}. Ricarico l'app...`,"fine",true);
       try{ localStorage.setItem("turnipm_pull_da_supabase","1"); }catch(e){}
-      setTimeout(()=>window.location.reload(), 1500);
-    } catch(e){ segnalaErrore(e, "Ripristino backup (sovrascrittura dati)"); setSyncMsg("❌ Errore durante l'importazione: "+e.message); }
+      setTimeout(()=>window.location.reload(), 2500);
+    } catch(e){
+      segnalaErrore(e, "Ripristino backup");
+      avvisa("❌ Ripristino non riuscito: "+(e?.message||e)+". Su Supabase non è cambiato nulla (operazione tutto-o-niente).","fine",false);
+    }
   }
 
   async function handleLogout(){ await supabase.auth.signOut(); }

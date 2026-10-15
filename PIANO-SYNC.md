@@ -224,7 +224,7 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - **Provo prima di dichiarare fatto**: eseguo `crea_backup_automatico()` una volta a mano e confronto i conteggi del nuovo backup con le tabelle (è un backup vero e resta); controllo che `anon` non possa eseguirla; lancio una volta il lavoro di GitHub e leggo l'esito.
 - **Annullamento**: `select cron.unschedule('backup-automatico-settimanale'); drop function public.crea_backup_automatico(); alter table public.backups drop column tipo;` (prima `delete from public.backups where tipo='auto_settimanale';`) e cancellare il file del workflow.
 
-### Recupero dei dati su Supabase (15/10, sera) 🔄
+### Recupero dei dati su Supabase (15/10, sera) ✅
 - **Cosa è successo (dal Log e dai registri di Supabase, solo lettura)**:
   - 09:36–09:42 UTC: un "Ripristino backup" da un telefono Android è partito più volte e **si è interrotto a metà** (errori "Failed to fetch" e "duplicate key events_pkey"): il ripristino scrive riga per riga, ~1400 richieste una dopo l'altra, e basta una caduta di rete per lasciare Supabase mezzo vuoto;
   - 13:13 UTC: un altro ripristino ha rimesso una copia piccola (69 eventi, 30 modelli), quella lasciata dal tentativo fallito;
@@ -235,15 +235,23 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - **Poi**: conteggi e impronte di controllo; il vecchio "Ripristino backup" dell'app resta da **non usare** finché non lo rendo atomico (è la causa del danno).
 - Annullamento: i backup `d22626fe` (13:13) e `c927a543` (09:41:37) conservano lo stato precedente.
 
-### Passo 5b — completamento (15/10, sera)
+### Passo 5b — completamento (15/10, sera) ✅
 - **Verificato in sola lettura**: la parte database del 5b dell'altra sessione è **completa**: colonna `backups.tipo`, funzione `crea_backup_automatico()` (stesso formato dell'esportazione manuale; protezione che non salva se gli eventi sono meno della metà dell'ultimo automatico; conserva gli ultimi 8 automatici; non tocca i manuali), permessi chiusi (né `anon` né utenti loggati possono eseguirla), lavoro `pg_cron` `backup-automatico-settimanale` ogni domenica 03:00 UTC. Esiste già 1 backup automatico (09:22, 1417 eventi, 225 modelli, buono).
 - **Mancava**: il controllo anti-pausa su GitHub. Lo aggiungo ora: file `.github/workflows/anti-pausa-supabase.yml`, ogni giorno alle 06:17 UTC e a richiesta; fa una richiesta all'API di Supabase con la chiave pubblica già presente nei secrets (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`) e **fallisce con avviso se Supabase non risponde**. Nessun effetto sull'app, nessuna nuova APK (commit con `[skip ci]`). Lo lancio una volta a mano per provarlo.
 - Limite: GitHub spegne i lavori programmati dopo 60 giorni senza attività nel repo; finché si lavora sul repo non succede.
 
-### Ripristino backup ATOMICO (15/10, sera) 🔄
+### Ripristino backup ATOMICO (15/10, sera) ✅
 - **Problema**: il "Ripristino backup" dell'app cancella e reinserisce ~1400 righe una alla volta. Se la rete cade a metà (è successo due volte oggi) Supabase resta mezzo vuoto, con duplicati. In più non c'era nessuna protezione contro il ripristino di una copia più piccola dei dati attuali (13:13: ripristinata una copia da 69 eventi).
 - **Soluzione, in 2 parti** (prima DB, poi app con una nuova APK):
   1. **DB (solo aggiunta)**: funzione `ripristina_backup(p_backup_id, p_forza)`. Una sola richiesta, **tutto-o-niente** dentro il database: controlla login e che il backup sia tuo; **rifiuta** se il backup ha meno dell'80% degli eventi attuali (a meno di conferma esplicita `p_forza`); salva prima una copia dello stato attuale (`tipo='pre_ripristino'`); poi sostituisce calendari, rotazioni, modelli, eventi, colori, autocomplete con gli stessi id; `updated_at` riparte da adesso. Se qualcosa va storto non cambia niente.
   2. **App**: il pulsante di ripristino chiama quella funzione (una richiesta) al posto del ciclo; se risponde "backup più piccolo" mostra i numeri e chiede conferma esplicita; poi ricarica i dati.
 - **Provo prima**: test annullati simulando il login (ripristino della copia buona = ok; copia da 69 eventi = rifiutata; senza login = rifiutata).
 - Annullamento: `drop function public.ripristina_backup(uuid, boolean);` e ripristinare il commit dell'app.
+
+### Esiti (15/10, sera)
+- **Recupero eseguito e verificato**: Supabase riportato alla copia `08f747a6` (09:41:01). Conteggi e impronte identici: **1417 eventi, 225 modelli, 5 calendari, 4 rotazioni, 29 colori, 104 QUARTINA con flag**. Un primo tentativo è stato annullato dal database (mancava `updated_at`) senza modificare nulla; il secondo è riuscito.
+- **5b completo**: parte DB già fatta dall'altra sessione e verificata; aggiunto il controllo anti-pausa (`.github/workflows/anti-pausa-supabase.yml`), **lanciato a mano: riuscito**, nessuna APK avviata.
+- **Ripristino atomico — DB**: funzione `ripristina_backup` creata. Test annullati: copia buona → ok (1417/225/5/4/29) + 1 copia di sicurezza; copia da 69 eventi → **rifiutata**; senza login → rifiutata.
+- **Ripristino atomico — app**: pulsante ora in UNA richiesta, con finestra di esito e conferma esplicita se il backup è molto più piccolo. Pubblicato con nuova APK.
+- **Perché Importa/Sincronizza/Esporta "non funzionavano"**: Supabase era danneggiato (69 eventi) e le protezioni dell'app rifiutavano di proposito i dati incompleti. Ora Supabase è corretto: dopo l'aggiornamento APK, "Sincronizza ora" dovrebbe dire "identico a Supabase" o mostrare le differenze reali.
+- **Da NON fare**: sul telefono con dati dubbi non premere "Importa" prima di aver controllato i numeri.
