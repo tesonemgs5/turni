@@ -169,7 +169,7 @@ export default function VistaModelli({ C }){
     deleteCalendar, computeEventFields, saveEvt, updateEvt, delEvt, delEvtiRotazioneDaData,
     delTutteEvtiRotazione, cancellaTuttiEventiMese, calcMinuti, saveToSheets, syncSeAttivo, loadFromSheets,
     syncFromSheets, handleSave, handleLoad, handleSaveSheetsConfig, handleViewDbData, buildBackupPayload,
-    handleExportSupabase, handleOpenImportSupabase, handleVerificaSupabase, esitoVerificaSupabase, setEsitoVerificaSupabase, esitoExportSupabase, setEsitoExportSupabase, sincronizzaOra, handleRestoreBackup, handleLogout, eseguiNormalizzazione, normalizzaModelliTempo,
+    handleExportSupabase, handleOpenImportSupabase, handleVerificaSupabase, esitoVerificaSupabase, setEsitoVerificaSupabase, esitoExportSupabase, setEsitoExportSupabase, sincronizzaOra, syncAuto, impostaSyncAuto, handleRestoreBackup, handleLogout, eseguiNormalizzazione, normalizzaModelliTempo,
     normalizzaEventiTempo, modelliOrdinati, importsRecenti, modelliDelCalendario, rinumeraSottoinsieme, spostaModelloPuro,
     trascinaModelloPuro, salvaModifichePosizioni, moveH24, reorderModelli, moveRotazione, moveColoreExtra, ricoloraModelliPerFasciaOraria, ensureColoreRegistrato, registraValoreAutocomplete,
     registraValoriAutocomplete, rimuoviValoreAutocomplete, supabaseUpsertConRetry, saveModello, deleteModello, addColoreExtra,
@@ -1776,6 +1776,14 @@ export default function VistaModelli({ C }){
             color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
           🔄 Sincronizza ora (solo novità)
         </button>
+        <button onClick={()=>impostaSyncAuto(!syncAuto)}
+          style={{width:"100%",marginTop:8,background:syncAuto?"#10b981":T.s2,border:syncAuto?"none":`1px solid ${T.border}`,borderRadius:10,
+            color:syncAuto?"#fff":T.text,padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
+          {syncAuto?"✅ Sincronizzazione automatica: SÌ":"⏸️ Sincronizzazione automatica: NO"}
+        </button>
+        <div style={{fontSize:10.5,color:T.sub,marginTop:4,lineHeight:1.4}}>
+          {syncAuto?"Le novità fatte su altri dispositivi arrivano da sole (solo lettura da Supabase).":"Le novità arrivano solo quando premi «Sincronizza ora»."}
+        </div>
         <button onClick={handleVerificaSupabase}
           style={{width:"100%",marginTop:8,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
             color:T.text,padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>

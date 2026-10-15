@@ -15,7 +15,9 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 | 3b | L'app la usa per le raffiche (riordino modelli/rotazioni/colori, cambio colore dei gruppi) | App | ✅ pubblicato 15/10 (da provare sui telefoni) |
 | 3c | Le altre raffiche (propagazione colori agli eventi, normalizzazioni, creazione modello, ripristino disposizione) | App | ✅ pubblicato 15/10 (da provare sui telefoni) |
 | 4 | Vincoli e rifiuti del server: analisi + correzione del nome di colonna sbagliato | App (DB invariato) | ✅ pubblicato 15/10 |
-| 5 | Backup automatico giornaliero + copia fuori da Supabase + keep-alive | DB/App | ⏳ |
+| 5a | **Sincronizzazione automatica** (prima del backup, come deciso): A modifica → B la trova da solo | App | ✅ pubblicato 15/10 (da provare su 2 telefoni) |
+| 5b | Backup settimanale dentro Supabase + controllo anti-pausa del piano gratuito | DB | ⏳ |
+| 5c | Copia fuori da Supabase (da decidere insieme) | — | ⏳ |
 
 ## Garanzie
 - Prima di ogni modifica ai dati esiste una copia nella tabella `backups` (ultima completa: 14/10 20:07 UTC, 1416 eventi, 225 modelli).
@@ -175,3 +177,27 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - Annullamento: ripristinare il commit precedente.
 - **Pubblicato** (push + nuova APK): corretti i due nomi di colonna. Database non toccato.
 - **Come provarlo**: da un evento "QUARTINA" (o altro) imposta l'override di report su "tutti gli eventi di questo modello" e salva. Nel Log non devono più comparire gli avvisi "Colonna 'turno_vuoto' assente"; dopo la tua prova li cerco io in `log_attivita`.
+
+### Passo 5a — Sincronizzazione automatica ✅
+- **Obiettivo**: fai una modifica su A e la trovi su B **da solo**, senza premere nulla, e l'app si apre sempre SUBITO dal locale (nessuna schermata di attesa).
+- **Progetto, scritto prima del codice** (un solo push, poi nuova APK):
+  1. **Quando parte** (in background, in sola lettura da Supabase): 2,5 secondi dopo l'apertura; quando torni nell'app dopo averla lasciata in secondo piano; quando torna la linea; e ogni 60 secondi finché l'app è aperta e visibile. Ogni controllo è UNA richiesta piccola (`get_changes`). Mai più di una ogni 15 secondi.
+  2. **Silenziosa**: nessuna finestra e nessun popup. Se arrivano novità compare un avviso breve in basso ("🔄 Aggiornato: 1 evento") e una riga nel Log (origine "remoto"). Se non c'è niente di nuovo, non succede nulla. Gli errori vanno solo nel Log.
+  3. **Interruttore**: in Impostazioni, accanto a "Sincronizza ora", un pulsante "Sincronizzazione automatica: SÌ/NO" (di partenza SÌ). Se lo metti su NO l'app torna a leggere da Supabase solo quando premi tu.
+  4. **Niente falsi aggiornamenti**: una riga ricevuta viene applicata solo se è **diversa** da quella che hai già. Così le tue stesse modifiche, che tornano indietro dal server, non generano avvisi e non cambiano l'ordine degli eventi dello stesso giorno (una riga già presente si sostituisce sul posto).
+  5. **Protezioni** (le stesse di "Sincronizza ora", più due): si ferma se ci sono modifiche non ancora inviate (coda offline); si ferma se una scrittura di questo dispositivo è in corso; si ferma se Supabase segnala troppe eliminazioni (≥30% e almeno 5); non scrive MAI su Supabase.
+  6. **Punto di partenza automatico**: se il dispositivo non ha ancora il cursore, l'app scarica una volta tutto e lo confronta con i dati locali. Se sono **identici** attiva da sola la sincronizzazione; se **non coincidono** non tocca nulla e ti dice cosa fare (Esporta o Importa). Così non serve più un'azione manuale sui dispositivi già allineati.
+- **Non cambia**: l'avvio (parte sempre dal locale), la scrittura verso Supabase, Importa/Esporta, la regola "non sovrascrivere mai dati locali non inviati".
+- **Limite dichiarato**: non posso provarlo su due telefoni reali. Lo verifico leggendo Supabase e il Log dopo il tuo test. Il tempo tra una modifica su A e la comparsa su B sarà al massimo ~60 secondi con l'app aperta su B (subito se riapri B o la riporti in primo piano). Per l'aggiornamento istantaneo (pochi millisecondi) serve Supabase Realtime: lo valutiamo dopo, se questo non basta.
+- Annullamento: l'interruttore SÌ/NO, oppure ripristinare il commit.
+- **Pubblicato** (push + nuova APK): tutto come da progetto qui sopra; interruttore "Sincronizzazione automatica: SÌ/NO" in Impostazioni → Database Cloud Supabase.
+- **Verifica prima del push, sui dati reali** (il tuo backup locale delle 19:48): ho convertito ogni elemento nel formato Supabase (come fa "Esporta") e lo ho riconvertito con le stesse funzioni usate dalla sincronizzazione. Risultato: **1416 eventi, 225 modelli, 5 calendari, 4 rotazioni → 0 differenze**. Quindi, quando un dispositivo è allineato a Supabase, la sincronizzazione automatica non trova falsi aggiornamenti.
+- **Come provarlo (A e B)**:
+  1. Aggiorna l'APK su entrambi e aprili: se sono allineati a Supabase, nel Log compare "Questo dispositivo è identico a Supabase: sincronizzazione attivata" (se non coincidono, compare cosa fare, senza toccare nulla).
+  2. Su A fai una modifica e aspetta ☁️ ✓ nel Log.
+  3. Su B, con l'app aperta, entro ~60 secondi compare l'avviso "🔄 Aggiornato: 1 evento"; oppure riportala in primo piano e compare subito.
+  4. Dimmelo e controllo il Log di Supabase.
+- Tempo atteso: fino a ~60 s con l'app aperta su B; subito alla riapertura o al ritorno in primo piano. Per l'istantaneo vero (Realtime) si decide dopo.
+
+### Passo 5b — Backup settimanale dentro Supabase + anti-pausa
+- **Da fare, non ancora iniziato.** Prima di scrivere su Supabase descrivo qui: dove viene salvato (tabella `backups`, già esistente), quanti ne tengo (ultimi N), con quale pianificazione (una volta a settimana) e come evito la pausa del piano gratuito.

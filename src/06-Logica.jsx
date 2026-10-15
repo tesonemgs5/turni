@@ -372,7 +372,7 @@ export function useAppCore(session){
     return out;
   }
 
-  async function scriviConBackup({ tipo, table, payload, matchObj, contesto, ts, eventsPerSheets, calendarsPerSheets, modelliPerSheets, opzioni={} }){
+  async function scriviConBackupInterno({ tipo, table, payload, matchObj, contesto, ts, eventsPerSheets, calendarsPerSheets, modelliPerSheets, opzioni={} }){
     const idsOp = [ (payload && !Array.isArray(payload)) ? payload.id : null, matchObj?.id, ...idsConfermaPerMatch(table, matchObj) ].filter(Boolean);
     function accodaSilenziosamente(){
       // Locale è già scritto dal chiamante prima di arrivare qui: qui si
@@ -463,12 +463,23 @@ export function useAppCore(session){
       return accodaSilenziosamente();
     }
   }
+  // Conta le scritture verso Supabase ancora in corso: la sincronizzazione automatica aspetta che finiscano.
+  async function scriviConBackup(arg){
+    scrittureInVoloRef.current++;
+    try{ return await scriviConBackupInterno(arg); }
+    finally{ scrittureInVoloRef.current = Math.max(0, scrittureInVoloRef.current-1); }
+  }
   // Scrive MOLTE modifiche in UNA sola richiesta (funzione DB applica_modifiche: tutto-o-niente).
   // ops = [{ tipo:"insert"|"update"|"delete", table, payload, matchObj, contesto }]
   // - senza linea / rete che cade: ogni operazione va nella coda offline, come in scriviConBackup;
   // - errore vero del server: il blocco non è applicato e si ripiega sulla scrittura una per una;
   // - verifica: usa il numero di righe toccate (una modifica che tocca 0 righe finisce nel Log).
-  async function scriviBatchConBackup({ ops, contesto, ts, opzioni={} }){
+  async function scriviBatchConBackup(arg){
+    scrittureInVoloRef.current++;
+    try{ return await scriviBatchConBackupInterno(arg); }
+    finally{ scrittureInVoloRef.current = Math.max(0, scrittureInVoloRef.current-1); }
+  }
+  async function scriviBatchConBackupInterno({ ops, contesto, ts, opzioni={} }){
     const lista = (ops||[]).filter(Boolean);
     if(lista.length===0) return { ok:true, errore:null, errori:0 };
     const tsOp = ts || new Date().toISOString();
@@ -3569,42 +3580,126 @@ export function useAppCore(session){
     const t = await leggiOrarioServer();
     if(t){ try{ localStorage.setItem(CURSORE_SYNC_KEY, t); }catch(e){} }
   }
-  async function sincronizzaOra(){
-    const avvisa = (msg, stato="corso", ok=true)=>setEsitoExportSupabase({ titolo:"Sincronizza ora", stato, ok, messaggio:msg });
-    if(!userId){ avvisa("❌ Accedi per sincronizzare","fine",false); return; }
-    if(typeof navigator!=="undefined" && navigator.onLine===false){ avvisa("❌ Sei offline: impossibile sincronizzare. I tuoi dati locali non sono stati toccati.","fine",false); return; }
-    let cursore=null; try{ cursore=localStorage.getItem(CURSORE_SYNC_KEY); }catch(e){}
-    if(!cursore){
-      avvisa("ℹ️ Manca il punto di partenza. Se QUESTO dispositivo ha i dati giusti, premi prima «Esporta su Supabase». Se ha dati vecchi, premi «Importa da Supabase». Poi «Sincronizza ora» scaricherà solo le novità.","fine",false);
-      return;
-    }
+  // ── confronto/mappature riga-Supabase → dato locale (usate da Sincronizza ora e dall'automatica) ──
+  const SYNC_AUTO_KEY = "turnipm_sync_auto";
+  const [syncAuto, setSyncAutoState] = useState(()=>{ try{ return localStorage.getItem(SYNC_AUTO_KEY)!=="0"; }catch(e){ return true; } });
+  function impostaSyncAuto(v){ setSyncAutoState(!!v); try{ localStorage.setItem(SYNC_AUTO_KEY, v?"1":"0"); }catch(e){} }
+  const sincInCorsoRef = useRef(false);
+  const ultimaSyncAutoRef = useRef(0);
+  const scrittureInVoloRef = useRef(0);
+  const syncAutoFnRef = useRef(null);
+
+  const normSync = v=>{
+    if(v==null || v===false || v==="") return "";
+    if(Array.isArray(v)) return v.length ? JSON.stringify(v) : "";
+    if(typeof v==="object") return Object.keys(v).length ? JSON.stringify(v) : "";
+    return String(v);
+  };
+  // true se il dato locale "a" contiene gli stessi valori di "b" su tutti i campi di "b"
+  const ugualiSync = (a,b)=> !!a && Object.keys(b).every(k=>normSync(a[k])===normSync(b[k]));
+  const mapEvSync = e=>({
+    id:e.id, label:e.label, color:e.color, allDay:e.all_day,
+    tIn:e.time_in||"", tOut:e.time_out||"", place:e.place||"",
+    tInNote:e.time_in_note||"", tOutNote:e.time_out_note||"",
+    map:e.map_url||"", note:e.note||"",
+    modelloId:e.modello_id||null, rotazioneId:e.rotazione_id||null, collega:e.collega||null,
+    auto:e.auto||"", parentId:e.parent_id||null,
+    protPagFine:e.prot_pag_fine||"", protRecFine:e.prot_rec_fine||"",
+    protMenoRecIn:e.prot_meno_rec_in||"", protMenoRecOut:e.prot_meno_rec_out||"",
+    categoriaTurno:e.categoria_turno||"", categoriaAppAuto:e.categoria_app_auto||"",
+    turnoVuoto:!!e.categoria_turno_vuoto, appAutoVuoto:!!e.categoria_app_auto_vuoto,
+    reportOverrides:e.report_overrides||{}, importId:e.import_id||null,
+    visibileAncheIn:e.visibile_anche_in||[],
+  });
+  const mapCalSync = c=>({ id:c.id, name:c.name, color:c.color, isMain:c.is_main, shifts:c.shifts||[] });
+  const mapModSync = (m,fasce)=>({
+    id:m.id, titolo:m.titolo, label:m.label||"", tempo:m.tempo,
+    inizio:m.inizio||"", fine:m.fine||"", colore:m.colore,
+    coloreCustom:m.colore_custom || (m.tempo==="h24" ? COLORE_H24 : getColorByTime(m.inizio||"", fasce)),
+    posizione:m.posizione||"", sortOrder:m.sort_order||0, calendarId:m.calendar_id||null,
+    categoria:(m.categoria==="primo"||m.categoria==="secondo")?m.categoria:"",
+    categoriaAppAuto:(m.categoria_app_auto==="app"||m.categoria_app_auto==="auto")?m.categoria_app_auto:((m.categoria==="app"||m.categoria==="auto")?m.categoria:""),
+    turnoVuoto:!!m.categoria_turno_vuoto, appAutoVuoto:!!m.categoria_app_auto_vuoto,
+    visibileAncheIn:m.visibile_anche_in||[],
+  });
+  const mapRotSync = r=>({
+    id:r.id, tipo:r.tipo, titolo:r.titolo, dataInizio:r.data_inizio||"", nSettimane:r.n_settimane||52,
+    modellaLavoroId:r.modello_lavoro_id||null, modelloNLId:r.modello_nl_id||null, modelloRSId:r.modello_rs_id||null,
+    modelloG3Id:(r.griglia||{}).__modelloG3Id||null, modelloG4Id:(r.griglia||{}).__modelloG4Id||null,
+    griglia:r.griglia||{}, reperibilitaTurnoPartenza:(r.griglia||{}).__reperibilitaTurnoPartenza||"14-24",
+    sortOrder:r.sort_order||0,
+  });
+
+  // Confronto completo (solo per il "punto di partenza automatico"): quante righe differiscono?
+  function contaDifferenzeSync(full, loc, modelliCor, rotCor, colCor, fasce){
+    const out = { eventi:0, modelli:0, calendari:0, rotazioni:0, colori:0 };
+    const locEv = new Map();
+    Object.entries(loc.events||{}).forEach(([dk,byc])=>Object.entries(byc||{}).forEach(([cid,lst])=>(lst||[]).forEach(e=>locEv.set(e.id,{dk,cid,e}))));
+    const srvEv = new Set();
+    (full.events||[]).forEach(r=>{
+      srvEv.add(r.id);
+      const l = locEv.get(r.id);
+      if(!l || l.dk!==r.date_key || l.cid!==r.calendar_id || !ugualiSync(l.e, mapEvSync(r))) out.eventi++;
+    });
+    locEv.forEach((v,id)=>{ if(!srvEv.has(id)) out.eventi++; });
+    const confrontaLista = (srv, locale, mappa, chiave)=>{
+      let n=0; const visti=new Set(); const idx=new Map((locale||[]).map(x=>[x[chiave],x]));
+      (srv||[]).forEach(r=>{ const m=mappa(r); visti.add(m[chiave]); if(!ugualiSync(idx.get(m[chiave]), m)) n++; });
+      (locale||[]).forEach(x=>{ if(!visti.has(x[chiave])) n++; });
+      return n;
+    };
+    out.modelli = confrontaLista(full.modelli, modelliCor, m=>mapModSync(m,fasce), "id");
+    out.calendari = confrontaLista(full.calendars, loc.calendars, mapCalSync, "id");
+    out.rotazioni = confrontaLista(full.rotazioni, rotCor, mapRotSync, "id");
+    out.colori = confrontaLista(full.colori, colCor, c=>({hex:c.hex, label:c.label||null, sortOrder:c.sort_order||0}), "hex");
+    out.totale = out.eventi+out.modelli+out.calendari+out.rotazioni+out.colori;
+    return out;
+  }
+
+  // Cuore della sincronizzazione (sola lettura da Supabase). Ritorna { tipo, msg, cambiati }.
+  // tipo: "ok" (applicate novità) | "nessuna" | "occupato" | "coda" | "offline" | "manca_cursore" | "fermato" | "errore"
+  async function eseguiSync(){
+    if(!userId) return { tipo:"errore", msg:"❌ Accedi per sincronizzare" };
+    if(typeof navigator!=="undefined" && navigator.onLine===false) return { tipo:"offline", msg:"❌ Sei offline: impossibile sincronizzare. I tuoi dati locali non sono stati toccati." };
+    if(sincInCorsoRef.current || scrittureInVoloRef.current>0) return { tipo:"occupato", msg:"⏳ C'è già un salvataggio o una sincronizzazione in corso: riprova tra poco." };
     let inCoda=0; try{ inCoda=(leggiCodaSync()||[]).length; }catch(e){}
-    if(inCoda>0){
-      avvisa(`🕓 Ci sono ${inCoda} modifiche di questo dispositivo non ancora inviate a Supabase. Aspetta che partano (serve linea) e riprova: così non si rischia di perderle.`,"fine",false);
-      return;
-    }
-    avvisa("⏳ Controllo le novità su Supabase...");
+    if(inCoda>0) return { tipo:"coda", msg:`🕓 Ci sono ${inCoda} modifiche di questo dispositivo non ancora inviate a Supabase. Aspetta che partano (serve linea) e riprova: così non si rischia di perderle.` };
+    sincInCorsoRef.current = true;
     try{
+      let cursore=null; try{ cursore=localStorage.getItem(CURSORE_SYNC_KEY); }catch(e){}
+      const loc = storeRef.current || store;
+      const modelliCor = modelliRef.current && modelliRef.current.length ? modelliRef.current : modelli;
+      const fasce = loc.fasceAutomatiche || FASCE_AUTOMATICHE_DEFAULT;
+
+      // ── punto di partenza automatico ──
+      if(!cursore){
+        const {data:full, error:errFull} = await supabase.rpc("get_changes", { p_user_id:userId, p_since:null });
+        if(errFull) throw errFull;
+        if(!full?.server_now) throw new Error("Risposta del server non valida");
+        const d = contaDifferenzeSync(full, loc, modelliCor, rotazioni||[], coloriExtra||[], fasce);
+        if(d.totale===0){
+          try{ localStorage.setItem(CURSORE_SYNC_KEY, full.server_now); }catch(e){}
+          return { tipo:"nessuna", msg:"✅ Questo dispositivo è identico a Supabase: sincronizzazione attivata. Da ora le novità arrivano da sole." };
+        }
+        const parti=[]; if(d.eventi) parti.push(`${d.eventi} eventi`); if(d.modelli) parti.push(`${d.modelli} modelli`); if(d.calendari) parti.push(`${d.calendari} calendari`); if(d.rotazioni) parti.push(`${d.rotazioni} rotazioni`); if(d.colori) parti.push(`${d.colori} colori`);
+        return { tipo:"manca_cursore", msg:`ℹ️ Questo dispositivo non coincide con Supabase (differenze: ${parti.join(", ")}). Non ho toccato nulla. Se ha i dati giusti premi «Esporta su Supabase»; se ha dati vecchi premi «Importa da Supabase». Poi la sincronizzazione sarà automatica.` };
+      }
+
       const da = new Date(new Date(cursore).getTime()-5000).toISOString(); // 5 s di sovrapposizione
       const {data:ch, error:errCh} = await supabase.rpc("get_changes", { p_user_id:userId, p_since:da });
       if(errCh) throw errCh;
       if(!ch?.server_now) throw new Error("Risposta del server non valida");
-
-      const loc = storeRef.current || store;
-      const nCal=(ch.calendars||[]).length, nEvC=(ch.events||[]).length, nMod=(ch.modelli||[]).length,
-            nRot=(ch.rotazioni||[]).length, nCol=(ch.colori||[]).length;
       const elim = ch.eliminati||[];
       const elimDi = t=>elim.filter(x=>x.tabella===t).map(x=>String(x.id));
 
-      // ── EVENTI ──
+      // ── EVENTI (si applica solo ciò che è DIVERSO da quello che c'è già) ──
       let events = {...(loc.events||{})};
       const idx = new Map();
       Object.entries(events).forEach(([dk,byc])=>Object.entries(byc||{}).forEach(([cid,lst])=>(lst||[]).forEach(e=>idx.set(e.id,{dk,cid}))));
       const nEvLocali = idx.size;
-      const elimEv = elimDi("events");
+      const elimEv = elimDi("events").filter(id=>idx.has(id));
       if(nEvLocali>=5 && elimEv.length >= Math.max(5, nEvLocali*0.3)){
-        avvisa(`🛑 Sincronizzazione FERMATA per sicurezza: Supabase segnala ${elimEv.length} eventi eliminati su ${nEvLocali} presenti qui. Non è stato modificato nulla su questo dispositivo.`,"fine",false);
-        return;
+        return { tipo:"fermato", msg:`🛑 Sincronizzazione FERMATA per sicurezza: Supabase segnala ${elimEv.length} eventi eliminati su ${nEvLocali} presenti qui. Non è stato modificato nulla su questo dispositivo.` };
       }
       const togli = id=>{
         const pos=idx.get(id); if(!pos) return;
@@ -3619,32 +3714,33 @@ export function useAppCore(session){
         byc[cid]=[...(byc[cid]||[]),ev];
         events[dk]=byc; idx.set(ev.id,{dk,cid});
       };
+      const sostituisciSulPosto = (dk,cid,ev)=>{
+        const byc={...(events[dk]||{})};
+        byc[cid]=(byc[cid]||[]).map(x=>x.id===ev.id?ev:x);
+        events[dk]=byc;
+      };
+      const evCambiati = (ch.events||[]).filter(r=>{
+        const pos=idx.get(r.id);
+        if(!pos || pos.dk!==r.date_key || pos.cid!==r.calendar_id) return true;
+        const cur=(events[pos.dk]?.[pos.cid]||[]).find(x=>x.id===r.id);
+        return !ugualiSync(cur, mapEvSync(r));
+      });
       elimEv.forEach(togli);
-      (ch.events||[]).forEach(e=>{
-        togli(e.id);
-        metti(e.date_key, e.calendar_id, {
-          id:e.id, label:e.label, color:e.color, allDay:e.all_day,
-          tIn:e.time_in||"", tOut:e.time_out||"", place:e.place||"",
-          tInNote:e.time_in_note||"", tOutNote:e.time_out_note||"",
-          map:e.map_url||"", note:e.note||"",
-          modelloId:e.modello_id||null, rotazioneId:e.rotazione_id||null, collega:e.collega||null,
-          auto:e.auto||"", parentId:e.parent_id||null,
-          protPagFine:e.prot_pag_fine||"", protRecFine:e.prot_rec_fine||"",
-          protMenoRecIn:e.prot_meno_rec_in||"", protMenoRecOut:e.prot_meno_rec_out||"",
-          categoriaTurno:e.categoria_turno||"", categoriaAppAuto:e.categoria_app_auto||"",
-          turnoVuoto:!!e.categoria_turno_vuoto, appAutoVuoto:!!e.categoria_app_auto_vuoto,
-          reportOverrides:e.report_overrides||{}, importId:e.import_id||null,
-          visibileAncheIn:e.visibile_anche_in||[],
-        });
+      evCambiati.forEach(r=>{
+        const nuovo = mapEvSync(r);
+        const pos = idx.get(r.id);
+        if(pos && pos.dk===r.date_key && pos.cid===r.calendar_id) sostituisciSulPosto(r.date_key, r.calendar_id, nuovo);
+        else { togli(r.id); metti(r.date_key, r.calendar_id, nuovo); }
       });
 
-      // ── CALENDARI ── (se cambiano, rileggo anche l'ordine: sono pochi)
+      // ── CALENDARI ──
       let calendars = loc.calendars||[];
-      const elimCal = new Set(elimDi("calendars"));
-      if(nCal>0 || elimCal.size>0){
+      const elimCal = new Set(elimDi("calendars").filter(id=>calendars.some(c=>String(c.id)===id)));
+      const calCambiati = (ch.calendars||[]).filter(c=>!ugualiSync(calendars.find(x=>x.id===c.id), mapCalSync(c)));
+      if(calCambiati.length>0 || elimCal.size>0){
         calendars = calendars.filter(c=>!elimCal.has(String(c.id)));
-        (ch.calendars||[]).forEach(c=>{
-          const nuovo = { id:c.id, name:c.name, color:c.color, isMain:c.is_main, shifts:c.shifts||[] };
+        calCambiati.forEach(c=>{
+          const nuovo = mapCalSync(c);
           const i = calendars.findIndex(x=>x.id===c.id);
           if(i>=0) calendars[i]=nuovo; else calendars=[...calendars, nuovo];
         });
@@ -3655,22 +3751,13 @@ export function useAppCore(session){
       }
 
       // ── MODELLI ──
-      let modelliNuovi = modelliRef.current && modelliRef.current.length ? modelliRef.current : modelli;
-      const elimMod = new Set(elimDi("modelli"));
-      if(nMod>0 || elimMod.size>0){
-        const fasce = loc.fasceAutomatiche || FASCE_AUTOMATICHE_DEFAULT;
+      let modelliNuovi = modelliCor;
+      const elimMod = new Set(elimDi("modelli").filter(id=>modelliNuovi.some(m=>String(m.id)===id)));
+      const modCambiati = (ch.modelli||[]).filter(m=>!ugualiSync(modelliNuovi.find(x=>x.id===m.id), mapModSync(m,fasce)));
+      if(modCambiati.length>0 || elimMod.size>0){
         modelliNuovi = modelliNuovi.filter(m=>!elimMod.has(String(m.id)));
-        (ch.modelli||[]).forEach(m=>{
-          const nuovo = {
-            id:m.id, titolo:m.titolo, label:m.label||"", tempo:m.tempo,
-            inizio:m.inizio||"", fine:m.fine||"", colore:m.colore,
-            coloreCustom:m.colore_custom || (m.tempo==="h24" ? COLORE_H24 : getColorByTime(m.inizio||"", fasce)),
-            posizione:m.posizione||"", sortOrder:m.sort_order||0, calendarId:m.calendar_id||null,
-            categoria:(m.categoria==="primo"||m.categoria==="secondo")?m.categoria:"",
-            categoriaAppAuto:(m.categoria_app_auto==="app"||m.categoria_app_auto==="auto")?m.categoria_app_auto:((m.categoria==="app"||m.categoria==="auto")?m.categoria:""),
-            turnoVuoto:!!m.categoria_turno_vuoto, appAutoVuoto:!!m.categoria_app_auto_vuoto,
-            visibileAncheIn:m.visibile_anche_in||[],
-          };
+        modCambiati.forEach(m=>{
+          const nuovo = mapModSync(m,fasce);
           const i = modelliNuovi.findIndex(x=>x.id===m.id);
           if(i>=0){ modelliNuovi=[...modelliNuovi]; modelliNuovi[i]=nuovo; } else modelliNuovi=[...modelliNuovi, nuovo];
         });
@@ -3688,34 +3775,33 @@ export function useAppCore(session){
 
       // ── ROTAZIONI ──
       let rotNuove = rotazioni||[];
-      const elimRot = new Set(elimDi("rotazioni"));
-      if(nRot>0 || elimRot.size>0){
+      const elimRot = new Set(elimDi("rotazioni").filter(id=>rotNuove.some(r=>String(r.id)===id)));
+      const rotCambiate = (ch.rotazioni||[]).filter(r=>!ugualiSync(rotNuove.find(x=>x.id===r.id), mapRotSync(r)));
+      if(rotCambiate.length>0 || elimRot.size>0){
         rotNuove = rotNuove.filter(r=>!elimRot.has(String(r.id)));
-        (ch.rotazioni||[]).forEach(r=>{
-          const nuova = {
-            id:r.id, tipo:r.tipo, titolo:r.titolo, dataInizio:r.data_inizio||"", nSettimane:r.n_settimane||52,
-            modellaLavoroId:r.modello_lavoro_id||null, modelloNLId:r.modello_nl_id||null, modelloRSId:r.modello_rs_id||null,
-            modelloG3Id:(r.griglia||{}).__modelloG3Id||null, modelloG4Id:(r.griglia||{}).__modelloG4Id||null,
-            griglia:r.griglia||{}, reperibilitaTurnoPartenza:(r.griglia||{}).__reperibilitaTurnoPartenza||"14-24",
-            sortOrder:r.sort_order||0,
-          };
+        rotCambiate.forEach(r=>{
+          const nuova = mapRotSync(r);
           const i = rotNuove.findIndex(x=>x.id===r.id);
           if(i>=0){ rotNuove=[...rotNuove]; rotNuove[i]=nuova; } else rotNuove=[...rotNuove, nuova];
         });
         rotNuove = [...rotNuove].sort((a,b)=> a.sortOrder!==b.sortOrder ? a.sortOrder-b.sortOrder : String(a.id).localeCompare(String(b.id)));
       }
 
-      // ── COLORI ── (nell'app non hanno id: se cambiano, rileggo l'elenco intero, sono pochi)
-      let coloriNuovi = null;
-      if(nCol>0 || elimDi("colori").length>0){
+      // ── COLORI (nell'app non hanno id: se ci sono novità rileggo l'elenco e confronto) ──
+      let coloriNuovi = null; let nCol = 0;
+      if((ch.colori||[]).length>0 || elimDi("colori").length>0){
         const {data:colRows, error:errCol} = await supabase.from("colori").select("hex,label,sort_order").eq("user_id",userId);
         if(errCol) throw errCol;
-        coloriNuovi = (colRows||[]).map(c=>({hex:c.hex, label:c.label||null, sortOrder:c.sort_order||0}))
+        const lista = (colRows||[]).map(c=>({hex:c.hex, label:c.label||null, sortOrder:c.sort_order||0}))
           .sort((a,b)=> a.sortOrder!==b.sortOrder ? a.sortOrder-b.sortOrder : String(a.hex).localeCompare(String(b.hex)));
+        const attuali = coloriExtra||[];
+        const diversi = lista.length!==attuali.length || lista.some(c=>!ugualiSync(attuali.find(x=>x.hex===c.hex), c));
+        if(diversi){ coloriNuovi = lista; nCol = Math.max(1, Math.abs(lista.length-attuali.length)); }
       }
 
-      const totElim = elim.length;
-      const nessunaNovita = nCal+nEvC+nMod+nRot+nCol===0 && totElim===0;
+      const nEv=evCambiati.length, nMod=modCambiati.length, nCal=calCambiati.length, nRot=rotCambiate.length;
+      const totElim = elimEv.length + elimCal.size + elimMod.size + elimRot.size;
+      const nessunaNovita = nEv+nMod+nCal+nRot+nCol===0 && totElim===0;
       if(!nessunaNovita){
         impostaSorgenteLog("remoto");
         setStore(s=>({ ...s, calendars, events }));
@@ -3728,21 +3814,60 @@ export function useAppCore(session){
       try{ localStorage.setItem(CURSORE_SYNC_KEY, ch.server_now); }catch(e){}
 
       const parti=[];
-      if(nEvC) parti.push(`${nEvC} ${nEvC===1?"evento":"eventi"}`);
+      if(nEv) parti.push(`${nEv} ${nEv===1?"evento":"eventi"}`);
       if(nMod) parti.push(`${nMod} ${nMod===1?"modello":"modelli"}`);
       if(nCal) parti.push(`${nCal} ${nCal===1?"calendario":"calendari"}`);
       if(nRot) parti.push(`${nRot} ${nRot===1?"rotazione":"rotazioni"}`);
-      if(nCol) parti.push(`${nCol} ${nCol===1?"colore":"colori"}`);
-      const msg = nessunaNovita
-        ? "✅ Già aggiornato: nessuna novità su Supabase."
-        : `✅ Aggiornato. Cambiati: ${parti.join(", ")||"nessuno"}${totElim?` · eliminati: ${totElim}`:""}.`;
-      registraAttivita("Sincronizza ora", msg, { chiave:"sync-ora", supabase:"n/a" });
-      avvisa(msg,"fine",true);
+      if(nCol) parti.push(`colori`);
+      if(nessunaNovita) return { tipo:"nessuna", msg:"✅ Già aggiornato: nessuna novità su Supabase." };
+      return { tipo:"ok", cambiati:parti.join(", "), msg:`✅ Aggiornato. Cambiati: ${parti.join(", ")||"nessuno"}${totElim?` · eliminati: ${totElim}`:""}.` };
     }catch(e){
-      segnalaErrore(e, "Sincronizza ora");
-      avvisa("❌ Sincronizzazione non riuscita: "+(e?.message||e)+". Nessun dato di questo dispositivo è stato modificato.","fine",false);
+      segnalaErroreSoloLog(e?.message||String(e), "Sincronizzazione da Supabase");
+      return { tipo:"errore", msg:"❌ Sincronizzazione non riuscita: "+(e?.message||e)+". Nessun dato di questo dispositivo è stato modificato." };
+    } finally { sincInCorsoRef.current = false; }
+  }
+
+  // Pulsante "Sincronizza ora": mostra sempre l'esito in una finestra.
+  async function sincronizzaOra(){
+    const avvisa = (msg, stato="corso", ok=true)=>setEsitoExportSupabase({ titolo:"Sincronizza ora", stato, ok, messaggio:msg });
+    avvisa("⏳ Controllo le novità su Supabase...");
+    const r = await eseguiSync();
+    if(r.tipo==="ok" || r.tipo==="nessuna") registraAttivita("Sincronizza ora", r.msg, { chiave:"sync-ora", supabase:"n/a" });
+    avvisa(r.msg, "fine", r.tipo==="ok" || r.tipo==="nessuna");
+  }
+
+  // Sincronizzazione AUTOMATICA: silenziosa, in background, solo lettura.
+  async function sincronizzaAuto(motivo){
+    if(!userId || !syncAuto || !isInitialized.current) return;
+    if(typeof document!=="undefined" && document.visibilityState==="hidden") return;
+    const ora = Date.now();
+    if(ora - ultimaSyncAutoRef.current < 15000) return; // mai più di una ogni 15 s
+    ultimaSyncAutoRef.current = ora;
+    const r = await eseguiSync();
+    if(r.tipo==="ok"){
+      registraAttivita("Sincronizzazione automatica", `🔄 ${r.msg} (${motivo})`, { chiave:"sync-auto", supabase:"n/a" });
+      setBanner(`🔄 Aggiornato: ${r.cambiati}`);
+      setTimeout(()=>setBanner(b=>String(b||"").startsWith("🔄 Aggiornato")?null:b), 3000);
+    } else if(r.tipo==="fermato" || r.tipo==="manca_cursore"){
+      // niente popup: una riga nel Log, una sola volta per sessione per tipo
+      const k=`_syncAutoLog_${r.tipo}`; if(!window[k]){ window[k]=true; registraAttivita("Sincronizzazione automatica", r.msg, { chiave:"sync-auto-"+r.tipo, supabase:"n/a" }); }
+    } else if(r.tipo==="nessuna" && /attivata/.test(r.msg||"")){
+      registraAttivita("Sincronizzazione automatica", r.msg, { chiave:"sync-auto-attiva", supabase:"n/a" });
     }
   }
+  syncAutoFnRef.current = sincronizzaAuto;
+  useEffect(()=>{
+    if(!userId) return;
+    const lancia = motivo=>{ try{ syncAutoFnRef.current && syncAutoFnRef.current(motivo); }catch(e){} };
+    const t0 = setTimeout(()=>lancia("apertura"), 2500);
+    const onVis = ()=>{ if(document.visibilityState==="visible") lancia("ritorno nell'app"); };
+    const onOnline = ()=>lancia("linea tornata");
+    const iv = setInterval(()=>{ if(document.visibilityState==="visible") lancia("controllo periodico"); }, 60000);
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("online", onOnline);
+    return ()=>{ clearTimeout(t0); clearInterval(iv); document.removeEventListener("visibilitychange", onVis); window.removeEventListener("online", onOnline); };
+  }, [userId]);
+
   async function handleExportSupabase(){
     // Ogni passaggio e l'esito finale compaiono in una FINESTRA grande (non solo in una scritta piccola).
     const avvisa = (msg, stato="corso", ok=true)=>{ setSyncMsg(msg); setEsitoExportSupabase({titolo:"Esportazione su Supabase", stato, ok, messaggio:msg}); };
@@ -7852,7 +7977,7 @@ const importsRecenti = useMemo(()=>{
     handleExportSupabase,
     handleOpenImportSupabase,
     handleVerificaSupabase,
-    esitoVerificaSupabase, setEsitoVerificaSupabase, esitoExportSupabase, setEsitoExportSupabase, sincronizzaOra,
+    esitoVerificaSupabase, setEsitoVerificaSupabase, esitoExportSupabase, setEsitoExportSupabase, sincronizzaOra, syncAuto, impostaSyncAuto,
     handleRestoreBackup,
     handleEsportaBackupLocale,
     handleFileSelezionatoImportLocale,
