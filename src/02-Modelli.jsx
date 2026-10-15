@@ -3198,9 +3198,9 @@ export default function VistaModelli({ C }){
     };
     const patchDb = {
       categoria_turno: form.categoriaTurno||null, categoria_app_auto: form.categoriaAppAuto||null,
-      // turnoVuoto/appAutoVuoto non hanno ancora una colonna dedicata: li
-      // rappresentiamo lato DB come categoria vuota + un marcatore booleano.
-      turno_vuoto: !!form.turnoVuoto, app_auto_vuoto: !!form.appAutoVuoto,
+      // turnoVuoto/appAutoVuoto: colonne dedicate sul DB (nomi esatti: prima erano
+      // "turno_vuoto"/"app_auto_vuoto", inesistenti, e il valore non veniva mai salvato).
+      categoria_turno_vuoto: !!form.turnoVuoto, categoria_app_auto_vuoto: !!form.appAutoVuoto,
     };
     applicaReportOverrideATuttiGliEventi(form.label||"", form.tIn||"", form.tOut||"", patchLocale, patchDb);
     // Sul modello resta la config di default per i nuovi eventi futuri

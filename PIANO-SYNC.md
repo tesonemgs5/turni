@@ -14,7 +14,7 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 | 3a | Funzione `applica_modifiche`: molte modifiche in UNA richiesta, tutto-o-niente | DB | ✅ fatto 15/10 |
 | 3b | L'app la usa per le raffiche (riordino modelli/rotazioni/colori, cambio colore dei gruppi) | App | ✅ pubblicato 15/10 (da provare sui telefoni) |
 | 3c | Le altre raffiche (propagazione colori agli eventi, normalizzazioni, creazione modello, ripristino disposizione) | App | ✅ pubblicato 15/10 (da provare sui telefoni) |
-| 4 | Vincoli: ordine di invio, colori in inserisci-o-aggiorna, riferimenti che si azzerano | DB + App | ⏳ |
+| 4 | Vincoli e rifiuti del server: analisi + correzione del nome di colonna sbagliato | App (DB invariato) | ✅ pubblicato 15/10 |
 | 5 | Backup automatico giornaliero + copia fuori da Supabase + keep-alive | DB/App | ⏳ |
 
 ## Garanzie
@@ -163,3 +163,15 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
   Dopo i test: nessuna modifica rimasta.
 - **Come provarlo**: cambia il colore di un modello che ha eventi nel calendario → gli eventi si ricolorano e nel Log compare ☁️ ✓ senza raffiche di richieste; poi dimmelo e leggo Supabase.
 - **Riepilogo scrittura a blocchi (3a+3b+3c)**: ora le raffiche sono UNA richiesta; restano "una per una" solo le singole modifiche, il ripristino modello orfano e la rimozione colore.
+
+### Passo 4 — Vincoli e rifiuti del server ✅
+- **Analisi (solo lettura)** del Log di Supabase degli ultimi 5 giorni e dei vincoli del database:
+  1. **72 eventi rifiutati (rotazione mancante), 21 colori duplicati, 3 calendari ancora usati dai modelli**: tutti del 14/10 tra le 13:08 e le 13:11, cioè del vecchio "Ripristino backup", **già corretto** nel commit d7d2cec (id originali, ordine di cancellazione giusto, stop se una cancellazione fallisce, colori duplicati ignorati). Dopo di allora: zero.
+  2. **I 208 aggiornamenti "respinti"** (14/10 ~11:00 ora italiana): erano **104 eventi × 2 colonne con il nome sbagliato**. In `02-Modelli.jsx` (scheda override di report) l'app manda `turno_vuoto` e `app_auto_vuoto`, ma nel database le colonne si chiamano `categoria_turno_vuoto` e `categoria_app_auto_vuoto`. Il server le scartava, l'app riprovava senza, e quei due valori **non sono mai stati salvati su Supabase** per quegli eventi. È l'unico errore di colonna presente nel Log.
+  3. **Vincoli del database**: già adatti. Eventi → calendario: si cancellano col calendario (CASCADE). Eventi → rotazione: se la rotazione sparisce l'evento resta e perde solo il collegamento (SET NULL). Modelli → calendario: blocca la cancellazione di un calendario che ha ancora modelli; lo lascio così perché "azzerare" farebbe finire i modelli, in silenzio, nel calendario principale. Colori: unico per utente+colore; i nuovi inserimenti in blocco ignorano i doppioni.
+- **Decisione**: **nessuna modifica al database** in questo passo (i vincoli sono corretti; cambiarli darebbe più rischio che beneficio).
+- **Cosa cambio nell'app**: i due nomi di colonna in `02-Modelli.jsx` (riga ~3203). Effetto: per le modifiche di massa nessuna richiesta ripetuta, e i due valori finalmente salvati.
+- **Gli eventi già modificati** (le 104 QUARTINA) hanno il valore giusto sul telefono; su Supabase lo avranno al prossimo "Esporta su Supabase" (che riscrive tutti i campi).
+- Annullamento: ripristinare il commit precedente.
+- **Pubblicato** (push + nuova APK): corretti i due nomi di colonna. Database non toccato.
+- **Come provarlo**: da un evento "QUARTINA" (o altro) imposta l'override di report su "tutti gli eventi di questo modello" e salva. Nel Log non devono più comparire gli avvisi "Colonna 'turno_vuoto' assente"; dopo la tua prova li cerco io in `log_attivita`.
