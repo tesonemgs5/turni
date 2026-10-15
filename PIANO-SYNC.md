@@ -255,3 +255,13 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - **Ripristino atomico — app**: pulsante ora in UNA richiesta, con finestra di esito e conferma esplicita se il backup è molto più piccolo. Pubblicato con nuova APK.
 - **Perché Importa/Sincronizza/Esporta "non funzionavano"**: Supabase era danneggiato (69 eventi) e le protezioni dell'app rifiutavano di proposito i dati incompleti. Ora Supabase è corretto: dopo l'aggiornamento APK, "Sincronizza ora" dovrebbe dire "identico a Supabase" o mostrare le differenze reali.
 - **Da NON fare**: sul telefono con dati dubbi non premere "Importa" prima di aver controllato i numeri.
+
+### Impostazioni backup: frequenza, quanti tenerne, cancellazione e spazio 🔄
+- **Stato prima (verificato)**: il backup automatico c'è ma è fisso: ogni domenica 03:00 UTC, si tengono gli ultimi 8 automatici. Nell'app non si poteva né scegliere né cancellare nulla.
+- **Cosa aggiungo**:
+  1. **DB (solo aggiunte)**: tabella `backup_config` (per utente: `frequenza` = disattivato / giornaliero / settimanale / mensile, `max_automatici` da 1 a 60; di partenza settimanale e 8); funzioni `backup_config_leggi`, `backup_config_salva` (applica subito anche la pulizia), `backup_elenco` (data, tipo, eventi, modelli e **peso in kB**, senza scaricare i dati), `backup_elimina(ids)` (mai tutti: ne resta sempre almeno 1) e `backup_tieni_ultimi(n)`. Tutte richiedono login e toccano solo i tuoi backup.
+  2. **DB**: `crea_backup_automatico()` legge la configurazione di ogni utente (frequenza e quanti tenerne) e salta chi è "disattivato" o non è ancora il momento; il lavoro `pg_cron` passa da "ogni domenica" a "ogni giorno alle 03:00 UTC" (decide la funzione se è ora). Resta la protezione contro i backup danneggiati.
+  3. **App** (nuova APK): in Impostazioni → Database Cloud Supabase un blocco "🗄️ Backup automatici" con frequenza e quanti tenerne; la finestra "Backup disponibili" mostra data, tipo e peso, ha il cestino per ogni backup, "Tieni solo gli ultimi N" e il totale dello spazio usato.
+- **Regole di sicurezza**: nessun backup si cancella senza conferma; non si può cancellare l'ultimo rimasto; i backup manuali non vengono mai toccati dalla pulizia automatica (solo quando li cancelli tu o usi "Tieni solo gli ultimi N").
+- **Provo prima**: test annullati (config, elenco, cancellazione, rifiuto di cancellare tutto, senza login).
+- Annullamento: `drop function` delle 5 funzioni, `drop table backup_config`, ripristinare `crea_backup_automatico` e il lavoro cron settimanale, ripristinare il commit dell'app.
