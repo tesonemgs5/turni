@@ -463,6 +463,62 @@ export function useAppCore(session){
       return accodaSilenziosamente();
     }
   }
+  // Scrive MOLTE modifiche in UNA sola richiesta (funzione DB applica_modifiche: tutto-o-niente).
+  // ops = [{ tipo:"insert"|"update"|"delete", table, payload, matchObj, contesto }]
+  // - senza linea / rete che cade: ogni operazione va nella coda offline, come in scriviConBackup;
+  // - errore vero del server: il blocco non è applicato e si ripiega sulla scrittura una per una;
+  // - verifica: usa il numero di righe toccate (una modifica che tocca 0 righe finisce nel Log).
+  async function scriviBatchConBackup({ ops, contesto, ts, opzioni={} }){
+    const lista = (ops||[]).filter(Boolean);
+    if(lista.length===0) return { ok:true, errore:null, errori:0 };
+    const tsOp = ts || new Date().toISOString();
+    const idsDi = o => [ (o.payload && !Array.isArray(o.payload)) ? o.payload.id : null, o.matchObj?.id, ...idsConfermaPerMatch(o.table, o.matchObj) ].filter(Boolean);
+    const accoda = (elenco)=>{
+      const coda = leggiCodaSync();
+      elenco.forEach(o=>coda.push({ id: generaIdLocale(), ts: tsOp, tipo:o.tipo, table:o.table, payload:o.payload??null, match:o.matchObj??null, contesto:o.contesto||contesto }));
+      scriviCodaSync(coda);
+      segnaInCodaSupabase(elenco.flatMap(idsDi));
+    };
+    programmaSheets();
+    if(typeof navigator!=="undefined" && navigator.onLine===false){
+      accoda(lista);
+      return { ok:true, accodato:true, errore:null, errori:0 };
+    }
+    let errori = 0;
+    for(let i=0; i<lista.length; i+=500){
+      const blocco = lista.slice(i, i+500);
+      let risposta;
+      try{
+        risposta = await supabase.rpc("applica_modifiche", {
+          p_ops: blocco.map(o=>({ tipo:o.tipo, table:o.table, payload:o.payload??null, match:o.matchObj??null })),
+        });
+      }catch(e){
+        accoda(lista.slice(i));
+        return { ok:true, accodato:true, errore:null, errori };
+      }
+      const { data, error } = risposta;
+      if(error){
+        if(eRoreDiRete(error)){
+          accoda(lista.slice(i));
+          return { ok:true, accodato:true, errore:null, errori };
+        }
+        segnalaErroreSoloLog(`Scrittura a blocchi non riuscita (${error.message||error.code||"errore"}): riprovo una modifica alla volta.`, `${contesto} (scrittura a blocchi)`);
+        for(const o of blocco){
+          const ris = await scriviConBackup({ tipo:o.tipo, table:o.table, payload:o.payload, matchObj:o.matchObj, contesto:o.contesto||contesto, ts:tsOp, opzioni });
+          if(ris?.errore) errori++;
+        }
+        continue;
+      }
+      blocco.forEach((o,k)=>{
+        if(o.tipo==="update" && data?.[k]?.righe===0){
+          errori++;
+          segnalaErroreSoloLog(`Modifica su ${o.table} non trovata su Supabase (0 righe toccate)`, `${o.contesto||contesto} (controllo dopo il salvataggio)`);
+        }
+      });
+      confermaSupabase(blocco.flatMap(idsDi));
+    }
+    return { ok: errori===0, errore: errori>0 ? { message:`${errori} operazioni non confermate` } : null, errori };
+  }
   // Normalizza un campo testo in maiuscolo, gestendo null/undefined.
   // Usata al posto di ripetere ovunque (campo||"").toUpperCase().
   const up = (v) => (v||"").toUpperCase();
@@ -4491,17 +4547,15 @@ const importsRecenti = useMemo(()=>{
       return !prima || prima.sortOrder!==m.sortOrder;
     });
     const ts = new Date().toISOString();
-    await Promise.all(daSalvare.map(m =>
-      scriviConBackup({
-        tipo: "update",
-        table: "modelli",
+    await scriviBatchConBackup({
+      ops: daSalvare.map(m=>({
+        tipo: "update", table: "modelli",
         payload: { sort_order: m.sortOrder },
         matchObj: { id: m.id, user_id: userId },
         contesto: "Salvataggio posizione modello",
-        ts,
-        opzioni: { soloLog: true },
-      })
-    ));
+      })),
+      contesto: "Salvataggio posizione modello", ts, opzioni: { soloLog: true },
+    });
   }
 
   async function moveH24(id, dir, calIdFiltro){
@@ -4554,15 +4608,15 @@ const importsRecenti = useMemo(()=>{
       return !prima || prima.sortOrder!==r.sortOrder;
     });
     const ts = new Date().toISOString();
-    await Promise.all(daSalvare.map(r =>
-      scriviConBackup({
+    await scriviBatchConBackup({
+      ops: daSalvare.map(r=>({
         tipo: "update", table: "rotazioni",
         payload: { sort_order: r.sortOrder },
         matchObj: { id: r.id, user_id: userId },
-        contesto: "Salvataggio posizione rotazione", ts,
-        opzioni: { soloLog: true },
-      })
-    ));
+        contesto: "Salvataggio posizione rotazione",
+      })),
+      contesto: "Salvataggio posizione rotazione", ts, opzioni: { soloLog: true },
+    });
   }
 
   async function moveRotazione(id, dir){
@@ -4604,15 +4658,15 @@ const importsRecenti = useMemo(()=>{
       return !prima || prima.sortOrder!==c.sortOrder;
     });
     const ts = new Date().toISOString();
-    await Promise.all(daSalvare.map(c =>
-      scriviConBackup({
+    await scriviBatchConBackup({
+      ops: daSalvare.map(c=>({
         tipo: "update", table: "colori",
         payload: { sort_order: c.sortOrder },
         matchObj: { hex: c.hex, user_id: userId },
-        contesto: "Salvataggio posizione colore", ts,
-        opzioni: { soloLog: true },
-      })
-    ));
+        contesto: "Salvataggio posizione colore",
+      })),
+      contesto: "Salvataggio posizione colore", ts, opzioni: { soloLog: true },
+    });
   }
 
   async function moveColoreExtra(hex, dir, ordineVisibile){
@@ -4730,15 +4784,15 @@ const importsRecenti = useMemo(()=>{
     setModelli(aggiornatiRicolorati);
     if(modelliDaSalvare.length>0) saveToLocalStorage(store.events, store.calendars, aggiornatiRicolorati, calId);
     const ts = new Date().toISOString();
-    await Promise.all(modelliDaSalvare.map(m =>
-      scriviConBackup({
+    await scriviBatchConBackup({
+      ops: modelliDaSalvare.map(m=>({
         tipo: "update", table: "modelli",
         payload: { colore: m.colore, colore_custom: null },
         matchObj: { id: m.id, user_id: userId },
-        contesto: "Ricolorazione modelli per fascia oraria (una tantum)", ts,
-        opzioni: { soloLog: true },
-      })
-    ));
+        contesto: "Ricolorazione modelli per fascia oraria (una tantum)",
+      })),
+      contesto: "Ricolorazione modelli per fascia oraria (una tantum)", ts, opzioni: { soloLog: true },
+    });
     // Gli eventi già inseriti seguono il nuovo colore del modello.
     const mappaColori = {};
     modelliDaSalvare.forEach(m=>{ mappaColori[m.id] = m.colore; });
@@ -5836,28 +5890,25 @@ const importsRecenti = useMemo(()=>{
     // decine di errori "controllo dopo il salvataggio").
     const ts = new Date().toISOString();
     (async()=>{
-      let errori = 0;
-      for(const m of daAggiornare){
-        const ris = await scriviConBackup({
-          tipo:"update", table:"modelli", payload:{ colore_custom:newHex, colore:newHex },
-          matchObj:{id:m.id, user_id:userId},
-          contesto:`Sostituzione colore su modello "${m.titolo||m.id}"`, ts,
-          opzioni:{ soloLog:true },
-        });
-        if(ris?.errore) errori++;
-      }
+      // UNA sola richiesta (tutto-o-niente): modelli + vecchio colore + gruppo nuovo.
+      const ops = daAggiornare.map(m=>({
+        tipo:"update", table:"modelli", payload:{ colore_custom:newHex, colore:newHex },
+        matchObj:{id:m.id, user_id:userId},
+        contesto:`Sostituzione colore su modello "${m.titolo||m.id}"`,
+      }));
       if(regVecchio && !parziale){
-        await scriviConBackup({ tipo:"delete", table:"colori", payload:null, matchObj:{user_id:userId, hex:regVecchio.hex},
-          contesto:"Sostituzione colore (rimozione vecchio)", ts, opzioni:{ soloLog:true } });
+        ops.push({ tipo:"delete", table:"colori", payload:null, matchObj:{user_id:userId, hex:regVecchio.hex},
+          contesto:"Sostituzione colore (rimozione vecchio)" });
       }
       if(regNuovo){
-        await scriviConBackup({ tipo:"update", table:"colori", payload:{label:nomeGruppo}, matchObj:{user_id:userId, hex:regNuovo.hex},
-          contesto:"Sostituzione colore (nome gruppo)", ts, opzioni:{ soloLog:true } });
+        ops.push({ tipo:"update", table:"colori", payload:{label:nomeGruppo||null}, matchObj:{user_id:userId, hex:regNuovo.hex},
+          contesto:"Sostituzione colore (nome gruppo)" });
       } else {
-        await scriviConBackup({ tipo:"insert", table:"colori", payload: nomeGruppo ? { user_id:userId, hex:newHex, label:nomeGruppo } : { user_id:userId, hex:newHex }, matchObj:null,
-          contesto:"Sostituzione colore (nuovo gruppo)", ts, opzioni:{ soloLog:true } });
+        ops.push({ tipo:"insert", table:"colori", payload: nomeGruppo ? { user_id:userId, hex:newHex, label:nomeGruppo } : { user_id:userId, hex:newHex }, matchObj:null,
+          contesto:"Sostituzione colore (nuovo gruppo)" });
       }
-      if(errori>0) segnalaErroreSoloLog(`${errori} modelli non salvati su Supabase durante il cambio colore`, "Sostituzione colore");
+      const risB = await scriviBatchConBackup({ ops, contesto:"Sostituzione colore", ts, opzioni:{ soloLog:true } });
+      if(risB.errori>0) segnalaErroreSoloLog(`${risB.errori} modifiche non salvate su Supabase durante il cambio colore`, "Sostituzione colore");
       syncSeAttivo(eventiAggiornati||store.events, store.calendars, modelliAggiornati);
     })();
   }
@@ -5905,17 +5956,15 @@ const importsRecenti = useMemo(()=>{
     try{ await salvaModifichePosizioni(prima, modelliAggiornati); }catch(e){ segnalaErroreSoloLog(e?.message||String(e), "Assegnazione colore (posizioni)"); }
     const ts = new Date().toISOString();
     (async()=>{
-      let errori = 0;
-      for(const x of modificati){
-        const ris = await scriviConBackup({
+      const risB = await scriviBatchConBackup({
+        ops: modificati.map(x=>({
           tipo:"update", table:"modelli", payload:{ colore_custom:x.colore, colore:x.colore },
           matchObj:{ id:x.id, user_id:userId },
-          contesto:`Assegnazione colore su modello "${x.titolo||x.id}"`, ts,
-          opzioni:{ soloLog:true },
-        });
-        if(ris?.errore) errori++;
-      }
-      if(errori>0) segnalaErroreSoloLog(`${errori} modelli non salvati su Supabase durante l'assegnazione del colore`, "Assegnazione colore");
+          contesto:`Assegnazione colore su modello "${x.titolo||x.id}"`,
+        })),
+        contesto:"Assegnazione colore", ts, opzioni:{ soloLog:true },
+      });
+      if(risB.errori>0) segnalaErroreSoloLog(`${risB.errori} modelli non salvati su Supabase durante l'assegnazione del colore`, "Assegnazione colore");
       syncSeAttivo(eventiAggiornati||store.events, store.calendars, modelliAggiornati);
     })();
     return { ok:true, n:modificati.length };

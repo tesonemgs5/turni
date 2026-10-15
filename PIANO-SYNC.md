@@ -12,7 +12,7 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 | 2b | **Cambiato**: invece di cambiare tutte le cancellazioni dell'app, il DB registra da solo le righe eliminate (tabella `eliminati`) e offre la funzione `get_changes` (solo le differenze) | DB | ✅ fatto 15/10 |
 | 2c | "Sincronizza ora": scarica solo le righe cambiate dall'ultima volta | App | ✅ pubblicato 15/10 (da provare sui telefoni) |
 | 3a | Funzione `applica_modifiche`: molte modifiche in UNA richiesta, tutto-o-niente | DB | ✅ fatto 15/10 |
-| 3b | L'app la usa per le raffiche (colori dei gruppi, riordino modelli) | App | ⏳ |
+| 3b | L'app la usa per le raffiche (riordino modelli/rotazioni/colori, cambio colore dei gruppi) | App | ✅ pubblicato 15/10 (da provare sui telefoni) |
 | 3c | Le altre raffiche (eventi in blocco, import) | App | ⏳ |
 | 4 | Vincoli: ordine di invio, colori in inserisci-o-aggiorna, riferimenti che si azzerano | DB + App | ⏳ |
 | 5 | Backup automatico giornaliero + copia fuori da Supabase + keep-alive | DB/App | ⏳ |
@@ -117,5 +117,27 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - **Dopo i test**: nessuna traccia (29 colori, 0 colori di test, 1417 eventi, 225 modelli, registro eliminazioni vuoto).
 - Nessun push dell'app in questo passo.
 
-### Passo 3b — l'app usa `applica_modifiche` per le raffiche
-- **Da fare, non ancora iniziato.** Prima di toccare il codice scrivo qui: l'elenco dei punti a raffica, quale migrare per primo, e come si comporta senza linea (le operazioni finiscono nella coda offline una per una, come ora) e in caso di errore (si torna alla scrittura una per una, così i messaggi restano quelli di oggi).
+### Passo 3b — l'app usa `applica_modifiche` per le raffiche ✅
+- **Punti a raffica trovati e che migro in questo push** (tutti scrivono su Supabase "una richiesta per riga"):
+  1. `salvaModifichePosizioni` — riordino dei modelli (la causa principale: tutte le richieste partono insieme, ognuna con la sua lettura di controllo). Usato da trascinamento, frecce ▲▼ e assegnazione colori.
+  2. `salvaModifichePosizioniRotazioni` — riordino rotazioni.
+  3. `salvaModifichePosizioniColori` — riordino colori.
+  4. `replaceColoreEverywhere` — cambio colore di un gruppo: N modelli + vecchio colore + gruppo nuovo, tutto in UNA richiesta.
+  5. `assegnaColoreAModelli` — assegnare un colore a più modelli.
+  6. Ricolorazione "una tantum" dei modelli per fascia oraria.
+- **Come funziona**: nuova funzione dell'app `scriviBatchConBackup`. Manda le operazioni a `applica_modifiche` (max 500 per richiesta), tutto-o-niente.
+  - **Senza linea / rete che cade**: le operazioni vanno nella coda offline una per una, esattamente come oggi (la coda non cambia).
+  - **Errore vero del server** (non di rete): il blocco non viene applicato; l'app ripiega sulla scrittura una per una di oggi, così i messaggi e il comportamento restano quelli noti.
+  - **Verifica**: al posto della lettura di controllo per ogni riga, si usa il numero di righe toccate restituito dal server; una modifica che tocca 0 righe viene segnalata nel Log.
+  - Spunta ☁️ Supabase nel Log e Sheets: invariati.
+- **Non cambia**: la scrittura delle singole modifiche (un evento, un modello), la coda offline, Esporta, Sincronizza ora.
+- Limite dichiarato: non posso provarlo su un telefono reale. Lo verifico leggendo Supabase dopo il tuo test (riordina un modello e cambia un colore di gruppo).
+- Annullamento: basta ripristinare il commit precedente; la funzione DB può restare.
+- **Pubblicato** (push + nuova APK): la funzione `scriviBatchConBackup` e i 6 punti migrati, come da elenco qui sopra.
+- **Verificato prima del push** (test annullati sul DB, con le stesse forme di richiesta che manderà l'app): cambio colore di un gruppo (modello + cancellazione vecchio colore con contenuto vuoto + nuovo gruppo con filtro vuoto) = 3 operazioni in una richiesta; ricolorazione con `colore_custom` nullo; posizione colore per `hex`. Dopo i test: 29 colori, 1417 eventi, 225 modelli, nessuna traccia.
+- **Come provarlo**: (1) sposta un modello con le frecce o col trascinamento; (2) cambia il colore di un gruppo che ha molti modelli. Nel Log ogni operazione deve mostrare ☁️ Supabase ✓. Poi dimmelo e leggo Supabase.
+- **Dopo il primo spostamento di modello** l'app rinumera una volta tutti i modelli (numerazione con buchi, commit 13b3403): prima era una raffica di circa 225 richieste, ora è **una richiesta sola**.
+- Restano scritture "una per una" per le singole modifiche (un evento, un modello) e le raffiche sugli eventi (passo 3c).
+
+### Passo 3c — altre raffiche (eventi in blocco, import)
+- **Da fare, non ancora iniziato.**
