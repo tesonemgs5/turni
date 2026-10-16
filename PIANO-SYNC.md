@@ -283,3 +283,7 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - **App**: nessuna modifica in questo passo (la finestra unica backup viene dopo, con nuova APK).
 - **Provo prima**: test annullati (creazione, conteggi eventi per modello, guardia 80%, ripristino, senza login).
 - **Annullamento**: `drop function crea_backup_per_modello(); drop function ripristina_modello(uuid,uuid); drop table backup_per_modello;` e togliere il lavoro cron.
+- **Eseguito** (16/10): tabella `backup_per_modello` (RLS attiva, nessun accesso diretto), funzioni `crea_backup_per_modello()` e `ripristina_modello(modello, copia)`, lavoro `pg_cron` `backup-per-modello` ogni domenica 03:10 UTC.
+- **Scelte**: si tengono le ultime **4** copie per modello (fisso, non dalla configurazione); ogni copia contiene modello, calendario, rotazioni collegate ed **eventi intatti** (tutte le colonne: entrata/uscita, collega, auto, note, colori, categorie); i 6 eventi senza modello restano solo nei backup completi.
+- **Verificato con test annullati** (login simulato): copia di tutti i 225 modelli con 1411 eventi (= eventi con modello); guardia 80% **scatta** (copia saltata se i dati calano); ripristino di QUARTINA: 104 eventi ripristinati = 104 attesi, con copia di sicurezza `pre_ripristino`; `anon` non può creare, `authenticated` può ripristinare, senza login **rifiutato**. Dopo i test: 0 righe in `backup_per_modello`, 1417 eventi, 225 modelli.
+- **Non ancora fatto**: prima copia reale (parte domenica, o a mano); finestra unica nell'app.
