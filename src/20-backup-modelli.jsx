@@ -143,7 +143,7 @@ export function BackupPerModelloPulsante({ T }) {
 }
 
 // Riga di stato sotto "Sincronizza ora": "Ok" oppure quante modifiche sono da sincronizzare, con dettaglio a scomparsa.
-const NOMI_TAB = { events: "Eventi", modelli: "Modelli", calendars: "Calendari", rotazioni: "Rotazioni", colori: "Colori", autocomplete_valori: "Suggerimenti" };
+const NOMI_TAB = { events: "Eventi", modelli: "Modelli", calendars: "Calendari", rotazioni: "Rotazioni", colori: "Colori", gruppi_modelli: "Gruppi", autocomplete_valori: "Suggerimenti" };
 export function StatoSync({ T, userId, refreshKey }) {
   const [coda, setCoda] = useState([]);
   const [aperto, setAperto] = useState(false);

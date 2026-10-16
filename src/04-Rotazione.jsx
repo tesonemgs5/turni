@@ -686,7 +686,7 @@ export function saveExtraHolsLocale(extraHols) {
 // Va chiamata da un useEffect che osserva questi stati (vedi 06-Logica.jsx),
 // così ogni punto che li modifica è coperto automaticamente, senza dover
 // aggiungere una chiamata manuale ad ogni singolo setRotazioni/setColoriExtra/ecc.
-export function saveDatiSessioneLocale({ rotazioni, coloriExtra, autocompleteValori, indennita, valoreTicket, conteggioConfigs }) {
+export function saveDatiSessioneLocale({ rotazioni, coloriExtra, gruppi, autocompleteValori, indennita, valoreTicket, conteggioConfigs }) {
   try {
     let precedente = {};
     try {
@@ -697,6 +697,7 @@ export function saveDatiSessioneLocale({ rotazioni, coloriExtra, autocompleteVal
       ...precedente,
       ...(rotazioni !== undefined ? { rotazioni } : {}),
       ...(coloriExtra !== undefined ? { coloriExtra } : {}),
+      ...(gruppi !== undefined ? { gruppi } : {}),
       ...(autocompleteValori !== undefined ? { autocompleteValori } : {}),
       ...(indennita !== undefined ? { indennita } : {}),
       ...(valoreTicket !== undefined ? { valoreTicket } : {}),
@@ -746,7 +747,7 @@ const LS_REGISTRO_IMPORT_KEY = "turnipm_registro_import_v1";
 export const CATEGORIE_BACKUP_LOCALE = [
   { id: "calendari", label: "Calendari", campiCache: ["calendars"], obbligatorio: true },
   { id: "eventi", label: "Eventi/turni", campiCache: ["events"], obbligatorio: true },
-  { id: "modelli", label: "Modelli", campiCache: ["modelli"], obbligatorio: true },
+  { id: "modelli", label: "Modelli", campiCache: ["modelli","gruppi"], obbligatorio: true },
   { id: "rotazioni", label: "Rotazioni", campiCache: ["rotazioni"] },
   { id: "coloriIndennita", label: "Colori extra e indennità", campiCache: ["coloriExtra","indennita","valoreTicket","conteggioConfigs"] },
   { id: "autocomplete", label: "Autocomplete (suggerimenti)", campiCache: ["autocompleteValori"] },
@@ -1047,7 +1048,7 @@ export const CONTESTO_CONTROLLO_SUPABASE = "Controllo Supabase";
 export const TABELLE_SUPABASE_ATTESE = [
   "calendars","events","modelli","rotazioni","user_settings","backups","usage_stats",
   "autocomplete_valori","disposizione_auto","log_attivita","modelli_sortorder_backup",
-  "impostazioni_backup","colori",
+  "impostazioni_backup","colori","gruppi_modelli",
 ];
 function classificaErroreSupabase(err){
   const code = String(err?.code||""); const msg = String(err?.message||"");

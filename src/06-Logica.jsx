@@ -1,6 +1,6 @@
     import { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "./11-supabase";
-import { ordineAttivo, impostaOrdineAttivo, posDaRiga, colonnePosizione, payloadPosCambiate, scambiaOrdini } from "./21-ordine";
+import { ordineAttivo, impostaOrdineAttivo, posDaRiga, colonnePosizione, payloadPosCambiate, scambiaOrdini, mapGruppoDb, colGruppo } from "./21-ordine";
 import { calcolaAllineamentoColori } from "./13-allinea-colori";
 import { widgetDisponibile, inviaAlWidget, descriviStatoWidget } from "./17-widget";
 import { scaricaFileTesto } from "./18-scarica-file";
@@ -642,6 +642,7 @@ export function useAppCore(session){
   const [showColorAssignPicker, setShowColorAssignPicker] = useState(null); // colore hex attualmente aperto nel popup
   const [colorAssignCalFiltro, setColorAssignCalFiltro] = useState(null); // calendari selezionati per filtrare la lista modelli nel popup colore (null = tutti)
   const [showAddColorPicker, setShowAddColorPicker] = useState(false); // popup "+" per aggiungere un colore alla sezione
+  const [gruppi, setGruppi] = useState([]); // gruppi a tendina dei modelli: {id, calendarId, ordine:"A"|"B", nome, sortOrder}
   const [coloriExtra, setColoriExtra] = useState([]); // colori aggiunti manualmente o generati da modelli: array di {hex, label}
   // ── Autocomplete: 5 liste dedicate, sincronizzate su Supabase (tabella
   // autocomplete_valori), una per campo. Caricate una volta all'avvio;
@@ -834,8 +835,8 @@ export function useAppCore(session){
       primoRenderDatiSessioneFatto.current = true;
       return;
     }
-    saveDatiSessioneLocale({ rotazioni, coloriExtra, autocompleteValori, indennita, valoreTicket, conteggioConfigs });
-  }, [rotazioni, coloriExtra, autocompleteValori, indennita, valoreTicket, conteggioConfigs]);
+    saveDatiSessioneLocale({ rotazioni, coloriExtra, gruppi, autocompleteValori, indennita, valoreTicket, conteggioConfigs });
+  }, [rotazioni, coloriExtra, gruppi, autocompleteValori, indennita, valoreTicket, conteggioConfigs]);
 
   const [showReportModelliPicker, setShowReportModelliPicker] = useState(null); // reportId aperto
   const [editFascia, setEditFascia] = useState(null); // key fascia in editing (nome/orario)
@@ -916,6 +917,7 @@ export function useAppCore(session){
           // non torna. setRotazioni applica anche la guardia anti-null.
           if(cached.rotazioni !== undefined) setRotazioni(cached.rotazioni||[]);
           if(cached.coloriExtra !== undefined) setColoriExtra(cached.coloriExtra||[]);
+          if(cached.gruppi !== undefined) setGruppi(cached.gruppi||[]);
           if(cached.autocompleteValori !== undefined) setAutocompleteValori(cached.autocompleteValori||{titolo:[],nome_visualizzato:[],auto:[],luogo:[],collega:[]});
           if(cached.indennita !== undefined) setIndennita(cached.indennita||{diurno:"",notturno:"",festivo:"",notturno_festivo:""});
           if(cached.valoreTicket !== undefined) setValoreTicket(cached.valoreTicket||"");
@@ -985,6 +987,7 @@ export function useAppCore(session){
         const settings = all?.user_settings || null;
         const modelliDb = all?.modelli || [];
         const coloriDb = all?.colori || [];
+        const gruppiDb = all?.gruppi || [];
         const rotazioniDb = all?.rotazioni || [];
 
         // Ordino i calendari secondo sort_order (posizione scelta in Impostazioni con <-‘<-“),
@@ -1183,6 +1186,7 @@ export function useAppCore(session){
             });
           }
         }catch(eMig){ segnalaErroreSoloLog(eMig?.message||String(eMig), "Migrazione colore esplicito modelli"); }
+        setGruppi((gruppiDb||[]).map(mapGruppoDb));
         setColoriExtra((coloriDb||[]).map(c=>({hex:c.hex, label:c.label||null, sortOrder:c.sort_order||0}))
           .sort((a,b)=>{
             const sa=a.sortOrder, sb=b.sortOrder;
@@ -3475,11 +3479,12 @@ export function useAppCore(session){
     const {data:rots} = await dbSelectTutto("rotazioni", {matchObj:{user_id:userId}, contesto:"Esportazione backup — rotazioni"});
     const {data:colori} = await dbSelectTutto("colori", {matchObj:{user_id:userId}, contesto:"Esportazione backup — colori"});
     const {data:autocomplete} = await dbSelectTutto("autocomplete_valori", {matchObj:{user_id:userId}, contesto:"Esportazione backup — autocomplete"});
+    const {data:gruppiBk} = await dbSelectTutto("gruppi_modelli", {matchObj:{user_id:userId}, contesto:"Esportazione backup — gruppi"});
     const {data:sett} = await supabase.from("user_settings").select("*").eq("user_id",userId).maybeSingle();
     return {
       exported_at: new Date().toISOString(),
       calendars: cals||[], events: evts||[], modelli: mods||[],
-      rotazioni: rots||[], colori: colori||[], autocomplete_valori: autocomplete||[],
+      rotazioni: rots||[], colori: colori||[], gruppi_modelli: gruppiBk||[], autocomplete_valori: autocomplete||[],
       user_settings: sett||null,
     };
   }
@@ -3729,12 +3734,13 @@ export function useAppCore(session){
       let elim = ch.eliminati||[];
       if(vecchio){
         const srv = t=>new Set((ch[t]||[]).map(r=>String(r.id)));
-        const sE=srv("events"), sC=srv("calendars"), sM=srv("modelli"), sR=srv("rotazioni");
+        const sE=srv("events"), sC=srv("calendars"), sM=srv("modelli"), sR=srv("rotazioni"), sG=srv("gruppi");
         elim = [];
         Object.values(loc.events||{}).forEach(byc=>Object.values(byc||{}).forEach(lst=>(lst||[]).forEach(e=>{ if(e && !sE.has(String(e.id))) elim.push({tabella:"events", id:String(e.id)}); })));
         (loc.calendars||[]).forEach(c=>{ if(!sC.has(String(c.id))) elim.push({tabella:"calendars", id:String(c.id)}); });
         modelliCor.forEach(m=>{ if(!sM.has(String(m.id))) elim.push({tabella:"modelli", id:String(m.id)}); });
         (rotazioni||[]).forEach(r=>{ if(!sR.has(String(r.id))) elim.push({tabella:"rotazioni", id:String(r.id)}); });
+        (gruppi||[]).forEach(g=>{ if(!sG.has(String(g.id))) elim.push({tabella:"gruppi_modelli", id:String(g.id)}); });
       }
       const elimDi = t=>elim.filter(x=>x.tabella===t).map(x=>String(x.id));
 
@@ -3842,6 +3848,21 @@ export function useAppCore(session){
         if(diversi){ coloriNuovi = lista; nCol = Math.max(1, Math.abs(lista.length-attuali.length)); }
       }
 
+      // ── GRUPPI (tendine dei modelli): applico solo cio' che e' DIVERSO ──
+      let gruppiNuovi = null; let nGru = 0;
+      {
+        const gAttuali = gruppi||[];
+        const elimGru = new Set(elimDi("gruppi_modelli"));
+        const grCambiati = (ch.gruppi||[]).filter(r=>!ugualiSync(gAttuali.find(x=>x.id===r.id), mapGruppoDb(r)));
+        const grEliminati = gAttuali.filter(g=>elimGru.has(String(g.id)));
+        if(grCambiati.length>0 || grEliminati.length>0){
+          let lista = gAttuali.filter(g=>!elimGru.has(String(g.id)));
+          grCambiati.forEach(r=>{ const n=mapGruppoDb(r); const i=lista.findIndex(x=>x.id===r.id); if(i>=0){ lista=[...lista]; lista[i]=n; } else lista=[...lista, n]; });
+          gruppiNuovi = [...lista].sort((a,b)=> a.sortOrder!==b.sortOrder ? a.sortOrder-b.sortOrder : String(a.id).localeCompare(String(b.id)));
+          nGru = grCambiati.length + grEliminati.length;
+        }
+      }
+
       // ── IMPOSTAZIONI (user_settings): giorni importanti/festivi personali, colore domeniche e festivi,
       // quartine (dentro report_settings), colori delle fasce, festività attive. Non stanno nelle tabelle di get_changes.
       // Si rilegge la riga dal server e si applica solo ciò che è DIVERSO; i giorni importanti si fondono con le modifiche locali in coda.
@@ -3876,7 +3897,7 @@ export function useAppCore(session){
 
       const nEv=evCambiati.length, nMod=modCambiati.length, nCal=calCambiati.length, nRot=rotCambiate.length;
       const totElim = elimEv.length + elimCal.size + elimMod.size + elimRot.size;
-      const nessunaNovita = nEv+nMod+nCal+nRot+nCol+nExtra===0 && totElim===0;
+      const nessunaNovita = nEv+nMod+nCal+nRot+nCol+nGru+nExtra===0 && totElim===0;
       // Regola dell'80%: se l'aggiornamento cambia piu' dell'80% dei dati di questo dispositivo, chiedo se continuare o annullare.
       const totLocale = nEvLocali + modelliCor.length + (loc.calendars||[]).length + (rotazioni||[]).length;
       const totCambi = nEv+nMod+nCal+nRot+totElim;
@@ -3896,6 +3917,7 @@ export function useAppCore(session){
         if(nMod>0 || elimMod.size>0) setModelli(modelliNuovi);
         if(nRot>0 || elimRot.size>0) setRotazioni(rotNuove);
         if(coloriNuovi) setColoriExtra(coloriNuovi);
+        if(gruppiNuovi) setGruppi(gruppiNuovi);
         saveToLocalStorage(events, calendars, modelliNuovi, calId, impostazioniNuove||{});
         setTimeout(()=>impostaSorgenteLog("locale"), 1500);
       }
@@ -3907,6 +3929,7 @@ export function useAppCore(session){
       if(nCal) parti.push(`${nCal} ${nCal===1?"calendario":"calendari"}`);
       if(nRot) parti.push(`${nRot} ${nRot===1?"rotazione":"rotazioni"}`);
       if(nCol) parti.push(`colori`);
+      if(nGru) parti.push(`gruppi`);
       if(nExtra) parti.push(`impostazioni/colori`);
       if(nessunaNovita) return { tipo:"nessuna", msg:"✅ Già aggiornato: nessuna novità su Supabase." };
       return { tipo:"ok", cambiati:parti.join(", "), msg:`✅ Aggiornato. Cambiati: ${parti.join(", ")||"nessuno"}${totElim?` · eliminati: ${totElim}`:""}.` };
@@ -3969,7 +3992,7 @@ export function useAppCore(session){
     try{
       const quandoCambia = ()=>{ clearTimeout(timerRt); timerRt = setTimeout(()=>lancia("tempo reale"), 1200); };
       canale = supabase.channel("turni-sync-"+userId);
-      ["events","modelli","calendars","rotazioni","colori"].forEach(t=>canale.on("postgres_changes", { event:"*", schema:"public", table:t }, quandoCambia));
+      ["events","modelli","calendars","rotazioni","colori","gruppi_modelli"].forEach(t=>canale.on("postgres_changes", { event:"*", schema:"public", table:t }, quandoCambia));
       // impostazioni (giorni importanti / festivi personali): serve user_settings nella pubblicazione realtime (vedi realtime-user-settings.sql)
       canale.on("postgres_changes", { event:"*", schema:"public", table:"user_settings" }, quandoCambia);
       canale.subscribe(stato=>{
@@ -4054,7 +4077,13 @@ export function useAppCore(session){
         label:m.label||"", categoria:nn(m.categoria), categoria_app_auto:nn(m.categoriaAppAuto),
         categoria_turno_vuoto:!!m.turnoVuoto, categoria_app_auto_vuoto:!!m.appAutoVuoto,
         visibile_anche_in:m.visibileAncheIn||[],
+        ...((gruppi||[]).length>0 ? { gruppo_a:nn(m.gruppoA), gruppo_b:nn(m.gruppoB) } : {}), // se il telefono non conosce i gruppi NON tocco quelli di Supabase
       })));
+      if((gruppi||[]).length>0){
+        await scrivi("gruppi_modelli", gruppi.map(g=>({
+          id:g.id, user_id:userId, calendar_id:nn(g.calendarId), ordine:g.ordine, nome:g.nome||"", sort_order:g.sortOrder||0,
+        })));
+      }
       await scrivi("events", evLocali.map(({e,dateKey,cId})=>({
         id:e.id, user_id:userId, calendar_id:cId, date_key:dateKey,
         label:e.label||"", color:nn(e.color), all_day:e.allDay??true,
@@ -7903,6 +7932,7 @@ const importsRecenti = useMemo(()=>{
     showAddColorPicker,
     setShowAddColorPicker,
     coloriExtra,
+    gruppi, setGruppi,
     setColoriExtra,
     autocompleteValori,
     setAutocompleteValori,

@@ -405,3 +405,15 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - **Riempimento iniziale** (una sola istruzione, **test annullato prima**, confronto dei conteggi con quelli visibili oggi): B = MATTINA, POMERIGGIO, TERZO TURNO, NOTTE (6h15/6h30 per fasce delle Impostazioni, più i 4 modelli etichetta H24) e H24; A = DISTACCATI (nome che inizia per D o DF + spazio), AUTO, APPIEDATI, ALTRI. Personalizzati/senza orario in B: senza gruppo (sotto i gruppi).
 - **App tappa 1**: stato `gruppi` con cache locale, lettura da `get_user_data`/`get_changes`, Realtime su `gruppi_modelli`, Esporta/Importa/backup che li conoscono; tendine disegnate dai gruppi; «+ Aggiungi gruppo», elimina, rinomina; scritture sempre a blocchi (`applica_modifiche`).
 - **Annullamento**: ripristinare il commit; `drop table gruppi_modelli; alter table modelli drop column gruppo_a, drop column gruppo_b;` e rimettere le funzioni com'erano (definizioni salvate in `gruppi-ripristino-funzioni.sql` prima della modifica). Le colonne e le tabelle esistenti non vengono mai toccate.
+
+#### Tappa 1a — database ✅ (verificato 17/10)
+- Tabella `gruppi_modelli` (19 gruppi) e colonne `modelli.gruppo_a`/`gruppo_b` (225/225 con gruppo A, 224/225 con gruppo B) presenti su Supabase.
+- `get_user_data`, `get_changes`, `applica_modifiche`, `crea_backup_automatico`, `ripristina_backup` conoscono i gruppi.
+- Da controllare: il modello senza gruppo B.
+
+#### Tappa 1b-i — app legge e sincronizza i gruppi ✅ (17/10, solo codice, aspetto dell'app invariato)
+- Stato `gruppi` (con cache locale), letto da `get_user_data`, sincronizzato da `get_changes` e Realtime su `gruppi_modelli`.
+- `posDaRiga` porta in memoria `gruppoA`/`gruppoB` di ogni modello; nuovi helper `mapGruppoDb` e `colGruppo` in `21-ordine.js`.
+- Backup Supabase e Esporta: includono i gruppi. Esporta scrive `gruppo_a`/`gruppo_b` e la tabella solo se il telefono conosce dei gruppi (altrimenti non tocca quelli di Supabase) e non elimina mai gruppi.
+- Controllo struttura e backup locale conoscono la nuova tabella. Build di prova riuscita.
+- Prossimo: **1b-ii** (tendine disegnate dai gruppi, «+ Aggiungi gruppo», elimina, rinomina).

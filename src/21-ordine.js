@@ -7,7 +7,10 @@ export function impostaOrdineAttivo(o){ try{ localStorage.setItem(CHIAVE, o==="A
 export const colAttiva = ()=> ordineAttivo()==="A" ? "sort_order_a" : "sort_order";
 export const colAltra  = ()=> ordineAttivo()==="A" ? "sort_order" : "sort_order_a";
 // Riga del database -> campi di posizione in memoria.
-export function posDaRiga(r){ return { sortOrder:(r && r[colAttiva()])||0, sortOrderAltro:(r && r[colAltra()])||0 }; }
+export function posDaRiga(r){ return { sortOrder:(r && r[colAttiva()])||0, sortOrderAltro:(r && r[colAltra()])||0, gruppoA:(r && r.gruppo_a)||null, gruppoB:(r && r.gruppo_b)||null }; }
+// Gruppi a tendina (tabella gruppi_modelli): riga del database -> oggetto in memoria, e colonna di appartenenza per ordine.
+export function mapGruppoDb(r){ return { id:r.id, calendarId:r.calendar_id||null, ordine:r.ordine==="A"?"A":"B", nome:r.nome||"", sortOrder:r.sort_order||0 }; }
+export const colGruppo = (ordine)=> ordine==="A" ? "gruppo_a" : "gruppo_b";
 // Modello in memoria -> ENTRAMBE le colonne del database.
 export function colonnePosizione(m){
   const a = ordineAttivo()==="A"; const v = (m && m.sortOrder)||0, w = (m && m.sortOrderAltro)||0;
