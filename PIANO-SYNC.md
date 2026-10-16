@@ -271,3 +271,15 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
   - **App** (nuova APK): Impostazioni → Database Cloud Supabase → blocco **"🗄️ Backup automatici"** (Ogni quanto: Disattivato / giorno / settimana / mese; Quanti tenerne: 1–60). La finestra "Importa da Supabase" ora mostra per ogni backup data, tipo, eventi, modelli e peso, con 🗑️ per cancellarlo (con conferma) e, in alto, il totale dello spazio e **"Libera spazio: tieni solo gli ultimi N"**.
   - **Regole**: non si può cancellare l'ultimo backup rimasto; i manuali non vengono toccati dalla pulizia automatica; "tieni gli ultimi N" invece vale per tutti i tipi, con conferma.
 - **Backup attuali**: 27, ~4,9 MB (circa 180 kB l'uno). Con il piano gratuito non è un problema, ma "tieni gli ultimi 10" porterebbe a ~2 MB.
+
+### Passo 5c — Backup di emergenza per modello (solo DB, scritto prima) 🔄
+- **Obiettivo**: oltre ai backup completi (che restano com'è), una copia **per modello**, ogni riga autonoma e leggibile da sola. Serve solo come emergenza.
+- **Cosa contiene ogni riga** (tutte le colonne, copiate intere dalle righe, quindi nulla va perso): il modello (titolo, orari, colore e colore personalizzato, posizione/ordine, calendario, rotazione, flag e impostazioni) + **tutti i suoi eventi** (giorno, entrata e uscita, luogo, note, collega, auto, categorie, colore, protezioni) + la rotazione collegata.
+- **DB (solo aggiunte)**:
+  1. tabella `backup_per_modello` (utente, modello_id, titolo, `creato_il`, `batch_id`, `n_eventi`, `dati jsonb`). RLS attiva, nessun accesso diretto dall'app.
+  2. funzione `crea_backup_per_modello()`: una riga per modello con tutti i suoi eventi. Guardie: salta chi non ha dati; non salva se i modelli o gli eventi totali sono meno dell'80% dell'ultima copia; tiene le ultime N copie per modello (N dalla configurazione, di partenza 4); cancella le vecchie solo dopo aver scritto le nuove. Permessi: né `anon` né `authenticated`, solo il sistema.
+  3. `pg_cron`: parte insieme al backup automatico.
+  4. funzione `ripristina_modello(p_modello_id, p_batch_id)`: per utenti loggati, tutto-o-niente, reinserisce modello ed eventi con gli stessi id; prima salva una copia di sicurezza.
+- **App**: nessuna modifica in questo passo (la finestra unica backup viene dopo, con nuova APK).
+- **Provo prima**: test annullati (creazione, conteggi eventi per modello, guardia 80%, ripristino, senza login).
+- **Annullamento**: `drop function crea_backup_per_modello(); drop function ripristina_modello(uuid,uuid); drop table backup_per_modello;` e togliere il lavoro cron.
