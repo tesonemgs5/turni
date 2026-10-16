@@ -1,5 +1,6 @@
     import { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "./11-supabase";
+import { ordineAttivo, impostaOrdineAttivo, posDaRiga, colonnePosizione, payloadPosCambiate, scambiaOrdini } from "./21-ordine";
 import { calcolaAllineamentoColori } from "./13-allinea-colori";
 import { widgetDisponibile, inviaAlWidget, descriviStatoWidget } from "./17-widget";
 import { scaricaFileTesto } from "./18-scarica-file";
@@ -600,6 +601,17 @@ export function useAppCore(session){
   const modelliRef = useRef([]);
   useEffect(()=>{ modelliRef.current = modelli; }, [modelli]);
   const [modelliSort, setModelliSort] = useState("orario");
+  // Ordine dei modelli da vedere: "B" = orario, "A" = alfabetico. Vale per questo dispositivo; le posizioni sono nel database.
+  const [ordineModelli, setOrdineModelliStato] = useState(()=>ordineAttivo());
+  function cambiaOrdineModelli(nuovo){
+    const n = nuovo==="A" ? "A" : "B";
+    if(n===ordineAttivo()) return;
+    impostaOrdineAttivo(n);
+    const scambiati = (modelliRef.current||[]).map(scambiaOrdini);
+    setModelli(scambiati);
+    try{ saveToLocalStorage(store.events, store.calendars, scambiati, calId); }catch(e){}
+    setOrdineModelliStato(n);
+  }
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [showModelForm, setShowModelForm] = useState(false);
   // Da dove è stato aperto il form "Nuovo/Modifica modello": determina dove
@@ -1053,7 +1065,7 @@ export function useAppCore(session){
           // fascia corrente, e da qui in poi non cambia più da solo.
           colore:m.colore,
           coloreCustom:m.colore_custom || (m.tempo==="h24" ? COLORE_H24 : getColorByTime(m.inizio||"", savedFasce)),
-          posizione:m.posizione||"", sortOrder:m.sort_order||0,
+          posizione:m.posizione||"", ...posDaRiga(m),
           calendarId:m.calendar_id||null,
           categoria:(m.categoria==="primo"||m.categoria==="secondo")?m.categoria:"",
           categoriaAppAuto:(m.categoria_app_auto==="app"||m.categoria_app_auto==="auto")?m.categoria_app_auto:((m.categoria==="app"||m.categoria==="auto")?m.categoria:""),
@@ -1275,7 +1287,7 @@ export function useAppCore(session){
                 id:m.id,titolo:m.titolo,label:m.label||"",tempo:m.tempo,
                 inizio:m.inizio||"",fine:m.fine||"",
                 colore:m.colore,coloreCustom:m.colore_custom||m.colore||null,
-                posizione:m.posizione||"",sortOrder:m.sort_order||0,
+                posizione:m.posizione||"",...posDaRiga(m),
               })));
             }
           } catch(e){ segnalaErrore(e, "Correzione automatica ordine modelli all'avvio"); }
@@ -1358,7 +1370,7 @@ export function useAppCore(session){
                 inizio:m.inizio||"",fine:m.fine||"",
                 colore:m.colore,coloreCustom:m.colore_custom||m.colore||null,
                 calendarId:m.calendar_id||null,
-                posizione:m.posizione||"",sortOrder:m.sort_order||0,
+                posizione:m.posizione||"",...posDaRiga(m),
               })));
               if(modelliDaRimappare.size>0){
                 setStore(prev=>{
@@ -1416,7 +1428,7 @@ export function useAppCore(session){
                 inizio:m.inizio||"",fine:m.fine||"",
                 colore:m.colore,coloreCustom:m.colore_custom||m.colore||null,
                 calendarId:m.calendar_id||null,
-                posizione:m.posizione||"",sortOrder:m.sort_order||0,
+                posizione:m.posizione||"",...posDaRiga(m),
               })));
               // Aggiorno anche la label sugli eventi già creati da questi
               // modelli, così il calendario mostra subito il nome breve
@@ -1485,7 +1497,7 @@ export function useAppCore(session){
                   inizio:m.inizio||"",fine:m.fine||"",
                   colore:m.colore,coloreCustom:m.colore_custom||m.colore||null,
                   calendarId:m.calendar_id||null,
-                  posizione:m.posizione||"",sortOrder:m.sort_order||0,
+                  posizione:m.posizione||"",...posDaRiga(m),
                 })));
               }
               try{ localStorage.setItem(FLAG_KEY, "1"); }catch(e){}
@@ -3638,7 +3650,7 @@ export function useAppCore(session){
     id:m.id, titolo:m.titolo, label:m.label||"", tempo:m.tempo,
     inizio:m.inizio||"", fine:m.fine||"", colore:m.colore,
     coloreCustom:m.colore_custom || (m.tempo==="h24" ? COLORE_H24 : getColorByTime(m.inizio||"", fasce)),
-    posizione:m.posizione||"", sortOrder:m.sort_order||0, calendarId:m.calendar_id||null,
+    posizione:m.posizione||"", ...posDaRiga(m), calendarId:m.calendar_id||null,
     categoria:(m.categoria==="primo"||m.categoria==="secondo")?m.categoria:"",
     categoriaAppAuto:(m.categoria_app_auto==="app"||m.categoria_app_auto==="auto")?m.categoria_app_auto:((m.categoria==="app"||m.categoria==="auto")?m.categoria:""),
     turnoVuoto:!!m.categoria_turno_vuoto, appAutoVuoto:!!m.categoria_app_auto_vuoto,
@@ -4038,7 +4050,7 @@ export function useAppCore(session){
       await scrivi("modelli", mods.map(m=>({
         id:m.id, user_id:userId, titolo:m.titolo||"", tempo:m.tempo||"personalizzato",
         inizio:nn(m.inizio), fine:nn(m.fine), colore:m.colore||"#64748b", colore_custom:nn(m.coloreCustom),
-        posizione:nn(m.posizione), sort_order:m.sortOrder||0, calendar_id:nn(m.calendarId),
+        posizione:nn(m.posizione), ...colonnePosizione(m), calendar_id:nn(m.calendarId),
         label:m.label||"", categoria:nn(m.categoria), categoria_app_auto:nn(m.categoriaAppAuto),
         categoria_turno_vuoto:!!m.turnoVuoto, categoria_app_auto_vuoto:!!m.appAutoVuoto,
         visibile_anche_in:m.visibileAncheIn||[],
@@ -4529,6 +4541,55 @@ const BLOCCO_POSIZIONI_CALENDARIO = 1000000;
 // Distanza "normale" tra due modelli vicini: lascia buchi per inserire in mezzo.
 const PASSO_POSIZIONI = 1000;
 
+// ── Inserimento di un modello negli ordini A (alfabetico) e B (orario). Indipendente da colori, fasce e Impostazioni.
+function titoloChiaveOrdine(m){ return String((m&&m.titolo)||"").trim().toUpperCase(); }
+function minutiOrdineB(m){ if(!m || m.tempo==="h24") return null; const x = oraInMinuti(m.inizio||""); return x==null ? null : x; }
+// "lista" = modelli del calendario nell'ordine da usare, SENZA il modello nuovo. Ritorna l'indice dove inserirlo.
+function indiceInserimentoB(lista, nuovo){
+  const k = minutiOrdineB(nuovo);
+  if(k==null){ let ultimo=-1; lista.forEach((m,i)=>{ if(minutiOrdineB(m)==null) ultimo=i; }); return ultimo>=0 ? ultimo+1 : lista.length; }
+  let ultimoUguale=-1, migliorMinore=-1, valMinore=-1, primoMaggiore=-1, valMaggiore=Infinity;
+  lista.forEach((m,i)=>{
+    const v = minutiOrdineB(m); if(v==null) return;
+    if(v===k) ultimoUguale=i;
+    else if(v<k){ if(v>=valMinore){ valMinore=v; migliorMinore=i; } }
+    else if(v<valMaggiore){ valMaggiore=v; primoMaggiore=i; }
+  });
+  if(ultimoUguale>=0) return ultimoUguale+1;
+  if(migliorMinore>=0) return migliorMinore+1;
+  if(primoMaggiore>=0) return primoMaggiore;
+  return 0;
+}
+function indiceInserimentoA(lista, nuovo){
+  const t = titoloChiaveOrdine(nuovo), h24 = nuovo.tempo==="h24";
+  let ultimoUguale=-1, migliorMinore=-1, tMinore=null, primoMaggiore=-1, tMaggiore=null, trovati=0;
+  lista.forEach((m,i)=>{
+    if((m.tempo==="h24")!==h24) return;
+    trovati++;
+    const tm = titoloChiaveOrdine(m), c = tm.localeCompare(t,"it");
+    if(c===0) ultimoUguale=i;
+    else if(c<0){ if(tMinore===null || tm.localeCompare(tMinore,"it")>=0){ tMinore=tm; migliorMinore=i; } }
+    else if(tMaggiore===null || tm.localeCompare(tMaggiore,"it")<0){ tMaggiore=tm; primoMaggiore=i; }
+  });
+  if(!trovati) return h24 ? lista.length : 0;
+  if(ultimoUguale>=0) return ultimoUguale+1;
+  if(migliorMinore>=0) return migliorMinore+1;
+  if(primoMaggiore>=0) return primoMaggiore;
+  return h24 ? lista.length : 0;
+}
+// Mette "nuovo" (nuovo o spostato) nel punto giusto di UN ordine. usaAltro=true lavora sull'altro ordine
+// (si scambiano le due posizioni, si ricalcola, si rimettono a posto).
+function posizionaInOrdine(modelliAll, nuovo, targetCalId, calendarsOrdinati, mainCalId, lettera, usaAltro){
+  const vista = usaAltro ? modelliAll.map(scambiaOrdini) : modelliAll;
+  const nuovoV = vista.find(m=>m.id===nuovo.id) || (usaAltro ? scambiaOrdini(nuovo) : nuovo);
+  const delCal = calcolaOrdineModelli(vista.filter(m=>(m.calendarId||mainCalId)===targetCalId && m.id!==nuovo.id));
+  const idx = lettera==="A" ? indiceInserimentoA(delCal, nuovoV) : indiceInserimentoB(delCal, nuovoV);
+  const riord = [...delCal]; riord.splice(idx, 0, nuovoV);
+  const base = vista.some(m=>m.id===nuovo.id) ? vista : [...vista, nuovoV];
+  const ris = ricalcolaPosizioniGlobali(base, calendarsOrdinati, new Map([[targetCalId, riord]]), mainCalId);
+  return usaAltro ? ris.map(scambiaOrdini) : ris;
+}
+
 // Assegna le posizioni a un calendario lasciando dei BUCHI tra i numeri.
 // "ordine" = modelli del calendario nell'ordine desiderato. I modelli che
 // hanno già un numero valido e coerente con l'ordine NON vengono toccati;
@@ -4724,13 +4785,13 @@ const importsRecenti = useMemo(()=>{
     const prevById = new Map(prevElenco.map(m=>[m.id,m]));
     const daSalvare = nuovoElenco.filter(m=>{
       const prima = prevById.get(m.id);
-      return !prima || prima.sortOrder!==m.sortOrder;
-    });
+      return !prima || prima.sortOrder!==m.sortOrder || (prima.sortOrderAltro||0)!==(m.sortOrderAltro||0);
+    }).filter(m=>Object.keys(payloadPosCambiate(prevById.get(m.id), m)).length>0);
     const ts = new Date().toISOString();
     await scriviBatchConBackup({
       ops: daSalvare.map(m=>({
         tipo: "update", table: "modelli",
-        payload: { sort_order: m.sortOrder },
+        payload: payloadPosCambiate(prevById.get(m.id), m),
         matchObj: { id: m.id, user_id: userId },
         contesto: "Salvataggio posizione modello",
       })),
@@ -5100,7 +5161,6 @@ const importsRecenti = useMemo(()=>{
       user_id:userId, titolo:(data.titolo||"").toUpperCase(), label:(data.label||"").toUpperCase(), tempo:data.tempo,
       inizio:data.inizio||null, fine:data.fine||null,
       colore:coloreEff, colore_custom:coloreEff, // colore sempre esplicito
-      sort_order:data.sortOrder||modelli.length,
       calendar_id: targetCalId,
       categoria: (data.categoria==="primo"||data.categoria==="secondo") ? data.categoria : null,
       categoria_app_auto: (data.categoriaAppAuto==="app"||data.categoriaAppAuto==="auto") ? data.categoriaAppAuto : null,
@@ -5139,48 +5199,24 @@ const importsRecenti = useMemo(()=>{
         modelloAggiornato = nuovo;
         return nuovo;
       });
-      // Se orario o tipo (h24/personalizzato) sono cambiati, la posizione
-      // del modello nel suo calendario potrebbe non essere più quella
-      // giusta: si ricalcola l'ordine per orario e si rinumera TUTTO il
-      // calendario (1,2,3...), stessa logica usata in creazione.
+      // Posizioni: solo se cambia ciò che definisce l'ordine (B = orario di inizio/tipo, A = nome/tipo, o il calendario).
+      // Nessun legame con colori, fasce o Impostazioni: il modello resta dov'è, a meno che non cambi il suo posto.
       const modelloPrimaModifica = modelli.find(m=>m.id===data.id);
-      const orarioCambiato = modelloPrimaModifica && (
-        modelloPrimaModifica.inizio!==modelloAggiornato.inizio ||
-        modelloPrimaModifica.tempo!==modelloAggiornato.tempo ||
-        (modelloPrimaModifica.calendarId||mainCalId)!==targetCalId ||
-        chiaveColoreModello(modelloPrimaModifica)!==chiaveColoreModello(modelloAggiornato)
-      );
-      if(orarioCambiato){
-        const calendarioModelli = modelliAggiornati.filter(m=>(m.calendarId||mainCalId)===targetCalId);
-        const senzaQuesto = calcolaOrdineModelli(calendarioModelli.filter(m=>m.id!==data.id));
-        // Inserimento per FASCIA ORARIA (stessa logica di calcolaOrdinePerFasciaOraria):
-        // prima si trova il blocco corretto (NOTTE/MATTINA/POMERIGGIO/3°TURNO/altri),
-        // poi dentro il blocco si inserisce in ordine crescente di minuti.
-        // Un confronto a stringa sull'orario non basta perché non rispetta i confini
-        // di fascia: dopo un "Riordina posizione modelli" bastava modificare un
-        // modello per rimischiare tutto.
-        const fasciaNuovo = classificaFasciaOrariaModello(modelloAggiornato);
-        const etichettaNuovo = fasciaModelloEtichetta(modelloAggiornato)!=null;
-        const minutiNuovo = modelloAggiornato.tempo==="h24" ? 0 : (oraInMinuti(modelloAggiornato.inizio||"") ?? 0);
-        let idxInserimento = senzaQuesto.length;
-        for(let i=0;i<senzaQuesto.length;i++){
-          const m = senzaQuesto[i];
-          const fasciaM = classificaFasciaOrariaModello(m);
-          const etichettaM = fasciaModelloEtichetta(m)!=null;
-          const minutiM = m.tempo==="h24" ? 0 : (oraInMinuti(m.inizio||"") ?? 0);
-          if(fasciaM > fasciaNuovo){ idxInserimento = i; break; }
-          if(fasciaM === fasciaNuovo && etichettaM!==etichettaNuovo){
-            if(etichettaNuovo){ idxInserimento = i; break; } // il nuovo è l'etichetta: va prima di questo
-            // il nuovo non è l'etichetta ma m sì: m resta prima, si continua
-          } else if(fasciaM === fasciaNuovo && minutiM > minutiNuovo){ idxInserimento = i; break; }
-          idxInserimento = i+1;
-        }
-        const riordinato0 = [...senzaQuesto];
-        riordinato0.splice(idxInserimento, 0, modelloAggiornato);
-        const riordinato = raggruppaPerColore(riordinato0); // modelli dello stesso colore sempre consecutivi
+      if(modelloPrimaModifica){
+        const cambioCal = (modelloPrimaModifica.calendarId||mainCalId)!==targetCalId;
+        const cambioB = cambioCal || modelloPrimaModifica.inizio!==modelloAggiornato.inizio || modelloPrimaModifica.tempo!==modelloAggiornato.tempo;
+        const cambioA = cambioCal || modelloPrimaModifica.titolo!==modelloAggiornato.titolo || modelloPrimaModifica.tempo!==modelloAggiornato.tempo;
+        const lettera = ordineAttivo(), altra = lettera==="A" ? "B" : "A";
+        const passi = lettera==="B"
+          ? [[cambioB,"B",false],[cambioA,"A",true]]
+          : [[cambioA,"A",false],[cambioB,"B",true]];
         const calendarsOrdinati = nuovoStore.calendars.map(c=>c.id);
-        const ordiniPerCalendario = new Map([[targetCalId, riordinato]]);
-        modelliAggiornati = ricalcolaPosizioniGlobali(modelliAggiornati, calendarsOrdinati, ordiniPerCalendario, mainCalId);
+        passi.forEach(([serve,let_,altro])=>{
+          if(!serve) return;
+          const corrente = modelliAggiornati.find(m=>m.id===data.id);
+          modelliAggiornati = posizionaInOrdine(modelliAggiornati, corrente, targetCalId, calendarsOrdinati, mainCalId, let_, altro);
+          modelloAggiornato = modelliAggiornati.find(m=>m.id===data.id) || modelloAggiornato;
+        });
       }
       saveToLocalStorage(nuovoStore.events, nuovoStore.calendars, modelliAggiornati);
       setStore(nuovoStore);
@@ -5216,6 +5252,8 @@ const importsRecenti = useMemo(()=>{
         if(risModello?.errore || risEventi?.errore){
           segnalaErroreDb(risModello?.errore || risEventi?.errore, "Salvataggio modello");
         }
+        // Posizioni cambiate (solo le colonne diverse, una sola richiesta)
+        try{ await salvaModifichePosizioni(modelli, modelliAggiornati); }catch(e){ segnalaErroreSoloLog(e?.message||String(e), "Salvataggio posizioni modello"); }
       })();
       return { ok:true, modello: modelloAggiornato };
     } else {
@@ -5223,54 +5261,16 @@ const importsRecenti = useMemo(()=>{
       // (modelli, calcolaOrdineModelli) -- non serve aspettare Supabase per
       // deciderlo. L'id e' generato qui, subito, come per gli eventi.
       const idLocale = generaIdLocale();
-      const calendarioModelli = modelli.filter(m=>(m.calendarId||mainCalId)===targetCalId);
-      const tutti = calcolaOrdineModelli(calendarioModelli);
-
-      // Trova l'indice di inserimento in base all'orario, sempre in modo
-      // deterministico anche se i modelli con lo stesso orario non sono
-      // vicini tra loro in lista: si inserisce subito dopo l'ultimo modello
-      // che ha un orario "non successivo" al nuovo (stesso principio di un
-      // inserimento ordinato in un array). Regola: h24/senza orario sempre
-      // in fondo a tutti; gli altri per orario di inizio crescente.
-      // Inserimento per FASCIA ORARIA (stessa logica di calcolaOrdinePerFasciaOraria):
-      // prima si trova il blocco corretto (NOTTE/MATTINA/POMERIGGIO/3°TURNO/altri),
-      // poi dentro il blocco si inserisce in ordine crescente di minuti. Un
-      // confronto a stringa sull'orario non basta perché non rispetta i confini
-      // di fascia: dopo un "Riordina posizione modelli" bastava aggiungere un
-      // modello per rimischiare tutto (es. NOTTE 00:00 finiva scavalcato in cima
-      // solo perché la stringa "00:00" è la più piccola in assoluto).
-      const modelloTemp = { tempo:data.tempo, inizio:data.inizio||"", titolo:data.titolo||"" };
-      const fasciaNuovo = classificaFasciaOrariaModello(modelloTemp);
-      const etichettaNuovo = fasciaModelloEtichetta(modelloTemp)!=null;
-      const minutiNuovo = data.tempo==="h24" ? 0 : (oraInMinuti(data.inizio||"") ?? 0);
-      let idxInserimento = tutti.length;
-      for(let i=0;i<tutti.length;i++){
-        const m = tutti[i];
-        const fasciaM = classificaFasciaOrariaModello(m);
-        const etichettaM = fasciaModelloEtichetta(m)!=null;
-        const minutiM = m.tempo==="h24" ? 0 : (oraInMinuti(m.inizio||"") ?? 0);
-        if(fasciaM > fasciaNuovo){ idxInserimento = i; break; }
-        if(fasciaM === fasciaNuovo && etichettaM!==etichettaNuovo){
-          if(etichettaNuovo){ idxInserimento = i; break; } // il nuovo è l'etichetta: va prima di questo
-        } else if(fasciaM === fasciaNuovo && minutiM > minutiNuovo){ idxInserimento = i; break; }
-        idxInserimento = i+1;
-      }
-
-      const modelloCreato = {...(({silenzioso,...rest})=>rest)(data),id:idLocale,colore:coloreEff,coloreCustom:coloreEff,sortOrder:0,calendarId:targetCalId};
-      const riordinato0 = [...tutti];
-      riordinato0.splice(idxInserimento, 0, modelloCreato);
-      const riordinato = raggruppaPerColore(riordinato0); // modelli dello stesso colore sempre consecutivi
-
-      // Subito in locale: nuovo modello inserito + rinumerazione GLOBALE a
-      // blocchi contigui (il blocco di questo calendario resta ordinato,
-      // gli altri calendari restano invariati nella loro posizione relativa).
-      // Calcolo SUBITO dai valori correnti: prima il risultato veniva letto da una
-      // variabile riempita DENTRO l'updater di React, che non è garantito venga
-      // eseguito in tempo: se non lo era, la cache veniva salvata senza modelli.
-      const updated = [...modelli, modelloCreato];
+      // Il nuovo modello entra in ENTRAMBI gli ordini, mai in fondo: A = dopo l'ultimo con lo stesso nome (o nel punto
+      // alfabetico), B = dopo l'ultimo con lo stesso orario di inizio (o fra gli orari vicini). Nessun legame con
+      // colori, fasce o Impostazioni. Il calcolo usa solo dati in memoria (nessuna attesa di Supabase).
+      const modelloCreato = {...(({silenzioso,...rest})=>rest)(data),id:idLocale,colore:coloreEff,coloreCustom:coloreEff,sortOrder:0,sortOrderAltro:0,calendarId:targetCalId};
       const calendarsOrdinati = store.calendars.map(c=>c.id);
-      const ordiniPerCalendario = new Map([[targetCalId, riordinato]]);
-      const modelliAggiornati = ricalcolaPosizioniGlobali(updated, calendarsOrdinati, ordiniPerCalendario, mainCalId);
+      const letteraAttiva = ordineAttivo(), letteraAltra = letteraAttiva==="A" ? "B" : "A";
+      let modelliAggiornati = [...modelli, modelloCreato];
+      modelliAggiornati = posizionaInOrdine(modelliAggiornati, modelloCreato, targetCalId, calendarsOrdinati, mainCalId, letteraAttiva, false);
+      modelliAggiornati = posizionaInOrdine(modelliAggiornati, modelliAggiornati.find(m=>m.id===idLocale), targetCalId, calendarsOrdinati, mainCalId, letteraAltra, true);
+      const creatoFinale = modelliAggiornati.find(m=>m.id===idLocale) || modelloCreato;
       setModelli(modelliAggiornati);
       // FIX: a differenza del ramo UPDATE, qui la cache locale non veniva
       // mai riscritta con il nuovo modello. Risultato: il modello compariva
@@ -5287,7 +5287,7 @@ const importsRecenti = useMemo(()=>{
       // partire "fire and forget" in background.
       async function backupInsertModello(){
         const risInsert = await scriviConBackup({
-          tipo:"insert", table:"modelli", payload:{...payload, id:idLocale}, matchObj:null,
+          tipo:"insert", table:"modelli", payload:{...payload, id:idLocale, ...colonnePosizione(creatoFinale)}, matchObj:null,
           contesto:"Creazione modello", ts,
           eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelliAggiornati,
           opzioni:{soloLog:true},
@@ -5305,12 +5305,13 @@ const importsRecenti = useMemo(()=>{
           .filter(m=>m.id!==idLocale)
           .filter(m=>{
             const prima = prevById.get(m.id);
-            return prima && prima.sortOrder!==m.sortOrder;
+            return prima && (prima.sortOrder!==m.sortOrder || (prima.sortOrderAltro||0)!==(m.sortOrderAltro||0));
           })
-          .map(m=>({id:m.id, nuovoVal:m.sortOrder}));
+          .map(m=>({id:m.id, pos:payloadPosCambiate(prevById.get(m.id), m)}))
+          .filter(x=>Object.keys(x.pos).length>0);
         await scriviBatchConBackup({
-          ops: rinumerazioniApplicate.map(({id,nuovoVal})=>({
-            tipo:"update", table:"modelli", payload:{sort_order:nuovoVal}, matchObj:{id, user_id:userId},
+          ops: rinumerazioniApplicate.map(({id,pos})=>({
+            tipo:"update", table:"modelli", payload:pos, matchObj:{id, user_id:userId},
             contesto:"Creazione modello — rinumerazione posizioni esistenti",
           })),
           contesto:"Creazione modello — rinumerazione posizioni esistenti", ts, opzioni:{soloLog:true},
@@ -5329,10 +5330,10 @@ const importsRecenti = useMemo(()=>{
         if(risInsert?.errore){
           return { ok:false, errore: risInsert.errore, modello: null };
         }
-        return { ok:true, modello: modelloCreato };
+        return { ok:true, modello: creatoFinale };
       }
       backupInsertModello();
-      return { ok:true, modello: modelloCreato };
+      return { ok:true, modello: creatoFinale };
     }
   }
 
@@ -5436,7 +5437,7 @@ const importsRecenti = useMemo(()=>{
     return JSON.stringify(v===undefined?null:v);
   }
   function firmaDisposizione(d){
-    const voci = (d.voci||[]).map(v=>[String(v.modello_id), v.sort_order||0, v.colore||null, v.colore_custom||null, v.calendar_id||null])
+    const voci = (d.voci||[]).map(v=>[String(v.modello_id), v.sort_order||0, v.sort_order_a||0, v.colore||null, v.colore_custom||null, v.calendar_id||null])
       .sort((a,b)=>a[0].localeCompare(b[0]));
     const extra = (d.coloriExtra||[]).map(c=>[String(c.hex).toLowerCase(), c.label||null]).sort((a,b)=>a[0].localeCompare(b[0]));
     return firmaStabile({ voci, fasce:d.fasce||[], extra });
@@ -5444,7 +5445,7 @@ const importsRecenti = useMemo(()=>{
   function costruisciDisposizioneCorrente(){
     return {
       voci: modelli.filter(Boolean).map(m=>({
-        modello_id:m.id, titolo:m.titolo||"", calendar_id:m.calendarId||null, sort_order:m.sortOrder||0,
+        modello_id:m.id, titolo:m.titolo||"", calendar_id:m.calendarId||null, ...colonnePosizione(m),
         colore:m.colore||null, colore_custom:m.coloreCustom||null,
       })),
       fasce: (store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT).map(f=>({...f})),
@@ -5735,7 +5736,7 @@ const importsRecenti = useMemo(()=>{
     const adesso = new Date().toISOString();
     // Snapshot a 360 gradi di ogni modello (ordine, colori, nome, titolo, orari, calendario, etc.).
     const righe = modelli.map(m=>({
-      user_id:userId, modello_id:m.id, sort_order:m.sortOrder||0,
+      user_id:userId, modello_id:m.id, ...colonnePosizione(m),
       colore:m.colore||null, colore_custom:m.coloreCustom||null,
       titolo:m.titolo||"", label:m.label||"", inizio:m.inizio||null, fine:m.fine||null, tempo:m.tempo||"custom",
       calendar_id:m.calendarId||null,
@@ -5771,7 +5772,7 @@ const importsRecenti = useMemo(()=>{
     const snapshot = {
       userId, salvato_il:adesso, supabaseOk:false,
       voci: modelli.map(m=>({
-        ...m, modello_id:m.id, sort_order:m.sortOrder||0,
+        ...m, modello_id:m.id, ...colonnePosizione(m),
         colore:m.colore||null, colore_custom:m.coloreCustom||null
       })),
       fasce, coloriExtra: coloriExtraSnap, sundayColor: sundayCol, holidayColor: holidayCol
@@ -5883,7 +5884,11 @@ const importsRecenti = useMemo(()=>{
       const v = vociById.get(m.id);
       if(!v) return m;
       const nuovo = {...m};
-      if(v.sort_order!==undefined) nuovo.sortOrder = v.sort_order;
+      if(v.sort_order!==undefined){
+        const attA = ordineAttivo()==="A";
+        const vB = v.sort_order, vA = (v.sort_order_a!==undefined && v.sort_order_a!==null) ? v.sort_order_a : (attA ? m.sortOrder : m.sortOrderAltro);
+        nuovo.sortOrder = attA ? vA : vB; nuovo.sortOrderAltro = attA ? vB : vA;
+      }
       if(v.titolo) nuovo.titolo = v.titolo;
       if(v.label) nuovo.label = v.label;
       if(v.inizio!==undefined) nuovo.inizio = v.inizio;
@@ -5891,7 +5896,7 @@ const importsRecenti = useMemo(()=>{
       if(v.tempo) nuovo.tempo = v.tempo;
       if(v.colore!==undefined && v.colore!==null) nuovo.colore = v.colore;
       if(v.colore_custom!==undefined) nuovo.coloreCustom = v.colore_custom||v.colore||m.coloreCustom||null;
-      const cambiato = ["sortOrder","titolo","label","inizio","fine","tempo","colore","coloreCustom"]
+      const cambiato = ["sortOrder","sortOrderAltro","titolo","label","inizio","fine","tempo","colore","coloreCustom"]
         .some(k=>(nuovo[k]??null)!==(m[k]??null));
       if(!cambiato) return m;
       daRiscrivere.push(nuovo);
@@ -5907,7 +5912,7 @@ const importsRecenti = useMemo(()=>{
     const risB = await scriviBatchConBackup({
       ops: daRiscrivere.map(m=>({
         tipo:"update", table:"modelli",
-        payload:{ colore:m.colore, colore_custom:m.coloreCustom||null, titolo:m.titolo, label:m.label, inizio:m.inizio, fine:m.fine, tempo:m.tempo, sort_order:m.sortOrder },
+        payload:{ colore:m.colore, colore_custom:m.coloreCustom||null, titolo:m.titolo, label:m.label, inizio:m.inizio, fine:m.fine, tempo:m.tempo, ...colonnePosizione(m) },
         matchObj:{ id:m.id, user_id:userId },
         contesto:"Ripristino disposizione 360°",
       })),
@@ -6116,7 +6121,7 @@ const importsRecenti = useMemo(()=>{
       const calendarsOrdinati = (store.calendars||[]).map(c=>c.id);
       const ordini = new Map();
       calAffetti.forEach(cid=>{
-        ordini.set(cid, raggruppaPerColore(calcolaOrdineModelli(modelliAggiornati.filter(m=>m && (m.calendarId||mainCalId)===cid))));
+        ordini.set(cid, calcolaOrdineModelli(modelliAggiornati.filter(m=>m && (m.calendarId||mainCalId)===cid)));
       });
       modelliAggiornati = ricalcolaPosizioniGlobali(modelliAggiornati, calendarsOrdinati, ordini, mainCalId);
     }catch(e){ segnalaErroreSoloLog(e?.message||String(e), "Assegnazione colore (riordino)"); }
@@ -7879,6 +7884,7 @@ const importsRecenti = useMemo(()=>{
     modelli,
     setModelli,
     modelliSort,
+    ordineModelli, cambiaOrdineModelli,
     setModelliSort,
     showSortMenu,
     setShowSortMenu,

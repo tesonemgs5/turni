@@ -147,7 +147,7 @@ export default function VistaModelli({ C }){
     stats, setStats, showDbModal, setShowDbModal, showModelloEditor, setShowModelloEditor,
     isOnline, setIsOnline, banner, setBanner, syncMode, setSyncMode,
     dbRawData, setDbRawData, dbCalsCount, setDbCalsCount, dbEvtsCount, setDbEvtsCount,
-    modelliTab, setModelliTab, modelli, setModelli, modelliSort, setModelliSort,
+    modelliTab, setModelliTab, modelli, setModelli, modelliSort, setModelliSort, ordineModelli, cambiaOrdineModelli,
     showSortMenu, setShowSortMenu, showModelForm, setShowModelForm, origineModelForm, setOrigineModelForm,
     editModello, setEditModello, modelForm, setModelForm, showColorAssignPicker, setShowColorAssignPicker,
     colorAssignCalFiltro, setColorAssignCalFiltro, showAddColorPicker, setShowAddColorPicker, coloriExtra, setColoriExtra,
@@ -363,12 +363,12 @@ export default function VistaModelli({ C }){
                   border:`1px solid ${T.border}`,borderRadius:12,padding:8,zIndex:200,
                   minWidth:190,boxShadow:"0 8px 24px rgba(0,0,0,0.15)"}}
                   onClick={e=>e.stopPropagation()}>
-                  {[["orario","Ordina per orario"],["manuale","Ordine manuale"]].map(([v,l])=>(
-                    <div key={v} onClick={()=>{setModelliSort(v);setShowSortMenu(false);}}
+                  {[["B","Ordine per orario (B)"],["A","Ordine alfabetico (A)"]].map(([v,l])=>(
+                    <div key={v} onClick={()=>{cambiaOrdineModelli(v);setShowSortMenu(false);}}
                       style={{padding:"10px 12px",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:600,
-                        background:modelliSort===v?accent+"22":"transparent",
-                        color:modelliSort===v?accent:T.text}}>
-                      {modelliSort===v?"✓  ":"    "}{l}
+                        background:ordineModelli===v?accent+"22":"transparent",
+                        color:ordineModelli===v?accent:T.text}}>
+                      {ordineModelli===v?"✓  ":"    "}{l}
                     </div>
                   ))}
                 </div>
