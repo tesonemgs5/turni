@@ -2124,7 +2124,10 @@ export function ModelForm({
             // niente "Automatico": se non c'è una scelta, il pulsante deciso dall'automatismo è PIENO; ritoccando la scelta si torna all'automatico
             const sel = (form.categoria ?? null) === val || ((form.categoria ?? null) === null && val === categoriaTurnoAutomatica(form));
             return (
-            <button key={lab} type="button" onClick={() => setForm(prev => ({ ...prev, categoria: (prev.categoria ?? null) === val ? null : val }))}
+            <button key={lab} type="button" onClick={() => setForm(prev => { const cur = prev.categoria ?? null; const autoV = categoriaTurnoAutomatica(prev);
+                // pulsante pieno (scelto o deciso dall'automatismo) -> Nessuna; Nessuna già attiva -> torna all'automatico
+                const next = val === "nessuna" ? (cur === "nessuna" ? null : "nessuna") : ((cur === val || (cur === null && val === autoV)) ? "nessuna" : val);
+                return { ...prev, categoria: next }; })}
               style={{
                 ...NB, flex: "1 1 28%", fontSize: 12, background: sel ? accent : T.s2,
                 color: sel ? accentText : T.text,
@@ -2142,7 +2145,9 @@ export function ModelForm({
           {[["app", "APP"], ["auto", "AUTO"], ["nessuna", "Nessuna"]].map(([val, lab]) => {
             const sel = (form.categoriaAppAuto ?? null) === val || ((form.categoriaAppAuto ?? null) === null && val === categoriaAppAutoAutomatica(form));
             return (
-            <button key={lab} type="button" onClick={() => setForm(prev => ({ ...prev, categoriaAppAuto: (prev.categoriaAppAuto ?? null) === val ? null : val }))}
+            <button key={lab} type="button" onClick={() => setForm(prev => { const cur = prev.categoriaAppAuto ?? null; const autoV = categoriaAppAutoAutomatica(prev);
+                const next = val === "nessuna" ? (cur === "nessuna" ? null : "nessuna") : ((cur === val || (cur === null && val === autoV)) ? "nessuna" : val);
+                return { ...prev, categoriaAppAuto: next }; })}
               style={{
                 ...NB, flex: "1 1 28%", fontSize: 12, background: sel ? accent : T.s2,
                 color: sel ? accentText : T.text,

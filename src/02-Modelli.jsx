@@ -3251,9 +3251,9 @@ export default function VistaModelli({ C }){
     const suggeritoDaAuto = nessunaSceltaEsplicita && v!=="" && v===catAuto;
     // Nessun bordo e nessun "Automatica" evidenziato: il pulsante scelto (anche dall'automatismo) è semplicemente PIENO.
     const pieno = selezionato || suggeritoDaAuto;
-    const nuovoValore = (selezionato && v!=="") ? "" : v;
+    // Pulsante pieno (scelto o deciso dall'automatismo) ritoccato -> "Nessuna categoria"; altro pulsante -> lo seleziona.
     return (
-      <button key={v||l} onClick={()=>setForm(f=>({...f,[campo]:nuovoValore,[flagCampo]:false}))}
+      <button key={v||l} onClick={()=>setForm(f=> pieno ? ({...f,[campo]:"",[flagCampo]:true}) : ({...f,[campo]:v,[flagCampo]:false}))}
         style={{flex:"1 1 40%",padding:"9px 4px",borderRadius:10,cursor:"pointer",
           fontWeight:700,fontSize:11,
           border:"2px solid transparent",
@@ -3322,7 +3322,7 @@ export default function VistaModelli({ C }){
         </>
       )}
       <div style={{fontSize:11,color:T.sub,marginTop:-4,marginBottom:10}}>
-        Il pulsante pieno è quello deciso in automatico da titolo/orario. Toccane un altro per cambiare solo questo evento; ritocca la scelta fatta per tornare all'automatico. Scegliendo una categoria qui, questo evento resterà sempre in quel gruppo nel report Turnazione.
+        Il pulsante pieno è quello deciso in automatico da titolo/orario. Toccalo di nuovo per metterlo su «Nessuna», oppure toccane un altro per cambiare solo questo evento. Scegliendo una categoria qui, questo evento resterà sempre in quel gruppo nel report Turnazione.
       </div>
       {haOverrideAttivo && (
         <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
