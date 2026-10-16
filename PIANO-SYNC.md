@@ -438,3 +438,9 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - Provato in isolamento: 1 solo modello cambiato per spostamento, ordini nei gruppi corretti (anche verso «senza gruppo» e verso gruppi con più modelli). Build di prova riuscita. **Da provare sul telefono.**
 - Annullamento: ripristinare il commit di questa tappa (nessuna modifica al database).
 - Prossimo: **tappa 3** (selezione multipla: 500 ms seleziona, tocchi per aggiungere/togliere, 250 ms sposta tutti insieme).
+
+#### Correzione tappa 1/2 — gruppi «spariti» sul telefono (17/10) ✅
+- **Sintomo**: dopo l'installazione i modelli risultavano tutti «senza gruppo» (in fondo). Il database era integro (19 gruppi, 225 modelli assegnati, nessuna eliminazione).
+- **Causa**: l'app parte dai dati locali e la sincronizzazione porta solo le righe cambiate dopo il punto di partenza del telefono; i gruppi erano nati su Supabase prima di quel punto, quindi un telefono con dati già salvati non li riceveva mai. Non l'avevo previsto.
+- **Correzione**: `caricaGruppiUnaVolta` (06-Logica.jsx): una volta per dispositivo legge da Supabase tutti i gruppi e le colonne `gruppo_a`/`gruppo_b` dei modelli e applica solo ciò che è diverso. Solo lettura; non parte se ci sono modifiche locali non inviate; il flag `turnipm_gruppi_caricati_v1` si segna solo a lettura riuscita (altrimenti riprova ogni 20 s). Esito nel Log («Caricati N gruppi…»).
+- Dati su Supabase mai toccati da questa correzione.

@@ -3939,6 +3939,58 @@ export function useAppCore(session){
     } finally { sincInCorsoRef.current = false; }
   }
 
+  // ── Primo caricamento dei GRUPPI (una volta per dispositivo) ──
+  // I gruppi sono nati su Supabase dopo il punto di partenza di questo telefono, quindi get_changes non li porterebbe mai:
+  // senza questo passo i modelli sembrano "senza gruppo". Qui si leggono interi (gruppi + colonne gruppo_a/gruppo_b dei modelli)
+  // e si applicano solo se diversi. Solo lettura da Supabase; non parte se ci sono modifiche locali non ancora inviate.
+  // Il flag si segna solo a lettura riuscita: finche' non riesce, riprova.
+  const gruppiInCaricamentoRef = useRef(false);
+  async function caricaGruppiUnaVolta(){
+    if(!userId || gruppiInCaricamentoRef.current || sincInCorsoRef.current || scrittureInVoloRef.current>0) return;
+    try{ if(localStorage.getItem("turnipm_gruppi_caricati_v1")==="1") return; }catch(e){}
+    if(typeof navigator!=="undefined" && navigator.onLine===false) return;
+    let inCoda=0; try{ inCoda=(leggiCodaSync()||[]).length; }catch(e){}
+    if(inCoda>0) return;
+    gruppiInCaricamentoRef.current = true;
+    try{
+      const {data:gRows, error:eG} = await dbSelectTutto("gruppi_modelli", {matchObj:{user_id:userId}, contesto:"Primo caricamento gruppi"});
+      if(eG) throw eG;
+      const {data:mRows, error:eM} = await dbSelectTutto("modelli", {matchObj:{user_id:userId}, contesto:"Primo caricamento gruppi \u2014 modelli", colonne:"id,gruppo_a,gruppo_b"});
+      if(eM) throw eM;
+      let inCoda2=0; try{ inCoda2=(leggiCodaSync()||[]).length; }catch(e){}
+      if(inCoda2>0) return; // nel frattempo e' nata una modifica locale: riprovo piu' tardi
+      const nuoviGruppi = (gRows||[]).map(mapGruppoDb)
+        .sort((a,b)=> a.sortOrder!==b.sortOrder ? a.sortOrder-b.sortOrder : String(a.id).localeCompare(String(b.id)));
+      const perId = new Map((mRows||[]).map(r=>[r.id, r]));
+      const cur = (modelliRef.current && modelliRef.current.length) ? modelliRef.current : modelli;
+      let cambiati = 0;
+      const nuoviModelli = (cur||[]).map(m=>{
+        if(!m) return m;
+        const r = perId.get(m.id); if(!r) return m;
+        const a = r.gruppo_a||null, b = r.gruppo_b||null;
+        if((m.gruppoA||null)===a && (m.gruppoB||null)===b) return m;
+        cambiati++; return { ...m, gruppoA:a, gruppoB:b };
+      });
+      setGruppi(nuoviGruppi);
+      if(cambiati>0){
+        modelliRef.current = nuoviModelli;
+        setModelli(nuoviModelli);
+        saveToLocalStorage(undefined, undefined, nuoviModelli);
+      }
+      try{ localStorage.setItem("turnipm_gruppi_caricati_v1","1"); }catch(e){}
+      registraAttivita("Gruppi", `Caricati ${nuoviGruppi.length} gruppi da Supabase (${cambiati} modelli aggiornati).`, { chiave:"gruppi-primo-caricamento", supabase:"ok" });
+    }catch(e){
+      segnalaErroreSoloLog(e?.message||String(e), "Primo caricamento gruppi");
+    } finally { gruppiInCaricamentoRef.current = false; }
+  }
+  useEffect(()=>{
+    if(!userId || loading) return;
+    caricaGruppiUnaVolta();
+    const t = setInterval(caricaGruppiUnaVolta, 20000); // riprova finche' non riesce (poi esce subito)
+    return ()=>clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, loading]);
+
   // Pulsante "Sincronizza ora": mostra sempre l'esito in una finestra.
   async function sincronizzaOra(){
     const avvisa = (msg, stato="corso", ok=true)=>setEsitoExportSupabase({ titolo:"Sincronizza ora", stato, ok, messaggio:msg });
