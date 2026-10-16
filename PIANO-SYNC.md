@@ -429,3 +429,12 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - Modello KATIA (calendario 6870d81c…) senza gruppo B: corretto, quel calendario non ha gruppi B.
 - Build di prova riuscita; **non provata sul telefono** (serve la build della tappa 4).
 - Prossimo: **tappa 2** (spostamenti: frecce al bordo che cambiano gruppo, frecce delle tendine chiuse, trascinamento fra gruppi).
+
+#### Tappa 2 — spostamenti ✅ (17/10)
+- **Frecce ▲▼ dei modelli** (modalità spostamento ↕): dentro il gruppo scambiano col modello vicino; al bordo il modello passa nel gruppo vicino (su: in fondo al gruppo sopra; giù: in cima al gruppo sotto). Dopo l'ultimo gruppo c'è il blocco «senza gruppo»; dal primo gruppo non si va più su.
+- **Frecce ▲▼ delle tendine chiuse** (solo con tendina chiusa e modalità spostamento): spostano l'intero gruppo fra i gruppi dello stesso calendario/ordine (scambio dei `sort_order`, in una richiesta a blocchi).
+- **Trascinamento**: su un modello di un altro gruppo = entra in quel gruppo davanti a quel modello; sull'intestazione di un gruppo (anche chiuso) = in fondo a quel gruppo; sulla zona «in fondo» = senza gruppo, in fondo. Con la ricerca attiva resta il vecchio riordino semplice.
+- Funzione nuova `spostaModelloInGruppo` (06-Logica.jsx): inserisce il modello fra i vicini del gruppo di arrivo mantenendo fermi gli altri modelli (algoritmo «fermi» già in uso: di norma **1 sola scrittura**, che comprende anche `gruppo_a`/`gruppo_b`); gruppo di arrivo vuoto = cambia solo l'appartenenza. Funzione `spostaGruppo` per i gruppi.
+- Provato in isolamento: 1 solo modello cambiato per spostamento, ordini nei gruppi corretti (anche verso «senza gruppo» e verso gruppi con più modelli). Build di prova riuscita. **Da provare sul telefono.**
+- Annullamento: ripristinare il commit di questa tappa (nessuna modifica al database).
+- Prossimo: **tappa 3** (selezione multipla: 500 ms seleziona, tocchi per aggiungere/togliere, 250 ms sposta tutti insieme).

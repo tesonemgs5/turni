@@ -197,7 +197,7 @@ export default function VistaModelli({ C }){
     applicaReportOverrideATuttiGliEventi, totaleTurni,
     setPrevGrid, REPORT_TEMPLATES, calcolaOrdineModelli, updateFascia, session, salvaQuartine, coloriUsatiTutti, riordinaColoriUsati,
   } = C;
-  const { gruppi, gruppiDelCalendario, aggiungiGruppo, rinominaGruppo, eliminaGruppo } = C;
+  const { gruppi, gruppiDelCalendario, aggiungiGruppo, rinominaGruppo, eliminaGruppo, spostaModelloInGruppo, spostaGruppo } = C;
 
   // Qualsiasi menu a tendina espandibile aperto nel form Modifica Evento
   // (es. le righe di CATEGORIA REPORT) deve chiudersi non appena si cambia
@@ -508,14 +508,28 @@ export default function VistaModelli({ C }){
                   });
                   sezioni.push(...[...perNome.values()].sort((a,b)=>(a.ord-b.ord) || String(a.label).localeCompare(String(b.label))));
                 }
-                const ordinati = [...sezioni.flatMap(sz=>sz.modelli), ...senzaGruppo];
+                // "Blocchi" = i gruppi nell'ordine + in fondo il blocco dei modelli senza gruppo.
+                const blocchi = [...sezioni, {key:"__SENZA__", gruppo:null, senza:true, modelli:senzaGruppo}];
+                const ordinati = blocchi.flatMap(b=>b.modelli);
                 const infoMod = new Map();
-                [...sezioni.map(sz=>sz.modelli), senzaGruppo].forEach(lst=>lst.forEach((m,k)=>infoMod.set(m.id,{lst,k})));
+                blocchi.forEach((b,sIdx)=>b.modelli.forEach((m,k)=>infoMod.set(m.id,{lst:b.modelli,k,s:sIdx})));
                 const gestibile = calId!==null && !q;
-                // Il riordino per trascinamento vale dentro lo stesso gruppo (il cambio di gruppo arriva nella tappa 2).
+                // Trascinamento: sullo stesso gruppo = riordino; su un altro gruppo (o sulla sua intestazione) = cambia gruppo;
+                // nella zona "in fondo" = senza gruppo, in fondo. Con la ricerca attiva resta il vecchio riordino semplice.
                 const riordina = async (src, dst)=>{
-                  if(dst!=="__FONDO__"){ const a=infoMod.get(src), b=infoMod.get(dst); if(!a || !b || a.lst!==b.lst) return; }
-                  await reorderModelli(src, dst, calId);
+                  if(!src || !dst) return;
+                  if(!gestibile){ await reorderModelli(src, dst, calId); return; }
+                  const a = infoMod.get(src); if(!a) return;
+                  if(dst==="__FONDO__"){ await spostaModelloInGruppo(src, null, null, calId); return; }
+                  if(String(dst).startsWith("__G:")){
+                    const bl = blocchi.find(b=>"__G:"+b.key===dst);
+                    if(bl) await spostaModelloInGruppo(src, bl.gruppo ? bl.gruppo.id : null, null, calId);
+                    return;
+                  }
+                  const b = infoMod.get(dst); if(!b) return;
+                  if(a.lst===b.lst){ await reorderModelli(src, dst, calId); return; }
+                  const bl = blocchi[b.s];
+                  await spostaModelloInGruppo(src, bl.gruppo ? bl.gruppo.id : null, dst, calId);
                 };
                 const chiudiRinomina = ()=>setGruppoInRinomina(null);
                 const confermaRinomina = async ()=>{
@@ -535,11 +549,14 @@ export default function VistaModelli({ C }){
                   const chiuso = gruppiChiusi.has(sz.key);
                   const gg = gestibile ? sz.gruppo : null;
                   const inRin = !!gg && !!gruppoInRinomina && gruppoInRinomina.id===gg.id;
+                  const idxS = sezioni.indexOf(sz);
+                  const bersaglio = !!draggingId && dragOverId==="__G:"+sz.key;
                   return (
-                    <div onClick={()=>{ if(!inRin) toggleGruppoModelli(sz.key); }}
+                    <div data-gruppo-key={gestibile ? sz.key : undefined}
+                      onClick={()=>{ if(!inRin) toggleGruppoModelli(sz.key); }}
                       style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",
-                        padding:"9px 12px",background:T.s2,fontSize:12,fontWeight:900,letterSpacing:0.5,color:T.text,
-                        borderBottom:`1px solid ${T.border}`,gap:8}}>
+                        padding:"9px 12px",background:bersaglio?`${accent}22`:T.s2,fontSize:12,fontWeight:900,letterSpacing:0.5,color:T.text,
+                        borderBottom:`1px solid ${T.border}`,borderTop:bersaglio?`3px solid ${accent}`:"none",gap:8}}>
                       {inRin ? (
                         <input autoFocus value={gruppoInRinomina.testo}
                           onClick={e=>e.stopPropagation()}
@@ -554,6 +571,10 @@ export default function VistaModelli({ C }){
                           <button title="Conferma" onClick={e=>{ e.stopPropagation(); confermaRinomina(); }} style={btnPiccolo}>✓</button>
                           <button title="Annulla" onClick={e=>{ e.stopPropagation(); chiudiRinomina(); }} style={btnPiccolo}>✕</button>
                         </>) : gg ? (<>
+                          {modalitaSpostamento && chiuso && (<>
+                            {idxS>0 && <button title="Sposta il gruppo su" onClick={e=>{ e.stopPropagation(); spostaGruppo(gg.id,"up"); }} style={btnPiccolo}>▲</button>}
+                            {idxS<sezioni.length-1 && <button title="Sposta il gruppo giù" onClick={e=>{ e.stopPropagation(); spostaGruppo(gg.id,"down"); }} style={btnPiccolo}>▼</button>}
+                          </>)}
                           <button title="Rinomina gruppo" onClick={e=>{ e.stopPropagation(); setGruppoInRinomina({id:gg.id, testo:gg.nome}); }} style={btnPiccolo}>✏️</button>
                           <button title="Elimina gruppo" onClick={e=>{ e.stopPropagation(); setGruppoDaEliminare(gg.id); }} style={btnPiccolo}>🗑️</button>
                         </>) : null}
@@ -563,7 +584,7 @@ export default function VistaModelli({ C }){
                   );
                 };
                 const renderModello = (m,i,arr)=>{
-                const inf = infoMod.get(m.id) || {lst:[m],k:0};
+                const inf = infoMod.get(m.id) || {lst:[m],k:0,s:-1};
                 return (
                 <div key={m.id}>
                 <div style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
@@ -602,8 +623,8 @@ export default function VistaModelli({ C }){
                     // non corrisponde più alla posizione reale tra i modelli del
                     // calendario, quindi uno spostamento sposterebbe il modello
                     // nel posto sbagliato.
-                    onMoveUp={modalitaSpostamento&&!q&&inf.k>0&&(m.calendarId||mainCalId)===calId?()=>moveH24(m.id,"up",calId,inf.lst[inf.k-1].id):null}
-                    onMoveDown={modalitaSpostamento&&!q&&inf.k<inf.lst.length-1&&(m.calendarId||mainCalId)===calId?()=>moveH24(m.id,"down",calId,inf.lst[inf.k+1].id):null}
+                    onMoveUp={modalitaSpostamento&&!q&&(m.calendarId||mainCalId)===calId&&(inf.k>0||(gestibile&&inf.s>0))?(inf.k>0?()=>moveH24(m.id,"up",calId,inf.lst[inf.k-1].id):()=>spostaModelloInGruppo(m.id, blocchi[inf.s-1].gruppo?blocchi[inf.s-1].gruppo.id:null, null, calId)):null}
+                    onMoveDown={modalitaSpostamento&&!q&&(m.calendarId||mainCalId)===calId&&(inf.k<inf.lst.length-1||(gestibile&&inf.s<blocchi.length-1))?(inf.k<inf.lst.length-1?()=>moveH24(m.id,"down",calId,inf.lst[inf.k+1].id):()=>spostaModelloInGruppo(m.id, blocchi[inf.s+1].gruppo?blocchi[inf.s+1].gruppo.id:null, blocchi[inf.s+1].modelli[0]?blocchi[inf.s+1].modelli[0].id:null, calId)):null}
                     // Drag & drop: disponibile solo in modalitaSpostamento, per
                     // spostamenti più ampi rispetto alle frecce ▲▼.
                     isDragging={draggingId===m.id}
@@ -620,9 +641,9 @@ export default function VistaModelli({ C }){
                       updateAutoScroll(t.clientY);
                       const el=document.elementFromPoint(t.clientX,t.clientY);
                       // La zona "in fondo" ha id speciale "__FONDO__" (data-fondo).
-                      const card=el?.closest("[data-modello-id]") || el?.closest("[data-fondo]");
+                      const card=el?.closest("[data-modello-id]") || el?.closest("[data-gruppo-key]") || el?.closest("[data-fondo]");
                       if(card){
-                        const id=card.getAttribute("data-modello-id") || "__FONDO__";
+                        const id=card.getAttribute("data-modello-id") || (card.getAttribute("data-gruppo-key") ? "__G:"+card.getAttribute("data-gruppo-key") : "__FONDO__");
                         touchTargetId.current=id;
                         if(dragOverId!==id) setDragOverId(id);
                       }
@@ -659,8 +680,8 @@ export default function VistaModelli({ C }){
                       e.preventDefault();
                       updateAutoScroll(e.clientY);
                       const el=document.elementFromPoint(e.clientX,e.clientY);
-                      const card=el?.closest("[data-modello-id]") || el?.closest("[data-fondo]");
-                      const id=card?(card.getAttribute("data-modello-id") || "__FONDO__"):m.id;
+                      const card=el?.closest("[data-modello-id]") || el?.closest("[data-gruppo-key]") || el?.closest("[data-fondo]");
+                      const id=card?(card.getAttribute("data-modello-id") || (card.getAttribute("data-gruppo-key") ? "__G:"+card.getAttribute("data-gruppo-key") : "__FONDO__")):m.id;
                       dragTargetId.current=id;
                       if(dragOverId!==id) setDragOverId(id);
                     }:null}
@@ -724,7 +745,7 @@ export default function VistaModelli({ C }){
                   onDragOver={(e)=>{ e.preventDefault(); dragTargetId.current="__FONDO__"; if(dragOverId!=="__FONDO__") setDragOverId("__FONDO__"); }}
                   onDrop={async()=>{
                     stopAutoScroll();
-                    await reorderModelli(dragSrcId.current, "__FONDO__", calId);
+                    await (ricercaModelli.trim() ? reorderModelli(dragSrcId.current, "__FONDO__", calId) : spostaModelloInGruppo(dragSrcId.current, null, null, calId));
                     dragSrcId.current=null; dragTargetId.current=null;
                     setDraggingId(null); setDragOverId(null);
                   }}
@@ -733,7 +754,7 @@ export default function VistaModelli({ C }){
                     color:dragOverId==="__FONDO__"?accent:T.sub,
                     borderTop:dragOverId==="__FONDO__"?`3px solid ${accent}`:`1px dashed ${T.border}`,
                     background:dragOverId==="__FONDO__"?`${accent}14`:"transparent"}}>
-                  ⬇ Rilascia qui per mettere in fondo
+                  ⬇ Rilascia qui per mettere in fondo (senza gruppo)
                 </div>
               )}
             </div>

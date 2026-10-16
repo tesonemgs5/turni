@@ -4917,6 +4917,73 @@ const importsRecenti = useMemo(()=>{
     return { ok:true, modelliLiberati:membri.length };
   }
 
+  // Salva i modelli cambiati: posizioni (colonne dell'ordine A/B) e appartenenza ai gruppi (gruppo_a / gruppo_b), a blocchi.
+  async function salvaModificheModelliEGruppi(prevElenco, nuovoElenco, contesto){
+    const prevById = new Map(prevElenco.map(m=>[m.id,m]));
+    const ops = [];
+    nuovoElenco.forEach(m=>{
+      const prima = prevById.get(m.id); if(!prima) return;
+      const payload = { ...payloadPosCambiate(prima, m) };
+      if((prima.gruppoA||null)!==(m.gruppoA||null)) payload.gruppo_a = m.gruppoA||null;
+      if((prima.gruppoB||null)!==(m.gruppoB||null)) payload.gruppo_b = m.gruppoB||null;
+      if(Object.keys(payload).length===0) return;
+      ops.push({ tipo:"update", table:"modelli", payload, matchObj:{ id:m.id, user_id:userId }, contesto });
+    });
+    await scriviBatchConBackup({ ops, contesto, ts:new Date().toISOString(), opzioni:{ soloLog:true } });
+  }
+  // Sposta un modello in un gruppo (destGruppoId = null: senza gruppo) del suo calendario, nella posizione scelta:
+  // primaDiId = modello davanti al quale inserirlo (null = in fondo al gruppo). Le posizioni degli altri modelli
+  // restano ferme (di solito UNA sola scrittura); i gruppi di arrivo vuoti cambiano solo l'appartenenza.
+  async function spostaModelloInGruppo(id, destGruppoId, primaDiId, calIdX){
+    if(!userId) return;
+    const prev = modelliRef.current;
+    const corrente = (prev||[]).find(x=>x && x.id===id);
+    if(!corrente || (corrente.calendarId||mainCalId)!==calIdX) return;
+    const ordine = ordineAttivo();
+    const campo = ordine==="A" ? "gruppoA" : "gruppoB";
+    const gl = gruppiDelCalendario(calIdX, ordine);
+    const dest = destGruppoId || null;
+    if(dest && !gl.some(g=>g.id===dest)) return;
+    const eff = x => { const g = x[campo]; return (g && gl.some(y=>y.id===g)) ? g : null; };
+    const flat = calcolaOrdineModelli(modelliDelCalendario(prev, calIdX));
+    const membri = flat.filter(x=>x.id!==id && eff(x)===dest);
+    const mm = { ...corrente, [campo]: dest };
+    let nuovoFlat;
+    if(membri.length>0){
+      const ix = primaDiId ? membri.findIndex(x=>x.id===primaDiId) : -1;
+      nuovoFlat = flat.filter(x=>x.id!==id);
+      const rif = ix>=0 ? membri[ix].id : membri[membri.length-1].id;
+      const p = nuovoFlat.findIndex(x=>x.id===rif);
+      nuovoFlat.splice(ix>=0 ? p : p+1, 0, mm);
+    } else {
+      nuovoFlat = flat.map(x=>x.id===id ? mm : x); // gruppo vuoto: la posizione non cambia
+    }
+    const ricalcolato = ricalcolaPosizioniGlobali(prev, store.calendars.map(c=>c.id), new Map([[calIdX, nuovoFlat]]), mainCalId);
+    const nuovo = ricalcolato.map(x=> (x && x.id===id) ? { ...x, [campo]: dest } : x);
+    modelliRef.current = nuovo;
+    setModelli(nuovo);
+    saveToLocalStorage(undefined, undefined, nuovo);
+    segnalaModificaOrdineModelli();
+    await salvaModificheModelliEGruppi(prev, nuovo, "Spostamento modello fra gruppi");
+  }
+  // Sposta un gruppo (con i suoi modelli) su o giu' di un posto fra i gruppi dello stesso calendario e ordine.
+  async function spostaGruppo(id, dir){
+    const g = (gruppi||[]).find(x=>x.id===id); if(!userId || !g) return;
+    const gl = gruppiDelCalendario(g.calendarId||mainCalId, g.ordine);
+    const i = gl.findIndex(x=>x.id===id); const j = dir==="up" ? i-1 : i+1;
+    if(i<0 || j<0 || j>=gl.length) return;
+    const nuovaLista = [...gl]; [nuovaLista[i], nuovaLista[j]] = [nuovaLista[j], nuovaLista[i]];
+    const valori = gl.map(x=>x.sortOrder||0);
+    const distinti = valori.every((v,k)=> k===0 || v>valori[k-1]);
+    const sortNuovi = new Map(nuovaLista.map((x,k)=>[x.id, distinti ? valori[k] : (k+1)*1000]));
+    const cambiati = nuovaLista.filter(x=>(x.sortOrder||0)!==sortNuovi.get(x.id));
+    setGruppi(prev=>prev.map(x=> sortNuovi.has(x.id) ? { ...x, sortOrder:sortNuovi.get(x.id) } : x));
+    await scriviBatchConBackup({
+      ops: cambiati.map(x=>({ tipo:"update", table:"gruppi_modelli", payload:{ sort_order:sortNuovi.get(x.id) }, matchObj:{ id:x.id, user_id:userId }, contesto:"Sposta gruppo" })),
+      contesto:"Sposta gruppo", ts:new Date().toISOString(), opzioni:{ soloLog:true },
+    });
+  }
+
   // ═══════════════════════════════════════════════════════════════
   // Spostamento e riordino per ROTAZIONI e COLORI — stessa logica di
   // spostaModelloPuro/salvaModifichePosizioni sopra, ma senza il concetto
@@ -7999,7 +8066,7 @@ const importsRecenti = useMemo(()=>{
     showAddColorPicker,
     setShowAddColorPicker,
     coloriExtra,
-    gruppi, setGruppi, gruppiDelCalendario, aggiungiGruppo, rinominaGruppo, eliminaGruppo,
+    gruppi, setGruppi, gruppiDelCalendario, aggiungiGruppo, rinominaGruppo, eliminaGruppo, spostaModelloInGruppo, spostaGruppo,
     setColoriExtra,
     autocompleteValori,
     setAutocompleteValori,
