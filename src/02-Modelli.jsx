@@ -88,6 +88,27 @@ function ColorRow({ T, accent, hex, label, sub, count, onClick, onRemove, onMove
 
 export default function VistaModelli({ C }){
   const [ricercaModelli, setRicercaModelli] = useState("");
+  // Gruppi a scomparsa dell'elenco modelli (solo visualizzazione, per dispositivo)
+  const [gruppiChiusi, setGruppiChiusi] = useState(()=>{ try{ return new Set(JSON.parse(localStorage.getItem("turnipm_gruppi_chiusi")||"[]")); }catch(e){ return new Set(); } });
+  function toggleGruppoModelli(k){
+    setGruppiChiusi(prev=>{ const n=new Set(prev); if(n.has(k)) n.delete(k); else n.add(k);
+      try{ localStorage.setItem("turnipm_gruppi_chiusi", JSON.stringify([...n])); }catch(e){} return n; });
+  }
+  const NOMI_GRUPPI_FASCE = { mattina:"MATTINA", pomeriggio:"POMERIGGIO", terzo_turno:"TERZO TURNO", notte:"NOTTE" };
+  function gruppoModello(m){
+    if(ordineModelli==="A"){
+      if(/^DF?\s/i.test(String(m.titolo||"").trim())) return {key:"A:D", label:"DISTACCATI"};
+      if(m.categoriaAppAuto==="auto") return {key:"A:auto", label:"AUTO"};
+      if(m.categoriaAppAuto==="app")  return {key:"A:app", label:"APPIEDATI"};
+      return {key:"A:altri", label:"ALTRI"};
+    }
+    if(m.tempo==="h24") return {key:"B:h24", label:"H24"};
+    if(m.tempo!=="6h15" && m.tempo!=="6h30") return null; // personalizzati: fuori dai gruppi
+    const p = String(m.inizio||"").split(":"); if(p.length<2) return null;
+    const mm = (parseInt(p[0],10)||0)*60 + (parseInt(p[1],10)||0);
+    const f = (fasceAutomatiche||[]).find(f=> f.from<=f.to ? (mm>=f.from && mm<=f.to) : (mm>=f.from || mm<=f.to));
+    return f ? {key:"B:"+f.key, label:NOMI_GRUPPI_FASCE[f.key]||f.label} : null;
+  }
   const [confermaEliminaMultipla, setConfermaEliminaMultipla] = useState(false);
   const [confermaEliminaCalId, setConfermaEliminaCalId] = useState(null);
   const [confermaEliminaEvento, setConfermaEliminaEvento] = useState(null); // {dKey, cId, id}
@@ -457,8 +478,33 @@ export default function VistaModelli({ C }){
             </div>
           ):(
             <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
-              {modelliVisibili.map((m,i,arr)=>(
-                <div key={m.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
+              {(()=>{
+                const gr = q ? [] : modelliVisibili.map(gruppoModello);
+                const conteggi = {}; gr.forEach(g=>{ if(g) conteggi[g.key]=(conteggi[g.key]||0)+1; });
+                let ultimoGruppo = null;
+                return modelliVisibili.map((m,i,arr)=>{
+                const gm = q ? null : gr[i];
+                const chiuso = !!gm && gruppiChiusi.has(gm.key);
+                let intestazione = null;
+                const nuovoTratto = !!gm && (!ultimoGruppo || ultimoGruppo.key!==gm.key);
+                if(gm) ultimoGruppo = gm;
+                if(nuovoTratto){
+                  const nGruppo = conteggi[gm.key]||0;
+                  intestazione = (
+                    <div onClick={()=>toggleGruppoModelli(gm.key)}
+                      style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",
+                        padding:"9px 12px",background:T.s2,fontSize:12,fontWeight:900,letterSpacing:0.5,color:T.text,
+                        borderBottom:`1px solid ${T.border}`}}>
+                      <span>{chiuso?"▶":"▼"}&nbsp; {gm.label}</span>
+                      <span style={{color:T.sub,fontWeight:700}}>{nGruppo}</span>
+                    </div>
+                  );
+                }
+                if(chiuso) return intestazione ? <div key={m.id}>{intestazione}</div> : null;
+                return (
+                <div key={m.id}>
+                  {intestazione}
+                <div style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                   <ModelloCard modello={m} T={T} accent={accent} fasceAutomatiche={fasceAutomatiche}
                     nomeCalendario={store.calendars.find(c=>c.id===(m.calendarId||mainCalId))?.name||""}
                     // La modalità selezione multipla (checkbox) resta legata a editMode
@@ -574,7 +620,9 @@ export default function VistaModelli({ C }){
                       setDraggingId(null); setDragOverId(null);
                     }:null}/>
                 </div>
-              ))}
+                </div>
+                );
+              }); })()}
               {/* Zona "in fondo": visibile solo mentre si trascina. Senza di essa
                   l'ultimo posto era irraggiungibile (il modello viene sempre
                   inserito PRIMA della card su cui si rilascia). */}
