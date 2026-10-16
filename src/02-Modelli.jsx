@@ -127,7 +127,7 @@ export default function VistaModelli({ C }){
   const [espandiAmbitoInPoi, setEspandiAmbitoInPoi] = useState(false);
   useEffect(()=>{ if(!chiediAmbitoModifica){ setEspandiAmbitoTutti(false); setEspandiAmbitoInPoi(false); } },[chiediAmbitoModifica]);
   const {
-    today, tipoModelloProtrazione, computeStornoRecupero, computeStornoPI, tipoModelloPI, store, setStore, loading, setLoading, year,
+    today, tipoModelloProtrazione, eRecuperoGiornata, computeStornoRecupero, computeStornoPI, tipoModelloPI, store, setStore, loading, setLoading, year,
     ripristinaModelliMancanti, ripristinoInCorso, setRipristinoInCorso, ripristinoEsito, setRipristinoEsito,
     setYear, month, setMonth, calId, setCalId, editMode,
     setEditMode, selectedCalIds, setSelectedCalIds, reportCalIds, setReportCalIds, selectedModelloIds,
@@ -2955,6 +2955,39 @@ export default function VistaModelli({ C }){
       // turno base), non ha senso mostrargli di nuovo quegli stessi campi:
       // qui mostriamo solo la durata effettiva (ingresso/uscita di questo
       // evento), che Ã¨ l'unica informazione rilevante per lui.
+      // Recupero compensativo intera giornata: nessun orario, scala 6h15 dal credito delle protrazioni a recupero.
+      if(form.editId && eRecuperoGiornata && eRecuperoGiornata(form.evtModelloId)){
+        const { perEvento } = computeStornoRecupero();
+        const info = perEvento[form.editId];
+        const fmtMin = m=> m<=0 ? "0m" : Math.floor(m/60)+"h"+(m%60>0?" "+(m%60)+"m":"");
+        const fmtData = k=>{ const [y,mm,d]=k.split("-"); return `${d}/${mm}/${y}`; };
+        return (
+          <div style={{marginBottom:4}}>
+            <div style={{width:"100%",padding:"5px 8px",borderRadius:8,fontSize:9,fontWeight:800,textAlign:"center",background:"#dc2626",color:"#fff",marginBottom:4}}>
+              RECUPERO INTERA GIORNATA · SCALA 6h 15m DALLA PROTRAZIONE A RECUPERO
+            </div>
+            <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 10px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:(info&&info.storni.length>0)?6:0}}>
+                <span style={{fontSize:11,color:T.sub,fontWeight:700}}>Non coperto</span>
+                <span style={{fontSize:12,fontWeight:900,color:(info&&info.minutiResidui>0)?"#dc2626":T.sub}}>{fmtMin(info?info.minutiResidui:375)}</span>
+              </div>
+              {info && info.storni.length>0 && (
+                <div>
+                  <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:4}}>Scalato da</div>
+                  <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                    {info.storni.map((s,i)=>(
+                      <div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:11}}>
+                        <span style={{color:T.text,fontWeight:600}}>{fmtData(s.dateKey)}</span>
+                        <span style={{color:"#dc2626",fontWeight:800}}>{fmtMin(s.minuti)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      }
       const tipoQuestoEvento = form.editId ? tipoModelloProtrazione(form.evtModelloId) : null;
       if(tipoQuestoEvento){
         const m1=oraInMinuti(form.tIn), m2=oraInMinuti(form.tOut);

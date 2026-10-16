@@ -1989,6 +1989,16 @@ export function useAppCore(session){
     if(n.includes("PIANOINCENTIVANTE") || n === "PI") return "piano_incentivante";
     return null;
   }
+  // "RECUPERO COMPENSATIVO INTERA GIORNATA": un giorno senza orario che CONSUMA 6h15 (375 min) dal credito
+  // delle PROTRAZIONI A RECUPERO accumulato in giorni diversi (dal più vecchio, FIFO), come un "-PROTRAZIONE A RECUPERO".
+  const MIN_RECUPERO_GIORNATA = 375;
+  function eRecuperoGiornata(modelloId){
+    if(!modelloId) return false;
+    const mod = modelli.find(m=>m.id===modelloId);
+    if(!mod) return false;
+    const n = (mod.titolo||"").trim().toUpperCase().replace(/\s+/g,"");
+    return n.includes("RECUPEROCOMPENSATIVO") && n.includes("INTERAGIORNATA") && tipoModelloPI(modelloId)!=="rc_pi";
+  }
   // Vero se dateKey (formato YYYY-MM-DD) cade di domenica. Solo i Piani
   // Incentivanti di domenica maturano un giorno di riposo — quelli nei
   // festivi infrasettimanali (es. 19 settembre) non generano credito.
@@ -7033,11 +7043,12 @@ const importsRecenti = useMemo(()=>{
           const collegList = splitColleghi(e.collega);
           if(filtraCollega && !collegList.some(c=>c.toUpperCase().includes(filtraCollega))) continue;
 
-          let mins = minutiEvento(e);
+          const rcGiornata = eRecuperoGiornata(e.modelloId);
+          let mins = rcGiornata ? MIN_RECUPERO_GIORNATA : minutiEvento(e);
           if(mins<=0) continue; // niente da sommare (evento senza orario valido)
           // "-PROTRAZIONE A RECUPERO" è un CONSUMO di credito, non un altro
           // turno lavorato: nel totale ore va sottratto, non sommato.
-          if(tipoModelloProtrazione(e.modelloId)==="meno_recupero") mins = -mins;
+          if(rcGiornata || tipoModelloProtrazione(e.modelloId)==="meno_recupero") mins = -mins;
 
           result.totaleMin += mins;
           if(e.modelloId){
@@ -7102,6 +7113,7 @@ const importsRecenti = useMemo(()=>{
     for(const [dateKey, calMap] of Object.entries(store.events)){
       for(const [calId, evts] of Object.entries(calMap)){
         for(const e of evts){
+          if(eRecuperoGiornata(e.modelloId)){ eventiConsumo.push({ id:e.id, dateKey, calId, minuti:MIN_RECUPERO_GIORNATA }); continue; }
           const tipo = tipoModelloProtrazione(e.modelloId);
           if(tipo==="recupero"){
             const mins = e.allDay ? 0 : calcMinuti(e.tIn||"", e.tOut||"");
@@ -8029,7 +8041,7 @@ const importsRecenti = useMemo(()=>{
     computeMinutiForReport,
     computeStornoRecupero,
     computeStornoPI,
-    tipoModelloPI,
+    tipoModelloPI, eRecuperoGiornata,
     computeTurnazioneForReport,
     computeConteggio,
     computeIndennita,

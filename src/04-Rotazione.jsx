@@ -2120,31 +2120,38 @@ export function ModelForm({
 
       {campo("CATEGORIA TURNO (per report Turnazione)", (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-          {[["primo", "1° turno"], ["secondo", "2° turno"], [null, "Automatico"], ["nessuna", "Nessuna"]].map(([val, lab]) => (
-            <button key={lab} type="button" onClick={() => setForm(prev => ({ ...prev, categoria: val }))}
+          {[["primo", "1° turno"], ["secondo", "2° turno"], ["nessuna", "Nessuna"]].map(([val, lab]) => {
+            // niente "Automatico": se non c'è una scelta, il pulsante deciso dall'automatismo è PIENO; ritoccando la scelta si torna all'automatico
+            const sel = (form.categoria ?? null) === val || ((form.categoria ?? null) === null && val === categoriaTurnoAutomatica(form));
+            return (
+            <button key={lab} type="button" onClick={() => setForm(prev => ({ ...prev, categoria: (prev.categoria ?? null) === val ? null : val }))}
               style={{
-                ...NB, flex: "1 1 22%", fontSize: 12, background: (form.categoria ?? null) === val ? accent : T.s2,
-                color: (form.categoria ?? null) === val ? accentText : T.text,
-                border: `1px solid ${(form.categoria ?? null) === val ? accent : T.border}`,
+                ...NB, flex: "1 1 28%", fontSize: 12, background: sel ? accent : T.s2,
+                color: sel ? accentText : T.text,
+                border: `1px solid ${sel ? accent : T.border}`,
               }}>
               {lab}
             </button>
-          ))}
+            );
+          })}
         </div>
       ))}
 
       {!isH24Form && campo("CATEGORIA APP/AUTO (per report Turnazione)", (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-          {[["app", "APP"], ["auto", "AUTO"], [null, "Automatico"], ["nessuna", "Nessuna"]].map(([val, lab]) => (
-            <button key={lab} type="button" onClick={() => setForm(prev => ({ ...prev, categoriaAppAuto: val }))}
+          {[["app", "APP"], ["auto", "AUTO"], ["nessuna", "Nessuna"]].map(([val, lab]) => {
+            const sel = (form.categoriaAppAuto ?? null) === val || ((form.categoriaAppAuto ?? null) === null && val === categoriaAppAutoAutomatica(form));
+            return (
+            <button key={lab} type="button" onClick={() => setForm(prev => ({ ...prev, categoriaAppAuto: (prev.categoriaAppAuto ?? null) === val ? null : val }))}
               style={{
-                ...NB, flex: "1 1 22%", fontSize: 12, background: (form.categoriaAppAuto ?? null) === val ? accent : T.s2,
-                color: (form.categoriaAppAuto ?? null) === val ? accentText : T.text,
-                border: `1px solid ${(form.categoriaAppAuto ?? null) === val ? accent : T.border}`,
+                ...NB, flex: "1 1 28%", fontSize: 12, background: sel ? accent : T.s2,
+                color: sel ? accentText : T.text,
+                border: `1px solid ${sel ? accent : T.border}`,
               }}>
               {lab}
             </button>
-          ))}
+            );
+          })}
         </div>
       ))}
 
