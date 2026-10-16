@@ -13,6 +13,7 @@ function BackupPerModello({ T }) {
   const [cerca, setCerca] = useState("");
   const [msg, setMsg] = useState("");
   const [lavoro, setLavoro] = useState(false);
+  const [sel, setSel] = useState(() => new Set());
 
   async function carica() {
     try {
@@ -52,6 +53,25 @@ function BackupPerModello({ T }) {
     } catch (e) { setLavoro(false); setMsg("❌ Ripristino non riuscito: " + (e?.message || e) + ". Nulla è cambiato."); }
   }
 
+  const selezionati = (elenco || []).filter(x => sel.has(x.modello_id));
+  const eventiSel = selezionati.reduce((t, x) => t + (x.n_eventi || 0), 0);
+  function toggle(id) { setSel(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; }); }
+  function selezionaTutti() { setSel(prev => { const n = new Set(prev); filtrati.forEach(x => n.add(x.modello_id)); return n; }); }
+
+  async function ripristinaSelezionati() {
+    if (!selezionati.length) return;
+    if (typeof navigator !== "undefined" && navigator.onLine === false) { setMsg("❌ Sei offline: nulla è stato modificato."); return; }
+    if (!window.confirm(`Ripristinare ${selezionati.length} modelli con i loro ${eventiSel} eventi, come nell'ultima copia? Gli altri modelli non vengono toccati. Prima viene salvata una copia dello stato attuale. Se uno fallisce, non cambia nulla.`)) return;
+    setLavoro(true); setMsg("⏳ Ripristino in corso...");
+    try {
+      const { data, error } = await supabase.rpc("ripristina_modelli", { p_ids: selezionati.map(x => x.modello_id) });
+      if (error) throw error;
+      setMsg(`✅ Ripristinati ${data?.modelli_ripristinati ?? selezionati.length} modelli, ${data?.eventi_ripristinati ?? 0} eventi. Ricarico l'app...`);
+      try { localStorage.setItem("turnipm_pull_da_supabase", "1"); } catch (e) {}
+      setTimeout(() => window.location.reload(), 2000);
+    } catch (e) { setLavoro(false); setMsg("❌ Ripristino non riuscito: " + (e?.message || e) + ". Nulla è cambiato."); }
+  }
+
   const btn = { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "6px 9px", fontSize: 12, fontWeight: 800, color: T.text, cursor: "pointer" };
   return (
     <div>
@@ -61,6 +81,11 @@ function BackupPerModello({ T }) {
       {msg && <div style={{ fontSize: 12, color: T.text, background: T.s2, borderRadius: 8, padding: "8px 10px", marginBottom: 8 }}>{msg}</div>}
       <input value={cerca} onChange={e => setCerca(e.target.value)} placeholder="Cerca per nome o orario..."
         style={{ width: "100%", boxSizing: "border-box", background: T.s2, border: `1px solid ${T.border}`, borderRadius: 8, padding: "8px 10px", color: T.text, fontSize: 13, marginBottom: 8 }} />
+      <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
+        <button disabled={lavoro} onClick={selezionaTutti} style={btn}>☑️ Seleziona tutti{cerca.trim() ? " (filtrati)" : ""}</button>
+        <button disabled={lavoro || sel.size === 0} onClick={() => setSel(new Set())} style={btn}>Nessuno</button>
+        <span style={{ fontSize: 11.5, color: T.sub }}>{sel.size} selezionati</span>
+      </div>
       {elenco === null ? (
         <div style={{ fontSize: 12, color: T.sub, padding: 8 }}>⏳ Caricamento...</div>
       ) : filtrati.length === 0 ? (
@@ -69,6 +94,8 @@ function BackupPerModello({ T }) {
         <div style={{ maxHeight: 280, overflowY: "auto" }}>
           {filtrati.map(x => (
             <div key={x.modello_id} style={{ display: "flex", gap: 6, alignItems: "center", background: T.s2, border: `1px solid ${T.border}`, borderRadius: 10, padding: "8px 10px", marginBottom: 6 }}>
+              <input type="checkbox" checked={sel.has(x.modello_id)} onChange={() => toggle(x.modello_id)} disabled={lavoro}
+                style={{ width: 20, height: 20, flexShrink: 0 }} aria-label="Seleziona" />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{x.titolo} <span style={{ fontWeight: 900, color: "#2563eb", display: "inline-block", whiteSpace: "nowrap" }}>· {orarioDi(x)}</span></div>
                 <div style={{ fontSize: 11, color: T.sub }}>{x.n_eventi} eventi · {new Date(x.creato_il).toLocaleDateString("it-IT")}</div>
@@ -78,6 +105,12 @@ function BackupPerModello({ T }) {
             </div>
           ))}
         </div>
+      )}
+      {sel.size > 0 && (
+        <button disabled={lavoro} onClick={ripristinaSelezionati}
+          style={{ width: "100%", marginTop: 10, background: "#dc2626", border: "none", borderRadius: 10, color: "#fff", padding: "12px 0", fontWeight: 900, fontSize: 13, cursor: "pointer" }}>
+          Ripristina selezionati ({sel.size} · {eventiSel} eventi)
+        </button>
       )}
     </div>
   );
