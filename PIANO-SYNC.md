@@ -297,3 +297,12 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - **Annullamento**: ripristinare il commit; `drop function backup_modelli_elenco(); drop function backup_modello_dati(uuid,uuid);`
 - **Eseguito** (16/10): DB `backup_modelli_elenco()` e `backup_modello_dati()` (test annullati: 225 modelli in elenco, JSON di un modello con i suoi 7 eventi, senza login rifiutato, `anon` escluso). App: sezione "🧩 Copie per modello (emergenza)" in fondo alla finestra "Backup disponibili" (ricerca, ⬇️ scarica, Ripristina con conferma); nuovo file `src/20-backup-modelli.jsx`; build locale riuscita. Pubblicato con nuova APK.
 - **Come provarlo**: Impostazioni → Importa da Supabase → in fondo la sezione copie per modello. Prova ⬇️ su un modello; il Ripristina solo su un modello di prova.
+
+### Passo 5c — correzioni dopo la prova sul telefono (scritto prima) 🔄
+- **Richieste**: (1) il pulsante delle copie per modello sta nel blocco Supabase delle Impostazioni (piace dove sta); (2) un modello è sempre **nome + orario**: nell'elenco il nome da solo non basta (4 modelli "AUTO" si distinguono solo dall'orario); (3) sotto "Sincronizza ora" si vede quante modifiche sono da sincronizzare, con una freccia che apre il dettaglio; se non c'è niente: ok.
+- **DB (solo aggiunta)**: `backup_modelli_elenco()` restituisce anche `inizio` e `fine` del modello (dalla copia). Test annullato prima.
+- **App**:
+  1. Pulsante "🧩 Copie per modello (emergenza)" nel blocco "Backup automatici": apre una finestra con l'elenco; la sezione sparisce dalla finestra "Importa da Supabase". Ogni riga mostra **nome + orario** (es. "AUTO · 06:00–14:00"; se non ha orari: "senza orario"); la ricerca trova anche per orario; nome e orario compaiono anche nella conferma di ripristino e nel nome del file scaricato.
+  2. Sotto "Sincronizza ora": riga di stato. **"✅ Ok"** se non c'è nulla; altrimenti **"🕓 N da sincronizzare ▾"**. La freccia apre il dettaglio: *da inviare* (modifiche di questo dispositivo in coda, raggruppate per tipo: eventi, modelli, ecc.) e *da ricevere* (novità presenti su Supabase, solo conteggio per tipo, letto con una richiesta di sola lettura quando apri il dettaglio). Il conteggio delle modifiche in coda si aggiorna da solo ogni pochi secondi.
+- **Non cambia**: sincronizzazione, scrittura, backup. Solo lettura.
+- Annullamento: ripristinare il commit; la funzione DB resta compatibile.
