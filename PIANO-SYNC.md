@@ -337,3 +337,15 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - **Automatico**: tolto anche dal form del modello (turno e APP/AUTO). Se non c'è una scelta, il pulsante deciso dall'automatismo (fascia oraria / «APP» nel titolo) è pieno; ritoccando la scelta fatta si torna all'automatico.
 - **RECUPERO COMPENSATIVO INTERA GIORNATA** (modello senza orario): ogni evento scala 6h15 (375 min) dal credito delle PROTRAZIONI A RECUPERO, dal giorno più vecchio (FIFO), anche da più giorni. Nell'evento compare il riquadro «Scalato da» con date e minuti (e «Non coperto» se il credito non basta). Nel report ore, se il modello è incluso, vale -6h15 come «-PROTRAZIONE A RECUPERO». Riconosciuto dal titolo (contiene «RECUPERO COMPENSATIVO» e «INTERA GIORNATA»).
 - **Correzione (16/10)**: il pulsante pieno (scelto o deciso dall'automatismo), se ritoccato, passa a «Nessuna»; si può anche premere direttamente «Nessuna». Ripremendo «Nessuna» si torna all'automatico. Vale per evento e per modello (turno e APP/AUTO).
+
+### Fasce orarie: NOTTE inizia alle 18:01 (16/10) 🔄
+- **Problema**: 3° TURNO finiva alle 18:00 e NOTTE iniziava alle 18:00: un evento alle 18:00 stava in due fasce. In più `trovaFascia` trattava la fine come esclusa, mentre i valori salvati (360–705, 706–960, 961–1080) sono "fine inclusa": con la nuova regola un orario come 16:00 o 11:45 poteva non trovare nessuna fascia.
+- **Cosa cambio**:
+  1. Valori predefiniti (`04-Rotazione.jsx`): NOTTE da 1081 (18:01); 3° TURNO resta fino a 1080 (18:00).
+  2. `trovaFascia`: la fine delle fasce è **inclusa** (coerente con i valori salvati); nessun buco: 00:00–05:59 notte, 06:00–11:45 mattina, 11:46–16:00 pomeriggio, 16:01–18:00 terzo turno, 18:01–23:59 notte.
+  3. `classificaFasciaOrariaModello` (`06-Logica.jsx`): NOTTE da 18:01; 18:00 va nel 3° TURNO.
+  4. Impostazioni già salvate: correzione una tantum all'avvio (solo se NOTTE parte alle 18:00 e il 3° TURNO finisce alle 18:00, cioè la sovrapposizione), più la stessa correzione su `user_settings.fasce_automatiche` in Supabase (una sola riga, solo il valore `from` della NOTTE).
+- **Non cambia**: colori, nomi, orari delle altre fasce, eventi, modelli.
+- **Annullamento**: ripristinare il commit; su Supabase rimettere `from: 1080` alla fascia `notte`.
+- **Eseguito** (16/10): codice (default NOTTE 18:01, `trovaFascia` con fine inclusa, classificazione modelli, correzione una tantum all'avvio) e `user_settings.fasce_automatiche` su Supabase (test annullato prima: mattina 360–705 | pomeriggio 706–960 | terzo_turno 961–1080 | notte 1081–359; poi applicato sulla sola riga dell'utente). Build locale riuscita; pubblicato con nuova APK.
+- **Nota**: l'ordine automatico per fasce dei modelli (`classificaFasciaOrariaModello`, con i modelli "etichetta" NOTTE/PRIMO/SECONDO/3°TURNO e gli H24 in coda) è scritto fisso nel codice e non legge le Impostazioni: da tenere presente nel doppio ordine A/B.

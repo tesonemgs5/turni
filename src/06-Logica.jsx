@@ -1030,7 +1030,14 @@ export function useAppCore(session){
         const savedIndennita = settings?.indennita || { diurno:"", notturno:"", festivo:"", notturno_festivo:"" };
         const savedValoreTicket = settings?.valore_ticket || "";
         const savedConteggioConfigs = settings?.conteggio_configs || {};
-        const savedFasce = settings?.fasce_automatiche || FASCE_AUTOMATICHE_DEFAULT;
+        let savedFasce = settings?.fasce_automatiche || FASCE_AUTOMATICHE_DEFAULT;
+        // Correzione una tantum: la NOTTE inizia alle 18:01 (prima si sovrapponeva al 3° TURNO che finisce alle 18:00).
+        try{
+          const ntF = savedFasce.find(f=>f.key==="notte"), t3F = savedFasce.find(f=>f.key==="terzo_turno");
+          if(ntF && t3F && ntF.from===1080 && t3F.to===1080){
+            savedFasce = savedFasce.map(f=>f.key==="notte" ? {...f, from:1081} : f);
+          }
+        }catch(e){}
         const savedSundayColor = settings?.sunday_color || "";
         const savedHolidayColor = settings?.holiday_color || "";
         const savedNationalHolsEnabled = settings?.national_hols_enabled || FESTIVITA_DEFAULT_ATTIVE;
@@ -4393,8 +4400,8 @@ function calcolaOrdineModelli(sottoinsieme){
 //      lasciati in coda, ordinati anch'essi per orario di inizio crescente.
 // All'interno di ciascun blocco l'ordine è per orario di inizio crescente.
 function classificaFasciaOrariaModello(m){
-  // Fasce: 0=NOTTE (18:00–05:59), 1=PRIMO (06:00–11:45), 2=SECONDO (11:46–16:00),
-  // 3=3° TURNO (16:01–17:59), 4=altri (H24 e senza orario valido, sempre in coda).
+  // Fasce: 0=NOTTE (18:01–05:59), 1=PRIMO (06:00–11:45), 2=SECONDO (11:46–16:00),
+  // 3=3° TURNO (16:01–18:00), 4=altri (H24 e senza orario valido, sempre in coda).
   // I 4 modelli "etichetta" (titolo NOTTE/PRIMO/SECONDO/3°TURNO) vanno nella
   // fascia che rappresentano, in testa al loro blocco.
   const fasciaEtichetta = fasciaModelloEtichetta(m);
@@ -4402,10 +4409,10 @@ function classificaFasciaOrariaModello(m){
   if(m.tempo==="h24") return 4; // H24 sempre in coda, anche con inizio residuo
   const mins = oraInMinuti(m.inizio||"");
   if(mins==null) return 4;
-  if(mins>=1080 || mins<=359) return 0; // NOTTE    18:00–05:59
+  if(mins>=1081 || mins<=359) return 0; // NOTTE    18:01–05:59
   if(mins>=360  && mins<=705) return 1; // PRIMO    06:00–11:45
   if(mins>=706  && mins<=960) return 2; // SECONDO  11:46–16:00
-  return 3;                             // 3° TURNO 16:01–17:59
+  return 3;                             // 3° TURNO 16:01–18:00
 }
 // Riconosce i 4 modelli "etichetta di fascia" dal titolo (case-insensitive,
 // tollerante a spazi e simbolo gradi): restituisce il numero di fascia

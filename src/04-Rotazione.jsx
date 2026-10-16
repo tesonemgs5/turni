@@ -66,7 +66,7 @@ export const FASCE_AUTOMATICHE_DEFAULT = [
   { key:"mattina",     label:"PRIMO",    color:"#FFEB3C", from:360,  to:705  }, // 06:00–11:45
   { key:"pomeriggio",  label:"SECONDO",  color:"#FAC02E", from:706,  to:960  }, // 11:46–16:00
   { key:"terzo_turno", label:"3° TURNO", color:"#90CAF8", from:961,  to:1080 }, // 16:01–18:00
-  { key:"notte",       label:"NOTTE",    color:"#1E40AF", from:1080, to:359  }, // 18:00–05:59 (attraversa la mezzanotte)
+  { key:"notte",       label:"NOTTE",    color:"#1E40AF", from:1081, to:359  }, // 18:01–05:59 (attraversa la mezzanotte)
 ];
 
 
@@ -238,8 +238,8 @@ function trovaFascia(tIn, fasce) {
     const da = f.from, a = f.to;
     if (da == null || a == null) continue;
     if (da === a) continue; // fascia "riposo" senza intervallo, salta
-    if (da < a) { if (m >= da && m < a) return f; }
-    else { if (m >= da || m < a) return f; } // fascia che attraversa la mezzanotte
+    if (da < a) { if (m >= da && m <= a) return f; } // fine inclusa (come i valori salvati)
+    else { if (m >= da || m <= a) return f; } // fascia che attraversa la mezzanotte
   }
   return lista[0];
 }
