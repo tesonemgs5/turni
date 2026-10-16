@@ -4745,11 +4745,12 @@ const importsRecenti = useMemo(()=>{
   // poi rinumera tutta l'app a blocchi globali (vedi ricalcolaPosizioniGlobali)
   // cosi' il blocco di questo calendario resta contiguo e ordinato, e gli
   // altri calendari mantengono la loro posizione relativa.
-  function spostaModelloPuro(prev, id, dir, calIdFiltro){
+  function spostaModelloPuro(prev, id, dir, calIdFiltro, idVicino){
     const sottoinsieme = calcolaOrdineModelli(modelliDelCalendario(prev, calIdFiltro));
     const idx = sottoinsieme.findIndex(m=>m.id===id);
     if(idx===-1) return prev;
-    const vicinoIdx = dir==="up" ? idx-1 : idx+1;
+    // idVicino (opzionale): scambio con quel modello preciso, quello che si vede accanto nella tendina
+    const vicinoIdx = idVicino ? sottoinsieme.findIndex(m=>m.id===idVicino) : (dir==="up" ? idx-1 : idx+1);
     if(vicinoIdx<0 || vicinoIdx>=sottoinsieme.length) return prev; // gia' al limite, nessun movimento
     const riordinato = [...sottoinsieme];
     [riordinato[idx], riordinato[vicinoIdx]] = [riordinato[vicinoIdx], riordinato[idx]];
@@ -4828,9 +4829,9 @@ const importsRecenti = useMemo(()=>{
     });
   }
 
-  async function moveH24(id, dir, calIdFiltro){
+  async function moveH24(id, dir, calIdFiltro, idVicino){
     const prev = modelliRef.current;
-    const nuovo = spostaModelloPuro(prev, id, dir, calIdFiltro);
+    const nuovo = spostaModelloPuro(prev, id, dir, calIdFiltro, idVicino);
     if(nuovo===prev) return;
     modelliRef.current = nuovo;
     setModelli(nuovo);
@@ -4848,6 +4849,72 @@ const importsRecenti = useMemo(()=>{
     saveToLocalStorage(undefined, undefined, nuovo); // il riordino deve restare dopo il riavvio
     segnalaModificaOrdineModelli();
     await salvaModifichePosizioni(prev, nuovo);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // GRUPPI A TENDINA dei modelli. Ogni ordine (A alfabetico, B orario) ha i propri gruppi,
+  // per calendario. Un modello senza gruppo sta sotto tutti i gruppi, nel suo ordine di sempre.
+  // Scritture sempre a blocchi (una richiesta); il locale si aggiorna subito.
+  // ═══════════════════════════════════════════════════════════════
+  function gruppiDelCalendario(calIdX, ordine){
+    const ord = ordine || ordineAttivo();
+    return (gruppi||[]).filter(g=>g.ordine===ord && (g.calendarId||mainCalId)===calIdX)
+      .sort((a,b)=> a.sortOrder!==b.sortOrder ? a.sortOrder-b.sortOrder : String(a.id).localeCompare(String(b.id)));
+  }
+  async function aggiungiGruppo(nome, calIdX){
+    if(!userId) return { ok:false };
+    const n = String(nome||"").trim().toUpperCase();
+    const cal = calIdX || mainCalId;
+    if(!n || !cal) return { ok:false };
+    const ordine = ordineAttivo();
+    const esistenti = gruppiDelCalendario(cal, ordine);
+    if(esistenti.some(g=>String(g.nome||"").toUpperCase()===n)) return { ok:false, motivo:"esiste" };
+    const ultimo = esistenti.reduce((mx,g)=>Math.max(mx, g.sortOrder||0), 0);
+    const nuovo = { id:generaIdLocale(), calendarId:cal, ordine, nome:n, sortOrder:ultimo+1000 };
+    setGruppi(prev=>[...prev, nuovo]);
+    await scriviBatchConBackup({
+      ops:[{ tipo:"insert", table:"gruppi_modelli",
+        payload:{ id:nuovo.id, user_id:userId, calendar_id:cal, ordine, nome:n, sort_order:nuovo.sortOrder },
+        matchObj:null, contesto:"Nuovo gruppo" }],
+      contesto:"Nuovo gruppo", ts:new Date().toISOString(), opzioni:{ soloLog:true },
+    });
+    return { ok:true, gruppo:nuovo };
+  }
+  async function rinominaGruppo(id, nome){
+    const n = String(nome||"").trim().toUpperCase();
+    const g = (gruppi||[]).find(x=>x.id===id);
+    if(!userId || !n || !g) return { ok:false };
+    if(n===g.nome) return { ok:true };
+    if(gruppiDelCalendario(g.calendarId||mainCalId, g.ordine).some(x=>x.id!==id && String(x.nome||"").toUpperCase()===n)) return { ok:false, motivo:"esiste" };
+    setGruppi(prev=>prev.map(x=>x.id===id ? {...x, nome:n} : x));
+    await scriviBatchConBackup({
+      ops:[{ tipo:"update", table:"gruppi_modelli", payload:{ nome:n }, matchObj:{ id, user_id:userId }, contesto:"Rinomina gruppo" }],
+      contesto:"Rinomina gruppo", ts:new Date().toISOString(), opzioni:{ soloLog:true },
+    });
+    return { ok:true };
+  }
+  // Elimina il gruppo: i suoi modelli NON vengono toccati, tornano senza gruppo (e seguono il loro ordine).
+  async function eliminaGruppo(id){
+    const g = (gruppi||[]).find(x=>x.id===id);
+    if(!userId || !g) return { ok:false };
+    const campo = g.ordine==="A" ? "gruppoA" : "gruppoB";
+    const col = colGruppo(g.ordine);
+    const membri = (modelliRef.current||[]).filter(m=>m && m[campo]===id);
+    setGruppi(prev=>prev.filter(x=>x.id!==id));
+    if(membri.length>0){
+      const nuovi = (modelliRef.current||[]).map(m=> (m && m[campo]===id) ? {...m, [campo]:null} : m);
+      modelliRef.current = nuovi;
+      setModelli(nuovi);
+      saveToLocalStorage(undefined, undefined, nuovi);
+    }
+    await scriviBatchConBackup({
+      ops:[
+        ...membri.map(m=>({ tipo:"update", table:"modelli", payload:{ [col]:null }, matchObj:{ id:m.id, user_id:userId }, contesto:"Elimina gruppo \u2014 modelli senza gruppo" })),
+        { tipo:"delete", table:"gruppi_modelli", payload:null, matchObj:{ id, user_id:userId }, contesto:"Elimina gruppo" },
+      ],
+      contesto:"Elimina gruppo", ts:new Date().toISOString(), opzioni:{ soloLog:true },
+    });
+    return { ok:true, modelliLiberati:membri.length };
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -7932,7 +7999,7 @@ const importsRecenti = useMemo(()=>{
     showAddColorPicker,
     setShowAddColorPicker,
     coloriExtra,
-    gruppi, setGruppi,
+    gruppi, setGruppi, gruppiDelCalendario, aggiungiGruppo, rinominaGruppo, eliminaGruppo,
     setColoriExtra,
     autocompleteValori,
     setAutocompleteValori,

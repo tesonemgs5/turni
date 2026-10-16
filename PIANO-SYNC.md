@@ -417,3 +417,15 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - Backup Supabase e Esporta: includono i gruppi. Esporta scrive `gruppo_a`/`gruppo_b` e la tabella solo se il telefono conosce dei gruppi (altrimenti non tocca quelli di Supabase) e non elimina mai gruppi.
 - Controllo struttura e backup locale conoscono la nuova tabella. Build di prova riuscita.
 - Prossimo: **1b-ii** (tendine disegnate dai gruppi, «+ Aggiungi gruppo», elimina, rinomina).
+
+#### Tappa 1b-ii — tendine disegnate dai gruppi veri ✅ (17/10)
+- `02-Modelli.jsx`: le tendine arrivano da `gruppi_modelli` (per calendario e per ordine A/B), non più dal codice. Ordine: gruppi per `sort_order`; dentro ogni gruppo i modelli per posizione; **modelli senza gruppo in fondo, sotto tutti i gruppi**. Gruppi vuoti visibili con 0.
+- «+ Aggiungi gruppo» in fondo alla lista (nome scritto nella riga, «Crea»/«Annulla»); ✏️ rinomina e 🗑️ elimina accanto al numero dei modelli (conferma prima di eliminare: i modelli NON vengono cancellati, tornano senza gruppo). Visibili solo con un calendario selezionato e senza ricerca; con «tutti i calendari» le tendine con lo stesso nome si uniscono in sola visualizzazione.
+- `06-Logica.jsx`: `aggiungiGruppo`, `rinominaGruppo`, `eliminaGruppo`, `gruppiDelCalendario` (scritture a blocchi con `applica_modifiche`, locale aggiornato subito; nomi doppi nello stesso calendario/ordine rifiutati).
+- Frecce ▲▼ e trascinamento: per ora solo **dentro lo stesso gruppo** (le frecce scambiano con il modello che si vede accanto). Il passaggio fra gruppi è la tappa 2.
+- Controllo sui dati veri: ordine B = 5 tratti contigui = 5 gruppi (nello stesso ordine dei gruppi); ordine A del calendario principale ha i modelli alfabetici mescolati fra i 4 gruppi, quindi ora ogni gruppo si vede compatto (prima le intestazioni si ripetevano).
+- Le tendine chiuse/aperte vanno ricordate per dispositivo con chiavi nuove: all'inizio saranno tutte aperte.
+- Un nuovo modello nasce **senza gruppo** (in fondo), come da piano.
+- Modello KATIA (calendario 6870d81c…) senza gruppo B: corretto, quel calendario non ha gruppi B.
+- Build di prova riuscita; **non provata sul telefono** (serve la build della tappa 4).
+- Prossimo: **tappa 2** (spostamenti: frecce al bordo che cambiano gruppo, frecce delle tendine chiuse, trascinamento fra gruppi).

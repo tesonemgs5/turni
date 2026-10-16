@@ -94,27 +94,10 @@ export default function VistaModelli({ C }){
     setGruppiChiusi(prev=>{ const n=new Set(prev); if(n.has(k)) n.delete(k); else n.add(k);
       try{ localStorage.setItem("turnipm_gruppi_chiusi", JSON.stringify([...n])); }catch(e){} return n; });
   }
-  const NOMI_GRUPPI_FASCE = { mattina:"MATTINA", pomeriggio:"POMERIGGIO", terzo_turno:"TERZO TURNO", notte:"NOTTE" };
-  function gruppoModello(m){
-    if(ordineModelli==="A"){
-      if(/^DF?\s/i.test(String(m.titolo||"").trim())) return {key:"A:D", label:"DISTACCATI"};
-      if(m.categoriaAppAuto==="auto") return {key:"A:auto", label:"AUTO"};
-      if(m.categoriaAppAuto==="app")  return {key:"A:app", label:"APPIEDATI"};
-      return {key:"A:altri", label:"ALTRI"};
-    }
-    if(m.tempo==="h24"){
-      // I 4 modelli "etichetta" (NOTTE, MATTINA, POMERIGGIO, 3°TURNO) stanno dentro la tendina della loro fascia, insieme ai 6h15/6h30.
-      const t = String(m.titolo||"").toUpperCase().replace(/[\s°]/g,"");
-      const fk = { NOTTE:"notte", MATTINA:"mattina", POMERIGGIO:"pomeriggio", "3TURNO":"terzo_turno", TERZOTURNO:"terzo_turno" }[t];
-      if(fk) return {key:"B:"+fk, label:NOMI_GRUPPI_FASCE[fk]};
-      return {key:"B:h24", label:"H24"};
-    }
-    if(m.tempo!=="6h15" && m.tempo!=="6h30") return null; // personalizzati: fuori dai gruppi
-    const p = String(m.inizio||"").split(":"); if(p.length<2) return null;
-    const mm = (parseInt(p[0],10)||0)*60 + (parseInt(p[1],10)||0);
-    const f = (fasceAutomatiche||[]).find(f=> f.from<=f.to ? (mm>=f.from && mm<=f.to) : (mm>=f.from || mm<=f.to));
-    return f ? {key:"B:"+f.key, label:NOMI_GRUPPI_FASCE[f.key]||f.label} : null;
-  }
+  // Gruppi a tendina: arrivano dal database (tabella gruppi_modelli, vedi 06-Logica.jsx).
+  const [gruppoInRinomina, setGruppoInRinomina] = useState(null); // {id, testo}
+  const [nuovoGruppoTesto, setNuovoGruppoTesto] = useState(null); // null = chiuso, stringa = in scrittura
+  const [gruppoDaEliminare, setGruppoDaEliminare] = useState(null); // id
   const [confermaEliminaMultipla, setConfermaEliminaMultipla] = useState(false);
   const [confermaEliminaCalId, setConfermaEliminaCalId] = useState(null);
   const [confermaEliminaEvento, setConfermaEliminaEvento] = useState(null); // {dKey, cId, id}
@@ -214,6 +197,7 @@ export default function VistaModelli({ C }){
     applicaReportOverrideATuttiGliEventi, totaleTurni,
     setPrevGrid, REPORT_TEMPLATES, calcolaOrdineModelli, updateFascia, session, salvaQuartine, coloriUsatiTutti, riordinaColoriUsati,
   } = C;
+  const { gruppi, gruppiDelCalendario, aggiungiGruppo, rinominaGruppo, eliminaGruppo } = C;
 
   // Qualsiasi menu a tendina espandibile aperto nel form Modifica Evento
   // (es. le righe di CATEGORIA REPORT) deve chiudersi non appena si cambia
@@ -495,37 +479,93 @@ export default function VistaModelli({ C }){
           ):(
             <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
               {(()=>{
-                const gr = q ? [] : modelliVisibili.map(gruppoModello);
-                // Nessun modello resta fuori dalle tendine (es. i personalizzati): prende il gruppo del modello che lo precede
-                // nell'elenco; se è all'inizio, quello del primo modello con gruppo che lo segue.
-                if(!q){
-                  let prec = null; for(let k=0;k<gr.length;k++){ if(gr[k]) prec = gr[k]; else if(prec) gr[k] = prec; }
-                  let suc = null; for(let k=gr.length-1;k>=0;k--){ if(gr[k]) suc = gr[k]; else if(suc) gr[k] = suc; }
+                // Tendine = gruppi veri del database. Ogni ordine (A / B) ha i propri gruppi, per calendario.
+                // Dentro ogni gruppo i modelli seguono la loro posizione; i modelli senza gruppo stanno sotto tutti i gruppi.
+                const sezioni = []; const senzaGruppo = [];
+                const gruppoDi = m => ordineModelli==="A" ? m.gruppoA : m.gruppoB;
+                if(q){
+                  senzaGruppo.push(...modelliVisibili);
+                } else if(calId!==null){
+                  const gl = gruppiDelCalendario(calId, ordineModelli);
+                  const perId = new Map(gl.map(g=>[g.id,{key:"G:"+g.id, label:g.nome, gruppo:g, modelli:[]}]));
+                  modelliVisibili.forEach(m=>{
+                    const gid = gruppoDi(m);
+                    const sez = ((m.calendarId||mainCalId)===calId && gid) ? perId.get(gid) : null;
+                    if(sez) sez.modelli.push(m); else senzaGruppo.push(m);
+                  });
+                  gl.forEach(g=>sezioni.push(perId.get(g.id)));
+                } else {
+                  // Tutti i calendari: i gruppi con lo stesso nome si uniscono (sola visualizzazione, nessuna modifica dei gruppi).
+                  const perNome = new Map();
+                  modelliVisibili.forEach(m=>{
+                    const gid = gruppoDi(m);
+                    const g = gid ? (gruppi||[]).find(x=>x.id===gid && x.ordine===ordineModelli) : null;
+                    if(!g){ senzaGruppo.push(m); return; }
+                    const nk = String(g.nome||"").toUpperCase();
+                    let sez = perNome.get(nk);
+                    if(!sez){ sez = {key:"N:"+nk, label:g.nome, gruppo:null, ord:g.sortOrder||0, modelli:[]}; perNome.set(nk, sez); }
+                    sez.modelli.push(m);
+                  });
+                  sezioni.push(...[...perNome.values()].sort((a,b)=>(a.ord-b.ord) || String(a.label).localeCompare(String(b.label))));
                 }
-                const conteggi = {}; gr.forEach(g=>{ if(g) conteggi[g.key]=(conteggi[g.key]||0)+1; });
-                let ultimoGruppo = null;
-                return modelliVisibili.map((m,i,arr)=>{
-                const gm = q ? null : gr[i];
-                const chiuso = !!gm && gruppiChiusi.has(gm.key);
-                let intestazione = null;
-                const nuovoTratto = !!gm && (!ultimoGruppo || ultimoGruppo.key!==gm.key);
-                if(gm) ultimoGruppo = gm;
-                if(nuovoTratto){
-                  const nGruppo = conteggi[gm.key]||0;
-                  intestazione = (
-                    <div onClick={()=>toggleGruppoModelli(gm.key)}
+                const ordinati = [...sezioni.flatMap(sz=>sz.modelli), ...senzaGruppo];
+                const infoMod = new Map();
+                [...sezioni.map(sz=>sz.modelli), senzaGruppo].forEach(lst=>lst.forEach((m,k)=>infoMod.set(m.id,{lst,k})));
+                const gestibile = calId!==null && !q;
+                // Il riordino per trascinamento vale dentro lo stesso gruppo (il cambio di gruppo arriva nella tappa 2).
+                const riordina = async (src, dst)=>{
+                  if(dst!=="__FONDO__"){ const a=infoMod.get(src), b=infoMod.get(dst); if(!a || !b || a.lst!==b.lst) return; }
+                  await reorderModelli(src, dst, calId);
+                };
+                const chiudiRinomina = ()=>setGruppoInRinomina(null);
+                const confermaRinomina = async ()=>{
+                  const x = gruppoInRinomina; if(!x) return;
+                  const r = await rinominaGruppo(x.id, x.testo);
+                  if(r && r.motivo==="esiste"){ window.alert("Esiste già un gruppo con questo nome."); return; }
+                  chiudiRinomina();
+                };
+                const confermaNuovo = async ()=>{
+                  const nome = String(nuovoGruppoTesto||"").trim(); if(!nome){ setNuovoGruppoTesto(null); return; }
+                  const r = await aggiungiGruppo(nome, calId);
+                  if(r && r.motivo==="esiste"){ window.alert("Esiste già un gruppo con questo nome."); return; }
+                  setNuovoGruppoTesto(null);
+                };
+                const btnPiccolo = {background:"transparent",border:"none",cursor:"pointer",fontSize:14,padding:"0 2px",lineHeight:1,color:T.text};
+                const intestazione = (sz)=>{
+                  const chiuso = gruppiChiusi.has(sz.key);
+                  const gg = gestibile ? sz.gruppo : null;
+                  const inRin = !!gg && !!gruppoInRinomina && gruppoInRinomina.id===gg.id;
+                  return (
+                    <div onClick={()=>{ if(!inRin) toggleGruppoModelli(sz.key); }}
                       style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",
                         padding:"9px 12px",background:T.s2,fontSize:12,fontWeight:900,letterSpacing:0.5,color:T.text,
-                        borderBottom:`1px solid ${T.border}`}}>
-                      <span>{chiuso?"▶":"▼"}&nbsp; {gm.label}</span>
-                      <span style={{color:T.sub,fontWeight:700}}>{nGruppo}</span>
+                        borderBottom:`1px solid ${T.border}`,gap:8}}>
+                      {inRin ? (
+                        <input autoFocus value={gruppoInRinomina.testo}
+                          onClick={e=>e.stopPropagation()}
+                          onChange={e=>setGruppoInRinomina({id:gg.id, testo:e.target.value.toUpperCase()})}
+                          onKeyDown={e=>{ if(e.key==="Enter") confermaRinomina(); else if(e.key==="Escape") chiudiRinomina(); }}
+                          style={{flex:1,minWidth:0,background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,padding:"5px 8px",color:T.text,fontSize:12,fontWeight:800,outline:"none"}}/>
+                      ) : (
+                        <span>{chiuso?"▶":"▼"}&nbsp; {sz.label}</span>
+                      )}
+                      <span style={{display:"flex",alignItems:"center",gap:8,color:T.sub,fontWeight:700}}>
+                        {inRin ? (<>
+                          <button title="Conferma" onClick={e=>{ e.stopPropagation(); confermaRinomina(); }} style={btnPiccolo}>✓</button>
+                          <button title="Annulla" onClick={e=>{ e.stopPropagation(); chiudiRinomina(); }} style={btnPiccolo}>✕</button>
+                        </>) : gg ? (<>
+                          <button title="Rinomina gruppo" onClick={e=>{ e.stopPropagation(); setGruppoInRinomina({id:gg.id, testo:gg.nome}); }} style={btnPiccolo}>✏️</button>
+                          <button title="Elimina gruppo" onClick={e=>{ e.stopPropagation(); setGruppoDaEliminare(gg.id); }} style={btnPiccolo}>🗑️</button>
+                        </>) : null}
+                        <span>{sz.modelli.length}</span>
+                      </span>
                     </div>
                   );
-                }
-                if(chiuso) return intestazione ? <div key={m.id}>{intestazione}</div> : null;
+                };
+                const renderModello = (m,i,arr)=>{
+                const inf = infoMod.get(m.id) || {lst:[m],k:0};
                 return (
                 <div key={m.id}>
-                  {intestazione}
                 <div style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                   <ModelloCard modello={m} T={T} accent={accent} fasceAutomatiche={fasceAutomatiche}
                     nomeCalendario={store.calendars.find(c=>c.id===(m.calendarId||mainCalId))?.name||""}
@@ -562,8 +602,8 @@ export default function VistaModelli({ C }){
                     // non corrisponde più alla posizione reale tra i modelli del
                     // calendario, quindi uno spostamento sposterebbe il modello
                     // nel posto sbagliato.
-                    onMoveUp={modalitaSpostamento&&!q&&i>0&&(m.calendarId||mainCalId)===calId?()=>moveH24(m.id,"up",calId):null}
-                    onMoveDown={modalitaSpostamento&&!q&&i<arr.length-1&&(m.calendarId||mainCalId)===calId?()=>moveH24(m.id,"down",calId):null}
+                    onMoveUp={modalitaSpostamento&&!q&&inf.k>0&&(m.calendarId||mainCalId)===calId?()=>moveH24(m.id,"up",calId,inf.lst[inf.k-1].id):null}
+                    onMoveDown={modalitaSpostamento&&!q&&inf.k<inf.lst.length-1&&(m.calendarId||mainCalId)===calId?()=>moveH24(m.id,"down",calId,inf.lst[inf.k+1].id):null}
                     // Drag & drop: disponibile solo in modalitaSpostamento, per
                     // spostamenti più ampi rispetto alle frecce ▲▼.
                     isDragging={draggingId===m.id}
@@ -590,7 +630,7 @@ export default function VistaModelli({ C }){
                     onTouchEnd={modalitaSpostamento?async()=>{
                       stopAutoScroll();
                       if(!touchSrcId.current){ setDraggingId(null); setDragOverId(null); return; }
-                      await reorderModelli(touchSrcId.current, touchTargetId.current, calId);
+                      await riordina(touchSrcId.current, touchTargetId.current);
                       touchSrcId.current=null; touchTargetId.current=null;
                       setDraggingId(null); setDragOverId(null);
                     }:null}
@@ -630,7 +670,7 @@ export default function VistaModelli({ C }){
                       // MAI l'id della card che ha ricevuto l'evento onDrop: quella
                       // può non coincidere con la posizione reale del cursore quando
                       // il drag nativo perde precisione su liste lunghe.
-                      await reorderModelli(dragSrcId.current, dragTargetId.current, calId);
+                      await riordina(dragSrcId.current, dragTargetId.current);
                       dragSrcId.current=null; dragTargetId.current=null;
                       setDraggingId(null); setDragOverId(null);
                     }:null}
@@ -644,7 +684,38 @@ export default function VistaModelli({ C }){
                 </div>
                 </div>
                 );
-              }); })()}
+                };
+                return (<>
+                  {sezioni.map(sz=>(
+                    <Fragment key={sz.key}>
+                      {intestazione(sz)}
+                      {!gruppiChiusi.has(sz.key) && sz.modelli.map(m=>renderModello(m, ordinati.indexOf(m), ordinati))}
+                    </Fragment>
+                  ))}
+                  {senzaGruppo.map(m=>renderModello(m, ordinati.indexOf(m), ordinati))}
+                  {gestibile&&(
+                    <div style={{padding:"10px 12px",borderTop:`1px solid ${T.border}`}}>
+                      {nuovoGruppoTesto===null ? (
+                        <button onClick={()=>setNuovoGruppoTesto("")}
+                          style={{width:"100%",background:T.s2,border:`1px dashed ${T.border}`,borderRadius:10,color:T.text,padding:"10px 12px",cursor:"pointer",fontWeight:800,fontSize:13}}>
+                          + Aggiungi gruppo
+                        </button>
+                      ) : (
+                        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                          <input autoFocus value={nuovoGruppoTesto} placeholder="Nome del nuovo gruppo"
+                            onChange={e=>setNuovoGruppoTesto(e.target.value.toUpperCase())}
+                            onKeyDown={e=>{ if(e.key==="Enter") confermaNuovo(); else if(e.key==="Escape") setNuovoGruppoTesto(null); }}
+                            style={{flex:1,minWidth:0,background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 10px",color:T.text,fontSize:13,outline:"none"}}/>
+                          <button onClick={confermaNuovo}
+                            style={{background:accent,border:"none",borderRadius:8,color:getContrastTextColor(accent),padding:"8px 12px",cursor:"pointer",fontWeight:800,fontSize:12}}>Crea</button>
+                          <button onClick={()=>setNuovoGruppoTesto(null)}
+                            style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,color:T.sub,padding:"8px 10px",cursor:"pointer",fontWeight:700,fontSize:12}}>Annulla</button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>);
+              })()}
               {/* Zona "in fondo": visibile solo mentre si trascina. Senza di essa
                   l'ultimo posto era irraggiungibile (il modello viene sempre
                   inserito PRIMA della card su cui si rilascia). */}
@@ -702,6 +773,15 @@ export default function VistaModelli({ C }){
             </div>
           </div>
         )}
+        {gruppoDaEliminare&&(()=>{
+          const g = (gruppi||[]).find(x=>x.id===gruppoDaEliminare); if(!g) return null;
+          const n = (modelli||[]).filter(m=>m && (g.ordine==="A" ? m.gruppoA : m.gruppoB)===g.id).length;
+          return (
+            <ConfermaEliminazione T={T} testo={`Eliminare il gruppo ${g.nome}? I ${n} modelli al suo interno NON vengono eliminati: tornano senza gruppo.`}
+              onConferma={async()=>{ setGruppoDaEliminare(null); await eliminaGruppo(g.id); }}
+              onAnnulla={()=>setGruppoDaEliminare(null)}/>
+          );
+        })()}
         {confermaEliminaMultipla&&(
           <ConfermaEliminazione T={T} testo={`Eliminare ${selectedModelloIds.length} modelli selezionati?`}
             onConferma={async()=>{
