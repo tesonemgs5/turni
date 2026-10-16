@@ -3830,18 +3830,37 @@ export function useAppCore(session){
         if(diversi){ coloriNuovi = lista; nCol = Math.max(1, Math.abs(lista.length-attuali.length)); }
       }
 
-      // ── GIORNI IMPORTANTI / FESTIVI PERSONALI (stanno in user_settings.extra_hols, non nelle tabelle sopra) ──
-      // Si rilegge l'elenco dal server e ci si rimettono sopra le modifiche locali ancora in coda: nulla si perde.
-      let extraHolsNuovi = null; let nExtra = 0;
+      // ── IMPOSTAZIONI (user_settings): giorni importanti/festivi personali, colore domeniche e festivi,
+      // quartine (dentro report_settings), colori delle fasce, festività attive. Non stanno nelle tabelle di get_changes.
+      // Si rilegge la riga dal server e si applica solo ciò che è DIVERSO; i giorni importanti si fondono con le modifiche locali in coda.
+      let extraHolsNuovi = null; let impostazioniNuove = null; let nExtra = 0;
       try{
-        const {data:rigaSett, error:errSett} = await supabase.from("user_settings").select("extra_hols").eq("user_id",userId).maybeSingle();
+        const {data:rigaSett, error:errSett} = await supabase.from("user_settings")
+          .select("extra_hols,sunday_color,holiday_color,report_settings,fasce_automatiche,national_hols_enabled").eq("user_id",userId).maybeSingle();
         if(errSett) throw errSett;
         if(rigaSett){
           const dalServer = applicaOpExtraHols(rigaSett.extra_hols||[], leggiOpExtraHols());
           const diff = diffExtraHolsInOps(loc.extraHols||[], dalServer);
-          if(diff.length>0){ extraHolsNuovi = dalServer; nExtra = diff.length; }
+          if(diff.length>0){ extraHolsNuovi = dalServer; nExtra += diff.length; }
+          let fasceSrv = rigaSett.fasce_automatiche || FASCE_AUTOMATICHE_DEFAULT;
+          try{
+            const ntF = fasceSrv.find(f=>f.key==="notte"), t3F = fasceSrv.find(f=>f.key==="terzo_turno");
+            if(ntF && t3F && ntF.from===1080 && t3F.to===1080) fasceSrv = fasceSrv.map(f=>f.key==="notte" ? {...f, from:1081} : f);
+          }catch(e){}
+          const campi = {
+            sundayColor: rigaSett.sunday_color || "",
+            holidayColor: rigaSett.holiday_color || "",
+            reportSettings: rigaSett.report_settings || {},
+            fasceAutomatiche: fasceSrv,
+            nationalHolsEnabled: rigaSett.national_hols_enabled || FESTIVITA_DEFAULT_ATTIVE,
+          };
+          const cambiati = {};
+          Object.entries(campi).forEach(([k,v])=>{
+            if(JSON.stringify(loc[k] ?? null) !== JSON.stringify(v)) cambiati[k] = v;
+          });
+          if(Object.keys(cambiati).length>0){ impostazioniNuove = cambiati; nExtra += Object.keys(cambiati).length; }
         }
-      }catch(e){ segnalaErroreSoloLog(e?.message||String(e), "Sincronizzazione giorni importanti"); }
+      }catch(e){ segnalaErroreSoloLog(e?.message||String(e), "Sincronizzazione impostazioni e giorni importanti"); }
 
       const nEv=evCambiati.length, nMod=modCambiati.length, nCal=calCambiati.length, nRot=rotCambiate.length;
       const totElim = elimEv.length + elimCal.size + elimMod.size + elimRot.size;
@@ -3860,12 +3879,12 @@ export function useAppCore(session){
       }
       if(!nessunaNovita){
         impostaSorgenteLog("remoto");
-        setStore(s=>({ ...s, calendars, events, ...(extraHolsNuovi ? { extraHols: extraHolsNuovi } : {}) }));
+        setStore(s=>({ ...s, calendars, events, ...(extraHolsNuovi ? { extraHols: extraHolsNuovi } : {}), ...(impostazioniNuove||{}) }));
         if(extraHolsNuovi) saveExtraHolsLocale(extraHolsNuovi);
         if(nMod>0 || elimMod.size>0) setModelli(modelliNuovi);
         if(nRot>0 || elimRot.size>0) setRotazioni(rotNuove);
         if(coloriNuovi) setColoriExtra(coloriNuovi);
-        saveToLocalStorage(events, calendars, modelliNuovi, calId);
+        saveToLocalStorage(events, calendars, modelliNuovi, calId, impostazioniNuove||{});
         setTimeout(()=>impostaSorgenteLog("locale"), 1500);
       }
       try{ localStorage.setItem(CURSORE_SYNC_KEY, ch.server_now); }catch(e){}
@@ -3876,7 +3895,7 @@ export function useAppCore(session){
       if(nCal) parti.push(`${nCal} ${nCal===1?"calendario":"calendari"}`);
       if(nRot) parti.push(`${nRot} ${nRot===1?"rotazione":"rotazioni"}`);
       if(nCol) parti.push(`colori`);
-      if(nExtra) parti.push(`giorni importanti/festivi`);
+      if(nExtra) parti.push(`impostazioni/colori`);
       if(nessunaNovita) return { tipo:"nessuna", msg:"✅ Già aggiornato: nessuna novità su Supabase." };
       return { tipo:"ok", cambiati:parti.join(", "), msg:`✅ Aggiornato. Cambiati: ${parti.join(", ")||"nessuno"}${totElim?` · eliminati: ${totElim}`:""}.` };
     }catch(e){

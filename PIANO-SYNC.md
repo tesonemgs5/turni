@@ -365,6 +365,6 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 
 ## Giorni importanti (⭐) e festivi personali nella sincronizzazione
 - Stanno in `user_settings.extra_hols`, non nelle tabelle controllate da `get_changes`: prima la sincronizzazione automatica non li rileggeva mai (si vedevano sugli altri dispositivi solo dopo un riavvio).
-- `eseguiSync` ora rilegge `extra_hols`, ci rimette sopra le operazioni locali ancora in coda e, se c'è differenza, aggiorna schermo e cache (compare tra i «Cambiati» come «giorni importanti/festivi»).
+- `eseguiSync` ora rilegge da `user_settings`: `extra_hols`, colore domeniche e festivi, `report_settings` (quartine), colori fasce, festività attive. Applica solo le differenze; compare tra i «Cambiati» come «impostazioni/colori». I giorni importanti si fondono con le operazioni locali in coda.
 - Nuovi momenti di controllo: tempo reale su `user_settings` (richiede `realtime-user-settings.sql`, da eseguire una volta) e rientro dell'app in primo piano (max una volta ogni 15 s).
 - Annullamento: ripristinare il commit.
