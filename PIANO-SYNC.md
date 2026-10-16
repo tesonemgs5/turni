@@ -392,3 +392,7 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - **Richiesta**: nella scheda Turni, ordine B, la tendina di ogni fascia contiene tutti i 6h15/6h30 **più** il modello H24 etichetta (NOTTE, MATTINA, POMERIGGIO, 3°TURNO). La tendina H24 resta solo per gli altri H24 (QUARTINA, FESTIVO, MALATTIA, ecc.).
 - **App**: `gruppoModello` (02-Modelli.jsx) riconosce i 4 titoli etichetta H24 e li mette nel gruppo della fascia.
 - **Database**: il modello NOTTE (H24) spostato nell'ordine B da 1000999 a 1002499, cioè subito sotto NOTTE ELETTORALE (1001999). Ordine A (`sort_order_a`) non toccato. Annullamento: rimettere `sort_order = 1000999` al modello NOTTE H24 del calendario TURNI.
+
+### Pulsante A/B e tendine senza modelli fuori (16/10) ✅
+- **Pulsante A/B** nell'intestazione di Modelli (scheda Turni), a sinistra di ↑↓: mostra in colore la lettera attiva e con un tocco passa da ordine per orario (B) a ordine alfabetico (A). Prima il menu esisteva nel codice ma nessun pulsante lo apriva.
+- **Tendine**: nell'ordine B i modelli senza gruppo (personalizzati, senza orario di inizio) restavano visibili a tendina chiusa. Ora prendono il gruppo del modello che li precede nell'elenco (o del primo che segue, se sono all'inizio): chiudendo una tendina spariscono tutti i suoi modelli. Solo visualizzazione, nessun dato toccato.

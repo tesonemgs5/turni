@@ -315,6 +315,16 @@ export default function VistaModelli({ C }){
             </div>
             <div style={{display:"flex",gap:8,alignItems:"center",position:"relative"}}>
               {modelliTab==="turni"&&(
+              <button onClick={()=>cambiaOrdineModelli(ordineModelli==="A"?"B":"A")}
+                title={ordineModelli==="A"?"Ordine alfabetico (A) — tocca per passare all'ordine per orario (B)":"Ordine per orario (B) — tocca per passare all'ordine alfabetico (A)"}
+                style={{background:T.s2,border:`1.5px solid ${T.border}`,borderRadius:8,
+                  padding:"6px 9px",fontSize:15,fontWeight:700,cursor:"pointer",color:T.sub}}>
+                <span style={{color:ordineModelli==="A"?accent:T.sub,fontWeight:ordineModelli==="A"?900:600}}>A</span>
+                <span style={{color:T.sub}}>/</span>
+                <span style={{color:ordineModelli==="B"?accent:T.sub,fontWeight:ordineModelli==="B"?900:600}}>B</span>
+              </button>
+              )}
+              {modelliTab==="turni"&&(
               <button onClick={()=>{ setModalitaSpostamento(s=>!s); setSelectedModelloIds([]); }}
                 title={modalitaSpostamento?"Spostamento attivo — tocca per tornare a scorrere normalmente":"Attiva per trascinare e riordinare i modelli col dito"}
                 style={{background:modalitaSpostamento?accent:T.s2,
@@ -486,6 +496,12 @@ export default function VistaModelli({ C }){
             <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
               {(()=>{
                 const gr = q ? [] : modelliVisibili.map(gruppoModello);
+                // Nessun modello resta fuori dalle tendine (es. i personalizzati): prende il gruppo del modello che lo precede
+                // nell'elenco; se è all'inizio, quello del primo modello con gruppo che lo segue.
+                if(!q){
+                  let prec = null; for(let k=0;k<gr.length;k++){ if(gr[k]) prec = gr[k]; else if(prec) gr[k] = prec; }
+                  let suc = null; for(let k=gr.length-1;k>=0;k--){ if(gr[k]) suc = gr[k]; else if(suc) gr[k] = suc; }
+                }
                 const conteggi = {}; gr.forEach(g=>{ if(g) conteggi[g.key]=(conteggi[g.key]||0)+1; });
                 let ultimoGruppo = null;
                 return modelliVisibili.map((m,i,arr)=>{
