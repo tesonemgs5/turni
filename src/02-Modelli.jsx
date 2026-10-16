@@ -20,7 +20,7 @@ import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
 import { ImpostazioniAggiornamenti, inApk } from "./12-avviso-aggiornamento";
 import { QuartineSection } from "./16-QuartineSection";
 import { scaricaFileTesto } from "./18-scarica-file";
-import { BackupPerModello } from "./20-backup-modelli";
+import { BackupPerModelloPulsante, StatoSync } from "./20-backup-modelli";
 
 // Riga della lista Colori: mostra il pallino colore, etichetta, sottotitolo,
 // contatore di modelli che lo usano e (se applicabile) pulsanti per
@@ -1777,6 +1777,7 @@ export default function VistaModelli({ C }){
             color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
           🔄 Sincronizza ora (solo novità)
         </button>
+        <StatoSync T={T} userId={userId} refreshKey={esitoExportSupabase?.stato||""}/>
         <button onClick={()=>impostaSyncAuto(!syncAuto)}
           style={{width:"100%",marginTop:8,background:syncAuto?"#10b981":T.s2,border:syncAuto?"none":`1px solid ${T.border}`,borderRadius:10,
             color:syncAuto?"#fff":T.text,padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
@@ -1805,6 +1806,7 @@ export default function VistaModelli({ C }){
             </select>
           </div>
           <div style={{fontSize:10.5,color:T.sub,marginTop:6,lineHeight:1.4}}>Dei backup automatici restano solo gli ultimi che scegli; i più vecchi vengono eliminati da soli. I backup manuali e quelli fatti prima di un ripristino restano finché non li elimini tu (tocca «Importa da Supabase» per vederli, con il cestino).</div>
+          <BackupPerModelloPulsante T={T}/>
         </div>
         <button onClick={handleVerificaSupabase}
           style={{width:"100%",marginTop:8,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
@@ -2101,7 +2103,6 @@ export default function VistaModelli({ C }){
                 </div>
               ))
             )}
-            <BackupPerModello T={T}/>
           </div>
         </div>
       )}
