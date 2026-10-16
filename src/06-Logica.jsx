@@ -3588,6 +3588,7 @@ export function useAppCore(session){
   const ultimaSyncAutoRef = useRef(0);
   const scrittureInVoloRef = useRef(0);
   const syncAutoFnRef = useRef(null);
+  const sincRifiutataRef = useRef(false); // l'utente ha annullato un aggiornamento >80%: in automatico non lo richiedo piu' in questa sessione
 
   const normSync = v=>{
     if(v==null || v===false || v==="") return "";
@@ -3658,7 +3659,7 @@ export function useAppCore(session){
 
   // Cuore della sincronizzazione (sola lettura da Supabase). Ritorna { tipo, msg, cambiati }.
   // tipo: "ok" (applicate novità) | "nessuna" | "occupato" | "coda" | "offline" | "manca_cursore" | "fermato" | "errore"
-  async function eseguiSync(){
+  async function eseguiSync(opz={}){
     if(!userId) return { tipo:"errore", msg:"❌ Accedi per sincronizzare" };
     if(typeof navigator!=="undefined" && navigator.onLine===false) return { tipo:"offline", msg:"❌ Sei offline: impossibile sincronizzare. I tuoi dati locali non sono stati toccati." };
     if(sincInCorsoRef.current || scrittureInVoloRef.current>0) return { tipo:"occupato", msg:"⏳ C'è già un salvataggio o una sincronizzazione in corso: riprova tra poco." };
@@ -3685,11 +3686,23 @@ export function useAppCore(session){
         return { tipo:"manca_cursore", msg:`ℹ️ Questo dispositivo non coincide con Supabase (differenze: ${parti.join(", ")}). Non ho toccato nulla. Se ha i dati giusti premi «Esporta su Supabase»; se ha dati vecchi premi «Importa da Supabase». Poi la sincronizzazione sarà automatica.` };
       }
 
-      const da = new Date(new Date(cursore).getTime()-5000).toISOString(); // 5 s di sovrapposizione
+      // Il registro delle eliminazioni si cancella dopo 15 giorni: se il punto di partenza e' piu' vecchio di 14 giorni
+      // scarico l'elenco completo e considero eliminato cio' che qui c'e' e su Supabase non c'e' piu'.
+      const vecchio = (Date.now()-new Date(cursore).getTime()) > 14*86400000;
+      const da = vecchio ? null : new Date(new Date(cursore).getTime()-5000).toISOString(); // 5 s di sovrapposizione
       const {data:ch, error:errCh} = await supabase.rpc("get_changes", { p_user_id:userId, p_since:da });
       if(errCh) throw errCh;
       if(!ch?.server_now) throw new Error("Risposta del server non valida");
-      const elim = ch.eliminati||[];
+      let elim = ch.eliminati||[];
+      if(vecchio){
+        const srv = t=>new Set((ch[t]||[]).map(r=>String(r.id)));
+        const sE=srv("events"), sC=srv("calendars"), sM=srv("modelli"), sR=srv("rotazioni");
+        elim = [];
+        Object.values(loc.events||{}).forEach(byc=>Object.values(byc||{}).forEach(lst=>(lst||[]).forEach(e=>{ if(e && !sE.has(String(e.id))) elim.push({tabella:"events", id:String(e.id)}); })));
+        (loc.calendars||[]).forEach(c=>{ if(!sC.has(String(c.id))) elim.push({tabella:"calendars", id:String(c.id)}); });
+        modelliCor.forEach(m=>{ if(!sM.has(String(m.id))) elim.push({tabella:"modelli", id:String(m.id)}); });
+        (rotazioni||[]).forEach(r=>{ if(!sR.has(String(r.id))) elim.push({tabella:"rotazioni", id:String(r.id)}); });
+      }
       const elimDi = t=>elim.filter(x=>x.tabella===t).map(x=>String(x.id));
 
       // ── EVENTI (si applica solo ciò che è DIVERSO da quello che c'è già) ──
@@ -3698,9 +3711,6 @@ export function useAppCore(session){
       Object.entries(events).forEach(([dk,byc])=>Object.entries(byc||{}).forEach(([cid,lst])=>(lst||[]).forEach(e=>idx.set(e.id,{dk,cid}))));
       const nEvLocali = idx.size;
       const elimEv = elimDi("events").filter(id=>idx.has(id));
-      if(nEvLocali>=5 && elimEv.length >= Math.max(5, nEvLocali*0.3)){
-        return { tipo:"fermato", msg:`🛑 Sincronizzazione FERMATA per sicurezza: Supabase segnala ${elimEv.length} eventi eliminati su ${nEvLocali} presenti qui. Non è stato modificato nulla su questo dispositivo.` };
-      }
       const togli = id=>{
         const pos=idx.get(id); if(!pos) return;
         const byc={...(events[pos.dk]||{})};
@@ -3802,6 +3812,18 @@ export function useAppCore(session){
       const nEv=evCambiati.length, nMod=modCambiati.length, nCal=calCambiati.length, nRot=rotCambiate.length;
       const totElim = elimEv.length + elimCal.size + elimMod.size + elimRot.size;
       const nessunaNovita = nEv+nMod+nCal+nRot+nCol===0 && totElim===0;
+      // Regola dell'80%: se l'aggiornamento cambia piu' dell'80% dei dati di questo dispositivo, chiedo se continuare o annullare.
+      const totLocale = nEvLocali + modelliCor.length + (loc.calendars||[]).length + (rotazioni||[]).length;
+      const totCambi = nEv+nMod+nCal+nRot+totElim;
+      if(!nessunaNovita && totLocale>=5 && totCambi > totLocale*0.8){
+        if(opz.auto && sincRifiutataRef.current) return { tipo:"annullata", msg:"↩️ Aggiornamento già annullato in questa sessione." };
+        const det=[]; if(nEv||elimEv.length) det.push(`eventi: ${nEv} da aggiornare, ${elimEv.length} da eliminare`); if(nMod||elimMod.size) det.push(`modelli: ${nMod} da aggiornare, ${elimMod.size} da eliminare`); if(nCal||elimCal.size) det.push(`calendari: ${nCal} / ${elimCal.size}`); if(nRot||elimRot.size) det.push(`rotazioni: ${nRot} / ${elimRot.size}`);
+        const ok = window.confirm(`Questo aggiornamento da Supabase cambia più dell'80% dei dati di questo dispositivo (${totCambi} su ${totLocale}).\n\n${det.join("\n")}\n\nOK = continua e sostituisci\nAnnulla = non cambiare niente`);
+        if(!ok){
+          if(opz.auto) sincRifiutataRef.current = true;
+          return { tipo:"annullata", msg:"↩️ Aggiornamento annullato: non è stato modificato nulla su questo dispositivo." };
+        }
+      }
       if(!nessunaNovita){
         impostaSorgenteLog("remoto");
         setStore(s=>({ ...s, calendars, events }));
@@ -3831,9 +3853,10 @@ export function useAppCore(session){
   async function sincronizzaOra(){
     const avvisa = (msg, stato="corso", ok=true)=>setEsitoExportSupabase({ titolo:"Sincronizza ora", stato, ok, messaggio:msg });
     avvisa("⏳ Controllo le novità su Supabase...");
+    sincRifiutataRef.current = false;
     const r = await eseguiSync();
     if(r.tipo==="ok" || r.tipo==="nessuna") registraAttivita("Sincronizza ora", r.msg, { chiave:"sync-ora", supabase:"n/a" });
-    avvisa(r.msg, "fine", r.tipo==="ok" || r.tipo==="nessuna");
+    avvisa(r.msg, "fine", r.tipo==="ok" || r.tipo==="nessuna" || r.tipo==="annullata");
   }
 
   // Sincronizzazione AUTOMATICA: silenziosa, in background, solo lettura.
@@ -3841,9 +3864,9 @@ export function useAppCore(session){
     if(!userId || !syncAuto || !isInitialized.current) return;
     if(typeof document!=="undefined" && document.visibilityState==="hidden") return;
     const ora = Date.now();
-    if(ora - ultimaSyncAutoRef.current < 15000) return; // mai più di una ogni 15 s
+    if(ora - ultimaSyncAutoRef.current < (motivo==="tempo reale" ? 2000 : 15000)) return { tipo:"saltata" }; // aperture/riconnessioni: mai più di una ogni 15 s
     ultimaSyncAutoRef.current = ora;
-    const r = await eseguiSync();
+    const r = await eseguiSync({ auto:true });
     if(r.tipo==="ok"){
       registraAttivita("Sincronizzazione automatica", `🔄 ${r.msg} (${motivo})`, { chiave:"sync-auto", supabase:"n/a" });
       setBanner(`🔄 Aggiornato: ${r.cambiati}`);
@@ -3854,18 +3877,38 @@ export function useAppCore(session){
     } else if(r.tipo==="nessuna" && /attivata/.test(r.msg||"")){
       registraAttivita("Sincronizzazione automatica", r.msg, { chiave:"sync-auto-attiva", supabase:"n/a" });
     }
+    return r;
   }
   syncAutoFnRef.current = sincronizzaAuto;
   useEffect(()=>{
     if(!userId) return;
-    const lancia = motivo=>{ try{ syncAutoFnRef.current && syncAutoFnRef.current(motivo); }catch(e){} };
+    const lancia = async motivo=>{
+      try{
+        const r = syncAutoFnRef.current ? await syncAutoFnRef.current(motivo) : null;
+        // se era occupata (scrittura in corso) ritento una sola volta dopo 3 s
+        if(r && r.tipo==="occupato" && !String(motivo).includes("riprova")) setTimeout(()=>lancia(motivo+" (riprova)"), 3000);
+      }catch(e){}
+    };
+    // Nessun controllo ogni 60 s: un controllo all'apertura, uno quando torna la linea, e poi solo le novità in tempo reale.
     const t0 = setTimeout(()=>lancia("apertura"), 2500);
-    const onVis = ()=>{ if(document.visibilityState==="visible") lancia("ritorno nell'app"); };
     const onOnline = ()=>lancia("linea tornata");
-    const iv = setInterval(()=>{ if(document.visibilityState==="visible") lancia("controllo periodico"); }, 60000);
-    document.addEventListener("visibilitychange", onVis);
     window.addEventListener("online", onOnline);
-    return ()=>{ clearTimeout(t0); clearInterval(iv); document.removeEventListener("visibilitychange", onVis); window.removeEventListener("online", onOnline); };
+    // Tempo reale (Supabase Realtime): quando un altro dispositivo cambia qualcosa, qui parte la stessa sincronizzazione di sempre
+    // (sola lettura, applica solo le righe diverse da quelle locali, con le stesse protezioni).
+    let timerRt = null, primoCollegamento = true, canale = null;
+    try{
+      const quandoCambia = ()=>{ clearTimeout(timerRt); timerRt = setTimeout(()=>lancia("tempo reale"), 1200); };
+      canale = supabase.channel("turni-sync-"+userId);
+      ["events","modelli","calendars","rotazioni","colori"].forEach(t=>canale.on("postgres_changes", { event:"*", schema:"public", table:t }, quandoCambia));
+      canale.subscribe(stato=>{
+        if(stato==="SUBSCRIBED"){
+          // dopo una caduta di linea o un ritorno dallo sfondo recupero quello che è arrivato nel frattempo
+          if(!primoCollegamento) lancia("tempo reale ricollegato");
+          primoCollegamento = false;
+        }
+      });
+    }catch(e){}
+    return ()=>{ clearTimeout(t0); clearTimeout(timerRt); window.removeEventListener("online", onOnline); try{ canale && supabase.removeChannel(canale); }catch(e){} };
   }, [userId]);
 
   async function handleExportSupabase(){

@@ -320,3 +320,10 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - **App**: nell'elenco "Copie per modello" una casella per riga, "Seleziona tutti (quelli filtrati)" / "Nessuno", e il pulsante "Ripristina selezionati (N)" con conferma che dice quanti modelli e quanti eventi. Una sola richiesta; poi ricarica i dati. Il ripristino singolo resta com'è.
 - Annullamento: `drop function ripristina_modelli(uuid[]);` e ripristinare il commit.
 - **Eseguito** (16/10): DB `ripristina_modelli(uuid[])` (test annullati: 3 modelli insieme = 214 eventi attesi e ripristinati; con un id sbagliato **rifiutata**; senza login rifiutata; `anon` escluso; eventi 1417 prima e dopo). App: caselle, "Seleziona tutti (filtrati)", "Nessuno", pulsante "Ripristina selezionati (N · eventi)" con conferma. Build locale riuscita; pubblicato con nuova APK.
+
+### Tempo reale + regola 80% + pulizia (16/10) ✅
+- **DB** (fatto prima del push): funzioni `rls_auto_enable` e `imposta_updated_at` non eseguibili da nessun utente; tabella `eliminati` pulita da sola dopo 15 giorni (`pulisci_eliminati`, ogni giorno 03:30 UTC); Realtime attivo su eventi, modelli, calendari, rotazioni, colori; calendario PROVA (vuoto) eliminato.
+- **App**: via il controllo ogni 60 s. La sincronizzazione parte all'apertura, quando torna la linea, quando Supabase Realtime segnala una novità e dopo una riconnessione. Resta in sola lettura e applica solo righe diverse dal locale: le modifiche del dispositivo stesso non cambiano la schermata.
+- **Dispositivi fermi da più di 14 giorni**: scarica l'elenco completo e considera eliminato ciò che su Supabase non c'è più.
+- **Regola 80%**: se l'aggiornamento cambia più dell'80% dei dati del dispositivo, l'app chiede «continua o annulla» (sostituisce lo stop al 30%). Con «Annulla» non cambia niente; in automatico non richiede più nella stessa sessione.
+- Annullamento: ripristinare il commit; Realtime si toglie con `alter publication supabase_realtime drop table ...`.
