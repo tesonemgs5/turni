@@ -20,6 +20,7 @@ import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
 import { ImpostazioniAggiornamenti, inApk } from "./12-avviso-aggiornamento";
 import { QuartineSection } from "./16-QuartineSection";
 import { scaricaFileTesto } from "./18-scarica-file";
+import { BackupPerModello } from "./20-backup-modelli";
 
 // Riga della lista Colori: mostra il pallino colore, etichetta, sottotitolo,
 // contatore di modelli che lo usano e (se applicabile) pulsanti per
@@ -2100,6 +2101,7 @@ export default function VistaModelli({ C }){
                 </div>
               ))
             )}
+            <BackupPerModello T={T}/>
           </div>
         </div>
       )}
