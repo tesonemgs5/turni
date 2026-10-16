@@ -367,4 +367,5 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - Stanno in `user_settings.extra_hols`, non nelle tabelle controllate da `get_changes`: prima la sincronizzazione automatica non li rileggeva mai (si vedevano sugli altri dispositivi solo dopo un riavvio).
 - `eseguiSync` ora rilegge da `user_settings`: `extra_hols`, colore domeniche e festivi, `report_settings` (quartine), colori fasce, festività attive. Applica solo le differenze; compare tra i «Cambiati» come «impostazioni/colori». I giorni importanti si fondono con le operazioni locali in coda.
 - Nuovi momenti di controllo: tempo reale su `user_settings` (richiede `realtime-user-settings.sql`, da eseguire una volta) e rientro dell'app in primo piano (max una volta ogni 15 s).
-- Annullamento: ripristinare il commit.
+- **Eseguito** (16/10): `user_settings` aggiunta alla pubblicazione `supabase_realtime` (migrazione `realtime_user_settings`). Ora il tempo reale copre calendars, colori, events, modelli, rotazioni e user_settings. Verificato su Supabase che il giorno importante del 20/10/2026 («DENTISTA») è salvato in `extra_hols`.
+- Annullamento: ripristinare il commit; il realtime su user_settings si toglie con `alter publication supabase_realtime drop table public.user_settings;`.
