@@ -288,3 +288,10 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - **Verificato con test annullati** (login simulato): copia di tutti i 225 modelli con 1411 eventi (= eventi con modello); guardia 80% **scatta** (copia saltata se i dati calano); ripristino di QUARTINA: 104 eventi ripristinati = 104 attesi, con copia di sicurezza `pre_ripristino`; `anon` non può creare, `authenticated` può ripristinare, senza login **rifiutato**. Dopo i test: 0 righe in `backup_per_modello`, 1417 eventi, 225 modelli.
 - **Non ancora fatto**: prima copia reale (parte domenica, o a mano); finestra unica nell'app.
 - **Prima copia reale eseguita** (16/10): 225 modelli, 1411 eventi, ~356 kB. Dati invariati (1417 eventi, 225 modelli).
+
+### Passo 5c — finestra backup con copie per modello (DB + app, scritto prima) 🔄
+- **Cosa**: nella finestra "Backup disponibili" (già unica per backup completi, spazio, pulizia) aggiungo in fondo la sezione **"🧩 Copie per modello (emergenza)"**: ricerca per nome, per ogni modello data dell'ultima copia e numero di eventi, pulsanti **Ripristina** (solo quel modello con i suoi eventi, con conferma) e **Scarica** (file JSON del solo modello).
+- **DB (solo aggiunte)**: `backup_modelli_elenco()` (ultima copia di ogni modello: id, titolo, data, n. eventi, batch) e `backup_modello_dati(modello, batch)` (il JSON di un modello). Solo utenti loggati, solo i propri dati; `anon` escluso. Test annullati prima.
+- **App**: nuovo file `src/20-backup-modelli.jsx` (componente isolato) + una riga di inserimento in `02-Modelli.jsx`. Il ripristino usa `ripristina_modello`, poi ricarica i dati da Supabase come il ripristino completo. Nessun cambio a sincronizzazione, scrittura, backup esistenti.
+- **Aggiornamento APK**: la build usa sempre la stessa chiave di firma dai secrets e un numero di versione crescente → si installa sopra la vecchia senza disinstallare e senza perdere dati.
+- **Annullamento**: ripristinare il commit; `drop function backup_modelli_elenco(); drop function backup_modello_dati(uuid,uuid);`
