@@ -362,3 +362,9 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - **Interruttore A/B** in Modelli. **Gruppi a scomparsa**: B = Mattina, Pomeriggio, Terzo turno, Notte (solo 6h15/6h30, orari dalle Impostazioni: Mattina 06:00–11:45, Pomeriggio 11:46–16:00, Terzo turno 16:01–18:00, Notte 18:01–05:59), H24; personalizzati fuori. A = AUTO, APP, D (distaccati: nome che inizia per D). Solo visualizzazione.
 - **Rischio**: un punto dimenticato che scrive la colonna sbagliata. Mitigazione: censimento di tutti i punti (`sort_order`/`sortOrder`, ~100), test annullati sul DB, prova sui dati reali.
 - **Annullamento**: ripristinare il commit; `alter table modelli drop column sort_order_a;` (le colonne vecchie non vengono mai toccate).
+
+## Giorni importanti (⭐) e festivi personali nella sincronizzazione
+- Stanno in `user_settings.extra_hols`, non nelle tabelle controllate da `get_changes`: prima la sincronizzazione automatica non li rileggeva mai (si vedevano sugli altri dispositivi solo dopo un riavvio).
+- `eseguiSync` ora rilegge `extra_hols`, ci rimette sopra le operazioni locali ancora in coda e, se c'è differenza, aggiorna schermo e cache (compare tra i «Cambiati» come «giorni importanti/festivi»).
+- Nuovi momenti di controllo: tempo reale su `user_settings` (richiede `realtime-user-settings.sql`, da eseguire una volta) e rientro dell'app in primo piano (max una volta ogni 15 s).
+- Annullamento: ripristinare il commit.

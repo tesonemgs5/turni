@@ -3830,9 +3830,22 @@ export function useAppCore(session){
         if(diversi){ coloriNuovi = lista; nCol = Math.max(1, Math.abs(lista.length-attuali.length)); }
       }
 
+      // ── GIORNI IMPORTANTI / FESTIVI PERSONALI (stanno in user_settings.extra_hols, non nelle tabelle sopra) ──
+      // Si rilegge l'elenco dal server e ci si rimettono sopra le modifiche locali ancora in coda: nulla si perde.
+      let extraHolsNuovi = null; let nExtra = 0;
+      try{
+        const {data:rigaSett, error:errSett} = await supabase.from("user_settings").select("extra_hols").eq("user_id",userId).maybeSingle();
+        if(errSett) throw errSett;
+        if(rigaSett){
+          const dalServer = applicaOpExtraHols(rigaSett.extra_hols||[], leggiOpExtraHols());
+          const diff = diffExtraHolsInOps(loc.extraHols||[], dalServer);
+          if(diff.length>0){ extraHolsNuovi = dalServer; nExtra = diff.length; }
+        }
+      }catch(e){ segnalaErroreSoloLog(e?.message||String(e), "Sincronizzazione giorni importanti"); }
+
       const nEv=evCambiati.length, nMod=modCambiati.length, nCal=calCambiati.length, nRot=rotCambiate.length;
       const totElim = elimEv.length + elimCal.size + elimMod.size + elimRot.size;
-      const nessunaNovita = nEv+nMod+nCal+nRot+nCol===0 && totElim===0;
+      const nessunaNovita = nEv+nMod+nCal+nRot+nCol+nExtra===0 && totElim===0;
       // Regola dell'80%: se l'aggiornamento cambia piu' dell'80% dei dati di questo dispositivo, chiedo se continuare o annullare.
       const totLocale = nEvLocali + modelliCor.length + (loc.calendars||[]).length + (rotazioni||[]).length;
       const totCambi = nEv+nMod+nCal+nRot+totElim;
@@ -3847,7 +3860,8 @@ export function useAppCore(session){
       }
       if(!nessunaNovita){
         impostaSorgenteLog("remoto");
-        setStore(s=>({ ...s, calendars, events }));
+        setStore(s=>({ ...s, calendars, events, ...(extraHolsNuovi ? { extraHols: extraHolsNuovi } : {}) }));
+        if(extraHolsNuovi) saveExtraHolsLocale(extraHolsNuovi);
         if(nMod>0 || elimMod.size>0) setModelli(modelliNuovi);
         if(nRot>0 || elimRot.size>0) setRotazioni(rotNuove);
         if(coloriNuovi) setColoriExtra(coloriNuovi);
@@ -3862,6 +3876,7 @@ export function useAppCore(session){
       if(nCal) parti.push(`${nCal} ${nCal===1?"calendario":"calendari"}`);
       if(nRot) parti.push(`${nRot} ${nRot===1?"rotazione":"rotazioni"}`);
       if(nCol) parti.push(`colori`);
+      if(nExtra) parti.push(`giorni importanti/festivi`);
       if(nessunaNovita) return { tipo:"nessuna", msg:"✅ Già aggiornato: nessuna novità su Supabase." };
       return { tipo:"ok", cambiati:parti.join(", "), msg:`✅ Aggiornato. Cambiati: ${parti.join(", ")||"nessuno"}${totElim?` · eliminati: ${totElim}`:""}.` };
     }catch(e){
@@ -3914,6 +3929,9 @@ export function useAppCore(session){
     const t0 = setTimeout(()=>lancia("apertura"), 2500);
     const onOnline = ()=>lancia("linea tornata");
     window.addEventListener("online", onOnline);
+    // Quando l'app torna in primo piano controllo le novità (anche se il tempo reale non è attivo): max una ogni 15 s
+    const onVisibile = ()=>{ if(document.visibilityState==="visible") lancia("ritorno in primo piano"); };
+    document.addEventListener("visibilitychange", onVisibile);
     // Tempo reale (Supabase Realtime): quando un altro dispositivo cambia qualcosa, qui parte la stessa sincronizzazione di sempre
     // (sola lettura, applica solo le righe diverse da quelle locali, con le stesse protezioni).
     let timerRt = null, primoCollegamento = true, canale = null;
@@ -3921,6 +3939,8 @@ export function useAppCore(session){
       const quandoCambia = ()=>{ clearTimeout(timerRt); timerRt = setTimeout(()=>lancia("tempo reale"), 1200); };
       canale = supabase.channel("turni-sync-"+userId);
       ["events","modelli","calendars","rotazioni","colori"].forEach(t=>canale.on("postgres_changes", { event:"*", schema:"public", table:t }, quandoCambia));
+      // impostazioni (giorni importanti / festivi personali): serve user_settings nella pubblicazione realtime (vedi realtime-user-settings.sql)
+      canale.on("postgres_changes", { event:"*", schema:"public", table:"user_settings" }, quandoCambia);
       canale.subscribe(stato=>{
         if(stato==="SUBSCRIBED"){
           // dopo una caduta di linea o un ritorno dallo sfondo recupero quello che è arrivato nel frattempo
@@ -3929,7 +3949,7 @@ export function useAppCore(session){
         }
       });
     }catch(e){}
-    return ()=>{ clearTimeout(t0); clearTimeout(timerRt); window.removeEventListener("online", onOnline); try{ canale && supabase.removeChannel(canale); }catch(e){} };
+    return ()=>{ clearTimeout(t0); clearTimeout(timerRt); window.removeEventListener("online", onOnline); document.removeEventListener("visibilitychange", onVisibile); try{ canale && supabase.removeChannel(canale); }catch(e){} };
   }, [userId]);
 
   async function handleExportSupabase(){
