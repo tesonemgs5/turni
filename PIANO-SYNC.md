@@ -313,3 +313,9 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - **Richiesta**: se nome + orario stanno su una riga, bene; se servono due righe, l'orario va **tutto** sulla seconda, non diviso a metà.
 - **Cosa cambio**: nell'elenco "Copie per modello" l'orario diventa un blocco unico che non si spezza (`inline-block` + `nowrap`): se non ci sta accanto al nome, passa intero a capo. Solo grafica, nessun dato toccato.
 - Annullamento: ripristinare il commit.
+
+### Ripristino di PIÙ modelli insieme (16/10) 🔄
+- **Richiesta**: ripristinare più modelli contemporaneamente, non uno alla volta.
+- **DB (solo aggiunta)**: funzione `ripristina_modelli(p_ids uuid[])`: per utenti loggati, max 300 modelli, richiama `ripristina_modello` per ciascuno **dentro una sola transazione, tutto-o-niente** (se uno fallisce non cambia niente). Ogni modello usa la sua ultima copia e ne salva prima una di sicurezza (`pre_ripristino`). Test annullati: 3 modelli insieme, uno sbagliato fa fallire tutto, senza login rifiutata, `anon` escluso.
+- **App**: nell'elenco "Copie per modello" una casella per riga, "Seleziona tutti (quelli filtrati)" / "Nessuno", e il pulsante "Ripristina selezionati (N)" con conferma che dice quanti modelli e quanti eventi. Una sola richiesta; poi ricarica i dati. Il ripristino singolo resta com'è.
+- Annullamento: `drop function ripristina_modelli(uuid[]);` e ripristinare il commit.
