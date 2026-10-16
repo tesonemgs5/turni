@@ -3597,7 +3597,11 @@ export function useAppCore(session){
     return String(v);
   };
   // true se il dato locale "a" contiene gli stessi valori di "b" su tutti i campi di "b"
-  const ugualiSync = (a,b)=> !!a && Object.keys(b).every(k=>normSync(a[k])===normSync(b[k]));
+  const ugualiSync = (a,b)=> !!a && Object.keys(b).every(k=>{
+    // la fine dei modelli 6h15/6h30 si calcola dalla durata: se qui è vuota e su Supabase l'ha completata il database, non è una differenza
+    if(k==="fine" && (b.tempo==="6h15"||b.tempo==="6h30") && !normSync(a.fine)) return true;
+    return normSync(a[k])===normSync(b[k]);
+  });
   const mapEvSync = e=>({
     id:e.id, label:e.label, color:e.color, allDay:e.all_day,
     tIn:e.time_in||"", tOut:e.time_out||"", place:e.place||"",

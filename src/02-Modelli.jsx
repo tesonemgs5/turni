@@ -3216,14 +3216,16 @@ export default function VistaModelli({ C }){
     // visto in UI.
     const nessunaSceltaEsplicita = !valoreAttuale && !flagAttivo;
     const suggeritoDaAuto = nessunaSceltaEsplicita && v!=="" && v===catAuto;
+    // Nessun bordo e nessun "Automatica" evidenziato: il pulsante scelto (anche dall'automatismo) è semplicemente PIENO.
+    const pieno = selezionato || suggeritoDaAuto;
     const nuovoValore = (selezionato && v!=="") ? "" : v;
     return (
       <button key={v||l} onClick={()=>setForm(f=>({...f,[campo]:nuovoValore,[flagCampo]:false}))}
-        style={{flex:"1 1 30%",padding:"9px 4px",borderRadius:10,cursor:"pointer",
+        style={{flex:"1 1 40%",padding:"9px 4px",borderRadius:10,cursor:"pointer",
           fontWeight:700,fontSize:11,
-          border:suggeritoDaAuto?`2px solid ${accent}`:"2px solid transparent",
-          background:selezionato?accent:T.s2,
-          color:selezionato?"#fff":(suggeritoDaAuto?accent:T.sub)}}>{l}</button>
+          border:"2px solid transparent",
+          background:pieno?accent:T.s2,
+          color:pieno?"#fff":T.sub}}>{l}</button>
     );
   };
   const renderDeselBtn=(flagCampo, campo)=>{
@@ -3274,20 +3276,20 @@ export default function VistaModelli({ C }){
     <div style={{marginBottom:16}}>
       <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8}}>CATEGORIA TURNO (per report Turnazione)</div>
       <div style={{display:"flex",gap:6,marginBottom:10}}>
-        {[["","Automatica"],["primo","1° Turno"],["secondo","2° Turno"]].map(renderBtn("categoriaTurno", catAutoTurno, "turnoVuoto"))}
+        {[["primo","1° Turno"],["secondo","2° Turno"]].map(renderBtn("categoriaTurno", catAutoTurno, "turnoVuoto"))}
       </div>
       {renderDeselBtn("turnoVuoto","categoriaTurno")}
       {!isH24 && (
         <>
           <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8}}>CATEGORIA APP/AUTO (per report Turnazione)</div>
           <div style={{display:"flex",gap:6}}>
-            {[["","Automatica"],["app","APP"],["auto","AUTO"]].map(renderBtn("categoriaAppAuto", catAutoAppAuto, "appAutoVuoto"))}
+            {[["app","APP"],["auto","AUTO"]].map(renderBtn("categoriaAppAuto", catAutoAppAuto, "appAutoVuoto"))}
           </div>
           {renderDeselBtn("appAutoVuoto","categoriaAppAuto")}
         </>
       )}
       <div style={{fontSize:11,color:T.sub,marginTop:-4,marginBottom:10}}>
-        "Automatica" decide da sola in base a titolo/orario. Scegliendo una categoria qui, questo evento resterà sempre in quel gruppo nel report Turnazione.
+        Il pulsante pieno è quello deciso in automatico da titolo/orario. Toccane un altro per cambiare solo questo evento; ritocca la scelta fatta per tornare all'automatico. Scegliendo una categoria qui, questo evento resterà sempre in quel gruppo nel report Turnazione.
       </div>
       {haOverrideAttivo && (
         <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>

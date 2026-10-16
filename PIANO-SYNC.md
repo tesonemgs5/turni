@@ -327,3 +327,8 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - **Dispositivi fermi da più di 14 giorni**: scarica l'elenco completo e considera eliminato ciò che su Supabase non c'è più.
 - **Regola 80%**: se l'aggiornamento cambia più dell'80% dei dati del dispositivo, l'app chiede «continua o annulla» (sostituisce lo stop al 30%). Con «Annulla» non cambia niente; in automatico non richiede più nella stessa sessione.
 - Annullamento: ripristinare il commit; Realtime si toglie con `alter publication supabase_realtime drop table ...`.
+
+### Orario di fine dei modelli + pulsanti categoria evento (16/10) ✅
+- **Problema**: su Supabase 7 modelli 6h15/6h30 (es. TRIBUNALE) avevano `fine` vuota (il telefono la calcola dalla durata), quindi nelle copie per modello comparivano come «09:30–?».
+- **DB**: corrette le 7 righe (inizio + durata); trigger `modelli_completa_fine` completa la fine quando manca; `backup_modelli_elenco` calcola la fine anche per le copie vecchie. Il modello «RECUPERO COMPENSATIVO INTERA GIORNATA» non ha inizio: non toccato.
+- **App**: la sincronizzazione non considera differenza una `fine` vuota in locale per i modelli 6h15/6h30 (niente falsi aggiornamenti). Nell'evento, i pulsanti categoria turno e APP/AUTO non hanno più «Automatica» evidenziato né il bordo: il pulsante scelto (anche dall'automatismo) è pieno; ritoccandolo si torna all'automatico.
