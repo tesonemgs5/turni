@@ -102,7 +102,13 @@ export default function VistaModelli({ C }){
       if(m.categoriaAppAuto==="app")  return {key:"A:app", label:"APPIEDATI"};
       return {key:"A:altri", label:"ALTRI"};
     }
-    if(m.tempo==="h24") return {key:"B:h24", label:"H24"};
+    if(m.tempo==="h24"){
+      // I 4 modelli "etichetta" (NOTTE, MATTINA, POMERIGGIO, 3°TURNO) stanno dentro la tendina della loro fascia, insieme ai 6h15/6h30.
+      const t = String(m.titolo||"").toUpperCase().replace(/[\s°]/g,"");
+      const fk = { NOTTE:"notte", MATTINA:"mattina", POMERIGGIO:"pomeriggio", "3TURNO":"terzo_turno", TERZOTURNO:"terzo_turno" }[t];
+      if(fk) return {key:"B:"+fk, label:NOMI_GRUPPI_FASCE[fk]};
+      return {key:"B:h24", label:"H24"};
+    }
     if(m.tempo!=="6h15" && m.tempo!=="6h30") return null; // personalizzati: fuori dai gruppi
     const p = String(m.inizio||"").split(":"); if(p.length<2) return null;
     const mm = (parseInt(p[0],10)||0)*60 + (parseInt(p[1],10)||0);

@@ -387,3 +387,8 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - Un'intestazione compare all'inizio di ogni tratto consecutivo dello stesso gruppo; chiudere un gruppo nasconde tutti i suoi modelli. Con la ricerca attiva l'elenco è piatto. Lo stato aperto/chiuso resta salvato sul dispositivo (non sincronizzato).
 - **Annullamento**: ripristinare il commit.
 - **Eseguito** (16/10): intestazioni a scomparsa nella scheda Turni (B: MATTINA, POMERIGGIO, TERZO TURNO, NOTTE, H24; A: DISTACCATI, AUTO, APPIEDATI, ALTRI); personalizzati fuori dai gruppi; stato aperto/chiuso salvato sul dispositivo; ricerca attiva = elenco piatto; trascinamento e frecce invariati (le righe chiuse sono solo nascoste). Build locale riuscita; pubblicato con nuova APK. Da provare sul telefono.
+
+### Tendine fasce: i modelli etichetta dentro la loro tendina (16/10) ✅
+- **Richiesta**: nella scheda Turni, ordine B, la tendina di ogni fascia contiene tutti i 6h15/6h30 **più** il modello H24 etichetta (NOTTE, MATTINA, POMERIGGIO, 3°TURNO). La tendina H24 resta solo per gli altri H24 (QUARTINA, FESTIVO, MALATTIA, ecc.).
+- **App**: `gruppoModello` (02-Modelli.jsx) riconosce i 4 titoli etichetta H24 e li mette nel gruppo della fascia.
+- **Database**: il modello NOTTE (H24) spostato nell'ordine B da 1000999 a 1002499, cioè subito sotto NOTTE ELETTORALE (1001999). Ordine A (`sort_order_a`) non toccato. Annullamento: rimettere `sort_order = 1000999` al modello NOTTE H24 del calendario TURNI.
