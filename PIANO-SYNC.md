@@ -308,3 +308,8 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - Annullamento: ripristinare il commit; la funzione DB resta compatibile.
 - **Eseguito** (16/10): DB `backup_modelli_elenco()` ora include `inizio`/`fine` (test annullato: 225 modelli, 46 senza orario, es. "AUTO 06:00-12:15 | AUTO 06:30-12:45 | AUTO 06:45-13:00"). App: pulsante "🧩 Copie per modello (emergenza)" dentro il blocco Backup automatici (tolto dalla finestra Importa); elenco con **nome + orario**, ricerca anche per orario; sotto "Sincronizza ora" la riga di stato (✅ Ok / 🕓 N da sincronizzare ▼) con dettaglio da inviare / da ricevere. Build locale riuscita; pubblicato con nuova APK.
 - **Nota**: "da ricevere" può includere le tue ultime modifiche finché la prossima sincronizzazione non sposta il punto di partenza.
+
+### Correzione grafica — orario mai spezzato su due righe (16/10) 🔄
+- **Richiesta**: se nome + orario stanno su una riga, bene; se servono due righe, l'orario va **tutto** sulla seconda, non diviso a metà.
+- **Cosa cambio**: nell'elenco "Copie per modello" l'orario diventa un blocco unico che non si spezza (`inline-block` + `nowrap`): se non ci sta accanto al nome, passa intero a capo. Solo grafica, nessun dato toccato.
+- Annullamento: ripristinare il commit.

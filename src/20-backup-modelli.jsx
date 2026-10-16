@@ -70,7 +70,7 @@ function BackupPerModello({ T }) {
           {filtrati.map(x => (
             <div key={x.modello_id} style={{ display: "flex", gap: 6, alignItems: "center", background: T.s2, border: `1px solid ${T.border}`, borderRadius: 10, padding: "8px 10px", marginBottom: 6 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{x.titolo} <span style={{ fontWeight: 900, color: "#2563eb" }}>· {orarioDi(x)}</span></div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{x.titolo} <span style={{ fontWeight: 900, color: "#2563eb", display: "inline-block", whiteSpace: "nowrap" }}>· {orarioDi(x)}</span></div>
                 <div style={{ fontSize: 11, color: T.sub }}>{x.n_eventi} eventi · {new Date(x.creato_il).toLocaleDateString("it-IT")}</div>
               </div>
               <button disabled={lavoro} onClick={() => scarica(x)} style={btn} aria-label="Scarica">⬇️</button>
