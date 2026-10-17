@@ -1,5 +1,6 @@
     import { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "./11-supabase";
+import { scriviEsitoImport } from "./22-backup-stato";
 import { ordineAttivo, impostaOrdineAttivo, posDaRiga, colonnePosizione, payloadPosCambiate, scambiaOrdini, mapGruppoDb, colGruppo, BANDA_A, classeModelloA, ordinaClassiA } from "./21-ordine";
 import { calcolaAllineamentoColori } from "./13-allinea-colori";
 import { widgetDisponibile, inviaAlWidget, descriviStatoWidget } from "./17-widget";
@@ -956,6 +957,7 @@ export function useAppCore(session){
           return;
         }
         if(typeof navigator!=="undefined" && navigator.onLine===false){
+          scriviEsitoImport({ ok:false, titolo:"Importa da Supabase", messaggio:"Sei offline: nulla è stato importato. I dati del telefono non sono stati toccati." });
           setLoading(false);
           return;
         }
@@ -1141,6 +1143,7 @@ export function useAppCore(session){
             { message: `La sincronizzazione ha restituito ${nEventiNuovi} eventi contro i ${nEventiCache} già presenti in locale: per sicurezza NON è stata applicata, per evitare di cancellare turni per errore. I tuoi dati locali sono intatti. Riprova più tardi o controlla la connessione.` },
             "Sincronizzazione dati (calo eventi sospetto)"
           );
+          scriviEsitoImport({ ok:false, titolo:"Importa da Supabase", messaggio:`NON applicato: Supabase ha ${nEventiNuovi} eventi contro i ${nEventiCache} già presenti sul telefono. Per sicurezza non ho toccato i dati del telefono, per evitare di cancellare turni per errore.` });
           setLoading(false);
           return;
         }
@@ -1156,6 +1159,7 @@ export function useAppCore(session){
         } else {
           setStore(s=>({ ...s, theme, extraHols, reports: savedReports, reportSettings: savedReportSettings, fasceAutomatiche: savedFasce, sundayColor: savedSundayColor, holidayColor: savedHolidayColor, nationalHolsEnabled: savedNationalHolsEnabled, calEventRows: savedCalEventRows, calRow1Field: savedCalRow1Field, calRow2Field: savedCalRow2Field }));
         }
+        scriviEsitoImport({ ok:true, titolo:"Dati aggiornati da Supabase", messaggio:`Importati: ${nEventiNuovi} eventi, ${modelliMappati.length} modelli, ${calendars.length} calendari.` + (nEventiCache ? ` Prima sul telefono: ${nEventiCache} eventi.` : "") });
         // Aggiorno anche la cache delle impostazioni visive, così il
         // prossimo avvio dell'app parte già col colore giusto, senza flash.
         impostaSorgenteLog("remoto");
@@ -6364,9 +6368,11 @@ const importsRecenti = useMemo(()=>{
     if(!userId) return;
     // 1) SUBITO in locale.
     setColoriExtra(prev=>prev.filter(c=>c.hex!==hex));
+    // I modelli con questo colore tornano al colore automatico per orario: UNA sola operazione a blocchi
+    // (modelli + eventi + posizioni), al posto di un salvataggio completo per ogni modello.
     const daResettare = modelli.filter(m=>m?.coloreCustom===hex);
-    for(const m of daResettare){
-      await saveModello({...m, coloreCustom:null});
+    if(daResettare.length>0){
+      await assegnaColoreAModelli([], daResettare.map(m=>m.id), hex);
     }
     // 2) Backup su Supabase (con retry colonna) + Sheets in parallelo.
     scriviConBackup({
@@ -8000,27 +8006,32 @@ const importsRecenti = useMemo(()=>{
     }
     const risolti = [];
     const nonRisolti = [];
+    // Prima si cercano tutti i collegamenti sicuri, poi si scrive TUTTO in una richiesta (tutto-o-niente),
+    // al posto di una richiesta per ogni evento.
+    const daCollegare = [];
     for(const { dayKey, calId:cId, evt } of orfani){
       const match = trovaModelloCorrispondente(cId, evt.label, evt.tIn, evt.tOut);
-      if(match){
-        const { error } = await scriviConBackup({
-          tipo:"update", table:"events",
-          payload:{ modello_id: match.id },
-          matchObj:{ id: evt.id },
+      if(match) daCollegare.push({ dayKey, cId, evt, match });
+      else nonRisolti.push({ dayKey, label: evt.label, motivo: "nessun modello corrispondente trovato" });
+    }
+    if(daCollegare.length>0){
+      const risB = await scriviBatchConBackup({
+        ops: daCollegare.map(x=>({
+          tipo:"update", table:"events", payload:{ modello_id: x.match.id }, matchObj:{ id: x.evt.id, user_id:userId },
           contesto:"Ripristino automatico modello mancante",
-          ts:new Date().toISOString(),
-          opzioni:{ soloLog:true },
-        });
-        if(!error){
-          const nuovoStore = withEventoAggiornato(store, dayKey, cId, evt.id, { modelloId: match.id });
-          setStore(nuovoStore);
-          storeRef.current = nuovoStore;
-          risolti.push({ dayKey, label: evt.label, modello: match.titolo||match.label });
-        } else {
-          nonRisolti.push({ dayKey, label: evt.label, motivo: "errore di scrittura" });
-        }
+        })),
+        contesto:"Ripristino automatico modello mancante", ts:new Date().toISOString(), opzioni:{ soloLog:true },
+      });
+      if(risB && risB.errori>0){
+        daCollegare.forEach(x=>nonRisolti.push({ dayKey:x.dayKey, label:x.evt.label, motivo:"errore di scrittura" }));
       } else {
-        nonRisolti.push({ dayKey, label: evt.label, motivo: "nessun modello corrispondente trovato" });
+        let nuovoStore = store;
+        daCollegare.forEach(x=>{
+          nuovoStore = withEventoAggiornato(nuovoStore, x.dayKey, x.cId, x.evt.id, { modelloId: x.match.id });
+          risolti.push({ dayKey:x.dayKey, label:x.evt.label, modello:x.match.titolo||x.match.label });
+        });
+        setStore(nuovoStore);
+        storeRef.current = nuovoStore;
       }
     }
     return { totale: orfani.length, risolti, nonRisolti };

@@ -1,3 +1,4 @@
+import { EsitoImportSupabase } from "./22-backup-stato";
 import { useState, useRef, useMemo, Fragment, Component } from "react";
 import { useAppCore } from "./06-Logica";
 import VistaCalendario from "./03-Calendario";
@@ -326,6 +327,7 @@ function AppInterno({ session }){
           if(showReportModelliPicker) setShowReportModelliPicker(false);
           if(showFasciaColorPicker) setShowFasciaColorPicker(false);
         }} />
+      <EsitoImportSupabase T={T}/>
       {banner&&<div style={{position:"fixed",bottom:`calc(${NAV_HEIGHT_CSS} + 84px)`,left:"50%",transform:"translateX(-50%)",
         background:"rgba(0,0,0,0.75)",color:"#fff",padding:"6px 16px",
         borderRadius:20,fontSize:12,zIndex:9999,pointerEvents:"none"}}>{banner}</div>}

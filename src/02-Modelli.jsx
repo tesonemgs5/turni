@@ -22,6 +22,7 @@ import { QuartineSection } from "./16-QuartineSection";
 import { scaricaFileTesto } from "./18-scarica-file";
 import { classeModelloA, ordinaClassiA } from "./21-ordine";
 import { BackupPerModelloPulsante, StatoSync } from "./20-backup-modelli";
+import { BackupModelliConfigEStato } from "./22-backup-stato";
 
 // Riga della lista Colori: mostra il pallino colore, etichetta, sottotitolo,
 // contatore di modelli che lo usano e (se applicabile) pulsanti per
@@ -2104,6 +2105,7 @@ export default function VistaModelli({ C }){
             </select>
           </div>
           <div style={{fontSize:10.5,color:T.sub,marginTop:6,lineHeight:1.4}}>Dei backup automatici restano solo gli ultimi che scegli; i più vecchi vengono eliminati da soli. I backup manuali e quelli fatti prima di un ripristino restano finché non li elimini tu (tocca «Importa da Supabase» per vederli, con il cestino).</div>
+          <BackupModelliConfigEStato T={T} userId={userId}/>
           <BackupPerModelloPulsante T={T}/>
         </div>
         <button onClick={handleVerificaSupabase}
