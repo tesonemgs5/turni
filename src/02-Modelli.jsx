@@ -479,7 +479,7 @@ export default function VistaModelli({ C }){
           <div>All'inizio le tendine si decidono da sole, dal nome e dal tipo del modello (la prima regola che corrisponde): <b>APP</b> (nome che inizia per APP) · <b>AUTO</b> (AUTO) · <b>DISTACCATI</b> (D) · <b>FESTIVI</b> (F) · <b>PI</b> (PI o P.I.) · <b>H24</b> · <b>PERSONALIZZATO</b> · poi la <b>lettera iniziale</b>. APP o AUTO alla fine del nome non contano.</div>
           <div>Appena premi «↕» (spostamento) o «+ Aggiungi gruppo» le tendine diventano gruppi veri, una sola volta: da lì puoi spostare le tendine (▲▼ a tendina chiusa), rinominarle, eliminarle, crearne di nuove e spostare i modelli fra le tendine (frecce, trascinamento, selezione con 500 ms).</div>
           <div style={{fontWeight:800,marginTop:8}}>Nuovo modello o nome cambiato</div>
-          <div>Non devi scegliere il gruppo: il modello va da solo nella tendina della sua regola (se esiste), nel suo posto. Se quella tendina non esiste più resta senza gruppo, in fondo, in ordine alfabetico.</div>
+          <div><b>Ordine A:</b> il modello nuovo va in coda alla tendina che ha <b>più modelli con lo stesso orario d'inizio</b>; se due tendine pareggiano (o nessuna ha quell'orario) va in fondo all'elenco, in coda all'ultima tendina. Dentro le tendine i modelli stanno dove li metti tu (frecce o trascinamento) e la posizione resta salvata su tutti i dispositivi. Con le tendine automatiche (prima di «↕») vale la regola per nome. <b>Ordine B:</b> il modello va da solo nella tendina della sua fascia, dopo quelli con lo stesso orario.</div>
           <div style={{fontWeight:800,marginTop:8}}>Ordine B (per orario)</div>
           <div>Gruppi veri (MATTINA, POMERIGGIO, TERZO TURNO, NOTTE, H24…): un modello nuovo entra nel gruppo della sua fascia oraria, in fondo ai modelli simili. Puoi creare, rinominare, eliminare e spostare i gruppi; per spostare i modelli: modalità ↑↓, tieni premuto 500 ms per selezionarli, poi «Sposta nel gruppo».</div>
           <div style={{fontWeight:800,marginTop:8}}>Supabase</div>
@@ -565,14 +565,10 @@ export default function VistaModelli({ C }){
                   const perClasse = new Map();
                   modelliVisibili.forEach(m=>{ const k = classeModelloA(m); if(!perClasse.has(k)) perClasse.set(k, []); perClasse.get(k).push(m); });
                   const chiavi = ordinaClassiA([...perClasse.keys()]);
-                  blocchi = chiavi.map(k=>({key:"C:"+k, label:k, gruppo:null, modelli:ordinaPerInizio(perClasse.get(k))})); // dentro la tendina: ordine di inizio
+                  blocchi = chiavi.map(k=>({key:"C:"+k, label:k, gruppo:null, modelli:perClasse.get(k)})); // dentro la tendina vale la posizione salvata (si sposta a mano)
                   blocchi.forEach(bl=>{ sezioni.push(bl); sequenza.push({tipo:"gruppo", sz:bl}); });
                 } else {
-                  // ORDINE A con gruppi veri: dentro ogni tendina i modelli vanno in ORDINE DI INIZIO (a parità, per nome).
-                  if(ordineModelli==="A" && !q){
-                    sezioni.forEach(sz=>{ sz.modelli = ordinaPerInizio(sz.modelli); });
-                    const sg = ordinaPerInizio(senzaGruppo); senzaGruppo.length = 0; senzaGruppo.push(...sg);
-                  }
+                  // ORDINE A con gruppi veri: dentro ogni tendina vale la posizione salvata (si sposta a mano).
                   sezioni.forEach(sz=>sequenza.push({tipo:"gruppo", sz}));
                   senzaGruppo.forEach(m=>sequenza.push({tipo:"modello", m}));
                   // "Blocchi" = i gruppi veri nell'ordine + in fondo il blocco dei modelli senza gruppo.

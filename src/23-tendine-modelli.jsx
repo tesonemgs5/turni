@@ -15,12 +15,12 @@ export function costruisciSezioni({ modelli, ordine, calId, mainCalId, gruppiDel
   const lista = (modelli || []).filter(Boolean);
   if (cercando) return { blocchi: [], senza: lista };
   const gruppoDi = (x) => { const m = mod(x); return ordine === "A" ? m.gruppoA : m.gruppoB; };
-  const perInizio = (arr) => (ordine === "A" ? arr.map((x, i) => ({ x, i })).sort((a, b) => (minutiInizio(mod(a.x)) - minutiInizio(mod(b.x))) || (a.i - b.i)).map((o) => o.x) : arr);
+  const perInizio = (arr) => arr; // dentro la tendina vale la posizione salvata (si sposta a mano)
   const veriA = !!calId && ordine === "A" && (gruppiDelCalendario ? gruppiDelCalendario(calId, "A") : []).length > 0;
   if (ordine === "A" && !veriA) {
     const perClasse = new Map();
     lista.forEach((m) => { const k = classeModelloA(mod(m)); if (!perClasse.has(k)) perClasse.set(k, []); perClasse.get(k).push(m); });
-    return { blocchi: ordinaClassiA([...perClasse.keys()]).map((k) => ({ key: "C:" + k, label: k, modelli: perClasse.get(k).map((x, i) => ({ x, i })).sort((a, b) => (minutiInizio(mod(a.x)) - minutiInizio(mod(b.x))) || (a.i - b.i)).map((o) => o.x) })), senza: [] };
+    return { blocchi: ordinaClassiA([...perClasse.keys()]).map((k) => ({ key: "C:" + k, label: k, modelli: perClasse.get(k) })), senza: [] };
   }
   if (calId) {
     const gl = gruppiDelCalendario ? gruppiDelCalendario(calId, ordine) : [];

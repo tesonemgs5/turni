@@ -4547,10 +4547,10 @@ function calcolaOrdineVisuale(modelli, gruppi, mainCalId){
       .sort((a,b)=> a.sortOrder!==b.sortOrder ? a.sortOrder-b.sortOrder : String(a.id).localeCompare(String(b.id)));
     if(ordine==="A" && gl.length===0){
       const classi = ordinaClassiA([...new Set(lista.map(classeModelloA))]);
-      lista.forEach(m=>{ rank.set(m.id, classi.indexOf(classeModelloA(m))); iniz.set(m.id, minutiInizio(m)); });
+      lista.forEach(m=>{ rank.set(m.id, classi.indexOf(classeModelloA(m))); });
     } else {
       const pos = new Map(gl.map((g,i)=>[g.id,i]));
-      lista.forEach(m=>{ const gid = ordine==="A" ? m.gruppoA : m.gruppoB; rank.set(m.id, pos.has(gid) ? pos.get(gid) : gl.length); if(ordine==="A") iniz.set(m.id, minutiInizio(m)); });
+      lista.forEach(m=>{ const gid = ordine==="A" ? m.gruppoA : m.gruppoB; rank.set(m.id, pos.has(gid) ? pos.get(gid) : gl.length); });
     }
   });
   return base.map((m,i)=>({m,i})).sort((a,b)=> ((rank.get(a.m.id)||0)-(rank.get(b.m.id)||0)) || ((iniz.get(a.m.id)||0)-(iniz.get(b.m.id)||0)) || (a.i-b.i)).map(x=>x.m);
@@ -4696,11 +4696,11 @@ function indiceInserimentoA(lista, nuovo){
 }
 // Mette "nuovo" (nuovo o spostato) nel punto giusto di UN ordine. usaAltro=true lavora sull'altro ordine
 // (si scambiano le due posizioni, si ricalcola, si rimettono a posto).
-function posizionaInOrdine(modelliAll, nuovo, targetCalId, calendarsOrdinati, mainCalId, lettera, usaAltro){
+function posizionaInOrdine(modelliAll, nuovo, targetCalId, calendarsOrdinati, mainCalId, lettera, usaAltro, idxForzato){
   const vista = usaAltro ? modelliAll.map(scambiaOrdini) : modelliAll;
   const nuovoV = vista.find(m=>m.id===nuovo.id) || (usaAltro ? scambiaOrdini(nuovo) : nuovo);
   const delCal = calcolaOrdineModelli(vista.filter(m=>(m.calendarId||mainCalId)===targetCalId && m.id!==nuovo.id));
-  const idx = lettera==="A" ? indiceInserimentoA(delCal, nuovoV) : indiceInserimentoB(delCal, nuovoV);
+  const idx = (idxForzato!=null && lettera==="A") ? Math.max(0, Math.min(idxForzato, delCal.length)) : (lettera==="A" ? indiceInserimentoA(delCal, nuovoV) : indiceInserimentoB(delCal, nuovoV));
   const riord = [...delCal]; riord.splice(idx, 0, nuovoV);
   const base = vista.some(m=>m.id===nuovo.id) ? vista : [...vista, nuovoV];
   const ris = ricalcolaPosizioniGlobali(base, calendarsOrdinati, new Map([[targetCalId, riord]]), mainCalId);
@@ -4979,6 +4979,31 @@ const importsRecenti = useMemo(()=>{
     if(!nome) return null;
     const g = gruppiDelCalendario(calIdX, ordine).find(x=>String(x.nome||"").trim().toUpperCase()===nome);
     return g ? g.id : null;
+  }
+  // Ordine A, CREAZIONE di un modello: va in coda al gruppo (tendina) che ha PIU' modelli con lo stesso orario d'inizio.
+  // In caso di parita' (o se nessun gruppo ha quell'orario): in fondo all'elenco, in coda all'ultimo gruppo.
+  // Vale solo con gruppi veri; con le tendine automatiche resta la regola per nome (ritorna null).
+  function postoNuovoModelloA(modelliAll, nuovo, calIdX){
+    const gl = gruppiDelCalendario(calIdX, "A");
+    if(!gl.length) return null;
+    const vista = ordineAttivo()==="A" ? modelliAll : modelliAll.map(scambiaOrdini);
+    const lista = calcolaOrdineModelli(vista.filter(m=>m && (m.calendarId||mainCalId)===calIdX && m.id!==nuovo.id));
+    if(!lista.length) return { gruppoId:null, indice:0 };
+    const k = minutiInizio(nuovo);
+    const conta = new Map();
+    lista.forEach(m=>{ if(minutiInizio(m)===k){ const g = m.gruppoA||"__senza__"; conta.set(g, (conta.get(g)||0)+1); } });
+    let migliore = null, max = 0, parita = false;
+    conta.forEach((n,g)=>{ if(n>max){ max=n; migliore=g; parita=false; } else if(n===max){ parita=true; } });
+    let chiave, indice;
+    if(migliore && !parita){
+      chiave = migliore;
+      let ultimo = -1; lista.forEach((m,i)=>{ if((m.gruppoA||"__senza__")===chiave) ultimo = i; });
+      indice = ultimo+1;
+    } else {
+      chiave = lista[lista.length-1].gruppoA||"__senza__";
+      indice = lista.length;
+    }
+    return { gruppoId: chiave==="__senza__" ? null : chiave, indice };
   }
   async function aggiungiGruppo(nome, calIdX){
     if(!userId) return { ok:false };
@@ -5633,13 +5658,14 @@ const importsRecenti = useMemo(()=>{
       // Il nuovo modello entra in ENTRAMBI gli ordini, mai in fondo: A = dopo l'ultimo con lo stesso nome (o nel punto
       // alfabetico), B = dopo l'ultimo con lo stesso orario di inizio (o fra gli orari vicini). Nessun legame con
       // colori, fasce o Impostazioni. Il calcolo usa solo dati in memoria (nessuna attesa di Supabase).
+      const postoA = postoNuovoModelloA(modelli, { id:idLocale, inizio:data.inizio }, targetCalId);
       const modelloCreato = {...(({silenzioso,...rest})=>rest)(data),id:idLocale,colore:coloreEff,coloreCustom:coloreEff,sortOrder:0,sortOrderAltro:0,calendarId:targetCalId,
-        gruppoA:gruppoPerRegola(data,"A",targetCalId), gruppoB:gruppoPerRegola(data,"B",targetCalId)};
+        gruppoA:postoA ? postoA.gruppoId : gruppoPerRegola(data,"A",targetCalId), gruppoB:gruppoPerRegola(data,"B",targetCalId)};
       const calendarsOrdinati = store.calendars.map(c=>c.id);
       const letteraAttiva = ordineAttivo(), letteraAltra = letteraAttiva==="A" ? "B" : "A";
       let modelliAggiornati = [...modelli, modelloCreato];
-      modelliAggiornati = posizionaInOrdine(modelliAggiornati, modelloCreato, targetCalId, calendarsOrdinati, mainCalId, letteraAttiva, false);
-      modelliAggiornati = posizionaInOrdine(modelliAggiornati, modelliAggiornati.find(m=>m.id===idLocale), targetCalId, calendarsOrdinati, mainCalId, letteraAltra, true);
+      modelliAggiornati = posizionaInOrdine(modelliAggiornati, modelloCreato, targetCalId, calendarsOrdinati, mainCalId, letteraAttiva, false, (letteraAttiva==="A" && postoA) ? postoA.indice : null);
+      modelliAggiornati = posizionaInOrdine(modelliAggiornati, modelliAggiornati.find(m=>m.id===idLocale), targetCalId, calendarsOrdinati, mainCalId, letteraAltra, true, (letteraAltra==="A" && postoA) ? postoA.indice : null);
       const creatoFinale = modelliAggiornati.find(m=>m.id===idLocale) || modelloCreato;
       setModelli(modelliAggiornati);
       // FIX: a differenza del ramo UPDATE, qui la cache locale non veniva

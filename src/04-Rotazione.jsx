@@ -1373,11 +1373,12 @@ function diffEventi(prec, nuovo) {
 function diffModelli(prec, nuovo) {
   const A = new Map((prec.modelli || []).map(m => [String(m.id), m]));
   const B = new Map((nuovo.modelli || []).map(m => [String(m.id), m]));
-  const nome = m => m.titolo || m.label || String(m.id).slice(0, 8);
+  // Il nome di un modello da solo non lo identifica (ce ne sono tanti con lo stesso nome): nel Log si aggiunge sempre l'orario.
+  const nome = m => { const t = m.titolo || m.label || String(m.id).slice(0, 8); return (m.inizio || m.fine) ? `${t} ${m.inizio || "–"}–${m.fine || "–"}` : t; };
   const agg = [], eli = [], mod = [], riord = [], ids = [], idsFac = [];
   for (const [id, b] of B) {
     const a = A.get(id);
-    if (!a) { agg.push(`+ ${nome(b)} (${b.inizio || "–"}–${b.fine || "–"})`); ids.push(id); continue; }
+    if (!a) { agg.push(`+ ${nome(b)}`); ids.push(id); continue; }
     const cambi = [];
     for (const f of CAMPI_MODELLO) if (!uguali(a[f], b[f])) cambi.push(`${f}: ${fmtVal(a[f])}→${fmtVal(b[f])}`);
     if (cambi.length) { mod.push(`~ ${nome(b)}: ${cambi.join("; ")}`); ids.push(id); }
@@ -1454,12 +1455,12 @@ export function diffDisposizione(prec, righe, fasce, coloriExtra, sundayCol, hol
   const conteggi = { aggiunti: 0, eliminati: 0, modificati: 0, riordinati: 0, spostatiGruppo: 0 };
   const vecchi = new Map((prec?.voci || []).map(v => [String(v.modello_id || v.id), v]));
   const nuovi = new Map(righe.map(r => [String(r.modello_id), r]));
-  const nomeDi = r => r.titolo || r.label || String(r.modello_id || r.id).slice(0, 8);
+  const nomeDi = r => { const t = r.titolo || r.label || String(r.modello_id || r.id).slice(0, 8); return (r.inizio || r.fine) ? `${t} ${r.inizio || "–"}–${r.fine || "–"}` : t; };
   const CAMPI = [["colore", "colore"], ["colore_custom", "colore personalizzato"], ["titolo", "titolo"],
     ["label", "etichetta"], ["inizio", "inizio"], ["fine", "fine"], ["tempo", "tipo orario"], ["calendar_id", "calendario"]];
   for (const [id, n] of nuovi) {
     const v = vecchi.get(id);
-    if (!v) { conteggi.aggiunti++; idsCambiati.add(id); dettagli.push(`+ ${nomeDi(n)} (${n.inizio || "–"}–${n.fine || "–"})`); continue; }
+    if (!v) { conteggi.aggiunti++; idsCambiati.add(id); dettagli.push(`+ ${nomeDi(n)}`); continue; }
     const a = normRigaDisposizione(v), b = normRigaDisposizione(n);
     const cambi = [];
     for (const [k, etichetta] of CAMPI) if (!uguali(a[k], b[k])) cambi.push(`${etichetta}: ${fmtVal(a[k])}→${fmtVal(b[k])}`);
