@@ -14,6 +14,16 @@ import { execSync } from 'node:child_process';
 // Uso il fuso orario Europe/Rome esplicitamente: i server di build (es.
 // Vercel) girano tipicamente in UTC, quindi senza questo new Intl la
 // versione mostrerebbe l'ora UTC invece dell'ora italiana.
+// PERCORSI_CODICE: solo i commit che cambiano l'app contano per versione e numero di build (i commit del piano e dei
+// documenti no), cosi' APK e sito web, compilati dallo stesso codice, mostrano la STESSA stringa.
+// Elenco identico in aggiorna_versione_e_build.py e nel workflow Build APK.
+const PERCORSI_CODICE = 'src public index.html package.json package-lock.json vite.config.js capacitor.config.ts android api electron vercel.json';
+function storiaCompletaGit() {
+  try {
+    const sh = (cmd) => execSync(cmd, { stdio: ['ignore', 'pipe', 'ignore'], timeout: 90000 }).toString().trim();
+    if (sh('git rev-parse --is-shallow-repository') === 'true') sh('git fetch --unshallow --quiet');
+  } catch {}
+}
 function calcolaVersioneBuild() {
   // Usa la data dell'ULTIMO COMMIT git, non l'istante in cui gira questa
   // build: cosi' la versione resta IDENTICA sia che la build parta su
@@ -25,7 +35,10 @@ function calcolaVersioneBuild() {
   // build non si blocca mai per questo.
   let ora;
   try {
-    const isoCommit = execSync('git log -1 --format=%cI').toString().trim();
+    storiaCompletaGit();
+    let isoCommit = '';
+    try { isoCommit = execSync('git log -1 --format=%cI -- ' + PERCORSI_CODICE).toString().trim(); } catch {}
+    if (!isoCommit) isoCommit = execSync('git log -1 --format=%cI').toString().trim();
     ora = new Date(isoCommit);
     if (isNaN(ora.getTime())) throw new Error('data commit non valida');
   } catch {
@@ -61,7 +74,7 @@ function calcolaNumeroBuild() {
       shallow = sh('git rev-parse --is-shallow-repository') === 'true';
     }
     if (!shallow) {
-      const n = parseInt(sh('git rev-list --count HEAD'), 10);
+      const n = parseInt(sh('git rev-list --count HEAD -- ' + PERCORSI_CODICE), 10);
       if (Number.isFinite(n) && n > 0) return String(n);
     }
   } catch {}

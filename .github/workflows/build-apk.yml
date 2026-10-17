@@ -16,13 +16,13 @@ jobs:
   apk:
     runs-on: ubuntu-latest
     timeout-minutes: 40
-    env:
-      # Numero build dell'APK (contatore delle esecuzioni di questo workflow): finisce nella versione #N.
-      APK_BUILD_NUM: ${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Numero build (uguale alla versione web)
+        run: echo "APK_BUILD_NUM=$(git rev-list --count HEAD -- src public index.html package.json package-lock.json vite.config.js capacitor.config.ts android api electron vercel.json)" >> "$GITHUB_ENV"
 
       - uses: actions/setup-node@v4
         with:

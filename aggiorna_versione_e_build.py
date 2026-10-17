@@ -107,6 +107,11 @@ def find_project_root():
     return None
 
 
+# Stesso elenco di PERCORSI_CODICE in vite.config.js e nel workflow Build APK: solo i commit che toccano il codice
+# contano per la versione (i commit del piano e dei documenti no).
+PERCORSI_CODICE = "src public index.html package.json package-lock.json vite.config.js capacitor.config.ts android api electron vercel.json".split()
+
+
 def ultima_data_commit(project_root):
     """
     Legge la data dell'ultimo commit git, per calcolare la STESSA versione
@@ -119,8 +124,12 @@ def ultima_data_commit(project_root):
     """
     try:
         iso = subprocess.check_output(
-            ["git", "log", "-1", "--format=%cI"], cwd=project_root, text=True
+            ["git", "log", "-1", "--format=%cI", "--"] + PERCORSI_CODICE, cwd=project_root, text=True
         ).strip()
+        if not iso:
+            iso = subprocess.check_output(
+                ["git", "log", "-1", "--format=%cI"], cwd=project_root, text=True
+            ).strip()
         d = datetime.fromisoformat(iso)  # es. "2026-09-18T22:24:10+02:00"
         return d
     except Exception:
@@ -172,6 +181,12 @@ def aggiorna_vite_config(vite_path):
     build) e si assicura che l'import necessario (execSync) sia presente.
     Se il file ha gia' il nuovo formato, non tocca nulla.
     """
+    try:
+        if "PERCORSI_CODICE" in open(vite_path, encoding="utf-8").read():
+            print("vite.config.js: formula versione gia' aggiornata (percorsi del codice), non la riscrivo.")
+            return True
+    except Exception:
+        pass
     with open(vite_path, "r", encoding="utf-8") as f:
         content = f.read()
     content = assicura_import_execsync(content)
