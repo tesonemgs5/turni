@@ -202,7 +202,7 @@ export default function VistaModelli({ C }){
     applicaReportOverrideATuttiGliEventi, totaleTurni,
     setPrevGrid, REPORT_TEMPLATES, calcolaOrdineModelli, updateFascia, session, salvaQuartine, coloriUsatiTutti, riordinaColoriUsati,
   } = C;
-  const { gruppi, gruppiDelCalendario, aggiungiGruppo, rinominaGruppo, eliminaGruppo, spostaModelloInGruppo, spostaModelliInGruppo, spostaModelliInLettera, spostaGruppo } = C;
+  const { gruppi, gruppiDelCalendario, aggiungiGruppo, rinominaGruppo, eliminaGruppo, spostaModelloInGruppo, spostaModelliInGruppo, spostaGruppo } = C;
   // Selezione multipla in modalità spostamento (tappa 3): modelli selezionati con il tocco lungo (500 ms).
   // Si azzera uscendo dalla modalità spostamento, cambiando calendario/ordine o scrivendo nella ricerca.
   const [selSpost, setSelSpost] = useState([]);
@@ -517,38 +517,51 @@ export default function VistaModelli({ C }){
                   });
                   sezioni.push(...[...perNome.values()].sort((a,b)=>(a.ord-b.ord) || String(a.label).localeCompare(String(b.label))));
                 }
-                // ORDINE A (alfabetico): un'unica lista in ordine alfabetico. Dove ci sono 2 o piu' modelli CONSECUTIVI con lo
-                // stesso nome si forma in automatico un gruppo (tendina); gli altri restano modelli singoli al loro posto.
-                // Nessun gruppo "sopra" e nessun "senza gruppo" in fondo. (I gruppi personalizzati restano nel database ma
-                // in ordine A non si vedono.) ORDINE B: come prima (gruppi veri, poi modelli senza gruppo).
-                // ORDINE A (alfabetico): in alto i gruppi veri (creati dall'utente, es. AUTO, APP); sotto, i modelli SENZA gruppo
-                // raggruppati in automatico per LETTERA INIZIALE (A, B, C...; accenti ignorati; cifre/simboli = "#").
-                // Le tendine per lettera sono solo visualizzazione. ORDINE B: gruppi veri, poi modelli senza gruppo.
-                const letteraDi = m => {
-                  const t = String(m.titolo||"").trim().normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase();
-                  const c = t.charAt(0); return /[A-Z]/.test(c) ? c : "#";
-                };
+                // ORDINE A (alfabetico): tendine AUTOMATICHE, calcolate dal nome e dal tipo del modello (nessun dato nel database;
+                // i gruppi veri di ordine A non si usano). Vale la prima regola che corrisponde:
+                //   APP = nome che inizia per APP · AUTO = inizia per AUTO · DISTACCATI = inizia per D · FESTIVI = inizia per F ·
+                //   PI = inizia per PI / P.I. · H24 = tipo H24 · PERSONALIZZATO = orario personalizzato ·
+                //   tutti gli altri = LETTERA INIZIALE (A, B, C...; accenti ignorati; cifre/simboli = "#").
+                // Un nome che FINISCE per APP/AUTO (es. "F APP", "PI AUTO") NON va in APP/AUTO: segue la sua regola per prima parola.
+                // Dentro ogni tendina i modelli restano in ordine alfabetico. ORDINE B: gruppi veri, poi modelli senza gruppo.
+                const autoA = ordineModelli==="A" && !q;
                 const sequenza = [];
-                sezioni.forEach(sz=>sequenza.push({tipo:"gruppo", sz}));
-                if(ordineModelli==="A"){
-                  const usate = new Set();
-                  let i = 0;
-                  while(i<senzaGruppo.length){
-                    const k = letteraDi(senzaGruppo[i]); let j = i+1;
-                    while(j<senzaGruppo.length && letteraDi(senzaGruppo[j])===k) j++;
-                    let chiave = "L:"+k; if(usate.has(chiave)) chiave += ":"+i; usate.add(chiave);
-                    sequenza.push({tipo:"gruppo", sz:{key:chiave, label:k, gruppo:null, modelli:senzaGruppo.slice(i,j)}});
-                    i = j;
-                  }
+                let blocchi;
+                if(autoA){
+                  sezioni.length = 0; senzaGruppo.length = 0;
+                  const norm = m => String(m.titolo||"").trim().normalize("NFD").replace(/[̀-ͯ]/g,"").toUpperCase();
+                  const classe = m => {
+                    const t = norm(m);
+                    if(/^APP/.test(t)) return "APP";
+                    if(/^AUTO/.test(t)) return "AUTO";
+                    if(/^D/.test(t)) return "DISTACCATI";
+                    if(/^F/.test(t)) return "FESTIVI";
+                    if(/^P\.?I\.?(\s|$)/.test(t)) return "PI";
+                    if(m.tempo==="h24") return "H24";
+                    if(m.tempo==="personalizzato") return "PERSONALIZZATO";
+                    const c = t.charAt(0); return /[A-Z]/.test(c) ? c : "#";
+                  };
+                  const FISSI = ["APP","AUTO","DISTACCATI","FESTIVI","PI","H24","PERSONALIZZATO"];
+                  const perClasse = new Map();
+                  modelliVisibili.forEach(m=>{ const k = classe(m); if(!perClasse.has(k)) perClasse.set(k, []); perClasse.get(k).push(m); });
+                  const chiavi = [...perClasse.keys()].sort((x,y)=>{
+                    const ix = FISSI.indexOf(x), iy = FISSI.indexOf(y);
+                    if(ix>=0 || iy>=0) return (ix<0?99:ix) - (iy<0?99:iy);
+                    if(x==="#") return -1; if(y==="#") return 1;
+                    return x<y ? -1 : x>y ? 1 : 0;
+                  });
+                  blocchi = chiavi.map(k=>({key:"C:"+k, label:k, gruppo:null, modelli:perClasse.get(k)}));
+                  blocchi.forEach(bl=>{ sezioni.push(bl); sequenza.push({tipo:"gruppo", sz:bl}); });
                 } else {
+                  sezioni.forEach(sz=>sequenza.push({tipo:"gruppo", sz}));
                   senzaGruppo.forEach(m=>sequenza.push({tipo:"modello", m}));
+                  // "Blocchi" = i gruppi veri nell'ordine + in fondo il blocco dei modelli senza gruppo.
+                  blocchi = [...sezioni, {key:"__SENZA__", gruppo:null, senza:true, modelli:senzaGruppo}];
                 }
-                // "Blocchi" = i gruppi veri nell'ordine + in fondo il blocco dei modelli senza gruppo.
-                const blocchi = [...sezioni, {key:"__SENZA__", gruppo:null, senza:true, modelli:senzaGruppo}];
                 const ordinati = blocchi.flatMap(b=>b.modelli);
                 const infoMod = new Map();
                 blocchi.forEach((b,sIdx)=>b.modelli.forEach((m,k)=>infoMod.set(m.id,{lst:b.modelli,k,s:sIdx})));
-                const gestibile = calId!==null && !q;
+                const gestibile = calId!==null && !q && ordineModelli!=="A";
                 // Trascinamento: sullo stesso gruppo = riordino; su un altro gruppo (o sulla sua intestazione) = cambia gruppo;
                 // nella zona "in fondo" = senza gruppo, in fondo. Con la ricerca attiva resta il vecchio riordino semplice.
                 const riordina = async (src, dst)=>{
@@ -826,7 +839,7 @@ export default function VistaModelli({ C }){
                   onDragOver={(e)=>{ e.preventDefault(); dragTargetId.current="__FONDO__"; if(dragOverId!=="__FONDO__") setDragOverId("__FONDO__"); }}
                   onDrop={async()=>{
                     stopAutoScroll();
-                    await ((ricercaModelli.trim()) ? reorderModelli(dragSrcId.current, "__FONDO__", calId) : (selSpost.includes(dragSrcId.current) ? spostaModelliInGruppo(selSpost, null, null, calId) : spostaModelloInGruppo(dragSrcId.current, null, null, calId)));
+                    await ((ricercaModelli.trim() || ordineModelli==="A") ? reorderModelli(dragSrcId.current, "__FONDO__", calId) : (selSpost.includes(dragSrcId.current) ? spostaModelliInGruppo(selSpost, null, null, calId) : spostaModelloInGruppo(dragSrcId.current, null, null, calId)));
                     dragSrcId.current=null; dragTargetId.current=null;
                     setDraggingId(null); setDragOverId(null);
                   }}
@@ -835,7 +848,7 @@ export default function VistaModelli({ C }){
                     color:dragOverId==="__FONDO__"?accent:T.sub,
                     borderTop:dragOverId==="__FONDO__"?`3px solid ${accent}`:`1px dashed ${T.border}`,
                     background:dragOverId==="__FONDO__"?`${accent}14`:"transparent"}}>
-                  {"⬇ Rilascia qui per mettere in fondo (senza gruppo)"}
+                  {ordineModelli==="A" ? "⬇ Rilascia qui per mettere in fondo" : "⬇ Rilascia qui per mettere in fondo (senza gruppo)"}
                 </div>
               )}
             </div>
@@ -846,31 +859,13 @@ export default function VistaModelli({ C }){
             borderRadius:14,padding:"10px 14px",marginTop:10,display:"flex",alignItems:"center",
             justifyContent:"space-between",gap:10,boxShadow:"0 -4px 16px rgba(0,0,0,0.08)"}}>
             <span style={{fontSize:13,fontWeight:700,color:T.text}}>{selSpost.length} selezionati</span>
-            {(()=>{
-              // Destinazioni: gruppi veri del calendario; in ordine A anche le LETTERE presenti fra i titoli del calendario.
-              const lettereCal = ordineModelli==="A" ? [...new Set((modelli||[]).filter(m=>m && (m.calendarId||mainCalId)===calId)
-                .map(m=>{ const c=String(m.titolo||"").trim().normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().charAt(0); return /[A-Z]/.test(c)?c:"#"; }))].sort() : [];
-              return (
             <select value="" title="Sposta i modelli selezionati in un gruppo"
-              onChange={async e=>{
-                const v=e.target.value; if(!v) return;
-                if(v.startsWith("L:")){
-                  const r = await spostaModelliInLettera(selSpost, v.slice(2), calId);
-                  if(r && r.saltati>0){ setBanner("\u26A0\uFE0F "+r.saltati+(r.saltati===1?" modello non inizia":" modelli non iniziano")+" per "+v.slice(2)+": lasciati dove erano"); setTimeout(()=>setBanner(null), 5000); }
-                } else {
-                  await spostaModelliInGruppo(selSpost, v==="__NESSUNO__"?null:v, null, calId);
-                }
-                setSelSpost([]);
-              }}
+              onChange={async e=>{ const v=e.target.value; if(!v) return; await spostaModelliInGruppo(selSpost, v==="__NESSUNO__"?null:v, null, calId); setSelSpost([]); }}
               style={{flex:1,minWidth:0,background:accent,border:"none",borderRadius:8,color:getContrastTextColor(accent),padding:"8px 10px",fontWeight:800,fontSize:12,cursor:"pointer"}}>
               <option value="">Sposta nel gruppo…</option>
               {gruppiDelCalendario(calId, ordineModelli).map(g=><option key={g.id} value={g.id} style={{color:"#000"}}>{g.nome}</option>)}
-              {ordineModelli==="A"
-                ? lettereCal.map(l=><option key={"L:"+l} value={"L:"+l} style={{color:"#000"}}>{l}</option>)
-                : <option value="__NESSUNO__" style={{color:"#000"}}>Senza gruppo</option>}
+              <option value="__NESSUNO__" style={{color:"#000"}}>Senza gruppo</option>
             </select>
-              );
-            })()}
             <button onClick={()=>setSelSpost([])}
               style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,flexShrink:0,
                 color:T.sub,padding:"7px 12px",cursor:"pointer",fontWeight:700,fontSize:12}}>

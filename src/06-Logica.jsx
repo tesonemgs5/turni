@@ -5092,28 +5092,6 @@ const importsRecenti = useMemo(()=>{
     segnalaModificaOrdineModelli();
     await salvaModificheModelliEGruppi(prev, nuovo, "Spostamento di "+sel.length+" modelli fra gruppi");
   }
-  // Ordine A: "sposta nella lettera X" = il modello esce dal suo gruppo (se ne ha uno) e torna al suo posto ALFABETICO
-  // fra i modelli senza gruppo, dove la tendina automatica della lettera lo mostra. Valgono solo i modelli il cui titolo
-  // inizia per quella lettera (le altre tendine per lettera sono calcolate dal titolo). Ritorna quanti ne ha spostati.
-  async function spostaModelliInLettera(ids, lettera, calIdX){
-    if(!userId || !Array.isArray(ids) || ids.length===0) return { spostati:0, saltati:0 };
-    const chiave = titolo => String(titolo||"").trim().normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase();
-    const letteraDi = titolo => { const c = chiave(titolo).charAt(0); return /[A-Z]/.test(c) ? c : "#"; };
-    let spostati = 0, saltati = 0;
-    for(const id of ids){
-      const m = (modelliRef.current||[]).find(x=>x && x.id===id);
-      if(!m || (m.calendarId||mainCalId)!==calIdX) continue;
-      if(letteraDi(m.titolo)!==lettera){ saltati++; continue; }
-      const gl = gruppiDelCalendario(calIdX, "A");
-      const senza = x => { const g = x.gruppoA; return !(g && gl.some(y=>y.id===g)); };
-      const flat = calcolaOrdineModelli(modelliDelCalendario(modelliRef.current, calIdX));
-      const k = chiave(m.titolo);
-      const dopo = flat.find(x=>x.id!==id && senza(x) && chiave(x.titolo)>k);
-      await spostaModelloInGruppo(id, null, dopo ? dopo.id : null, calIdX);
-      spostati++;
-    }
-    return { spostati, saltati };
-  }
   // Sposta un gruppo (con i suoi modelli) su o giu' di un posto fra i gruppi dello stesso calendario e ordine.
   async function spostaGruppo(id, dir){
     const g = (gruppi||[]).find(x=>x.id===id); if(!userId || !g) return;
@@ -8218,7 +8196,7 @@ const importsRecenti = useMemo(()=>{
     showAddColorPicker,
     setShowAddColorPicker,
     coloriExtra,
-    gruppi, setGruppi, gruppiDelCalendario, aggiungiGruppo, rinominaGruppo, eliminaGruppo, spostaModelloInGruppo, spostaModelliInGruppo, spostaModelliInLettera, spostaGruppo,
+    gruppi, setGruppi, gruppiDelCalendario, aggiungiGruppo, rinominaGruppo, eliminaGruppo, spostaModelloInGruppo, spostaModelliInGruppo, spostaGruppo,
     setColoriExtra,
     autocompleteValori,
     setAutocompleteValori,
