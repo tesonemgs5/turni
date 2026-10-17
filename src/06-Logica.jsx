@@ -4526,6 +4526,31 @@ function calcolaOrdineModelli(sottoinsieme){
   });
 }
 
+// ── ORDINE VISUALE: identico a quello della lista Modelli > Turni.
+// Le tendine (gruppi) nell'ordine in cui si vedono, poi i modelli senza gruppo; dentro ogni tendina vale la posizione del modello.
+// Ordine A senza gruppi veri: tendine automatiche per classe (APP, AUTO, DISTACCATI, ... lettere), come nella lista.
+// Serve a tutte le liste che mostrano i modelli (colori, selettori, report, ordine eventi del giorno) cosi' seguono la lista.
+// Le funzioni che RISCRIVONO le posizioni continuano a usare calcolaOrdineModelli (posizione pura).
+function calcolaOrdineVisuale(modelli, gruppi, mainCalId){
+  const base = calcolaOrdineModelli(modelli);
+  const ordine = ordineAttivo();
+  const perCal = new Map();
+  base.forEach(m=>{ const c = m.calendarId||mainCalId||"__"; if(!perCal.has(c)) perCal.set(c,[]); perCal.get(c).push(m); });
+  const rank = new Map();
+  perCal.forEach((lista,c)=>{
+    const gl = (gruppi||[]).filter(g=>g.ordine===ordine && (g.calendarId||mainCalId||"__")===c && (ordine!=="A" || (g.sortOrder||0)>=BANDA_A))
+      .sort((a,b)=> a.sortOrder!==b.sortOrder ? a.sortOrder-b.sortOrder : String(a.id).localeCompare(String(b.id)));
+    if(ordine==="A" && gl.length===0){
+      const classi = ordinaClassiA([...new Set(lista.map(classeModelloA))]);
+      lista.forEach(m=>rank.set(m.id, classi.indexOf(classeModelloA(m))));
+    } else {
+      const pos = new Map(gl.map((g,i)=>[g.id,i]));
+      lista.forEach(m=>{ const gid = ordine==="A" ? m.gruppoA : m.gruppoB; rank.set(m.id, pos.has(gid) ? pos.get(gid) : gl.length); });
+    }
+  });
+  return base.map((m,i)=>({m,i})).sort((a,b)=> ((rank.get(a.m.id)||0)-(rank.get(b.m.id)||0)) || (a.i-b.i)).map(x=>x.m);
+}
+
 // ── Ordinamento per FASCIA ORARIA D'INIZIO, usato SOLO dal pulsante
 // "Riordina posizione modelli" (non tocca il comportamento normale di
 // calcolaOrdineModelli, usato ovunque altrove). Dentro ogni calendario i
@@ -4749,7 +4774,7 @@ function ricalcolaPosizioniGlobali(prev, calendarsOrdinati, ordiniPerCalendario,
 
 // Elenco completo (tutti i calendari insieme), usato dove serve una vista
 // globale — es. il ripristino da backup, o quando calId===null ("tutti").
-const modelliOrdinati = useMemo(()=>calcolaOrdineModelli(modelli), [modelli]);
+const modelliOrdinati = useMemo(()=>calcolaOrdineVisuale(modelli, gruppi, mainCalId), [modelli, gruppi, mainCalId]);
 
 const importsRecenti = useMemo(()=>{
   // Raggruppa per (calendario, importId): serve a tutti e 3 i dialog di import.

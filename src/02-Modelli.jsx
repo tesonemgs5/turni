@@ -253,7 +253,7 @@ export default function VistaModelli({ C }){
       base = modelliOrdinati.filter(m=>modelloVisibileInCalendario(m, calId, mainCalId));
     } else {
       const cals = (store.calendars||[]).slice().sort((a,b)=>(a.id===calId?-1:0)-(b.id===calId?-1:0));
-      const perCal = cals.flatMap(c=>calcolaOrdineModelli((modelli||[]).filter(m=>m && (m.calendarId||mainCalId)===c.id)));
+      const perCal = cals.flatMap(c=>modelliOrdinati.filter(m=>m && (m.calendarId||mainCalId)===c.id));
       const visti = new Set(perCal.map(m=>m.id));
       base = perCal.concat((modelli||[]).filter(m=>m && !visti.has(m.id)));
     }
@@ -1165,12 +1165,8 @@ export default function VistaModelli({ C }){
                   .filter(c=>calSelezionati.includes(c.id))
                   .map(c=>({
                     cal: c,
-                    modelli: (()=>{
-                      const lista = filtra(modelliOrdinati.filter(m=>modelloVisibileInCalendario(m, c.id, mainCalId)));
-                      const ids = snapSelColoreRef.current.ids;
-                      if(!ids || ids.size===0) return lista;
-                      return [...lista.filter(x=>ids.has(x.id)), ...lista.filter(x=>!ids.has(x.id))];
-                    })(),
+                    // Stesso ordine della lista Modelli (niente più «assegnati in cima»).
+                    modelli: filtra(modelliOrdinati.filter(m=>modelloVisibileInCalendario(m, c.id, mainCalId))),
                   }))
                   .filter(g=>g.modelli.length>0);
                 // Modelli che non risultano in nessun calendario esistente: prima sparivano dalla lista.

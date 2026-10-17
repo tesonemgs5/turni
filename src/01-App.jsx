@@ -347,7 +347,7 @@ function AppInterno({ session }){
         });
         const opzioni = Object.keys(conteggi)
           .map(id=>({id, titolo: id===VUOTO ? "(senza modello)" : (modelli.find(m=>m.id===id)?.titolo || "(modello eliminato)"), n: conteggi[id]}))
-          .sort((x,y2)=>x.titolo.localeCompare(y2.titolo));
+          .sort((x,y2)=>{ const p=id=>id===VUOTO ? -1 : (modelliOrdinati.findIndex(m=>m.id===id)+1 || 1e9); return p(x.id)-p(y2.id); });
         const turniSel = selTurniCancella.filter(id=>conteggi[id]);
         const totale = turniSel.reduce((t,id)=>t+conteggi[id],0);
         const tuttiSel = opzioni.length>0 && turniSel.length===opzioni.length;
