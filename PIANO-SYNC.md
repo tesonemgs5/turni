@@ -486,3 +486,11 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - **Ordine B**: invariato (gruppi veri, «Sposta nel gruppo» per la selezione).
 - **Spiegazione nell'app**: pulsante ℹ️ in Modelli (a sinistra di A/B) con queste regole.
 - `sort_order_a` riordinato alfabetico per calendario (copia del vecchio ordine in `bk_ordine_a_modelli`; vecchi gruppi A in `bk_ordine_a_gruppi`).
+
+### Backup: i gruppi (`gruppi_modelli`) nel backup del "resto" (17/10) 🔄
+- **Perché**: regola permanente «i backup seguono lo schema». Le copie per modello ricordano `gruppo_a`/`gruppo_b` di ogni modello, ma non i gruppi veri (nome, ordine, posizione, calendario): se un gruppo viene eliminato, un modello ripristinato resta con un gruppo che non esiste più.
+- **DB (solo modifica di due funzioni, nessuna tabella nuova)**: `snapshot_resto()` salva anche tutte le righe di `gruppi_modelli` dell'utente (chiave `gruppi_modelli`); `ripristina_resto(copia, parti)` accetta la parte `gruppi`: **non cancella nulla**, reinserisce o aggiorna per id (nome, ordine, calendario, posizione) e toglie `deleted_at`; i gruppi creati dopo la copia restano. Copia di sicurezza prima, come per le altre parti. Se la copia è vecchia (senza gruppi) la parte `gruppi` viene rifiutata con un messaggio chiaro. Non ci sono vincoli FK fra `modelli` e `gruppi_modelli` (verificato): nessun effetto collaterale sui modelli.
+- **Provo prima** (test annullato, login simulato): copia → elimino i gruppi → ripristino `gruppi` → stessi gruppi e stesse posizioni; senza login rifiutato; `anon` escluso. Poi creo una copia reale che li contiene.
+- **App**: nessun cambio.
+- **Backup**: questo passo è esso stesso l'adeguamento del backup.
+- **Annullamento**: rimettere le definizioni precedenti di `snapshot_resto` e `ripristina_resto` (nel piano 16/10, sezione «Backup del resto»).
