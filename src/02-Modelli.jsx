@@ -14,6 +14,7 @@ import { CalBadge, SmartTimeInput, AutocompleteInput, ColorPickerModal,
   IndennitaConfig, OrePerTurnoView, StraordinariView, GuadagniView, Sec, SecCollapsible,
   NAV_HEIGHT_CSS, nomeDelColore, ConfermaEliminazione, preparaFixCursore,
   modelloVisibileInCalendario, CercaModelli, NessunModello } from "./05-Comuni";
+import { ElencoModelliTendine, PulsanteOrdineAB } from "./23-tendine-modelli";
 import { ModelloCard, ModelForm, RotazioneCard, RotazioneForm, ModelloSelector,
   GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView, ReperibilitaView } from "./04-Rotazione";
 import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
@@ -1167,12 +1168,7 @@ export default function VistaModelli({ C }){
                   .map(c=>({
                     cal: c,
                     // Gli assegnati a questo colore in cima (voluto), poi gli altri; in ogni parte l'ordine della lista Modelli.
-                    modelli: (()=>{
-                      const lista = filtra(modelliOrdinati.filter(m=>modelloVisibileInCalendario(m, c.id, mainCalId)));
-                      const ids = snapSelColoreRef.current.ids;
-                      if(!ids || ids.size===0) return lista;
-                      return [...lista.filter(x=>ids.has(x.id)), ...lista.filter(x=>!ids.has(x.id))];
-                    })(),
+                    modelli: filtra(modelliOrdinati.filter(m=>modelloVisibileInCalendario(m, c.id, mainCalId))),
                   }))
                   .filter(g=>g.modelli.length>0);
                 // Modelli che non risultano in nessun calendario esistente: prima sparivano dalla lista.
@@ -1183,14 +1179,12 @@ export default function VistaModelli({ C }){
                 if(gruppiColorePerCalendario.length===0) return <NessunModello T={T}/>;
                 return (
                   <div style={{display:"flex",flexDirection:"column",gap:14}}>
-                    {gruppiColorePerCalendario.map(({cal, modelli:modelliCal})=>(
-                      <div key={cal.id}>
-                        <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6,paddingLeft:2}}>
-                          <div style={{width:8,height:8,borderRadius:"50%",background:cal.color}}/>
-                          <span style={{fontSize:12,fontWeight:800,color:T.sub,textTransform:"uppercase"}}>{cal.name}</span>
-                        </div>
-                        <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
-                          {modelliCal.map((m,i,arr)=>{
+                    <div style={{display:"flex",justifyContent:"flex-end"}}><PulsanteOrdineAB ordine={ordineModelli} onCambia={cambiaOrdineModelli} T={T} accent={accent}/></div>
+                    {gruppiColorePerCalendario.map(({cal, modelli:modelliCal})=>{
+                      const idsSel = snapSelColoreRef.current.ids;
+                      const assegnati = (idsSel && idsSel.size>0) ? modelliCal.filter(x=>idsSel.has(x.id)) : [];
+                      const altri = (idsSel && idsSel.size>0) ? modelliCal.filter(x=>!idsSel.has(x.id)) : modelliCal;
+                      const rigaColore = (m,i,arr)=>{
                             const selezionato = eqHexP(m.coloreCustom||m.colore, hex);
                             const coloreAttuale = m.coloreCustom||m.colore||(m.tempo==="h24"?COLORE_H24:colByTime(m.inizio));
                             return (
@@ -1219,10 +1213,28 @@ export default function VistaModelli({ C }){
                                 </div>
                               </div>
                             );
-                          })}
+                      };
+                      return (
+                      <div key={cal.id}>
+                        <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6,paddingLeft:2}}>
+                          <div style={{width:8,height:8,borderRadius:"50%",background:cal.color}}/>
+                          <span style={{fontSize:12,fontWeight:800,color:T.sub,textTransform:"uppercase"}}>{cal.name}</span>
                         </div>
+                        {assegnati.length>0 && (
+                          <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:10}}>
+                            <div style={{padding:"9px 12px",background:T.s2,fontSize:12,fontWeight:900,letterSpacing:0.5,color:T.text,borderBottom:`1px solid ${T.border}`}}>✓ ASSEGNATI A QUESTO COLORE · {assegnati.length}</div>
+                            {assegnati.map((m,i,arr)=>rigaColore(m,i,arr))}
+                          </div>
+                        )}
+                        {altri.length>0 && (
+                          <ElencoModelliTendine chiave={"colore_"+cal.id} modelli={altri} ordine={ordineModelli}
+                            calId={cal.id==="__senza_cal"?null:cal.id} mainCalId={mainCalId}
+                            gruppiDelCalendario={gruppiDelCalendario} gruppi={gruppi} cercando={cercando} T={T}
+                            renderRiga={rigaColore}/>
+                        )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 );
               })();
@@ -3023,12 +3035,14 @@ export default function VistaModelli({ C }){
               return (
               <>
                 <div style={{fontSize:10,color:T.sub,marginBottom:6,fontWeight:600}}>CAMBIA MODELLO TURNO</div>
-                <CercaModelli T={T}>{(filtra)=>{
+                <CercaModelli T={T}>{(filtra,cercando)=>{
                 const modelliFiltrati = filtra(modelliDelCal);
                 if(modelliFiltrati.length===0) return <NessunModello T={T}/>;
                 return (
-                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
-                  {modelliFiltrati.map(m=>{
+                <>
+                <div style={{display:"flex",justifyContent:"flex-end",marginBottom:6}}><PulsanteOrdineAB/></div>
+                <ElencoModelliTendine chiave="evento_cambia" modelli={modelliFiltrati} cercando={cercando}
+                  stileContenitore={{display:"flex",gap:6,flexWrap:"wrap",padding:6}} renderRiga={(m)=>{
                     const c=m.coloreCustom||colByTime(m.inizio);
                     return (
                       <button key={m.id}
@@ -3050,8 +3064,8 @@ export default function VistaModelli({ C }){
                         )}
                       </button>
                     );
-                  })}
-                </div>
+                  }}/>
+                </>
                 );
                 }}</CercaModelli>
               </>
@@ -3069,12 +3083,13 @@ export default function VistaModelli({ C }){
               return (
               <>
                 {!form.modelloId&&<div style={{fontSize:10,color:T.sub,marginBottom:6,fontWeight:600}}>MODELLO TURNO</div>}
-                <CercaModelli T={T} stile={form.modelloId?{display:"none"}:null}>{(filtra)=>{
+                <CercaModelli T={T} stile={form.modelloId?{display:"none"}:null}>{(filtra,cercando)=>{
                 const modelliFiltrati = form.modelloId ? modelliDelCal.filter(m=>m.id===form.modelloId) : filtra(modelliDelCal);
                 return (
-                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
-                  {modelliFiltrati.length===0&&!form.modelloId&&<div style={{width:"100%",fontSize:12,fontWeight:700,color:T.sub,padding:"6px 2px"}}>Nessun modello</div>}
-                  {modelliFiltrati.map(m=>{
+                <>
+                {!form.modelloId&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:6}}><PulsanteOrdineAB/></div>}
+                {(()=>{
+                const pillolaModello=(m)=>{
                     const c=m.coloreCustom||colByTime(m.inizio);
                     return (
                       <button key={m.id}
@@ -3094,7 +3109,13 @@ export default function VistaModelli({ C }){
                         )}
                       </button>
                     );
-                  })}
+                };
+                if(form.modelloId) return <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>{modelliFiltrati.map(pillolaModello)}</div>;
+                return (<>
+                  {modelliFiltrati.length===0&&<div style={{width:"100%",fontSize:12,fontWeight:700,color:T.sub,padding:"6px 2px"}}>Nessun modello</div>}
+                  <ElencoModelliTendine chiave="evento_libero" modelli={modelliFiltrati} cercando={cercando}
+                    stileContenitore={{display:"flex",gap:6,flexWrap:"wrap",padding:6}} renderRiga={pillolaModello}/>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
                   {!form.modelloId&&(
                     <button onClick={()=>setForm(f=>({...f,modelloId:null}))}
                       style={{background:!form.modelloId?accent:T.surface,
@@ -3104,7 +3125,10 @@ export default function VistaModelli({ C }){
                       Libero
                     </button>
                   )}
-                </div>
+                  </div>
+                </>);
+                })()}
+                </>
                 );
                 }}</CercaModelli>
               </>

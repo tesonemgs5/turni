@@ -13,6 +13,7 @@ import { CalBadge, SmartTimeInput, AutocompleteInput, ColorPickerModal,
   ModaleErroriMultipli, FasceExpand, ConteggioConfigCard, TurnazioneConfigCard, OreTurnoConfigCard, fmtOreMin,
   IndennitaConfig, OrePerTurnoView, StraordinariView, GuadagniView,
   ViabilitaView, TicketConfig, NAV_HEIGHT_CSS, ConfermaEliminazione, CercaModelli, NessunModello } from "./05-Comuni";
+import { ElencoModelliTendine, PulsanteOrdineAB } from "./23-tendine-modelli";
 import { ModelloCard, ModelForm, RotazioneCard, RotazioneForm, ModelloSelector,
   GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView } from "./04-Rotazione";
 import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
@@ -1030,6 +1031,7 @@ export default function VistaCalendario({ C }){
                   .filter(g=>g.modelli.length>0);
                 return (
                 <div style={{display:"flex",flexDirection:"column",gap:14}}>
+                  <div style={{display:"flex",justifyContent:"flex-end"}}><PulsanteOrdineAB/></div>
                   {!isTurnazione&&(
                     <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
                       <div onClick={()=>updateConteggioConfig(reportId, {...cfg, modelliInclusi:[]})}
@@ -1051,8 +1053,8 @@ export default function VistaCalendario({ C }){
                         <div style={{width:8,height:8,borderRadius:"50%",background:cal.color}}/>
                         <span style={{fontSize:12,fontWeight:800,color:T.sub,textTransform:"uppercase"}}>{cal.name}</span>
                       </div>
-                      <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
-                        {modelliCal.map((m,i,arr)=>{
+                      <ElencoModelliTendine chiave={"reportpicker_"+cal.id} modelli={modelliCal} calId={cal.id} cercando={cercando}
+                        stileContenitore={{marginBottom:0}} renderRiga={(m,i,arr)=>{
                           const selezionato = inclusi.includes(m.id);
                           const colore = m?.coloreCustom||colByTime(m.inizio);
                           return (
@@ -1075,8 +1077,7 @@ export default function VistaCalendario({ C }){
                               </div>
                             </div>
                           );
-                        })}
-                      </div>
+                        }}/>
                     </div>
                   ))}
                 </div>

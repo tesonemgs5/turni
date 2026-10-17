@@ -1,4 +1,5 @@
     import { useState, useEffect, useRef, useMemo, Fragment } from "react";
+import { ElencoModelliTendine, PulsanteOrdineAB } from "./23-tendine-modelli";
 // NOTA: COLORE_H24, getColorByTime e getContrastTextColor sono copiate qui
 // (invece di importate da 4.Rotazione) per evitare un import circolare
 // 4.Rotazione <-> 5.Comuni. Se cambi la formula del contrasto o le fasce
@@ -700,7 +701,8 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
                                   borderTop:"none",padding:"8px 10px"}}>
                                   {(cfg.modelliInclusi?.length>0 ? (modelliOrdinati||modelli).filter(m=>cfg.modelliInclusi.includes(m.id)) : (modelliOrdinati||modelli)).length===0?(
                                     <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"6px 0"}}>Nessun modello incluso nel filtro del report</div>
-                                  ):(cfg.modelliInclusi?.length>0 ? (modelliOrdinati||modelli).filter(m=>cfg.modelliInclusi.includes(m.id)) : (modelliOrdinati||modelli)).map(m=>{
+                                  ):(<ElencoModelliTendine chiave={"report_"+String(g.key||"x")} modelli={(cfg.modelliInclusi?.length>0 ? (modelliOrdinati||modelli).filter(m=>cfg.modelliInclusi.includes(m.id)) : (modelliOrdinati||modelli))} cercando={false}
+                                    stileContenitore={{border:"none",borderRadius:6,marginBottom:0}} renderRiga={(m)=>{
                                     const attivo = assegnazioni[m.id]===g.key;
                                     const c=m?.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
                                     const info = perGruppoSm[g.key]?.[m.id];
@@ -722,7 +724,7 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
                                         </div>
                                       </div>
                                     );
-                                  })}
+                                  }}/>)}
                                 </div>
                               )}
                             </div>
@@ -1023,7 +1025,8 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
                                   borderTop:"none",padding:"8px 10px"}}>
                                   {(cfg.modelliInclusi?.length>0 ? (modelliOrdinati||modelli).filter(m=>cfg.modelliInclusi.includes(m.id)) : (modelliOrdinati||modelli)).length===0?(
                                     <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"6px 0"}}>Nessun modello incluso nel filtro del report</div>
-                                  ):(cfg.modelliInclusi?.length>0 ? (modelliOrdinati||modelli).filter(m=>cfg.modelliInclusi.includes(m.id)) : (modelliOrdinati||modelli)).map(m=>{
+                                  ):(<ElencoModelliTendine chiave={"report_"+String(g.key||"x")} modelli={(cfg.modelliInclusi?.length>0 ? (modelliOrdinati||modelli).filter(m=>cfg.modelliInclusi.includes(m.id)) : (modelliOrdinati||modelli))} cercando={false}
+                                    stileContenitore={{border:"none",borderRadius:6,marginBottom:0}} renderRiga={(m)=>{
                                     const attivo = assegnazioni[m.id]===g.key;
                                     const c=m?.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
                                     const info = perGruppoSm[g.key]?.[m.id];
@@ -1045,7 +1048,7 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
                                         </div>
                                       </div>
                                     );
-                                  })}
+                                  }}/>)}
                                 </div>
                               )}
                             </div>
@@ -2341,10 +2344,13 @@ export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, tit
               };
               return (
                 <>
-                  <input value={qAssegna} onChange={e=>setQAssegna(e.target.value)}
-                    placeholder="🔎 Cerca modello o orario..."
-                    style={{width:"100%",boxSizing:"border-box",fontSize:12,color:T.text,background:T.s2,
-                      border:`1px solid ${T.border}`,borderRadius:8,padding:"7px 9px",outline:"none",marginBottom:6}}/>
+                  <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:6}}>
+                    <input value={qAssegna} onChange={e=>setQAssegna(e.target.value)}
+                      placeholder="🔎 Cerca modello o orario..."
+                      style={{flex:1,minWidth:0,boxSizing:"border-box",fontSize:12,color:T.text,background:T.s2,
+                        border:`1px solid ${T.border}`,borderRadius:8,padding:"7px 9px",outline:"none"}}/>
+                    <PulsanteOrdineAB/>
+                  </div>
                   {cals.length>1&&(
                     <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:6}}>
                       {cals.map(c=>{
@@ -2369,7 +2375,15 @@ export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, tit
                         <div style={{width:7,height:7,borderRadius:"50%",background:g.colore}}/>
                         <span style={{fontSize:11,fontWeight:800,color:T.sub,textTransform:"uppercase"}}>{g.nome}</span>
                       </div>
-                      {g.lista.map(riga)}
+                      {g.lista.some(x=>giaAssegnati.has(x.id)) && (
+                        <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden",marginBottom:6}}>
+                          <div style={{padding:"6px 8px",background:T.s2,fontSize:10,fontWeight:900,color:T.text,letterSpacing:0.5}}>✓ ASSEGNATI A QUESTO COLORE</div>
+                          {g.lista.filter(x=>giaAssegnati.has(x.id)).map(riga)}
+                        </div>
+                      )}
+                      <ElencoModelliTendine chiave={"colorepicker_"+(g.calId||"x")} modelli={g.lista.filter(x=>!giaAssegnati.has(x.id))}
+                        calId={g.calId||null} cercando={qAssegna.trim()!==""} estrai={x=>x.m||x}
+                        stileContenitore={{borderRadius:10,marginBottom:6}} renderRiga={(x)=>riga(x)}/>
                     </div>
                   ))}
                 </>

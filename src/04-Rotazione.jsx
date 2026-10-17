@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
+import { ElencoModelliTendine, PulsanteOrdineAB } from "./23-tendine-modelli";
 import { ColorPickerModal, nomeDelColore as nomeDelColoreShared, ConfermaEliminazione, preparaFixCursore, SmartTimeInput } from "./05-Comuni";
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1829,35 +1830,42 @@ export function withEventoRimosso(store, dateKey, calId, eventId) {
 // ─────────────────────────────────────────────────────────────────────
 
 export function ModelloSelector({ T, modelli = [], value, onChange, fasceAutomatiche = [] }) {
-  return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-      <button type="button" onClick={() => onChange(null)}
+  // Stesso sistema della lista Modelli: tendine (gruppi) nell'ordine A o B, con il pulsante A/B.
+  const pillola = (m) => {
+    const attivo = value === m.id;
+    const colore = m.coloreCustom || (m.tempo === "h24" ? COLORE_H24 : getColorByTime(m.inizio, fasceAutomatiche));
+    const orario = m.tempo === "h24" ? "H24" : `${m.inizio || "—"} – ${calcFineModello(m) || m.fine || "—"}`;
+    return (
+      <button key={m.id} type="button" onClick={() => onChange(m.id)}
         style={{
-          padding: "6px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: "pointer",
-          border: `1.5px solid ${!value ? "#ef4444" : T.border}`,
-          background: !value ? "#ef4444" : T.s2, color: !value ? "#fff" : T.text,
+          display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", borderRadius: 20,
+          border: `1.5px solid ${attivo ? colore : T.border}`,
+          background: attivo ? colore : T.s2,
+          color: attivo ? getContrastTextColor(colore) : T.text,
+          fontSize: 12, fontWeight: 700, cursor: "pointer",
         }}>
-        ✕ Nessuno
+        <div style={{ width: 8, height: 8, borderRadius: "50%", background: colore, flexShrink: 0 }} />
+        <span>{m.label||m.titolo}</span>
+        <span style={{ opacity: 0.85, fontWeight: 600 }}>{orario}</span>
       </button>
-      {modelli.map(m => {
-        const attivo = value === m.id;
-        const colore = m.coloreCustom || (m.tempo === "h24" ? COLORE_H24 : getColorByTime(m.inizio, fasceAutomatiche));
-        const orario = m.tempo === "h24" ? "H24" : `${m.inizio || "—"} – ${calcFineModello(m) || m.fine || "—"}`;
-        return (
-          <button key={m.id} type="button" onClick={() => onChange(m.id)}
-            style={{
-              display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", borderRadius: 20,
-              border: `1.5px solid ${attivo ? colore : T.border}`,
-              background: attivo ? colore : T.s2,
-              color: attivo ? getContrastTextColor(colore) : T.text,
-              fontSize: 12, fontWeight: 700, cursor: "pointer",
-            }}>
-            <div style={{ width: 8, height: 8, borderRadius: "50%", background: colore, flexShrink: 0 }} />
-            <span>{m.label||m.titolo}</span>
-            <span style={{ opacity: 0.85, fontWeight: 600 }}>{orario}</span>
-          </button>
-        );
-      })}
+    );
+  };
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+        <button type="button" onClick={() => onChange(null)}
+          style={{
+            padding: "6px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: "pointer",
+            border: `1.5px solid ${!value ? "#ef4444" : T.border}`,
+            background: !value ? "#ef4444" : T.s2, color: !value ? "#fff" : T.text,
+          }}>
+          ✕ Nessuno
+        </button>
+        <span style={{ flex: 1 }} />
+        <PulsanteOrdineAB />
+      </div>
+      <ElencoModelliTendine chiave="rotazione" modelli={modelli} renderRiga={pillola}
+        stileContenitore={{ display: "flex", flexWrap: "wrap", gap: 6, padding: 6, marginBottom: 0 }} />
     </div>
   );
 }

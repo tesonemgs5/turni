@@ -4,6 +4,7 @@ import { useAppCore } from "./06-Logica";
 import VistaCalendario from "./03-Calendario";
 import VistaModelli from "./02-Modelli";
 import { DialogoScarica } from "./19-dialogo-scarica";
+import { ElencoModelliTendine, PulsanteOrdineAB, ContestoTendine } from "./23-tendine-modelli";
 import { ModaleErroriMultipli, NAV_HEIGHT, NAV_HEIGHT_CSS, ConfermaEliminazione, CercaModelli, NessunModello } from "./05-Comuni";
 import {
   getContrastTextColor, NOMI_MESI_IT, calcFine6h15, calcFine6h30, calcDurata, formattaDurataHM, calcFineModello,
@@ -170,7 +171,7 @@ function AppInterno({ session }){
     delTutteEvtiRotazione, cancellaTuttiEventiMese, cancellaEventiMeseSelezione, calcMinuti, saveToSheets, syncSeAttivo, loadFromSheets,
     syncFromSheets, handleSave, handleLoad, handleSaveSheetsConfig, handleViewDbData, buildBackupPayload,
     handleExportSupabase, handleOpenImportSupabase, handleRestoreBackup, handleLogout, eseguiNormalizzazione, normalizzaModelliTempo,
-    normalizzaEventiTempo, modelliOrdinati, importsRecenti, calPersonaleId, calStellaId, modelliDelCalendario, rinumeraSottoinsieme, spostaModelloPuro,
+    normalizzaEventiTempo, modelliOrdinati, gruppi, gruppiDelCalendario, ordineModelli, cambiaOrdineModelli, importsRecenti, calPersonaleId, calStellaId, modelliDelCalendario, rinumeraSottoinsieme, spostaModelloPuro,
     trascinaModelloPuro, salvaModifichePosizioni, moveH24, reorderModelli, ensureColoreRegistrato, registraValoreAutocomplete,
     registraValoriAutocomplete, rimuoviValoreAutocomplete, supabaseUpsertConRetry, saveModello, deleteModello, addColoreExtra,
     removeColoreExtra, updateColoreExtraLabel, replaceColoreEverywhere, saveRotazione, deleteRotazione, updateGrigliaRotazione,
@@ -196,6 +197,7 @@ function AppInterno({ session }){
   }
 
   return (
+    <ContestoTendine.Provider value={{ordine:ordineModelli, cambiaOrdine:cambiaOrdineModelli, gruppi, gruppiDelCalendario, mainCalId, T, accent}}>
     <div style={{display:"flex",flexDirection:"column",height:"100dvh",background:T.bg,
       fontFamily:"system-ui,sans-serif",maxWidth:480,margin:"0 auto",overflow:"hidden"}}
       onClick={()=>pal&&setPal(null)}>
@@ -660,7 +662,8 @@ function AppInterno({ session }){
               {showModelloPicker==="quick"?(quickModeModello?"Tocca i giorni da riempire":"Scegli modello da applicare"):"Scegli modello"}
             </div>
             {showModelloPicker==="quick"&&!quickModeModello?(
-              <div style={{display:"flex",gap:6}}>
+              <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                <PulsanteOrdineAB ordine={ordineModelli} onCambia={cambiaOrdineModelli} T={T} accent={accent}/>
                 <button onClick={()=>setShowImportaFotoDialog(true)} title="Importa da PDF o foto"
                   style={{background:"none",border:"none",color:accent,fontSize:20,cursor:"pointer",width:32}}>📷</button>
                 <button onClick={()=>setShowImportaTurniJsonDialog(true)}
@@ -669,6 +672,8 @@ function AppInterno({ session }){
                   style={{background:"none",border:"none",color:"#ef4444",fontSize:20,cursor:"pointer",width:32}}>🗑️</button>
               </div>
             ):showModelloPicker!=="quick"?(
+              <div style={{display:"flex",gap:6,alignItems:"center"}}>
+              <PulsanteOrdineAB ordine={ordineModelli} onCambia={cambiaOrdineModelli} T={T} accent={accent}/>
               <button onClick={()=>{
                   setEditModello(null);
                   setModelForm({titolo:"",tempo:"personalizzato",inizio:"",fine:"",coloreCustom:null,posizione:"",
@@ -679,6 +684,7 @@ function AppInterno({ session }){
                 }}
                 title="Nuovo modello"
                 style={{background:"none",border:"none",color:accent,fontSize:24,cursor:"pointer",width:32,fontWeight:900}}>+</button>
+              </div>
             ):(
               <div style={{width:32}}/>
             )}
@@ -711,8 +717,9 @@ function AppInterno({ session }){
               const modelliFiltrati = filtra(modelliPicker);
               if(modelliFiltrati.length===0) return <NessunModello T={T}/>;
               return (
-              <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:12}}>
-                {modelliFiltrati.map((m,i,arr)=>{
+              <ElencoModelliTendine chiave="scegli" modelli={modelliFiltrati} ordine={ordineModelli} calId={calId} mainCalId={mainCalId}
+                gruppiDelCalendario={gruppiDelCalendario} gruppi={gruppi} cercando={cercando} T={T}
+                renderRiga={(m,i,arr)=>{
                   const c=m.coloreCustom||colByTime(m.inizio);
                   const durata=m.tempo==="h24"?"H24"
                     :m.tempo==="6h15"&&m.inizio?`${m.inizio} - ${calcFine6h15(m.inizio)} • 6h 15m`:m.tempo==="6h30"&&m.inizio?`${m.inizio} - ${calcFine6h30(m.inizio)} • 6h 30m`
@@ -741,8 +748,7 @@ function AppInterno({ session }){
                       </div>
                     </div>
                   );
-                })}
-              </div>
+                }}/>
               );
               }}</CercaModelli>
               );
@@ -1001,6 +1007,7 @@ function AppInterno({ session }){
         </div>
       )}
     </div>
+    </ContestoTendine.Provider>
   );
 }
 
