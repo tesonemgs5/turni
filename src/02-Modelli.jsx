@@ -94,6 +94,11 @@ export default function VistaModelli({ C }){
     setGruppiChiusi(prev=>{ const n=new Set(prev); if(n.has(k)) n.delete(k); else n.add(k);
       try{ localStorage.setItem("turnipm_gruppi_chiusi", JSON.stringify([...n])); }catch(e){} return n; });
   }
+  // Apre (chiudi=false) o chiude (chiudi=true) in un colpo solo tutte le tendine indicate (per dispositivo).
+  function impostaGruppiChiusi(chiavi, chiudi){
+    setGruppiChiusi(prev=>{ const n=new Set(prev); chiavi.forEach(k=>{ if(chiudi) n.add(k); else n.delete(k); });
+      try{ localStorage.setItem("turnipm_gruppi_chiusi", JSON.stringify([...n])); }catch(e){} return n; });
+  }
   // Gruppi a tendina: arrivano dal database (tabella gruppi_modelli, vedi 06-Logica.jsx).
   const [gruppoInRinomina, setGruppoInRinomina] = useState(null); // {id, testo}
   const [nuovoGruppoTesto, setNuovoGruppoTesto] = useState(null); // null = chiuso, stringa = in scrittura
@@ -520,18 +525,20 @@ export default function VistaModelli({ C }){
                 const sequenza = [];
                 if(autoNome){
                   sezioni.length = 0; senzaGruppo.length = 0;
-                  const chiaveNome = m => String(m.titolo||"").trim().toUpperCase();
+                  // Gruppi per LETTERA INIZIALE del titolo (A, B, C...; accenti ignorati; cifre/simboli = "#").
+                  const letteraDi = m => {
+                    const t = String(m.titolo||"").trim().normalize("NFD").replace(/[̀-ͯ]/g,"").toUpperCase();
+                    const c = t.charAt(0); return /[A-Z]/.test(c) ? c : "#";
+                  };
                   const usate = new Set();
                   let i = 0;
                   while(i<modelliVisibili.length){
-                    const k = chiaveNome(modelliVisibili[i]); let j = i+1;
-                    while(k && j<modelliVisibili.length && chiaveNome(modelliVisibili[j])===k) j++;
+                    const k = letteraDi(modelliVisibili[i]); let j = i+1;
+                    while(j<modelliVisibili.length && letteraDi(modelliVisibili[j])===k) j++;
                     const run = modelliVisibili.slice(i,j);
-                    if(run.length>=2){
-                      let chiave = "N:"+k; if(usate.has(chiave)) chiave += ":"+i; usate.add(chiave);
-                      const sz = {key:chiave, label:(run[0].titolo||k), gruppo:null, modelli:run};
-                      sezioni.push(sz); sequenza.push({tipo:"gruppo", sz});
-                    } else sequenza.push({tipo:"modello", m:run[0]});
+                    let chiave = "L:"+k; if(usate.has(chiave)) chiave += ":"+i; usate.add(chiave);
+                    const sz = {key:chiave, label:k, gruppo:null, modelli:run};
+                    sezioni.push(sz); sequenza.push({tipo:"gruppo", sz});
                     i = j;
                   }
                 } else {
@@ -774,7 +781,18 @@ export default function VistaModelli({ C }){
                 </div>
                 );
                 };
+                const chiaviGruppi = sezioni.map(s=>s.key);
+                const tuttiAperti = chiaviGruppi.length>0 && chiaviGruppi.every(k=>!gruppiChiusi.has(k));
                 return (<>
+                  {chiaviGruppi.length>0 && (
+                    <div style={{display:"flex",justifyContent:"flex-end",padding:"6px 12px",background:T.surface,borderBottom:`1px solid ${T.border}`}}>
+                      <button onClick={()=>impostaGruppiChiusi(chiaviGruppi, tuttiAperti)}
+                        title={tuttiAperti?"Chiudi tutte le tendine":"Apri tutte le tendine"}
+                        style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,color:T.text,padding:"5px 10px",cursor:"pointer",fontWeight:800,fontSize:12}}>
+                        {tuttiAperti?"▶ Chiudi tutti":"▼ Apri tutti"}
+                      </button>
+                    </div>
+                  )}
                   {sequenza.map(it=> it.tipo==="gruppo" ? (
                     <Fragment key={it.sz.key}>
                       {intestazione(it.sz)}
