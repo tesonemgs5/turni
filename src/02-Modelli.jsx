@@ -88,6 +88,7 @@ function ColorRow({ T, accent, hex, label, sub, count, onClick, onRemove, onMove
 
 export default function VistaModelli({ C }){
   const [ricercaModelli, setRicercaModelli] = useState("");
+  const [mostraRegoleOrdine, setMostraRegoleOrdine] = useState(false); // pannello ℹ️ con le regole di ordine e gruppi
   // Gruppi a scomparsa dell'elenco modelli (solo visualizzazione, per dispositivo)
   const [gruppiChiusi, setGruppiChiusi] = useState(()=>{ try{ return new Set(JSON.parse(localStorage.getItem("turnipm_gruppi_chiusi")||"[]")); }catch(e){ return new Set(); } });
   function toggleGruppoModelli(k){
@@ -308,6 +309,11 @@ export default function VistaModelli({ C }){
             </div>
             <div style={{display:"flex",gap:8,alignItems:"center",position:"relative"}}>
               {modelliTab==="turni"&&(
+              <button onClick={()=>setMostraRegoleOrdine(v=>!v)} title="Come funzionano ordine e gruppi (nuovi inserimenti compresi)"
+                style={{background:mostraRegoleOrdine?accent+"22":T.s2,border:`1.5px solid ${mostraRegoleOrdine?accent:T.border}`,borderRadius:8,
+                  padding:"6px 9px",fontSize:15,fontWeight:700,cursor:"pointer",color:T.sub}}>ℹ️</button>
+              )}
+              {modelliTab==="turni"&&(
               <button onClick={()=>cambiaOrdineModelli(ordineModelli==="A"?"B":"A")}
                 title={ordineModelli==="A"?"Ordine alfabetico (A) — tocca per passare all'ordine per orario (B)":"Ordine per orario (B) — tocca per passare all'ordine alfabetico (A)"}
                 style={{background:T.s2,border:`1.5px solid ${T.border}`,borderRadius:8,
@@ -451,6 +457,24 @@ export default function VistaModelli({ C }){
             style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
               borderRadius:10,padding:"10px 12px",color:T.text,fontSize:13,
               boxSizing:"border-box",outline:"none"}}/>
+        </div>
+      )}
+      {modelliTab==="turni"&&mostraRegoleOrdine&&(
+        <div style={{margin:"0 12px 10px",background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:"12px 14px",fontSize:12.5,lineHeight:1.5,color:T.text}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+            <b style={{fontSize:13}}>Come funzionano ordine e gruppi</b>
+            <button onClick={()=>setMostraRegoleOrdine(false)} style={{background:"transparent",border:"none",cursor:"pointer",fontSize:16,color:T.sub}}>✕</button>
+          </div>
+          <div style={{fontWeight:800,marginTop:4}}>Ordine A (alfabetico) — tendine automatiche</div>
+          <div>Il gruppo si decide da solo, dal nome e dal tipo del modello; vale la prima regola che corrisponde:</div>
+          <div>1. <b>APP</b>: il nome inizia per APP · 2. <b>AUTO</b>: inizia per AUTO · 3. <b>DISTACCATI</b>: inizia per D · 4. <b>FESTIVI</b>: inizia per F · 5. <b>PI</b>: inizia per PI o P.I. · 6. <b>H24</b>: tipo H24 · 7. <b>PERSONALIZZATO</b>: orario personalizzato · 8. tutti gli altri: <b>lettera iniziale</b> (A, B, C…).</div>
+          <div>Se APP o AUTO sono alla fine del nome (es. «F APP», «PI AUTO») non contano: vale la prima parola.</div>
+          <div style={{fontWeight:800,marginTop:8}}>Nuovo modello o nome cambiato</div>
+          <div>Non devi scegliere il gruppo: appena salvi, il modello va da solo nella tendina giusta, nel suo posto alfabetico. Cambiando il nome o il tipo si sposta di conseguenza.</div>
+          <div style={{fontWeight:800,marginTop:8}}>Ordine B (per orario)</div>
+          <div>Gruppi veri (MATTINA, POMERIGGIO, TERZO TURNO, NOTTE, H24…): un modello nuovo entra nel gruppo della sua fascia oraria, in fondo ai modelli simili. Puoi creare, rinominare, eliminare e spostare i gruppi; per spostare i modelli: modalità ↑↓, tieni premuto 500 ms per selezionarli, poi «Sposta nel gruppo».</div>
+          <div style={{fontWeight:800,marginTop:8}}>Supabase</div>
+          <div>Il database salva solo i dati (titolo, tipo, orari, posizione nei due ordini e, in B, il gruppo). Le tendine di ordine A non sono salvate: le calcola l'app ogni volta, quindi non serve istruire Supabase.</div>
         </div>
       )}
       <div ref={modelliScrollRef} style={{flex:1,overflowY:"auto",padding:"0 12px 80px"}}>

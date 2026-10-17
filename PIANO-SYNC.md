@@ -468,3 +468,11 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - **Come e' fatto**: solo visualizzazione (02-Modelli.jsx, `autoNome`): nessun dato nuovo nel database. Il gruppo e' una serie di modelli con lo stesso titolo uno dopo l'altro; un modello nuovo con lo stesso nome entra gia' dopo l'ultimo con quel nome (regola di inserimento di sempre), quindi finisce dentro il gruppo. Tendine aperte/chiuse per dispositivo, come prima.
 - **In ordine A non ci sono piu'**: «+ Aggiungi gruppo», rinomina/elimina gruppo, frecce delle tendine, selezione multipla verso i gruppi (non c'e' un gruppo dove spostare). Frecce ▲▼ e trascinamento dei modelli: scambio semplice di posto, come prima della tappa 1. I gruppi personalizzati di ordine A (AUTO, APPIEDATI, ALTRI, DISTACCATI, ACCERTAMENTI…) restano nel database ma non si vedono.
 - **Ordine B (orario)**: invariato (gruppi veri MATTINA/POMERIGGIO/…, poi i modelli senza gruppo). Da decidere se vale anche li' la lista unica.
+
+
+#### Ordine A: tendine automatiche per regola (17/10) ✅
+- **Regole** (solo visualizzazione, 02-Modelli.jsx, `classe`; nessun dato nel database; i gruppi veri di ordine A non si usano e restano nascosti): vale la prima che corrisponde. 1) APP: nome che inizia per APP · 2) AUTO: inizia per AUTO · 3) DISTACCATI: inizia per D · 4) FESTIVI: inizia per F · 5) PI: inizia per PI / P.I. · 6) H24: tipo h24 · 7) PERSONALIZZATO: tipo personalizzato · 8) altri: lettera iniziale (accenti ignorati; cifre/simboli = «#»). APP/AUTO alla FINE del nome non contano.
+- **Nuovi inserimenti**: nessuna scelta del gruppo; il modello nuovo (o con nome/tipo cambiato) cade da solo nella tendina giusta, in ordine alfabetico (`gruppoPerRegola` in ordine A restituisce sempre «senza gruppo»).
+- **Ordine B**: invariato (gruppi veri, «Sposta nel gruppo» per la selezione).
+- **Spiegazione nell'app**: pulsante ℹ️ in Modelli (a sinistra di A/B) con queste regole.
+- `sort_order_a` riordinato alfabetico per calendario (copia del vecchio ordine in `bk_ordine_a_modelli`; vecchi gruppi A in `bk_ordine_a_gruppi`).
