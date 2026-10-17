@@ -6,6 +6,10 @@ import { supabase } from './11-supabase.js'
 import { useState, useEffect } from 'react'
 import { registerSW } from 'virtual:pwa-register'
 import AvvisoAggiornamento from './12-avviso-aggiornamento.jsx'
+import { attivaMaiuscoloGlobale } from './24-maiuscolo.js'
+
+// Tutto cio' che si digita nei campi di testo diventa MAIUSCOLO (esclusi password, email, indirizzi, numeri, date, orari).
+attivaMaiuscoloGlobale()
 
 // Registra il service worker SOLO quando l'app gira in un vero browser
 // (versione PWA su web/telefono). Dentro Electron l'app è già interamente
