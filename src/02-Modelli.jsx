@@ -651,7 +651,7 @@ export default function VistaModelli({ C }){
                     selMultiAttiva={modalitaSpostamento&&gestibile&&selSpost.length>0}
                     numSelMulti={selSpost.length}
                     onToggleSelMulti={modalitaSpostamento&&gestibile&&(m.calendarId||mainCalId)===calId?()=>setSelSpost(p=>p.includes(m.id)?p.filter(x=>x!==m.id):[...p,m.id]):null}
-                    onSelezioneLunga={modalitaSpostamento&&gestibile&&(m.calendarId||mainCalId)===calId?()=>{ touchSrcId.current=null; touchTargetId.current=null; stopAutoScroll(); setDraggingId(null); setDragOverId(null); setSelSpost(p=>p.includes(m.id)?p:[...p,m.id]); }:null}
+                    onSelezioneLunga={modalitaSpostamento&&gestibile&&(m.calendarId||mainCalId)===calId&&!selSpost.includes(m.id)?()=>{ touchSrcId.current=null; touchTargetId.current=null; stopAutoScroll(); setDraggingId(null); setDragOverId(null); setSelSpost(p=>p.includes(m.id)?p:[...p,m.id]); }:null}
                     isDropTarget={dragOverId===m.id && draggingId!==m.id}
                     // Su touch questi tre handler NON scattano più al primo tocco:
                     // ModelloCard (04-Rotazione.jsx) li chiama solo dopo un

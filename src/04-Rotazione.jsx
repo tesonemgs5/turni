@@ -2575,6 +2575,36 @@ export function ModelloCard({
   const SELEZIONE_MS = 500;
   const lpTimerSel = useRef(null);
   const ultimoLungo = useRef(0);
+  // Mouse (PC): tenere premuto 500 ms SENZA muovere = seleziona; se il mouse si muove parte il trascinamento nativo.
+  // Sui telefoni dopo il tocco arrivano anche eventi mouse "finti": si ignorano per 1 s.
+  const mouseTimer = useRef(null);
+  const mouseStart = useRef({ x: 0, y: 0 });
+  const mouseLungoFatto = useRef(false);
+  const ultimoTouch = useRef(0);
+  function mouseAnnulla() { if (mouseTimer.current) { clearTimeout(mouseTimer.current); mouseTimer.current = null; } }
+  function mouseGiu(e) {
+    if (e.button !== 0 || Date.now() - ultimoTouch.current < 1000) return;
+    if (e.target.closest && e.target.closest("button")) return;
+    mouseStart.current = { x: e.clientX, y: e.clientY };
+    mouseLungoFatto.current = false;
+    mouseAnnulla();
+    mouseTimer.current = setTimeout(() => {
+      mouseTimer.current = null;
+      mouseLungoFatto.current = true;
+      ultimoLungo.current = Date.now();
+      const h = lpHandlers.current;
+      if (h.onSelezioneLunga) h.onSelezioneLunga();
+    }, SELEZIONE_MS);
+  }
+  function mouseMuovi(e) {
+    if (!mouseTimer.current) return;
+    if (Math.abs(e.clientX - mouseStart.current.x) > MOVE_TOLERANCE || Math.abs(e.clientY - mouseStart.current.y) > MOVE_TOLERANCE) mouseAnnulla();
+  }
+  function mouseSu() {
+    mouseAnnulla();
+    if (mouseLungoFatto.current) { mouseLungoFatto.current = false; ultimoLungo.current = Date.now(); } // il click dopo il rilascio non e' un tocco
+  }
+  useEffect(() => () => mouseAnnulla(), []);
   function lpAnnullaTimerSel() {
     if (lpTimerSel.current) { clearTimeout(lpTimerSel.current); lpTimerSel.current = null; }
   }
@@ -2589,6 +2619,7 @@ export function ModelloCard({
     if (!el || !touchAbilitato) return;
 
     const onStart = (e) => {
+      ultimoTouch.current = Date.now();
       if (e.touches.length !== 1) return;
       // Non avviare il drag se si tocca un pulsante (▲ ▼ 🗑)
       if (e.target.closest && e.target.closest("button")) return;
@@ -2679,10 +2710,14 @@ export function ModelloCard({
       // disattivato in modalità spostamento, altrimenti compare proprio
       // allo scadere del long-press e disturba il drag.
       onContextMenu={touchAbilitato ? (e => e.preventDefault()) : undefined}
-      onDragStart={onDragStart || undefined}
+      onDragStart={onDragStart ? (e => { mouseAnnulla(); onDragStart(e); }) : undefined}
       onDragOver={onDragOver || undefined}
       onDrop={onDrop || undefined}
       onDragEnd={onDragEnd || undefined}
+      onMouseDown={onSelezioneLunga ? mouseGiu : undefined}
+      onMouseMove={onSelezioneLunga ? mouseMuovi : undefined}
+      onMouseUp={onSelezioneLunga ? mouseSu : undefined}
+      onMouseLeave={onSelezioneLunga ? mouseSu : undefined}
       onClick={selectMode ? onToggleSelect : (onToggleSelMulti ? (e => {
         if (Date.now() - ultimoLungo.current < 600) return; // era un tocco lungo / trascinamento, non un tocco
         if (selMultiAttiva || (e && (e.ctrlKey || e.metaKey || e.shiftKey))) onToggleSelMulti();

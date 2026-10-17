@@ -4913,6 +4913,37 @@ const importsRecenti = useMemo(()=>{
     return (gruppi||[]).filter(g=>g.ordine===ord && (g.calendarId||mainCalId)===calIdX)
       .sort((a,b)=> a.sortOrder!==b.sortOrder ? a.sortOrder-b.sortOrder : String(a.id).localeCompare(String(b.id)));
   }
+  // Gruppo in cui mettere un modello NUOVO o MODIFICATO, con le regole di sempre (le stesse del riempimento iniziale):
+  //   ordine A: nome che inizia per D/DF + spazio = DISTACCATI; categoria AUTO = AUTO; categoria APP = APPIEDATI; altrimenti ALTRI.
+  //   ordine B: H24 con nome NOTTE/MATTINA/POMERIGGIO/3 TURNO = quella fascia, altri H24 = H24; 6h15/6h30 = fascia dell'orario di inizio
+  //             (MATTINA, POMERIGGIO, TERZO TURNO, NOTTE); personalizzati senza orario = nessun gruppo.
+  // Si cerca fra i gruppi veri del calendario quello con lo STESSO NOME (maiuscole ininfluenti); se non c'e' = senza gruppo (null).
+  function gruppoPerRegola(m, ordine, calIdX){
+    if(!m) return null;
+    let nome = null;
+    if(ordine==="A"){
+      if(/^DF?\s/i.test(String(m.titolo||"").trim())) nome = "DISTACCATI";
+      else if(m.categoriaAppAuto==="auto") nome = "AUTO";
+      else if(m.categoriaAppAuto==="app") nome = "APPIEDATI";
+      else nome = "ALTRI";
+    } else {
+      const NOMI = { mattina:"MATTINA", pomeriggio:"POMERIGGIO", terzo_turno:"TERZO TURNO", notte:"NOTTE" };
+      if(m.tempo==="h24"){
+        const t = String(m.titolo||"").toUpperCase().replace(/[\s°]/g,"");
+        const fk = { NOTTE:"notte", MATTINA:"mattina", POMERIGGIO:"pomeriggio", "3TURNO":"terzo_turno", TERZOTURNO:"terzo_turno" }[t];
+        nome = fk ? NOMI[fk] : "H24";
+      } else if(m.tempo==="6h15" || m.tempo==="6h30"){
+        const mm = oraInMinuti(m.inizio||"");
+        if(mm!=null){
+          const f = (fasceAutomatiche||[]).find(f=> f.from<=f.to ? (mm>=f.from && mm<=f.to) : (mm>=f.from || mm<=f.to));
+          if(f) nome = NOMI[f.key] || String(f.label||"").toUpperCase();
+        }
+      }
+    }
+    if(!nome) return null;
+    const g = gruppiDelCalendario(calIdX, ordine).find(x=>String(x.nome||"").trim().toUpperCase()===nome);
+    return g ? g.id : null;
+  }
   async function aggiungiGruppo(nome, calIdX){
     if(!userId) return { ok:false };
     const n = String(nome||"").trim().toUpperCase();
@@ -5475,6 +5506,9 @@ const importsRecenti = useMemo(()=>{
           if(!serve) return;
           const corrente = modelliAggiornati.find(m=>m.id===data.id);
           modelliAggiornati = posizionaInOrdine(modelliAggiornati, corrente, targetCalId, calendarsOrdinati, mainCalId, let_, altro);
+          const campoG = let_==="A" ? "gruppoA" : "gruppoB";
+          const gNuovo = gruppoPerRegola(modelliAggiornati.find(m=>m.id===data.id), let_, targetCalId);
+          modelliAggiornati = modelliAggiornati.map(m=> m.id===data.id ? { ...m, [campoG]: gNuovo } : m);
           modelloAggiornato = modelliAggiornati.find(m=>m.id===data.id) || modelloAggiornato;
         });
       }
@@ -5513,7 +5547,7 @@ const importsRecenti = useMemo(()=>{
           segnalaErroreDb(risModello?.errore || risEventi?.errore, "Salvataggio modello");
         }
         // Posizioni cambiate (solo le colonne diverse, una sola richiesta)
-        try{ await salvaModifichePosizioni(modelli, modelliAggiornati); }catch(e){ segnalaErroreSoloLog(e?.message||String(e), "Salvataggio posizioni modello"); }
+        try{ await salvaModificheModelliEGruppi(modelli, modelliAggiornati, "Salvataggio posizioni modello"); }catch(e){ segnalaErroreSoloLog(e?.message||String(e), "Salvataggio posizioni modello"); }
       })();
       return { ok:true, modello: modelloAggiornato };
     } else {
@@ -5524,7 +5558,8 @@ const importsRecenti = useMemo(()=>{
       // Il nuovo modello entra in ENTRAMBI gli ordini, mai in fondo: A = dopo l'ultimo con lo stesso nome (o nel punto
       // alfabetico), B = dopo l'ultimo con lo stesso orario di inizio (o fra gli orari vicini). Nessun legame con
       // colori, fasce o Impostazioni. Il calcolo usa solo dati in memoria (nessuna attesa di Supabase).
-      const modelloCreato = {...(({silenzioso,...rest})=>rest)(data),id:idLocale,colore:coloreEff,coloreCustom:coloreEff,sortOrder:0,sortOrderAltro:0,calendarId:targetCalId};
+      const modelloCreato = {...(({silenzioso,...rest})=>rest)(data),id:idLocale,colore:coloreEff,coloreCustom:coloreEff,sortOrder:0,sortOrderAltro:0,calendarId:targetCalId,
+        gruppoA:gruppoPerRegola(data,"A",targetCalId), gruppoB:gruppoPerRegola(data,"B",targetCalId)};
       const calendarsOrdinati = store.calendars.map(c=>c.id);
       const letteraAttiva = ordineAttivo(), letteraAltra = letteraAttiva==="A" ? "B" : "A";
       let modelliAggiornati = [...modelli, modelloCreato];
@@ -5547,7 +5582,7 @@ const importsRecenti = useMemo(()=>{
       // partire "fire and forget" in background.
       async function backupInsertModello(){
         const risInsert = await scriviConBackup({
-          tipo:"insert", table:"modelli", payload:{...payload, id:idLocale, ...colonnePosizione(creatoFinale)}, matchObj:null,
+          tipo:"insert", table:"modelli", payload:{...payload, id:idLocale, ...colonnePosizione(creatoFinale), gruppo_a:creatoFinale.gruppoA||null, gruppo_b:creatoFinale.gruppoB||null}, matchObj:null,
           contesto:"Creazione modello", ts,
           eventsPerSheets: store.events, calendarsPerSheets: store.calendars, modelliPerSheets: modelliAggiornati,
           opzioni:{soloLog:true},
