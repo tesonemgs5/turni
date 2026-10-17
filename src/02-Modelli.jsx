@@ -568,6 +568,11 @@ export default function VistaModelli({ C }){
                   blocchi = chiavi.map(k=>({key:"C:"+k, label:k, gruppo:null, modelli:ordinaPerInizio(perClasse.get(k))})); // dentro la tendina: ordine di inizio
                   blocchi.forEach(bl=>{ sezioni.push(bl); sequenza.push({tipo:"gruppo", sz:bl}); });
                 } else {
+                  // ORDINE A con gruppi veri: dentro ogni tendina i modelli vanno in ORDINE DI INIZIO (a parità, per nome).
+                  if(ordineModelli==="A" && !q){
+                    sezioni.forEach(sz=>{ sz.modelli = ordinaPerInizio(sz.modelli); });
+                    const sg = ordinaPerInizio(senzaGruppo); senzaGruppo.length = 0; senzaGruppo.push(...sg);
+                  }
                   sezioni.forEach(sz=>sequenza.push({tipo:"gruppo", sz}));
                   senzaGruppo.forEach(m=>sequenza.push({tipo:"modello", m}));
                   // "Blocchi" = i gruppi veri nell'ordine + in fondo il blocco dei modelli senza gruppo.

@@ -4550,7 +4550,7 @@ function calcolaOrdineVisuale(modelli, gruppi, mainCalId){
       lista.forEach(m=>{ rank.set(m.id, classi.indexOf(classeModelloA(m))); iniz.set(m.id, minutiInizio(m)); });
     } else {
       const pos = new Map(gl.map((g,i)=>[g.id,i]));
-      lista.forEach(m=>{ const gid = ordine==="A" ? m.gruppoA : m.gruppoB; rank.set(m.id, pos.has(gid) ? pos.get(gid) : gl.length); });
+      lista.forEach(m=>{ const gid = ordine==="A" ? m.gruppoA : m.gruppoB; rank.set(m.id, pos.has(gid) ? pos.get(gid) : gl.length); if(ordine==="A") iniz.set(m.id, minutiInizio(m)); });
     }
   });
   return base.map((m,i)=>({m,i})).sort((a,b)=> ((rank.get(a.m.id)||0)-(rank.get(b.m.id)||0)) || ((iniz.get(a.m.id)||0)-(iniz.get(b.m.id)||0)) || (a.i-b.i)).map(x=>x.m);

@@ -15,6 +15,7 @@ export function costruisciSezioni({ modelli, ordine, calId, mainCalId, gruppiDel
   const lista = (modelli || []).filter(Boolean);
   if (cercando) return { blocchi: [], senza: lista };
   const gruppoDi = (x) => { const m = mod(x); return ordine === "A" ? m.gruppoA : m.gruppoB; };
+  const perInizio = (arr) => (ordine === "A" ? arr.map((x, i) => ({ x, i })).sort((a, b) => (minutiInizio(mod(a.x)) - minutiInizio(mod(b.x))) || (a.i - b.i)).map((o) => o.x) : arr);
   const veriA = !!calId && ordine === "A" && (gruppiDelCalendario ? gruppiDelCalendario(calId, "A") : []).length > 0;
   if (ordine === "A" && !veriA) {
     const perClasse = new Map();
@@ -30,7 +31,7 @@ export function costruisciSezioni({ modelli, ordine, calId, mainCalId, gruppiDel
       const sez = (mod(m).calendarId || mainCalId) === calId && gid ? perId.get(gid) : null;
       if (sez) sez.modelli.push(m); else senza.push(m);
     });
-    return { blocchi: gl.map((g) => perId.get(g.id)).filter((b) => b.modelli.length > 0), senza };
+    return { blocchi: gl.map((g) => perId.get(g.id)).filter((b) => b.modelli.length > 0).map((b) => ({ ...b, modelli: perInizio(b.modelli) })), senza: perInizio(senza) };
   }
   const perNome = new Map(); const senza = [];
   lista.forEach((m) => {
@@ -42,7 +43,7 @@ export function costruisciSezioni({ modelli, ordine, calId, mainCalId, gruppiDel
     if (!sez) { sez = { key: "N:" + nk, label: g.nome, ord: g.sortOrder || 0, modelli: [] }; perNome.set(nk, sez); }
     sez.modelli.push(m);
   });
-  return { blocchi: [...perNome.values()].sort((a, b) => (a.ord - b.ord) || String(a.label).localeCompare(String(b.label))), senza };
+  return { blocchi: [...perNome.values()].sort((a, b) => (a.ord - b.ord) || String(a.label).localeCompare(String(b.label))).map((b) => ({ ...b, modelli: perInizio(b.modelli) })), senza: perInizio(senza) };
 }
 
 // Pulsante A/B, identico a quello della lista Modelli.
