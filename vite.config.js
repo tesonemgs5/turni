@@ -63,9 +63,34 @@ function calcolaVersioneBuild() {
 // commit. Vercel clona in modo "shallow": si recupera lo storico completo e,
 // se non riesce, si chiede il conteggio all'API pubblica di GitHub.
 // Se nessun metodo funziona resta vuoto (la versione si mostra senza #numero).
+// Numero della build APK che ha compilato lo STESSO codice di questa build: si chiede a GitHub l'esecuzione del
+// workflow "Build APK" dell'ultimo commit che ha toccato il codice. Cosi' il sito mostra lo stesso "#" dell'APK.
+// Vuoto se la richiesta non riesce (si ripiega sul conteggio dei commit di codice).
+function numeroBuildApkDaGitHub() {
+  const sh = (cmd) => execSync(cmd, { stdio: ['ignore', 'pipe', 'ignore'], timeout: 60000 }).toString().trim();
+  try {
+    const sha = sh('git log -1 --format=%H -- ' + PERCORSI_CODICE);
+    if (!sha) return '';
+    for (let i = 0; i < 4; i++) {
+      try {
+        const out = sh(`curl -s -m 20 "https://api.github.com/repos/tesonemgs5/turni/actions/workflows/build-apk.yml/runs?head_sha=${sha}&per_page=20"`);
+        const runs = (JSON.parse(out).workflow_runs || []);
+        const buone = runs.filter(r => r.conclusion !== 'failure' && r.conclusion !== 'cancelled').map(r => r.run_number).filter(Number.isFinite);
+        const tutte = runs.map(r => r.run_number).filter(Number.isFinite);
+        const scelte = buone.length ? buone : tutte;
+        if (scelte.length) return String(Math.max(...scelte));
+      } catch {}
+      try { sh('sleep 6'); } catch {}
+    }
+  } catch {}
+  return '';
+}
+
 function calcolaNumeroBuild() {
   // Build dell'APK (GitHub Actions): usa il contatore delle build APK, non il conteggio commit.
   if (/^\d+$/.test(process.env.APK_BUILD_NUM || '')) return process.env.APK_BUILD_NUM;
+  const daApk = numeroBuildApkDaGitHub();
+  if (daApk) return daApk;
   const sh = (cmd) => execSync(cmd, { stdio: ['ignore', 'pipe', 'ignore'], timeout: 90000 }).toString().trim();
   try {
     let shallow = sh('git rev-parse --is-shallow-repository') === 'true';

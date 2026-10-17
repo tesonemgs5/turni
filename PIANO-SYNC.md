@@ -506,3 +506,11 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - **Effetto atteso**: dopo questa modifica APK e web, compilati dallo stesso codice, mostrano **la stessa stringa** (es. `6.290.0512#NNN`). Il numero `#` cambierà una volta (da 129 al nuovo conteggio): è normale.
 - **Rischi**: l'avviso di aggiornamento confronta solo la versione (`a.ggg.hhmm`), che continua a crescere a ogni commit di codice; `versionCode` cresce allo stesso modo. Se Vercel non riesce a recuperare lo storico completo si ripiega sulla data dell'ultimo commit e sul conteggio via API (può restare una differenza).
 - **Annullamento**: ripristinare il commit.
+
+### Numero `#` uguale su APK e PC: il sito legge il numero della build APK (17/10) 🔄
+- **Richiesta**: il `#` deve essere lo stesso su telefono e PC. Vercel non fornisce al codice un numero progressivo (solo un id di deploy), quindi non si può usare «il numero di Vercel».
+- **Cosa cambio**: l'APK torna a usare il numero di esecuzione della build (`github.run_number`, come prima, e come nel titolo della release). Il **sito web** alla compilazione chiede a GitHub quale build APK ha compilato lo stesso codice: cerca l'ultimo commit che ha toccato il codice, prende il numero della build APK di quel commit (la più recente non fallita) e lo mostra come `#`. Così APK e web mostrano lo stesso `#N`, anche dopo commit del solo piano. La versione `a.ggg.hhmm` resta quella del commit di codice (già uguale).
+- **Se la richiesta a GitHub non riesce** (limite di richieste, rete) o per quel commit non c'è build APK (`[skip ci]`): si ripiega sul conteggio dei commit di codice (come adesso). In quel caso il `#` può differire.
+- **File**: `vite.config.js` (nuova funzione), `.github/workflows/build-apk.yml` (rimesso `APK_BUILD_NUM` = numero di esecuzione).
+- **Annullamento**: ripristinare il commit.
+- **Eseguito** (17/10): `vite.config.js` chiede a GitHub la build APK dell'ultimo commit di codice; workflow con `APK_BUILD_NUM` = numero di esecuzione. **Provato in locale** sul commit 6c4792a: il sito produce `6.290.0556#130`, uguale alla release APK 130. Pubblicato con nuova APK.
