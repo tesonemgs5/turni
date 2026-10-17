@@ -512,12 +512,40 @@ export default function VistaModelli({ C }){
                   });
                   sezioni.push(...[...perNome.values()].sort((a,b)=>(a.ord-b.ord) || String(a.label).localeCompare(String(b.label))));
                 }
-                // "Blocchi" = i gruppi nell'ordine + in fondo il blocco dei modelli senza gruppo.
-                const blocchi = [...sezioni, {key:"__SENZA__", gruppo:null, senza:true, modelli:senzaGruppo}];
+                // ORDINE A (alfabetico): un'unica lista in ordine alfabetico. Dove ci sono 2 o piu' modelli CONSECUTIVI con lo
+                // stesso nome si forma in automatico un gruppo (tendina); gli altri restano modelli singoli al loro posto.
+                // Nessun gruppo "sopra" e nessun "senza gruppo" in fondo. (I gruppi personalizzati restano nel database ma
+                // in ordine A non si vedono.) ORDINE B: come prima (gruppi veri, poi modelli senza gruppo).
+                const autoNome = ordineModelli==="A" && !q;
+                const sequenza = [];
+                if(autoNome){
+                  sezioni.length = 0; senzaGruppo.length = 0;
+                  const chiaveNome = m => String(m.titolo||"").trim().toUpperCase();
+                  const usate = new Set();
+                  let i = 0;
+                  while(i<modelliVisibili.length){
+                    const k = chiaveNome(modelliVisibili[i]); let j = i+1;
+                    while(k && j<modelliVisibili.length && chiaveNome(modelliVisibili[j])===k) j++;
+                    const run = modelliVisibili.slice(i,j);
+                    if(run.length>=2){
+                      let chiave = "N:"+k; if(usate.has(chiave)) chiave += ":"+i; usate.add(chiave);
+                      const sz = {key:chiave, label:(run[0].titolo||k), gruppo:null, modelli:run};
+                      sezioni.push(sz); sequenza.push({tipo:"gruppo", sz});
+                    } else sequenza.push({tipo:"modello", m:run[0]});
+                    i = j;
+                  }
+                } else {
+                  sezioni.forEach(sz=>sequenza.push({tipo:"gruppo", sz}));
+                  senzaGruppo.forEach(m=>sequenza.push({tipo:"modello", m}));
+                }
+                // "Blocchi" = i gruppi nell'ordine + in fondo il blocco dei modelli senza gruppo (in A: un solo blocco, tutta la lista).
+                const blocchi = autoNome
+                  ? [{key:"__TUTTI__", gruppo:null, senza:true, modelli:modelliVisibili}]
+                  : [...sezioni, {key:"__SENZA__", gruppo:null, senza:true, modelli:senzaGruppo}];
                 const ordinati = blocchi.flatMap(b=>b.modelli);
                 const infoMod = new Map();
                 blocchi.forEach((b,sIdx)=>b.modelli.forEach((m,k)=>infoMod.set(m.id,{lst:b.modelli,k,s:sIdx})));
-                const gestibile = calId!==null && !q;
+                const gestibile = calId!==null && !q && !autoNome;
                 // Trascinamento: sullo stesso gruppo = riordino; su un altro gruppo (o sulla sua intestazione) = cambia gruppo;
                 // nella zona "in fondo" = senza gruppo, in fondo. Con la ricerca attiva resta il vecchio riordino semplice.
                 const riordina = async (src, dst)=>{
@@ -747,13 +775,12 @@ export default function VistaModelli({ C }){
                 );
                 };
                 return (<>
-                  {sezioni.map(sz=>(
-                    <Fragment key={sz.key}>
-                      {intestazione(sz)}
-                      {!gruppiChiusi.has(sz.key) && sz.modelli.map(m=>renderModello(m, ordinati.indexOf(m), ordinati))}
+                  {sequenza.map(it=> it.tipo==="gruppo" ? (
+                    <Fragment key={it.sz.key}>
+                      {intestazione(it.sz)}
+                      {!gruppiChiusi.has(it.sz.key) && it.sz.modelli.map(m=>renderModello(m, ordinati.indexOf(m), ordinati))}
                     </Fragment>
-                  ))}
-                  {senzaGruppo.map(m=>renderModello(m, ordinati.indexOf(m), ordinati))}
+                  ) : renderModello(it.m, ordinati.indexOf(it.m), ordinati))}
                   {gestibile&&(
                     <div style={{padding:"10px 12px",borderTop:`1px solid ${T.border}`}}>
                       {nuovoGruppoTesto===null ? (
@@ -785,7 +812,7 @@ export default function VistaModelli({ C }){
                   onDragOver={(e)=>{ e.preventDefault(); dragTargetId.current="__FONDO__"; if(dragOverId!=="__FONDO__") setDragOverId("__FONDO__"); }}
                   onDrop={async()=>{
                     stopAutoScroll();
-                    await (ricercaModelli.trim() ? reorderModelli(dragSrcId.current, "__FONDO__", calId) : (selSpost.includes(dragSrcId.current) ? spostaModelliInGruppo(selSpost, null, null, calId) : spostaModelloInGruppo(dragSrcId.current, null, null, calId)));
+                    await ((ricercaModelli.trim() || ordineModelli==="A") ? reorderModelli(dragSrcId.current, "__FONDO__", calId) : (selSpost.includes(dragSrcId.current) ? spostaModelliInGruppo(selSpost, null, null, calId) : spostaModelloInGruppo(dragSrcId.current, null, null, calId)));
                     dragSrcId.current=null; dragTargetId.current=null;
                     setDraggingId(null); setDragOverId(null);
                   }}
@@ -794,7 +821,7 @@ export default function VistaModelli({ C }){
                     color:dragOverId==="__FONDO__"?accent:T.sub,
                     borderTop:dragOverId==="__FONDO__"?`3px solid ${accent}`:`1px dashed ${T.border}`,
                     background:dragOverId==="__FONDO__"?`${accent}14`:"transparent"}}>
-                  ⬇ Rilascia qui per mettere in fondo (senza gruppo)
+                  {ordineModelli==="A" ? "⬇ Rilascia qui per mettere in fondo" : "⬇ Rilascia qui per mettere in fondo (senza gruppo)"}
                 </div>
               )}
             </div>
