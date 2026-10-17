@@ -202,7 +202,7 @@ export default function VistaModelli({ C }){
     applicaReportOverrideATuttiGliEventi, totaleTurni,
     setPrevGrid, REPORT_TEMPLATES, calcolaOrdineModelli, updateFascia, session, salvaQuartine, coloriUsatiTutti, riordinaColoriUsati,
   } = C;
-  const { gruppi, gruppiDelCalendario, aggiungiGruppo, rinominaGruppo, eliminaGruppo, spostaModelloInGruppo, spostaModelliInGruppo, spostaGruppo } = C;
+  const { gruppi, gruppiDelCalendario, aggiungiGruppo, rinominaGruppo, eliminaGruppo, spostaModelloInGruppo, spostaModelliInGruppo, spostaModelliInLettera, spostaGruppo } = C;
   // Selezione multipla in modalità spostamento (tappa 3): modelli selezionati con il tocco lungo (500 ms).
   // Si azzera uscendo dalla modalità spostamento, cambiando calendario/ordine o scrivendo nella ricerca.
   const [selSpost, setSelSpost] = useState([]);
@@ -846,13 +846,31 @@ export default function VistaModelli({ C }){
             borderRadius:14,padding:"10px 14px",marginTop:10,display:"flex",alignItems:"center",
             justifyContent:"space-between",gap:10,boxShadow:"0 -4px 16px rgba(0,0,0,0.08)"}}>
             <span style={{fontSize:13,fontWeight:700,color:T.text}}>{selSpost.length} selezionati</span>
+            {(()=>{
+              // Destinazioni: gruppi veri del calendario; in ordine A anche le LETTERE presenti fra i titoli del calendario.
+              const lettereCal = ordineModelli==="A" ? [...new Set((modelli||[]).filter(m=>m && (m.calendarId||mainCalId)===calId)
+                .map(m=>{ const c=String(m.titolo||"").trim().normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().charAt(0); return /[A-Z]/.test(c)?c:"#"; }))].sort() : [];
+              return (
             <select value="" title="Sposta i modelli selezionati in un gruppo"
-              onChange={async e=>{ const v=e.target.value; if(!v) return; await spostaModelliInGruppo(selSpost, v==="__NESSUNO__"?null:v, null, calId); setSelSpost([]); }}
+              onChange={async e=>{
+                const v=e.target.value; if(!v) return;
+                if(v.startsWith("L:")){
+                  const r = await spostaModelliInLettera(selSpost, v.slice(2), calId);
+                  if(r && r.saltati>0){ setBanner("\u26A0\uFE0F "+r.saltati+(r.saltati===1?" modello non inizia":" modelli non iniziano")+" per "+v.slice(2)+": lasciati dove erano"); setTimeout(()=>setBanner(null), 5000); }
+                } else {
+                  await spostaModelliInGruppo(selSpost, v==="__NESSUNO__"?null:v, null, calId);
+                }
+                setSelSpost([]);
+              }}
               style={{flex:1,minWidth:0,background:accent,border:"none",borderRadius:8,color:getContrastTextColor(accent),padding:"8px 10px",fontWeight:800,fontSize:12,cursor:"pointer"}}>
               <option value="">Sposta nel gruppo…</option>
               {gruppiDelCalendario(calId, ordineModelli).map(g=><option key={g.id} value={g.id} style={{color:"#000"}}>{g.nome}</option>)}
-              <option value="__NESSUNO__" style={{color:"#000"}}>Senza gruppo{ordineModelli==="A"?" (lettere)":""}</option>
+              {ordineModelli==="A"
+                ? lettereCal.map(l=><option key={"L:"+l} value={"L:"+l} style={{color:"#000"}}>{l}</option>)
+                : <option value="__NESSUNO__" style={{color:"#000"}}>Senza gruppo</option>}
             </select>
+              );
+            })()}
             <button onClick={()=>setSelSpost([])}
               style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,flexShrink:0,
                 color:T.sub,padding:"7px 12px",cursor:"pointer",fontWeight:700,fontSize:12}}>
