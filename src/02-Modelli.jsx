@@ -572,6 +572,22 @@ export default function VistaModelli({ C }){
                   const bersaglio = !!draggingId && dragOverId==="__G:"+sz.key;
                   return (
                     <div data-gruppo-key={gestibile ? sz.key : undefined}
+                      // PC (mouse): l'intestazione del gruppo accetta il rilascio (evidenziata come sul telefono):
+                      // il modello trascinato, o tutti i selezionati, entrano in fondo a quel gruppo (anche se chiuso).
+                      onDragOver={gestibile&&modalitaSpostamento&&draggingId?(e)=>{
+                        e.preventDefault();
+                        updateAutoScroll(e.clientY);
+                        const id="__G:"+sz.key;
+                        dragTargetId.current=id;
+                        if(dragOverId!==id) setDragOverId(id);
+                      }:undefined}
+                      onDrop={gestibile&&modalitaSpostamento&&draggingId?async(e)=>{
+                        e.preventDefault();
+                        stopAutoScroll();
+                        await riordina(dragSrcId.current, "__G:"+sz.key);
+                        dragSrcId.current=null; dragTargetId.current=null;
+                        setDraggingId(null); setDragOverId(null);
+                      }:undefined}
                       onClick={()=>{ if(!inRin) toggleGruppoModelli(sz.key); }}
                       style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",
                         padding:"9px 12px",background:bersaglio?`${accent}22`:T.s2,fontSize:12,fontWeight:900,letterSpacing:0.5,color:T.text,
