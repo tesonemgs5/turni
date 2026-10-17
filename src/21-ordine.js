@@ -25,3 +25,32 @@ export function payloadPosCambiate(prima, dopo){
   return o;
 }
 export function scambiaOrdini(m){ return { ...m, sortOrder:(m.sortOrderAltro||0), sortOrderAltro:(m.sortOrder||0) }; }
+
+// ── Ordine A: gruppi GESTIBILI ma creati in automatico ──────────────────────────────────────────
+// Le tendine automatiche di ordine A (APP, AUTO, DISTACCATI, FESTIVI, PI, H24, PERSONALIZZATO, poi una per lettera)
+// diventano gruppi veri alla prima gestione (vedi materializzaGruppiA in 06-Logica.jsx). I gruppi "gestiti" di ordine A
+// hanno sort_order dalla BANDA_A in su: i vecchi gruppi di ordine A (DISTACCATI, AUTO, APPIEDATI, ALTRI...) restano
+// nel database ma sotto la banda e non vengono mai mostrati.
+export const BANDA_A = 10000000;
+export const FISSI_A = ["APP","AUTO","DISTACCATI","FESTIVI","PI","H24","PERSONALIZZATO"];
+// Prima regola che corrisponde (nome senza accenti, maiuscolo): vale la prima parola del nome, APP/AUTO in fondo non contano.
+export function classeModelloA(m){
+  const t = String((m && m.titolo)||"").trim().normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase();
+  if(/^APP/.test(t)) return "APP";
+  if(/^AUTO/.test(t)) return "AUTO";
+  if(/^D/.test(t)) return "DISTACCATI";
+  if(/^F/.test(t)) return "FESTIVI";
+  if(/^P\.?I\.?(\s|$)/.test(t)) return "PI";
+  if(m && m.tempo==="h24") return "H24";
+  if(m && m.tempo==="personalizzato") return "PERSONALIZZATO";
+  const c = t.charAt(0); return /[A-Z]/.test(c) ? c : "#";
+}
+// Ordine delle tendine automatiche: prima i fissi nel loro ordine, poi "#", poi le lettere.
+export function ordinaClassiA(chiavi){
+  return [...chiavi].sort((x,y)=>{
+    const ix = FISSI_A.indexOf(x), iy = FISSI_A.indexOf(y);
+    if(ix>=0 || iy>=0) return (ix<0?99:ix) - (iy<0?99:iy);
+    if(x==="#") return -1; if(y==="#") return 1;
+    return x<y ? -1 : x>y ? 1 : 0;
+  });
+}

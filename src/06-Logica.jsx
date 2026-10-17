@@ -1,6 +1,6 @@
     import { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "./11-supabase";
-import { ordineAttivo, impostaOrdineAttivo, posDaRiga, colonnePosizione, payloadPosCambiate, scambiaOrdini, mapGruppoDb, colGruppo } from "./21-ordine";
+import { ordineAttivo, impostaOrdineAttivo, posDaRiga, colonnePosizione, payloadPosCambiate, scambiaOrdini, mapGruppoDb, colGruppo, BANDA_A, classeModelloA, ordinaClassiA } from "./21-ordine";
 import { calcolaAllineamentoColori } from "./13-allinea-colori";
 import { widgetDisponibile, inviaAlWidget, descriviStatoWidget } from "./17-widget";
 import { scaricaFileTesto } from "./18-scarica-file";
@@ -599,6 +599,7 @@ export function useAppCore(session){
   // async (es. subito dopo un saveModello, prima che il re-render abbia
   // aggiornato la closure di questa funzione).
   const modelliRef = useRef([]);
+  const materializzandoA = useRef(new Set());
   useEffect(()=>{ modelliRef.current = modelli; }, [modelli]);
   const [modelliSort, setModelliSort] = useState("orario");
   // Ordine dei modelli da vedere: "B" = orario, "A" = alfabetico. Vale per questo dispositivo; le posizioni sono nel database.
@@ -4910,7 +4911,8 @@ const importsRecenti = useMemo(()=>{
   // ═══════════════════════════════════════════════════════════════
   function gruppiDelCalendario(calIdX, ordine){
     const ord = ordine || ordineAttivo();
-    return (gruppi||[]).filter(g=>g.ordine===ord && (g.calendarId||mainCalId)===calIdX)
+    // Ordine A: contano solo i gruppi "gestiti" (sort_order dalla BANDA_A in su); i vecchi gruppi A restano nascosti.
+    return (gruppi||[]).filter(g=>g.ordine===ord && (g.calendarId||mainCalId)===calIdX && (ord!=="A" || (g.sortOrder||0)>=BANDA_A))
       .sort((a,b)=> a.sortOrder!==b.sortOrder ? a.sortOrder-b.sortOrder : String(a.id).localeCompare(String(b.id)));
   }
   // Gruppo in cui mettere un modello NUOVO o MODIFICATO, con le regole di sempre (le stesse del riempimento iniziale):
@@ -4922,8 +4924,9 @@ const importsRecenti = useMemo(()=>{
     if(!m) return null;
     let nome = null;
     if(ordine==="A"){
-      // Ordine A: i modelli nuovi/modificati restano senza gruppo e si vedono nella tendina della loro lettera iniziale.
-      nome = null;
+      // Ordine A: il modello nuovo/modificato va nel gruppo della sua classe (APP, AUTO, DISTACCATI, FESTIVI, PI, H24,
+      // PERSONALIZZATO o lettera iniziale), se quel gruppo esiste; altrimenti resta senza gruppo (in fondo, in ordine alfabetico).
+      nome = classeModelloA(m);
     } else {
       const NOMI = { mattina:"MATTINA", pomeriggio:"POMERIGGIO", terzo_turno:"TERZO TURNO", notte:"NOTTE" };
       if(m.tempo==="h24"){
@@ -4950,7 +4953,12 @@ const importsRecenti = useMemo(()=>{
     const ordine = ordineAttivo();
     const esistenti = gruppiDelCalendario(cal, ordine);
     if(esistenti.some(g=>String(g.nome||"").toUpperCase()===n)) return { ok:false, motivo:"esiste" };
-    const ultimo = esistenti.reduce((mx,g)=>Math.max(mx, g.sortOrder||0), 0);
+    // Ordine A: prima di aggiungere, le tendine automatiche diventano gruppi veri (una sola volta).
+    if(ordine==="A" && esistenti.length===0){
+      await materializzaGruppiA(cal);
+      return aggiungiGruppo(nome, calIdX);
+    }
+    const ultimo = esistenti.reduce((mx,g)=>Math.max(mx, g.sortOrder||0), ordine==="A" ? BANDA_A : 0);
     const nuovo = { id:generaIdLocale(), calendarId:cal, ordine, nome:n, sortOrder:ultimo+1000 };
     setGruppi(prev=>[...prev, nuovo]);
     await scriviBatchConBackup({
@@ -4960,6 +4968,39 @@ const importsRecenti = useMemo(()=>{
       contesto:"Nuovo gruppo", ts:new Date().toISOString(), opzioni:{ soloLog:true },
     });
     return { ok:true, gruppo:nuovo };
+  }
+  // Ordine A: le tendine automatiche (classi per nome/tipo) diventano gruppi veri del calendario, UNA sola volta:
+  // da quel momento si possono spostare, rinominare, eliminare e i modelli si spostano fra le tendine.
+  // Posizioni dei modelli invariate; cambiano solo gruppo_a dei modelli. Scrittura a blocchi con backup.
+  async function materializzaGruppiA(calIdX){
+    if(!userId || !calIdX) return { ok:false };
+    if(gruppiDelCalendario(calIdX, "A").length>0) return { ok:true, gia:true };
+    if(materializzandoA.current.has(calIdX)) return { ok:false };
+    materializzandoA.current.add(calIdX);
+    try{
+      const prev = modelliRef.current||[];
+      const miei = prev.filter(m=>m && (m.calendarId||mainCalId)===calIdX);
+      if(miei.length===0) return { ok:false };
+      const chiavi = ordinaClassiA([...new Set(miei.map(classeModelloA))]);
+      const nuoviGruppi = chiavi.map((k,i)=>({ id:generaIdLocale(), calendarId:calIdX, ordine:"A", nome:k, sortOrder:BANDA_A+(i+1)*1000 }));
+      const idPerClasse = new Map(chiavi.map((k,i)=>[k, nuoviGruppi[i].id]));
+      const nuovi = prev.map(m=> (m && (m.calendarId||mainCalId)===calIdX) ? { ...m, gruppoA:idPerClasse.get(classeModelloA(m)) } : m);
+      setGruppi(p=>[...p, ...nuoviGruppi]);
+      modelliRef.current = nuovi;
+      setModelli(nuovi);
+      saveToLocalStorage(undefined, undefined, nuovi);
+      const ops = [
+        ...nuoviGruppi.map(g=>({ tipo:"insert", table:"gruppi_modelli",
+          payload:{ id:g.id, user_id:userId, calendar_id:calIdX, ordine:"A", nome:g.nome, sort_order:g.sortOrder },
+          matchObj:null, contesto:"Gruppi ordine A" })),
+        ...miei.filter(m=>(m.gruppoA||null)!==idPerClasse.get(classeModelloA(m))).map(m=>({ tipo:"update", table:"modelli",
+          payload:{ gruppo_a:idPerClasse.get(classeModelloA(m)) }, matchObj:{ id:m.id, user_id:userId }, contesto:"Gruppi ordine A" })),
+      ];
+      await scriviBatchConBackup({ ops, contesto:"Gruppi ordine A (prima gestione)", ts:new Date().toISOString(), opzioni:{ soloLog:true } });
+      return { ok:true, gruppi:nuoviGruppi.length };
+    } finally {
+      materializzandoA.current.delete(calIdX);
+    }
   }
   async function rinominaGruppo(id, nome){
     const n = String(nome||"").trim().toUpperCase();
@@ -5101,7 +5142,8 @@ const importsRecenti = useMemo(()=>{
     const nuovaLista = [...gl]; [nuovaLista[i], nuovaLista[j]] = [nuovaLista[j], nuovaLista[i]];
     const valori = gl.map(x=>x.sortOrder||0);
     const distinti = valori.every((v,k)=> k===0 || v>valori[k-1]);
-    const sortNuovi = new Map(nuovaLista.map((x,k)=>[x.id, distinti ? valori[k] : (k+1)*1000]));
+    const baseSort = g.ordine==="A" ? BANDA_A : 0;
+    const sortNuovi = new Map(nuovaLista.map((x,k)=>[x.id, distinti ? valori[k] : baseSort+(k+1)*1000]));
     const cambiati = nuovaLista.filter(x=>(x.sortOrder||0)!==sortNuovi.get(x.id));
     setGruppi(prev=>prev.map(x=> sortNuovi.has(x.id) ? { ...x, sortOrder:sortNuovi.get(x.id) } : x));
     await scriviBatchConBackup({
@@ -8196,7 +8238,7 @@ const importsRecenti = useMemo(()=>{
     showAddColorPicker,
     setShowAddColorPicker,
     coloriExtra,
-    gruppi, setGruppi, gruppiDelCalendario, aggiungiGruppo, rinominaGruppo, eliminaGruppo, spostaModelloInGruppo, spostaModelliInGruppo, spostaGruppo,
+    gruppi, setGruppi, gruppiDelCalendario, materializzaGruppiA, aggiungiGruppo, rinominaGruppo, eliminaGruppo, spostaModelloInGruppo, spostaModelliInGruppo, spostaGruppo,
     setColoriExtra,
     autocompleteValori,
     setAutocompleteValori,

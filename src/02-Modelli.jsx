@@ -20,6 +20,7 @@ import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
 import { ImpostazioniAggiornamenti, inApk } from "./12-avviso-aggiornamento";
 import { QuartineSection } from "./16-QuartineSection";
 import { scaricaFileTesto } from "./18-scarica-file";
+import { classeModelloA, ordinaClassiA } from "./21-ordine";
 import { BackupPerModelloPulsante, StatoSync } from "./20-backup-modelli";
 
 // Riga della lista Colori: mostra il pallino colore, etichetta, sottotitolo,
@@ -203,11 +204,18 @@ export default function VistaModelli({ C }){
     applicaReportOverrideATuttiGliEventi, totaleTurni,
     setPrevGrid, REPORT_TEMPLATES, calcolaOrdineModelli, updateFascia, session, salvaQuartine, coloriUsatiTutti, riordinaColoriUsati,
   } = C;
-  const { gruppi, gruppiDelCalendario, aggiungiGruppo, rinominaGruppo, eliminaGruppo, spostaModelloInGruppo, spostaModelliInGruppo, spostaGruppo } = C;
+  const { gruppi, gruppiDelCalendario, materializzaGruppiA, aggiungiGruppo, rinominaGruppo, eliminaGruppo, spostaModelloInGruppo, spostaModelliInGruppo, spostaGruppo } = C;
   // Selezione multipla in modalità spostamento (tappa 3): modelli selezionati con il tocco lungo (500 ms).
   // Si azzera uscendo dalla modalità spostamento, cambiando calendario/ordine o scrivendo nella ricerca.
   const [selSpost, setSelSpost] = useState([]);
   useEffect(()=>{ setSelSpost([]); }, [modalitaSpostamento, calId, ordineModelli, ricercaModelli]);
+  // Ordine A: entrando in modalità spostamento le tendine automatiche diventano gruppi veri (una sola volta per calendario),
+  // così si possono spostare i modelli fra le tendine e spostare le tendine stesse.
+  useEffect(()=>{
+    if(modalitaSpostamento && ordineModelli==="A" && calId!==null && !String(ricercaModelli||"").trim() && gruppiDelCalendario(calId,"A").length===0){
+      materializzaGruppiA(calId);
+    }
+  }, [modalitaSpostamento, ordineModelli, calId, gruppi]);
 
   // Qualsiasi menu a tendina espandibile aperto nel form Modifica Evento
   // (es. le righe di CATEGORIA REPORT) deve chiudersi non appena si cambia
@@ -465,16 +473,15 @@ export default function VistaModelli({ C }){
             <b style={{fontSize:13}}>Come funzionano ordine e gruppi</b>
             <button onClick={()=>setMostraRegoleOrdine(false)} style={{background:"transparent",border:"none",cursor:"pointer",fontSize:16,color:T.sub}}>✕</button>
           </div>
-          <div style={{fontWeight:800,marginTop:4}}>Ordine A (alfabetico) — tendine automatiche</div>
-          <div>Il gruppo si decide da solo, dal nome e dal tipo del modello; vale la prima regola che corrisponde:</div>
-          <div>1. <b>APP</b>: il nome inizia per APP · 2. <b>AUTO</b>: inizia per AUTO · 3. <b>DISTACCATI</b>: inizia per D · 4. <b>FESTIVI</b>: inizia per F · 5. <b>PI</b>: inizia per PI o P.I. · 6. <b>H24</b>: tipo H24 · 7. <b>PERSONALIZZATO</b>: orario personalizzato · 8. tutti gli altri: <b>lettera iniziale</b> (A, B, C…).</div>
-          <div>Se APP o AUTO sono alla fine del nome (es. «F APP», «PI AUTO») non contano: vale la prima parola.</div>
+          <div style={{fontWeight:800,marginTop:4}}>Ordine A (alfabetico) — tendine automatiche e gestibili</div>
+          <div>All'inizio le tendine si decidono da sole, dal nome e dal tipo del modello (la prima regola che corrisponde): <b>APP</b> (nome che inizia per APP) · <b>AUTO</b> (AUTO) · <b>DISTACCATI</b> (D) · <b>FESTIVI</b> (F) · <b>PI</b> (PI o P.I.) · <b>H24</b> · <b>PERSONALIZZATO</b> · poi la <b>lettera iniziale</b>. APP o AUTO alla fine del nome non contano.</div>
+          <div>Appena premi «↕» (spostamento) o «+ Aggiungi gruppo» le tendine diventano gruppi veri, una sola volta: da lì puoi spostare le tendine (▲▼ a tendina chiusa), rinominarle, eliminarle, crearne di nuove e spostare i modelli fra le tendine (frecce, trascinamento, selezione con 500 ms).</div>
           <div style={{fontWeight:800,marginTop:8}}>Nuovo modello o nome cambiato</div>
-          <div>Non devi scegliere il gruppo: appena salvi, il modello va da solo nella tendina giusta, nel suo posto alfabetico. Cambiando il nome o il tipo si sposta di conseguenza.</div>
+          <div>Non devi scegliere il gruppo: il modello va da solo nella tendina della sua regola (se esiste), nel suo posto. Se quella tendina non esiste più resta senza gruppo, in fondo, in ordine alfabetico.</div>
           <div style={{fontWeight:800,marginTop:8}}>Ordine B (per orario)</div>
           <div>Gruppi veri (MATTINA, POMERIGGIO, TERZO TURNO, NOTTE, H24…): un modello nuovo entra nel gruppo della sua fascia oraria, in fondo ai modelli simili. Puoi creare, rinominare, eliminare e spostare i gruppi; per spostare i modelli: modalità ↑↓, tieni premuto 500 ms per selezionarli, poi «Sposta nel gruppo».</div>
           <div style={{fontWeight:800,marginTop:8}}>Supabase</div>
-          <div>Il database salva solo i dati (titolo, tipo, orari, posizione nei due ordini e, in B, il gruppo). Le tendine di ordine A non sono salvate: le calcola l'app ogni volta, quindi non serve istruire Supabase.</div>
+          <div>Il database salva titolo, tipo, orari, posizione nei due ordini e il gruppo di ogni ordine (A e B), uguali su tutti i dispositivi.</div>
         </div>
       )}
       <div ref={modelliScrollRef} style={{flex:1,overflowY:"auto",padding:"0 12px 80px"}}>
@@ -548,32 +555,14 @@ export default function VistaModelli({ C }){
                 //   tutti gli altri = LETTERA INIZIALE (A, B, C...; accenti ignorati; cifre/simboli = "#").
                 // Un nome che FINISCE per APP/AUTO (es. "F APP", "PI AUTO") NON va in APP/AUTO: segue la sua regola per prima parola.
                 // Dentro ogni tendina i modelli restano in ordine alfabetico. ORDINE B: gruppi veri, poi modelli senza gruppo.
-                const autoA = ordineModelli==="A" && !q;
+                const autoA = ordineModelli==="A" && !q && !(calId!==null && gruppiDelCalendario(calId,"A").length>0);
                 const sequenza = [];
                 let blocchi;
                 if(autoA){
                   sezioni.length = 0; senzaGruppo.length = 0;
-                  const norm = m => String(m.titolo||"").trim().normalize("NFD").replace(/[̀-ͯ]/g,"").toUpperCase();
-                  const classe = m => {
-                    const t = norm(m);
-                    if(/^APP/.test(t)) return "APP";
-                    if(/^AUTO/.test(t)) return "AUTO";
-                    if(/^D/.test(t)) return "DISTACCATI";
-                    if(/^F/.test(t)) return "FESTIVI";
-                    if(/^P\.?I\.?(\s|$)/.test(t)) return "PI";
-                    if(m.tempo==="h24") return "H24";
-                    if(m.tempo==="personalizzato") return "PERSONALIZZATO";
-                    const c = t.charAt(0); return /[A-Z]/.test(c) ? c : "#";
-                  };
-                  const FISSI = ["APP","AUTO","DISTACCATI","FESTIVI","PI","H24","PERSONALIZZATO"];
                   const perClasse = new Map();
-                  modelliVisibili.forEach(m=>{ const k = classe(m); if(!perClasse.has(k)) perClasse.set(k, []); perClasse.get(k).push(m); });
-                  const chiavi = [...perClasse.keys()].sort((x,y)=>{
-                    const ix = FISSI.indexOf(x), iy = FISSI.indexOf(y);
-                    if(ix>=0 || iy>=0) return (ix<0?99:ix) - (iy<0?99:iy);
-                    if(x==="#") return -1; if(y==="#") return 1;
-                    return x<y ? -1 : x>y ? 1 : 0;
-                  });
+                  modelliVisibili.forEach(m=>{ const k = classeModelloA(m); if(!perClasse.has(k)) perClasse.set(k, []); perClasse.get(k).push(m); });
+                  const chiavi = ordinaClassiA([...perClasse.keys()]);
                   blocchi = chiavi.map(k=>({key:"C:"+k, label:k, gruppo:null, modelli:perClasse.get(k)}));
                   blocchi.forEach(bl=>{ sezioni.push(bl); sequenza.push({tipo:"gruppo", sz:bl}); });
                 } else {
@@ -585,7 +574,7 @@ export default function VistaModelli({ C }){
                 const ordinati = blocchi.flatMap(b=>b.modelli);
                 const infoMod = new Map();
                 blocchi.forEach((b,sIdx)=>b.modelli.forEach((m,k)=>infoMod.set(m.id,{lst:b.modelli,k,s:sIdx})));
-                const gestibile = calId!==null && !q && ordineModelli!=="A";
+                const gestibile = calId!==null && !q && !autoA;
                 // Trascinamento: sullo stesso gruppo = riordino; su un altro gruppo (o sulla sua intestazione) = cambia gruppo;
                 // nella zona "in fondo" = senza gruppo, in fondo. Con la ricerca attiva resta il vecchio riordino semplice.
                 const riordina = async (src, dst)=>{
@@ -832,7 +821,7 @@ export default function VistaModelli({ C }){
                       {!gruppiChiusi.has(it.sz.key) && it.sz.modelli.map(m=>renderModello(m, ordinati.indexOf(m), ordinati))}
                     </Fragment>
                   ) : renderModello(it.m, ordinati.indexOf(it.m), ordinati))}
-                  {gestibile&&(
+                  {calId!==null&&!q&&(
                     <div style={{padding:"10px 12px",borderTop:`1px solid ${T.border}`}}>
                       {nuovoGruppoTesto===null ? (
                         <button onClick={()=>setNuovoGruppoTesto("")}
@@ -872,7 +861,7 @@ export default function VistaModelli({ C }){
                     color:dragOverId==="__FONDO__"?accent:T.sub,
                     borderTop:dragOverId==="__FONDO__"?`3px solid ${accent}`:`1px dashed ${T.border}`,
                     background:dragOverId==="__FONDO__"?`${accent}14`:"transparent"}}>
-                  {ordineModelli==="A" ? "⬇ Rilascia qui per mettere in fondo" : "⬇ Rilascia qui per mettere in fondo (senza gruppo)"}
+                  {"⬇ Rilascia qui per mettere in fondo (senza gruppo)"}
                 </div>
               )}
             </div>
