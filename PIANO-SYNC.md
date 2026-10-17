@@ -1,6 +1,16 @@
 # Piano sincronizzazione Supabase — turni
 
 Regola: ogni punto viene scritto QUI **prima** di fare il push o la scrittura su Supabase.
+
+## REGOLA PERMANENTE — i backup seguono sempre lo schema di Supabase (17/10)
+Il backup per modello (riga intera del modello, `to_jsonb`) e il backup del "resto" (`snapshot_resto`) devono restare **allineati alle tabelle di Supabase**. Un backup rimasto indietro è inutile proprio quando serve: non lo si scopre finché non si ripristina.
+- **Colonne nuove** in tabelle già coperte (`modelli`, `events`, `calendars`, `rotazioni`, `colori`, `user_settings`): viaggiano da sole, perché si copia la riga intera. Va comunque controllato dopo il ripristino.
+- **Tabelle nuove**: nello stesso passo in cui nascono vanno aggiunte a (1) `crea_backup_automatico` + `ripristina_backup` (backup completi), (2) `snapshot_resto` + `ripristina_resto` se non appartengono a un modello, (3) Esporta, Importa e backup locale dell'app, (4) "Verifica struttura Supabase". Le tabelle di servizio o temporanee si escludono **scrivendolo qui**.
+- **Ogni passo del piano** che crea una tabella o cambia il formato di una riga deve avere una riga «Backup: …» con ciò che è stato fatto (o perché non serve).
+- **Controllo da rilanciare dopo ogni cambio di schema** (confronta le tabelle con quelle presenti nei backup):
+  `select c.relname, (pg_get_functiondef('public.snapshot_resto(uuid)'::regprocedure) ~ c.relname) in_resto, (pg_get_functiondef('public.crea_backup_automatico()'::regprocedure) ~ c.relname) in_completo from pg_class c where c.relnamespace='public'::regnamespace and c.relkind='r' order by 1;`
+- **Stato al 17/10**: coperte da tutti e due: `calendars`, `colori`, `events`, `rotazioni`, `user_settings`. **Solo nel backup completo**: `modelli` (e quindi nelle copie per modello, che copiano la riga), `gruppi_modelli`, `autocomplete_valori`. **DA FARE**: aggiungere `gruppi_modelli` al backup del "resto" e a `ripristina_resto` (nome, posizione, calendario e ordine dei gruppi: senza, ripristinando un modello il suo gruppo può non esistere più). **DA VERIFICARE** cosa contengono e se vanno salvate: `disposizione_auto`, `impostazioni_backup`. **Escluse di proposito** (servizio/temporanee): `backup_config`, `backup_per_modello`, `backup_resto`, `backups`, `eliminati`, `log_attivita`, `usage_stats`, `bk_*`, `modelli_sortorder_backup`.
+
 Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "aggiunta" (non toglie nulla).
 
 ## Stato dei passi
