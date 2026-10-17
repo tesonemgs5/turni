@@ -514,3 +514,10 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - **File**: `vite.config.js` (nuova funzione), `.github/workflows/build-apk.yml` (rimesso `APK_BUILD_NUM` = numero di esecuzione).
 - **Annullamento**: ripristinare il commit.
 - **Eseguito** (17/10): `vite.config.js` chiede a GitHub la build APK dell'ultimo commit di codice; workflow con `APK_BUILD_NUM` = numero di esecuzione. **Provato in locale** sul commit 6c4792a: il sito produce `6.290.0556#130`, uguale alla release APK 130. Pubblicato con nuova APK.
+
+### Pulsante nell'app per ripristinare il «resto» (17/10) 🔄 (scritto prima)
+- **Cosa**: nella finestra «Copie per modello» (Impostazioni → Supabase) una sezione a scomparsa «⚙️ Il resto»: si sceglie una copia (data) e le parti da ripristinare: **Impostazioni** (giorni importanti, colori delle fasce, festività…), **Eventi senza modello**, **Gruppi dei modelli**. Nessuna parte è spuntata di default.
+- **DB (solo aggiunta, sola lettura)**: funzione `backup_resto_elenco()` → elenco delle copie (data, n. eventi senza modello, se hanno impostazioni, n. gruppi); login richiesto, `anon` escluso. `ripristina_resto` esiste già e non cambia: prima salva una copia «pre_ripristino» dello stato attuale; impostazioni ed eventi senza modello vengono sostituiti, i gruppi non cancellano nulla.
+- **App** (`20-backup-modelli.jsx`): conferma con l'elenco delle parti; si ferma se ci sono modifiche non ancora inviate; dopo il ripristino ricarica l'app con il pull da Supabase (stesso meccanismo del ripristino modelli).
+- **Annullamento**: ripristinare il commit; la funzione `backup_resto_elenco` si può togliere con `drop function`.
+- **Eseguito** (17/10): migrazione `backup_resto_elenco` (provata con login simulato, test annullato: 2 copie, la più recente con 6 eventi senza modello e 40 gruppi); sezione «⚙️ Il resto» in `20-backup-modelli.jsx`. **Da provare sul telefono** (non provato con un vero ripristino, per non toccare i dati).

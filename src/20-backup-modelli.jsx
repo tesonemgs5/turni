@@ -14,6 +14,11 @@ function BackupPerModello({ T }) {
   const [msg, setMsg] = useState("");
   const [lavoro, setLavoro] = useState(false);
   const [sel, setSel] = useState(() => new Set());
+  // "Il resto": impostazioni, eventi senza modello, gruppi (copie in backup_resto, ripristino con ripristina_resto)
+  const [restoAperto, setRestoAperto] = useState(false);
+  const [copieResto, setCopieResto] = useState(null);
+  const [copiaSel, setCopiaSel] = useState("");
+  const [partiResto, setPartiResto] = useState(() => new Set());
 
   async function carica() {
     try {
@@ -72,6 +77,38 @@ function BackupPerModello({ T }) {
     } catch (e) { setLavoro(false); setMsg("❌ Ripristino non riuscito: " + (e?.message || e) + ". Nulla è cambiato."); }
   }
 
+  async function caricaResto() {
+    try {
+      const { data, error } = await supabase.rpc("backup_resto_elenco");
+      if (error) throw error;
+      const l = data || [];
+      setCopieResto(l);
+      if (l[0]) setCopiaSel(l[0].batch_id);
+    } catch (e) { setCopieResto([]); setMsg("❌ Non riesco a leggere le copie del resto: " + (e?.message || e)); }
+  }
+  useEffect(() => { if (restoAperto && copieResto === null) caricaResto(); }, [restoAperto]);
+  const copiaResto = (copieResto || []).find(c => c.batch_id === copiaSel) || null;
+  const disponibile = (c, parte) => !!c && (parte === "impostazioni" ? c.ha_impostazioni : parte === "gruppi" ? c.n_gruppi !== null && c.n_gruppi !== undefined : true);
+  const partiValide = ["impostazioni", "eventi", "gruppi"].filter(k => partiResto.has(k) && disponibile(copiaResto, k));
+  function toggleParte(k) { setPartiResto(prev => { const n = new Set(prev); if (n.has(k)) n.delete(k); else n.add(k); return n; }); }
+  async function ripristinaResto() {
+    const c = copiaResto;
+    if (!c || partiValide.length === 0) return;
+    if (typeof navigator !== "undefined" && navigator.onLine === false) { setMsg("❌ Sei offline: nulla è stato modificato."); return; }
+    let coda = []; try { coda = leggiCodaSync(); } catch (e) {}
+    if (Array.isArray(coda) && coda.length > 0) { setMsg("⚠️ Ci sono modifiche di questo dispositivo non ancora inviate a Supabase: aspetta che arrivino, poi riprova. Nulla è stato modificato."); return; }
+    const nomi = { impostazioni: "Impostazioni (giorni importanti, colori delle fasce, festività…)", eventi: `Eventi senza modello (${c.n_eventi})`, gruppi: `Gruppi dei modelli (${c.n_gruppi})` };
+    if (!window.confirm(`Ripristinare dalla copia del ${new Date(c.creato_il).toLocaleString("it-IT")}:\n${partiValide.map(k => "• " + nomi[k]).join("\n")}\n\nImpostazioni ed eventi senza modello attuali vengono sostituiti da quelli della copia; i gruppi non cancellano nulla. Prima viene salvata una copia dello stato attuale. Continuare?`)) return;
+    setLavoro(true); setMsg("⏳ Ripristino in corso...");
+    try {
+      const { data, error } = await supabase.rpc("ripristina_resto", { p_batch_id: c.batch_id, p_parti: partiValide });
+      if (error) throw error;
+      setMsg(`✅ Ripristinato: impostazioni ${data?.impostazioni_ripristinate ? "sì" : "no"}, ${data?.eventi_senza_modello_ripristinati ?? 0} eventi senza modello, ${data?.gruppi_ripristinati ?? 0} gruppi. Ricarico l'app...`);
+      try { localStorage.setItem("turnipm_pull_da_supabase", "1"); } catch (e) {}
+      setTimeout(() => window.location.reload(), 2000);
+    } catch (e) { setLavoro(false); setMsg("❌ Ripristino non riuscito: " + (e?.message || e) + ". Nulla è cambiato."); }
+  }
+
   const btn = { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "6px 9px", fontSize: 12, fontWeight: 800, color: T.text, cursor: "pointer" };
   return (
     <div>
@@ -79,6 +116,41 @@ function BackupPerModello({ T }) {
         Ogni modello con tutti i suoi eventi in una copia sola. {elenco && elenco.length ? `Ultima copia: ${new Date(elenco.reduce((a, x) => (x.creato_il > a ? x.creato_il : a), "")).toLocaleString("it-IT")}` : ""}
       </div>
       {msg && <div style={{ fontSize: 12, color: T.text, background: T.s2, borderRadius: 8, padding: "8px 10px", marginBottom: 8 }}>{msg}</div>}
+      <div style={{ border: `1px solid ${T.border}`, borderRadius: 10, marginBottom: 10, background: T.s2 }}>
+        <div onClick={() => setRestoAperto(v => !v)} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "10px 12px", cursor: "pointer", fontSize: 13, fontWeight: 800, color: T.text }}>
+          <span>⚙️ Il resto: impostazioni, eventi senza modello, gruppi</span><span>{restoAperto ? "▼" : "▶"}</span>
+        </div>
+        {restoAperto && (
+          <div style={{ padding: "0 12px 12px" }}>
+            {copieResto === null ? (
+              <div style={{ fontSize: 12, color: T.sub }}>⏳ Caricamento...</div>
+            ) : copieResto.length === 0 ? (
+              <div style={{ fontSize: 12, color: T.sub }}>Nessuna copia del resto trovata.</div>
+            ) : (
+              <>
+                <div style={{ fontSize: 11, color: T.sub, marginBottom: 6 }}>Copia del:</div>
+                <select value={copiaSel} onChange={e => setCopiaSel(e.target.value)} disabled={lavoro}
+                  style={{ width: "100%", boxSizing: "border-box", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "8px 10px", color: T.text, fontSize: 13, marginBottom: 8 }}>
+                  {copieResto.map(c => <option key={c.batch_id} value={c.batch_id}>{new Date(c.creato_il).toLocaleString("it-IT")}</option>)}
+                </select>
+                {[["impostazioni", "Impostazioni (giorni importanti, colori delle fasce, festività…)"], ["eventi", `Eventi senza modello (${copiaResto ? copiaResto.n_eventi : 0})`], ["gruppi", copiaResto && copiaResto.n_gruppi !== null && copiaResto.n_gruppi !== undefined ? `Gruppi dei modelli (${copiaResto.n_gruppi})` : "Gruppi dei modelli (non presenti in questa copia)"]].map(([k, lab]) => {
+                  const ok = disponibile(copiaResto, k);
+                  return (
+                    <label key={k} style={{ display: "flex", gap: 8, alignItems: "center", padding: "6px 0", fontSize: 13, color: ok ? T.text : T.sub, opacity: ok ? 1 : 0.6 }}>
+                      <input type="checkbox" disabled={lavoro || !ok} checked={ok && partiResto.has(k)} onChange={() => toggleParte(k)} style={{ width: 20, height: 20, flexShrink: 0 }} />
+                      <span>{lab}</span>
+                    </label>
+                  );
+                })}
+                <button disabled={lavoro || partiValide.length === 0} onClick={ripristinaResto}
+                  style={{ width: "100%", marginTop: 8, background: partiValide.length === 0 ? T.s2 : "#dc2626", border: `1px solid ${T.border}`, borderRadius: 10, color: partiValide.length === 0 ? T.sub : "#fff", padding: "11px 0", fontWeight: 900, fontSize: 13, cursor: partiValide.length === 0 ? "default" : "pointer" }}>
+                  Ripristina parti selezionate{partiValide.length ? ` (${partiValide.length})` : ""}
+                </button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
       <input value={cerca} onChange={e => setCerca(e.target.value)} placeholder="Cerca per nome o orario..."
         style={{ width: "100%", boxSizing: "border-box", background: T.s2, border: `1px solid ${T.border}`, borderRadius: 8, padding: "8px 10px", color: T.text, fontSize: 13, marginBottom: 8 }} />
       <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
