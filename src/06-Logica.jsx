@@ -5018,6 +5018,51 @@ const importsRecenti = useMemo(()=>{
     segnalaModificaOrdineModelli();
     await salvaModificheModelliEGruppi(prev, nuovo, "Spostamento modello fra gruppi");
   }
+  // Sposta PIU' modelli insieme (selezione multipla, tappa 3) in un gruppo del calendario (destGruppoId = null: senza gruppo).
+  // Arrivano come blocco, nello stesso ordine relativo con cui si vedono nell'elenco (prima i gruppi, poi senza gruppo).
+  // primaDiId = modello (non selezionato) davanti al quale inserirli; null = in fondo al gruppo.
+  // Le posizioni degli altri modelli restano ferme; tutto in UNA richiesta a blocchi (applica_modifiche).
+  async function spostaModelliInGruppo(ids, destGruppoId, primaDiId, calIdX){
+    if(!userId || !Array.isArray(ids) || ids.length===0) return;
+    const prev = modelliRef.current;
+    const ordine = ordineAttivo();
+    const campo = ordine==="A" ? "gruppoA" : "gruppoB";
+    const gl = gruppiDelCalendario(calIdX, ordine);
+    const dest = destGruppoId || null;
+    if(dest && !gl.some(g=>g.id===dest)) return;
+    const eff = x => { const g = x[campo]; return (g && gl.some(y=>y.id===g)) ? g : null; };
+    const flat = calcolaOrdineModelli(modelliDelCalendario(prev, calIdX));
+    const idSet = new Set(ids);
+    const posFlat = new Map(flat.map((x,k)=>[x.id,k]));
+    const indiceGruppo = x => { const g = eff(x); if(!g) return gl.length; const k = gl.findIndex(y=>y.id===g); return k<0 ? gl.length : k; };
+    // Solo modelli di questo calendario; ordine di arrivo = ordine visibile (gruppo, poi posizione).
+    const sel = flat.filter(x=>idSet.has(x.id)).sort((a,b)=> (indiceGruppo(a)-indiceGruppo(b)) || (posFlat.get(a.id)-posFlat.get(b.id)));
+    if(sel.length===0) return;
+    const selSet = new Set(sel.map(x=>x.id));
+    const membri = flat.filter(x=>!selSet.has(x.id) && eff(x)===dest);
+    const mms = sel.map(x=>({ ...x, [campo]: dest }));
+    let nuovoFlat;
+    if(membri.length>0){
+      const rifId = (primaDiId && membri.some(x=>x.id===primaDiId)) ? primaDiId : null;
+      nuovoFlat = flat.filter(x=>!selSet.has(x.id));
+      if(rifId){
+        const p = nuovoFlat.findIndex(x=>x.id===rifId);
+        nuovoFlat.splice(p, 0, ...mms);
+      } else {
+        const p = nuovoFlat.findIndex(x=>x.id===membri[membri.length-1].id);
+        nuovoFlat.splice(p+1, 0, ...mms);
+      }
+    } else {
+      nuovoFlat = flat.map(x=> selSet.has(x.id) ? { ...x, [campo]: dest } : x); // gruppo vuoto: le posizioni non cambiano
+    }
+    const ricalcolato = ricalcolaPosizioniGlobali(prev, store.calendars.map(c=>c.id), new Map([[calIdX, nuovoFlat]]), mainCalId);
+    const nuovo = ricalcolato.map(x=> (x && selSet.has(x.id)) ? { ...x, [campo]: dest } : x);
+    modelliRef.current = nuovo;
+    setModelli(nuovo);
+    saveToLocalStorage(undefined, undefined, nuovo);
+    segnalaModificaOrdineModelli();
+    await salvaModificheModelliEGruppi(prev, nuovo, "Spostamento di "+sel.length+" modelli fra gruppi");
+  }
   // Sposta un gruppo (con i suoi modelli) su o giu' di un posto fra i gruppi dello stesso calendario e ordine.
   async function spostaGruppo(id, dir){
     const g = (gruppi||[]).find(x=>x.id===id); if(!userId || !g) return;
@@ -8118,7 +8163,7 @@ const importsRecenti = useMemo(()=>{
     showAddColorPicker,
     setShowAddColorPicker,
     coloriExtra,
-    gruppi, setGruppi, gruppiDelCalendario, aggiungiGruppo, rinominaGruppo, eliminaGruppo, spostaModelloInGruppo, spostaGruppo,
+    gruppi, setGruppi, gruppiDelCalendario, aggiungiGruppo, rinominaGruppo, eliminaGruppo, spostaModelloInGruppo, spostaModelliInGruppo, spostaGruppo,
     setColoriExtra,
     autocompleteValori,
     setAutocompleteValori,

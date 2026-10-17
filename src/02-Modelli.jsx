@@ -197,7 +197,11 @@ export default function VistaModelli({ C }){
     applicaReportOverrideATuttiGliEventi, totaleTurni,
     setPrevGrid, REPORT_TEMPLATES, calcolaOrdineModelli, updateFascia, session, salvaQuartine, coloriUsatiTutti, riordinaColoriUsati,
   } = C;
-  const { gruppi, gruppiDelCalendario, aggiungiGruppo, rinominaGruppo, eliminaGruppo, spostaModelloInGruppo, spostaGruppo } = C;
+  const { gruppi, gruppiDelCalendario, aggiungiGruppo, rinominaGruppo, eliminaGruppo, spostaModelloInGruppo, spostaModelliInGruppo, spostaGruppo } = C;
+  // Selezione multipla in modalità spostamento (tappa 3): modelli selezionati con il tocco lungo (500 ms).
+  // Si azzera uscendo dalla modalità spostamento, cambiando calendario/ordine o scrivendo nella ricerca.
+  const [selSpost, setSelSpost] = useState([]);
+  useEffect(()=>{ setSelSpost([]); }, [modalitaSpostamento, calId, ordineModelli, ricercaModelli]);
 
   // Qualsiasi menu a tendina espandibile aperto nel form Modifica Evento
   // (es. le righe di CATEGORIA REPORT) deve chiudersi non appena si cambia
@@ -518,6 +522,21 @@ export default function VistaModelli({ C }){
                 // nella zona "in fondo" = senza gruppo, in fondo. Con la ricerca attiva resta il vecchio riordino semplice.
                 const riordina = async (src, dst)=>{
                   if(!src || !dst) return;
+                  // Selezione multipla: si trascina uno dei selezionati -> si spostano TUTTI insieme nel gruppo in cui vengono lasciati.
+                  if(gestibile && modalitaSpostamento && selSpost.includes(src)){
+                    const ids = selSpost.filter(id=>infoMod.has(id));
+                    if(ids.length===0 || selSpost.includes(dst)) return; // rilasciati su se stessi: nessuno spostamento
+                    if(dst==="__FONDO__"){ await spostaModelliInGruppo(ids, null, null, calId); return; }
+                    if(String(dst).startsWith("__G:")){
+                      const blg = blocchi.find(b=>"__G:"+b.key===dst);
+                      if(blg) await spostaModelliInGruppo(ids, blg.gruppo ? blg.gruppo.id : null, null, calId);
+                      return;
+                    }
+                    const bd = infoMod.get(dst); if(!bd) return;
+                    const blm = blocchi[bd.s];
+                    await spostaModelliInGruppo(ids, blm.gruppo ? blm.gruppo.id : null, dst, calId);
+                    return;
+                  }
                   if(!gestibile){ await reorderModelli(src, dst, calId); return; }
                   const a = infoMod.get(src); if(!a) return;
                   if(dst==="__FONDO__"){ await spostaModelloInGruppo(src, null, null, calId); return; }
@@ -627,7 +646,12 @@ export default function VistaModelli({ C }){
                     onMoveDown={modalitaSpostamento&&!q&&(m.calendarId||mainCalId)===calId&&(inf.k<inf.lst.length-1||(gestibile&&inf.s<blocchi.length-1))?(inf.k<inf.lst.length-1?()=>moveH24(m.id,"down",calId,inf.lst[inf.k+1].id):()=>spostaModelloInGruppo(m.id, blocchi[inf.s+1].gruppo?blocchi[inf.s+1].gruppo.id:null, blocchi[inf.s+1].modelli[0]?blocchi[inf.s+1].modelli[0].id:null, calId)):null}
                     // Drag & drop: disponibile solo in modalitaSpostamento, per
                     // spostamenti più ampi rispetto alle frecce ▲▼.
-                    isDragging={draggingId===m.id}
+                    isDragging={draggingId===m.id || (!!draggingId && selSpost.includes(draggingId) && selSpost.includes(m.id))}
+                    selMulti={modalitaSpostamento&&gestibile&&selSpost.includes(m.id)}
+                    selMultiAttiva={modalitaSpostamento&&gestibile&&selSpost.length>0}
+                    numSelMulti={selSpost.length}
+                    onToggleSelMulti={modalitaSpostamento&&gestibile&&(m.calendarId||mainCalId)===calId?()=>setSelSpost(p=>p.includes(m.id)?p.filter(x=>x!==m.id):[...p,m.id]):null}
+                    onSelezioneLunga={modalitaSpostamento&&gestibile&&(m.calendarId||mainCalId)===calId?()=>{ touchSrcId.current=null; touchTargetId.current=null; stopAutoScroll(); setDraggingId(null); setDragOverId(null); setSelSpost(p=>p.includes(m.id)?p:[...p,m.id]); }:null}
                     isDropTarget={dragOverId===m.id && draggingId!==m.id}
                     // Su touch questi tre handler NON scattano più al primo tocco:
                     // ModelloCard (04-Rotazione.jsx) li chiama solo dopo un
@@ -745,7 +769,7 @@ export default function VistaModelli({ C }){
                   onDragOver={(e)=>{ e.preventDefault(); dragTargetId.current="__FONDO__"; if(dragOverId!=="__FONDO__") setDragOverId("__FONDO__"); }}
                   onDrop={async()=>{
                     stopAutoScroll();
-                    await (ricercaModelli.trim() ? reorderModelli(dragSrcId.current, "__FONDO__", calId) : spostaModelloInGruppo(dragSrcId.current, null, null, calId));
+                    await (ricercaModelli.trim() ? reorderModelli(dragSrcId.current, "__FONDO__", calId) : (selSpost.includes(dragSrcId.current) ? spostaModelliInGruppo(selSpost, null, null, calId) : spostaModelloInGruppo(dragSrcId.current, null, null, calId)));
                     dragSrcId.current=null; dragTargetId.current=null;
                     setDraggingId(null); setDragOverId(null);
                   }}
@@ -760,6 +784,18 @@ export default function VistaModelli({ C }){
             </div>
           );
         })()}
+        {modelliTab==="turni"&&modalitaSpostamento&&calId!==null&&selSpost.length>0&&(
+          <div style={{position:"sticky",bottom:0,background:T.surface,border:`1px solid ${T.border}`,
+            borderRadius:14,padding:"10px 14px",marginTop:10,display:"flex",alignItems:"center",
+            justifyContent:"space-between",gap:10,boxShadow:"0 -4px 16px rgba(0,0,0,0.08)"}}>
+            <span style={{fontSize:13,fontWeight:700,color:T.text}}>{selSpost.length} selezionati · tieni premuto uno di essi e trascinali</span>
+            <button onClick={()=>setSelSpost([])}
+              style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,flexShrink:0,
+                color:T.sub,padding:"7px 12px",cursor:"pointer",fontWeight:700,fontSize:12}}>
+              Annulla selezione
+            </button>
+          </div>
+        )}
         {modelliTab==="turni"&&!editMode&&!modalitaSpostamento&&selectedModelloIds.length>0&&(
           <div style={{position:"sticky",bottom:0,background:T.surface,border:`1px solid ${T.border}`,
             borderRadius:14,padding:"10px 14px",marginTop:10,display:"flex",alignItems:"center",

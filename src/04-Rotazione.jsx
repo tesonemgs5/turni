@@ -2509,6 +2509,10 @@ export function ModelloCard({
   onTouchStart, onTouchMove, onTouchEnd,
   onDragStart, onDragOver, onDrop, onDragEnd,
   fasceAutomatiche, nomeCalendario = "",
+  // Selezione multipla in modalità spostamento (tappa 3): selMulti = questo modello è nella selezione;
+  // selMultiAttiva = c'è almeno un modello selezionato (allora il tocco semplice aggiunge/toglie);
+  // numSelMulti = quanti sono; onSelezioneLunga = tenuto premuto 500 ms; onToggleSelMulti = tocco.
+  selMulti = false, selMultiAttiva = false, numSelMulti = 0, onSelezioneLunga, onToggleSelMulti,
 }) {
   // Priorità: colore scelto a mano (coloreCustom) > H24 se il modello è
   // H24 > colore per fascia oraria, SEMPRE ricalcolato al volo con
@@ -2564,11 +2568,20 @@ export function ModelloCard({
   // Ultimi handler in un ref: il listener nativo è registrato una volta sola
   // ma deve sempre chiamare le versioni più recenti (chiudono su dragOverId ecc.).
   const lpHandlers = useRef({});
-  lpHandlers.current = { onTouchStart, onTouchMove, onTouchEnd };
+  lpHandlers.current = { onTouchStart, onTouchMove, onTouchEnd, onSelezioneLunga };
   const touchAbilitato = !!(onTouchStart || onTouchMove);
+  // Selezione multipla: dopo i 250 ms del "sposta", se il dito resta fermo fino a 500 ms il drag si annulla
+  // e il modello viene SELEZIONATO. Subito dopo un tocco lungo il click sintetico va ignorato.
+  const SELEZIONE_MS = 500;
+  const lpTimerSel = useRef(null);
+  const ultimoLungo = useRef(0);
+  function lpAnnullaTimerSel() {
+    if (lpTimerSel.current) { clearTimeout(lpTimerSel.current); lpTimerSel.current = null; }
+  }
 
   function lpAnnullaTimer() {
     if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null; }
+    lpAnnullaTimerSel();
   }
 
   useEffect(() => {
@@ -2594,6 +2607,19 @@ export function ModelloCard({
         setGhost({ x: r.left, y: r.top, w: r.width, h: r.height });
         const h = lpHandlers.current;
         if (h.onTouchStart) h.onTouchStart(e);
+        // 500 ms in totale, dito fermo: da "sposta" a "seleziona".
+        if (h.onSelezioneLunga) {
+          lpTimerSel.current = setTimeout(() => {
+            lpTimerSel.current = null;
+            if (!lpAttivo.current) return;
+            lpAttivo.current = false;
+            ultimoLungo.current = Date.now();
+            try { if (navigator.vibrate) navigator.vibrate([20, 40, 20]); } catch (_) {}
+            setGhost(null);
+            const hh = lpHandlers.current;
+            if (hh.onSelezioneLunga) hh.onSelezioneLunga();
+          }, SELEZIONE_MS - LONG_PRESS_MS);
+        }
       }, LONG_PRESS_MS);
     };
 
@@ -2610,6 +2636,11 @@ export function ModelloCard({
       }
       // Drag attivo: blocca lo scroll della pagina e passa il gesto al genitore.
       if (e.cancelable) e.preventDefault();
+      // Se il dito si sposta, è un trascinamento vero: niente selezione a 500 ms.
+      if (lpTimerSel.current) {
+        const mx = Math.abs(t.clientX - lpStart.current.x), my = Math.abs(t.clientY - lpStart.current.y);
+        if (mx > MOVE_TOLERANCE || my > MOVE_TOLERANCE) lpAnnullaTimerSel();
+      }
       const o = ghostOffset.current;
       setGhost({ x: t.clientX - o.dx, y: t.clientY - o.dy, w: o.w, h: o.h });
       const h = lpHandlers.current;
@@ -2620,6 +2651,7 @@ export function ModelloCard({
       lpAnnullaTimer();
       if (!lpAttivo.current) return; // tap o scroll normale: nulla da chiudere
       lpAttivo.current = false;
+      ultimoLungo.current = Date.now(); // il click che segue il rilascio non deve contare come tocco
       setGhost(null);
       const h = lpHandlers.current;
       if (h.onTouchEnd) h.onTouchEnd(e);
@@ -2651,11 +2683,14 @@ export function ModelloCard({
       onDragOver={onDragOver || undefined}
       onDrop={onDrop || undefined}
       onDragEnd={onDragEnd || undefined}
-      onClick={selectMode ? onToggleSelect : undefined}
+      onClick={selectMode ? onToggleSelect : (onToggleSelMulti ? (e => {
+        if (Date.now() - ultimoLungo.current < 600) return; // era un tocco lungo / trascinamento, non un tocco
+        if (selMultiAttiva || (e && (e.ctrlKey || e.metaKey || e.shiftKey))) onToggleSelMulti();
+      }) : undefined)}
       style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
-        background: selectMode && selected ? `${accent}22` : T.surface,
-        border: selectMode && selected ? `2px solid ${accent}` : `1px solid ${T.border}`,
+        background: (selectMode && selected) || selMulti ? `${accent}22` : T.surface,
+        border: (selectMode && selected) || selMulti ? `2px solid ${accent}` : `1px solid ${T.border}`,
         borderTop: isDropTarget ? `3px solid ${accent}` : undefined,
         borderRadius: 12, padding: "12px 14px", marginBottom: 8,
         marginTop: isDropTarget ? -2 : 0,
@@ -2682,6 +2717,10 @@ export function ModelloCard({
         WebkitTouchCallout: touchAbilitato ? "none" : undefined,
       }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0, flex: 1 }}>
+        {selMulti && (
+          <div style={{ width: 22, height: 22, borderRadius: 11, background: accent, color: getContrastTextColor(accent), flexShrink: 0,
+            display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 900 }}>✓</div>
+        )}
         <div style={{ width: 28, height: 28, borderRadius: 6, background: colore, flexShrink: 0, alignSelf: "center", marginLeft: 2, marginRight: 2 }} />
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 18, fontWeight: 700, color: T.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -2727,6 +2766,11 @@ export function ModelloCard({
           boxShadow: "0 10px 28px rgba(0,0,0,0.35)", transform: "scale(1.03)",
           opacity: 1,
         }}>
+          {selMulti && numSelMulti > 1 && (
+            <div style={{ position: "absolute", top: -10, right: -6, minWidth: 26, height: 26, padding: "0 7px", boxSizing: "border-box",
+              borderRadius: 13, background: accent, color: getContrastTextColor(accent), fontSize: 14, fontWeight: 900,
+              display: "flex", alignItems: "center", justifyContent: "center" }}>×{numSelMulti}</div>
+          )}
           <div style={{ width: 28, height: 28, borderRadius: 6, background: colore, flexShrink: 0, marginLeft: 2, marginRight: 2 }} />
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 18, fontWeight: 700, color: T.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
