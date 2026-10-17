@@ -2314,7 +2314,7 @@ export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, tit
                 !calEsclusi.has(m.calId) && (qAssegna.trim()==="" || (m.m ? modelloCorrispondeRicerca(m.m,qAssegna) : String(m.label||"").toLowerCase().includes(qAssegna.trim().toLowerCase()))));
               const gruppi = [];
               // Ordine della lista Modelli > Turni, ma in cima i modelli che hanno GIÀ il colore selezionato (stabile: non si muovono toccando le spunte).
-              const visibiliOrd = visibili; // stesso ordine della lista Modelli (le spunte mostrano gli assegnati)
+              const visibiliOrd = [...visibili.filter(m=>giaAssegnati.has(m.id)), ...visibili.filter(m=>!giaAssegnati.has(m.id))]; // assegnati in cima (voluto), poi gli altri, ciascuna parte nell'ordine della lista Modelli
               visibiliOrd.forEach(m=>{
                 let g = gruppi.find(x=>x.calId===m.calId);
                 if(!g){ g={calId:m.calId, nome:m.cal||"Senza calendario", colore:(cals.find(c=>c.id===m.calId)||{}).color||"#94a3b8", lista:[]}; gruppi.push(g); }

@@ -1165,8 +1165,13 @@ export default function VistaModelli({ C }){
                   .filter(c=>calSelezionati.includes(c.id))
                   .map(c=>({
                     cal: c,
-                    // Stesso ordine della lista Modelli (niente più «assegnati in cima»).
-                    modelli: filtra(modelliOrdinati.filter(m=>modelloVisibileInCalendario(m, c.id, mainCalId))),
+                    // Gli assegnati a questo colore in cima (voluto), poi gli altri; in ogni parte l'ordine della lista Modelli.
+                    modelli: (()=>{
+                      const lista = filtra(modelliOrdinati.filter(m=>modelloVisibileInCalendario(m, c.id, mainCalId)));
+                      const ids = snapSelColoreRef.current.ids;
+                      if(!ids || ids.size===0) return lista;
+                      return [...lista.filter(x=>ids.has(x.id)), ...lista.filter(x=>!ids.has(x.id))];
+                    })(),
                   }))
                   .filter(g=>g.modelli.length>0);
                 // Modelli che non risultano in nessun calendario esistente: prima sparivano dalla lista.
