@@ -54,3 +54,13 @@ export function ordinaClassiA(chiavi){
     return x<y ? -1 : x>y ? 1 : 0;
   });
 }
+
+// Dentro ogni tendina automatica dell'ordine A i modelli vanno in ORDINE DI INIZIO (ora d'inizio crescente);
+// senza orario d'inizio (es. H24) in fondo. A parita' resta l'ordine alfabetico gia' presente (ordinamento stabile).
+export function minutiInizio(m){
+  const t = m && m.inizio ? /^(\d{1,2}):(\d{2})/.exec(String(m.inizio)) : null;
+  return t ? (+t[1])*60 + (+t[2]) : 99999;
+}
+export function ordinaPerInizio(lista){
+  return (lista||[]).map((m,i)=>({m,i})).sort((a,b)=> (minutiInizio(a.m)-minutiInizio(b.m)) || (a.i-b.i)).map(x=>x.m);
+}

@@ -1,7 +1,7 @@
     import { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "./11-supabase";
 import { scriviEsitoImport } from "./22-backup-stato";
-import { ordineAttivo, impostaOrdineAttivo, posDaRiga, colonnePosizione, payloadPosCambiate, scambiaOrdini, mapGruppoDb, colGruppo, BANDA_A, classeModelloA, ordinaClassiA } from "./21-ordine";
+import { ordineAttivo, impostaOrdineAttivo, posDaRiga, colonnePosizione, payloadPosCambiate, scambiaOrdini, mapGruppoDb, colGruppo, BANDA_A, classeModelloA, ordinaClassiA, minutiInizio } from "./21-ordine";
 import { calcolaAllineamentoColori } from "./13-allinea-colori";
 import { widgetDisponibile, inviaAlWidget, descriviStatoWidget } from "./17-widget";
 import { scaricaFileTesto } from "./18-scarica-file";
@@ -4541,18 +4541,19 @@ function calcolaOrdineVisuale(modelli, gruppi, mainCalId){
   const perCal = new Map();
   base.forEach(m=>{ const c = m.calendarId||mainCalId||"__"; if(!perCal.has(c)) perCal.set(c,[]); perCal.get(c).push(m); });
   const rank = new Map();
+  const iniz = new Map(); // solo ordine A con tendine automatiche: dentro la tendina vale l'ora d'inizio
   perCal.forEach((lista,c)=>{
     const gl = (gruppi||[]).filter(g=>g.ordine===ordine && (g.calendarId||mainCalId||"__")===c && (ordine!=="A" || (g.sortOrder||0)>=BANDA_A))
       .sort((a,b)=> a.sortOrder!==b.sortOrder ? a.sortOrder-b.sortOrder : String(a.id).localeCompare(String(b.id)));
     if(ordine==="A" && gl.length===0){
       const classi = ordinaClassiA([...new Set(lista.map(classeModelloA))]);
-      lista.forEach(m=>rank.set(m.id, classi.indexOf(classeModelloA(m))));
+      lista.forEach(m=>{ rank.set(m.id, classi.indexOf(classeModelloA(m))); iniz.set(m.id, minutiInizio(m)); });
     } else {
       const pos = new Map(gl.map((g,i)=>[g.id,i]));
       lista.forEach(m=>{ const gid = ordine==="A" ? m.gruppoA : m.gruppoB; rank.set(m.id, pos.has(gid) ? pos.get(gid) : gl.length); });
     }
   });
-  return base.map((m,i)=>({m,i})).sort((a,b)=> ((rank.get(a.m.id)||0)-(rank.get(b.m.id)||0)) || (a.i-b.i)).map(x=>x.m);
+  return base.map((m,i)=>({m,i})).sort((a,b)=> ((rank.get(a.m.id)||0)-(rank.get(b.m.id)||0)) || ((iniz.get(a.m.id)||0)-(iniz.get(b.m.id)||0)) || (a.i-b.i)).map(x=>x.m);
 }
 
 // ── Ordinamento per FASCIA ORARIA D'INIZIO, usato SOLO dal pulsante

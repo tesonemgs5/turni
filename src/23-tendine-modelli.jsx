@@ -5,7 +5,7 @@
 //  · tutti i calendari insieme: i gruppi con lo stesso nome si uniscono; con la ricerca attiva l'elenco e' piatto.
 // Serve a tutte le liste che richiamano i modelli (selettori, colori, rotazioni, report...), cosi' hanno lo stesso sistema.
 import { useState, Fragment, createContext, useContext } from "react";
-import { classeModelloA, ordinaClassiA } from "./21-ordine";
+import { classeModelloA, ordinaClassiA, minutiInizio } from "./21-ordine";
 
 // Valori condivisi (ordine A/B, gruppi...) forniti una volta sola dalla schermata principale: cosi' ogni lista li trova da se'.
 export const ContestoTendine = createContext(null);
@@ -19,7 +19,7 @@ export function costruisciSezioni({ modelli, ordine, calId, mainCalId, gruppiDel
   if (ordine === "A" && !veriA) {
     const perClasse = new Map();
     lista.forEach((m) => { const k = classeModelloA(mod(m)); if (!perClasse.has(k)) perClasse.set(k, []); perClasse.get(k).push(m); });
-    return { blocchi: ordinaClassiA([...perClasse.keys()]).map((k) => ({ key: "C:" + k, label: k, modelli: perClasse.get(k) })), senza: [] };
+    return { blocchi: ordinaClassiA([...perClasse.keys()]).map((k) => ({ key: "C:" + k, label: k, modelli: perClasse.get(k).map((x, i) => ({ x, i })).sort((a, b) => (minutiInizio(mod(a.x)) - minutiInizio(mod(b.x))) || (a.i - b.i)).map((o) => o.x) })), senza: [] };
   }
   if (calId) {
     const gl = gruppiDelCalendario ? gruppiDelCalendario(calId, ordine) : [];

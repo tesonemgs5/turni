@@ -21,7 +21,7 @@ import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
 import { ImpostazioniAggiornamenti, inApk } from "./12-avviso-aggiornamento";
 import { QuartineSection } from "./16-QuartineSection";
 import { scaricaFileTesto } from "./18-scarica-file";
-import { classeModelloA, ordinaClassiA } from "./21-ordine";
+import { classeModelloA, ordinaClassiA, ordinaPerInizio } from "./21-ordine";
 import { BackupPerModelloPulsante, StatoSync } from "./20-backup-modelli";
 import { BackupModelliConfigEStato } from "./22-backup-stato";
 
@@ -565,7 +565,7 @@ export default function VistaModelli({ C }){
                   const perClasse = new Map();
                   modelliVisibili.forEach(m=>{ const k = classeModelloA(m); if(!perClasse.has(k)) perClasse.set(k, []); perClasse.get(k).push(m); });
                   const chiavi = ordinaClassiA([...perClasse.keys()]);
-                  blocchi = chiavi.map(k=>({key:"C:"+k, label:k, gruppo:null, modelli:perClasse.get(k)}));
+                  blocchi = chiavi.map(k=>({key:"C:"+k, label:k, gruppo:null, modelli:ordinaPerInizio(perClasse.get(k))})); // dentro la tendina: ordine di inizio
                   blocchi.forEach(bl=>{ sezioni.push(bl); sequenza.push({tipo:"gruppo", sz:bl}); });
                 } else {
                   sezioni.forEach(sz=>sequenza.push({tipo:"gruppo", sz}));

@@ -554,3 +554,10 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - **Non toccato**: la lista Modelli (resta com'è), «Copie per modello», menu a tendina «Cancella per modello» (è un elenco a scelta, non una lista di righe).
 - **Nessun dato cambiato** (solo visualizzazione). Provato con dati finti: B → NOTTE / MATTINA / senza gruppo; A → APP / H24 / L; ricerca piatta; nessun errore senza contesto.
 - **Annullamento**: ripristinare il commit.
+
+### Ordine A: dentro ogni tendina i modelli in ORDINE DI INIZIO (17/10)
+- **Richiesta**: individuata la tendina (APP, AUTO, DISTACCATI, FESTIVI, PI, H24, PERSONALIZZATO, lettere) i modelli dentro vanno in ordine di orario d'inizio, non alfabetico.
+- **Regola**: ora d'inizio crescente; senza orario (es. H24) in fondo; a parità resta l'ordine alfabetico già presente. Vale solo per l'ordine A (le tendine automatiche); l'ordine B non cambia.
+- **Dove**: `21-ordine.js` (nuove `minutiInizio`, `ordinaPerInizio`), lista Modelli (`02-Modelli.jsx`), tutte le liste a tendine (`23-tendine-modelli.jsx`), ordine visuale per colori/selettori/ordine eventi del giorno (`calcolaOrdineVisuale` in `06-Logica.jsx`). Solo visualizzazione: nessun dato del database cambiato.
+- **Provato** con dati finti: PI → 07:00, 07:00, 13:30, 15:30, senza orario in fondo.
+- **Annullamento**: ripristinare il commit.
