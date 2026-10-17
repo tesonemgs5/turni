@@ -1762,7 +1762,12 @@ export function useAppCore(session){
         const { error } = await q;
         if(!error) return { error:null };
         const m = /Could not find the '([^']+)' column/.exec(error.message||"");
-        if(m && payloadCorrente && m[1] in payloadCorrente){
+        if(m && Array.isArray(payloadCorrente) && payloadCorrente.some(r=>r && m[1] in r)){
+          // invio a blocchi (array di righe): la colonna mancante si toglie da ogni riga
+          segnalaErroreSoloLog(`Colonna '${m[1]}' assente su Supabase: omessa e riprovato automaticamente.`, `${op.contesto} (schema database)`);
+          return provaSupabase(payloadCorrente.map(r=>{ if(!r) return r; const { [m[1]]: _omessa, ...resto } = r; return resto; }), tentativi+1);
+        }
+        if(m && payloadCorrente && !Array.isArray(payloadCorrente) && m[1] in payloadCorrente){
           segnalaErroreSoloLog(`Colonna '${m[1]}' assente su Supabase: omessa e riprovato automaticamente.`, `${op.contesto} (schema database)`);
           const { [m[1]]: _omessa, ...resto } = payloadCorrente;
           return provaSupabase(resto, tentativi+1);
@@ -6075,8 +6080,11 @@ const importsRecenti = useMemo(()=>{
       colore:m.colore||null, colore_custom:m.coloreCustom||null,
       titolo:m.titolo||"", label:m.label||"", inizio:m.inizio||null, fine:m.fine||null, tempo:m.tempo||"custom",
       calendar_id:m.calendarId||null,
+      gruppo_a:m.gruppoA||null, gruppo_b:m.gruppoB||null,
       salvato_il:adesso
     }));
+    // Menu (gruppi a tendina): nome, ordine A/B, calendario e POSIZIONE di ogni menu.
+    const gruppiSnap = (gruppi||[]).map(g=>({ id:g.id, calendar_id:g.calendarId||null, ordine:g.ordine, nome:g.nome||"", sort_order:g.sortOrder||0 }));
     // Fasce automatiche, colori extra, sundayColor e holidayColor
     const fasce = (store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT).map(f=>({...f}));
     const coloriExtraSnap = (coloriExtra||[]).map(c=>({...c}));
@@ -6089,7 +6097,7 @@ const importsRecenti = useMemo(()=>{
       const raw = localStorage.getItem("disposizioneModelliBackup");
       if(raw){ const p = JSON.parse(raw); if(p?.userId===userId && Array.isArray(p.voci)) prec = p; }
     }catch{}
-    const cambi = diffDisposizione(prec, righe, fasce, coloriExtraSnap, sundayCol, holidayCol);
+    const cambi = diffDisposizione(prec, righe, fasce, coloriExtraSnap, sundayCol, holidayCol, gruppiSnap);
     const daRiprovare = !!prec && prec.supabaseOk===false; // l'ultimo invio a Supabase non era andato a buon fine
 
     if(cambi.nessunaModifica && !daRiprovare){
@@ -6110,7 +6118,8 @@ const importsRecenti = useMemo(()=>{
         ...m, modello_id:m.id, ...colonnePosizione(m),
         colore:m.colore||null, colore_custom:m.coloreCustom||null
       })),
-      fasce, coloriExtra: coloriExtraSnap, sundayColor: sundayCol, holidayColor: holidayCol
+      fasce, coloriExtra: coloriExtraSnap, sundayColor: sundayCol, holidayColor: holidayCol,
+      gruppi: gruppiSnap
     };
     try{ localStorage.setItem("disposizioneModelliBackup", JSON.stringify(snapshot)); }catch{}
     const idVoce = registraAttivita("Salva disposizione modelli", `Salvata disposizione: ${riepilogo}`, {
@@ -6125,9 +6134,9 @@ const importsRecenti = useMemo(()=>{
       ops.push({ tipo:"upsert", table:"modelli_sortorder_backup", payload:righeDaInviare.slice(k,k+100),
         onConflict:"user_id,modello_id", contesto:"Salva disposizione modelli" });
     }
-    if(tutte || cambi.impostazioniCambiate){
+    if(tutte || cambi.impostazioniCambiate || cambi.gruppiCambiati){
       ops.push({ tipo:"upsert", table:"impostazioni_backup",
-        payload:{ user_id:userId, fasce_automatiche:fasce, colori_extra:coloriExtraSnap, sunday_color:sundayCol, holiday_color:holidayCol, salvato_il:adesso },
+        payload:{ user_id:userId, fasce_automatiche:fasce, colori_extra:coloriExtraSnap, sunday_color:sundayCol, holiday_color:holidayCol, gruppi_modelli:gruppiSnap, salvato_il:adesso },
         onConflict:"user_id", contesto:"Salva disposizione modelli" });
     }
     if(ops.length===0){
@@ -6148,8 +6157,9 @@ const importsRecenti = useMemo(()=>{
 
   async function ripristinaDisposizioneModelli(sorgente=null){
     if(!userId) return { ok:false, errore:"Utente non autenticato" };
-    let vociBackup = null, fasceBackup = null, coloriExtraBackup = null, sundayColBackup = null, holidayColBackup = null;
+    let vociBackup = null, fasceBackup = null, coloriExtraBackup = null, sundayColBackup = null, holidayColBackup = null, gruppiBackup = null;
     if(sorgente){
+      gruppiBackup = Array.isArray(sorgente.gruppi) ? sorgente.gruppi : null;
       vociBackup = Array.isArray(sorgente.voci) ? sorgente.voci : null;
       fasceBackup = sorgente.fasce || null;
       coloriExtraBackup = sorgente.coloriExtra || null;
@@ -6164,8 +6174,9 @@ const importsRecenti = useMemo(()=>{
         ...r, modello_id:r.modello_id, sort_order:r.sort_order, colore:r.colore, colore_custom:r.colore_custom, calendarId:r.calendar_id
       }));
       const { data:imp } = await supabase.from("impostazioni_backup")
-        .select("fasce_automatiche, colori_extra, sunday_color, holiday_color").eq("user_id", userId).maybeSingle();
+        .select("*").eq("user_id", userId).maybeSingle();
       if(imp){
+        gruppiBackup = Array.isArray(imp.gruppi_modelli) ? imp.gruppi_modelli : null;
         fasceBackup = imp.fasce_automatiche||null;
         coloriExtraBackup = imp.colori_extra||null;
         sundayColBackup = imp.sunday_color||null;
@@ -6182,6 +6193,7 @@ const importsRecenti = useMemo(()=>{
             coloriExtraBackup = parsed.coloriExtra||null;
             sundayColBackup = parsed.sundayColor||null;
             holidayColBackup = parsed.holidayColor||null;
+            gruppiBackup = Array.isArray(parsed.gruppi) ? parsed.gruppi : null;
           }
         }
       }catch{}
@@ -6212,6 +6224,24 @@ const importsRecenti = useMemo(()=>{
       }
     }
 
+    // 2b) Menu (gruppi a tendina): nomi e posizione come nella copia. Solo se la copia li contiene.
+    //     I menu creati dopo la copia vengono tolti (i loro modelli tornano nel gruppo che avevano).
+    let gruppiRipristinati = false;
+    if(Array.isArray(gruppiBackup) && gruppiBackup.length>0){
+      const opsG = [];
+      const attuali = new Map((gruppi||[]).map(g=>[g.id,g]));
+      const salvati = new Map(gruppiBackup.map(g=>[g.id,g]));
+      gruppiBackup.forEach(g=>{
+        const cur = attuali.get(g.id);
+        if(!cur) opsG.push({ tipo:"insert", table:"gruppi_modelli", payload:{ id:g.id, user_id:userId, calendar_id:g.calendar_id||null, ordine:g.ordine, nome:g.nome, sort_order:g.sort_order||0 }, matchObj:null, contesto:"Ripristino menu" });
+        else if(cur.nome!==g.nome || (cur.sortOrder||0)!==(g.sort_order||0)) opsG.push({ tipo:"update", table:"gruppi_modelli", payload:{ nome:g.nome, sort_order:g.sort_order||0 }, matchObj:{ id:g.id, user_id:userId }, contesto:"Ripristino menu" });
+      });
+      (gruppi||[]).forEach(g=>{ if(!salvati.has(g.id)) opsG.push({ tipo:"delete", table:"gruppi_modelli", payload:null, matchObj:{ id:g.id, user_id:userId }, contesto:"Ripristino menu" }); });
+      setGruppi(gruppiBackup.map(g=>({ id:g.id, calendarId:g.calendar_id||null, ordine:g.ordine==="A"?"A":"B", nome:g.nome||"", sortOrder:g.sort_order||0 })));
+      if(opsG.length>0) await scriviBatchConBackup({ ops:opsG, contesto:"Ripristino menu", ts:new Date().toISOString(), opzioni:{ soloLog:true } });
+      gruppiRipristinati = true;
+    }
+
     // 3) Modelli: ripristino 360 gradi (ordine, nomi, titoli, orari, colori)
     const prevModelli = modelliRef.current;
     const daRiscrivere = [];
@@ -6231,7 +6261,13 @@ const importsRecenti = useMemo(()=>{
       if(v.tempo) nuovo.tempo = v.tempo;
       if(v.colore!==undefined && v.colore!==null) nuovo.colore = v.colore;
       if(v.colore_custom!==undefined) nuovo.coloreCustom = v.colore_custom||v.colore||m.coloreCustom||null;
-      const cambiato = ["sortOrder","sortOrderAltro","titolo","label","inizio","fine","tempo","colore","coloreCustom"]
+      if(gruppiRipristinati){
+        const ga = v.gruppo_a!==undefined ? v.gruppo_a : v.gruppoA;
+        const gb = v.gruppo_b!==undefined ? v.gruppo_b : v.gruppoB;
+        if(ga!==undefined) nuovo.gruppoA = ga||null;
+        if(gb!==undefined) nuovo.gruppoB = gb||null;
+      }
+      const cambiato = ["sortOrder","sortOrderAltro","titolo","label","inizio","fine","tempo","colore","coloreCustom","gruppoA","gruppoB"]
         .some(k=>(nuovo[k]??null)!==(m[k]??null));
       if(!cambiato) return m;
       daRiscrivere.push(nuovo);
@@ -6247,7 +6283,8 @@ const importsRecenti = useMemo(()=>{
     const risB = await scriviBatchConBackup({
       ops: daRiscrivere.map(m=>({
         tipo:"update", table:"modelli",
-        payload:{ colore:m.colore, colore_custom:m.coloreCustom||null, titolo:m.titolo, label:m.label, inizio:m.inizio, fine:m.fine, tempo:m.tempo, ...colonnePosizione(m) },
+        payload:{ colore:m.colore, colore_custom:m.coloreCustom||null, titolo:m.titolo, label:m.label, inizio:m.inizio, fine:m.fine, tempo:m.tempo, ...colonnePosizione(m),
+          ...(gruppiRipristinati ? { gruppo_a:m.gruppoA||null, gruppo_b:m.gruppoB||null } : {}) },
         matchObj:{ id:m.id, user_id:userId },
         contesto:"Ripristino disposizione 360°",
       })),

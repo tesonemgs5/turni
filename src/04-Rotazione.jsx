@@ -1442,12 +1442,15 @@ function normRigaDisposizione(v) {
     titolo: v.titolo || "", label: v.label || "", inizio: v.inizio || null, fine: v.fine || null,
     tempo: v.tempo || "custom", calendar_id: (v.calendar_id ?? v.calendarId) || null,
     sort_order: (v.sort_order ?? v.sortOrder) || 0,
+    sort_order_a: (v.sort_order_a ?? null),
+    gruppo_a: (v.gruppo_a !== undefined ? v.gruppo_a : v.gruppoA) || null,
+    gruppo_b: (v.gruppo_b !== undefined ? v.gruppo_b : v.gruppoB) || null,
   };
 }
-export function diffDisposizione(prec, righe, fasce, coloriExtra, sundayCol, holidayCol) {
+export function diffDisposizione(prec, righe, fasce, coloriExtra, sundayCol, holidayCol, gruppi) {
   const idsCambiati = new Set();
   const dettagli = [];
-  const conteggi = { aggiunti: 0, eliminati: 0, modificati: 0, riordinati: 0 };
+  const conteggi = { aggiunti: 0, eliminati: 0, modificati: 0, riordinati: 0, spostatiGruppo: 0 };
   const vecchi = new Map((prec?.voci || []).map(v => [String(v.modello_id || v.id), v]));
   const nuovi = new Map(righe.map(r => [String(r.modello_id), r]));
   const nomeDi = r => r.titolo || r.label || String(r.modello_id || r.id).slice(0, 8);
@@ -1464,6 +1467,14 @@ export function diffDisposizione(prec, righe, fasce, coloriExtra, sundayCol, hol
       conteggi.riordinati++; idsCambiati.add(id);
       dettagli.push(`↕ ${nomeDi(n)}: posizione ${a.sort_order}→${b.sort_order}`);
     }
+    if (a.sort_order_a !== null && b.sort_order_a !== null && !uguali(a.sort_order_a, b.sort_order_a) && uguali(a.sort_order, b.sort_order)) {
+      conteggi.riordinati++; idsCambiati.add(id);
+      dettagli.push(`↕ ${nomeDi(n)}: posizione (ordine A) ${a.sort_order_a}→${b.sort_order_a}`);
+    }
+    if (!uguali(a.gruppo_a, b.gruppo_a) || !uguali(a.gruppo_b, b.gruppo_b)) {
+      conteggi.spostatiGruppo++; idsCambiati.add(id);
+      dettagli.push(`⇄ ${nomeDi(n)}: cambiato gruppo`);
+    }
   }
   for (const [id, v] of vecchi) if (!nuovi.has(id)) { conteggi.eliminati++; dettagli.push(`− ${nomeDi(v)} (non più presente)`); }
   let impostazioniCambiate = false;
@@ -1473,14 +1484,24 @@ export function diffDisposizione(prec, righe, fasce, coloriExtra, sundayCol, hol
     if (!uguali(prec.sundayColor ?? null, sundayCol)) { impostazioniCambiate = true; dettagli.push(`~ colore domeniche: ${fmtVal(prec.sundayColor)}→${fmtVal(sundayCol)}`); }
     if (!uguali(prec.holidayColor ?? null, holidayCol)) { impostazioniCambiate = true; dettagli.push(`~ colore festivi: ${fmtVal(prec.holidayColor)}→${fmtVal(holidayCol)}`); }
   }
-  const nessunaModifica = !!prec && idsCambiati.size === 0 && conteggi.eliminati === 0 && !impostazioniCambiate;
+  // Menu (gruppi a tendina): nomi e posizione. Se la copia precedente non li conosceva, vale come cambiato.
+  let gruppiCambiati = false;
+  if (prec && Array.isArray(gruppi)) {
+    const chiave = l => JSON.stringify([...(l || [])].map(g => [g.id, g.calendar_id || null, g.ordine, g.nome, g.sort_order || 0]).sort((x, y) => String(x[0]).localeCompare(String(y[0]))));
+    if (!Array.isArray(prec.gruppi) ? gruppi.length > 0 : chiave(prec.gruppi) !== chiave(gruppi)) {
+      gruppiCambiati = true; dettagli.push("~ menu (gruppi): nomi o posizione cambiati");
+    }
+  }
+  const nessunaModifica = !!prec && idsCambiati.size === 0 && conteggi.eliminati === 0 && !impostazioniCambiate && !gruppiCambiati;
   const parti = [];
   if (conteggi.aggiunti) parti.push(forma(conteggi.aggiunti, "modello aggiunto", "modelli aggiunti"));
   if (conteggi.modificati) parti.push(forma(conteggi.modificati, "modello modificato", "modelli modificati"));
   if (conteggi.riordinati) parti.push(forma(conteggi.riordinati, "riordinato", "riordinati"));
   if (conteggi.eliminati) parti.push(forma(conteggi.eliminati, "eliminato", "eliminati"));
+  if (conteggi.spostatiGruppo) parti.push(forma(conteggi.spostatiGruppo, "spostato di gruppo", "spostati di gruppo"));
+  if (gruppiCambiati) parti.push("menu (gruppi)");
   if (impostazioniCambiate) parti.push("impostazioni (fasce/colori)");
-  return { nessunaModifica, idsCambiati, dettagli, conteggi, impostazioniCambiate, riepilogo: parti.join(", ") };
+  return { nessunaModifica, idsCambiati, dettagli, conteggi, impostazioniCambiate, gruppiCambiati, riepilogo: parti.join(", ") };
 }
 
 // ── Invio del log a Supabase (tabella log_attivita) ──────────────────
