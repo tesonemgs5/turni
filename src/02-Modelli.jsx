@@ -521,38 +521,34 @@ export default function VistaModelli({ C }){
                 // stesso nome si forma in automatico un gruppo (tendina); gli altri restano modelli singoli al loro posto.
                 // Nessun gruppo "sopra" e nessun "senza gruppo" in fondo. (I gruppi personalizzati restano nel database ma
                 // in ordine A non si vedono.) ORDINE B: come prima (gruppi veri, poi modelli senza gruppo).
-                const autoNome = ordineModelli==="A" && !q;
+                // ORDINE A (alfabetico): in alto i gruppi veri (creati dall'utente, es. AUTO, APP); sotto, i modelli SENZA gruppo
+                // raggruppati in automatico per LETTERA INIZIALE (A, B, C...; accenti ignorati; cifre/simboli = "#").
+                // Le tendine per lettera sono solo visualizzazione. ORDINE B: gruppi veri, poi modelli senza gruppo.
+                const letteraDi = m => {
+                  const t = String(m.titolo||"").trim().normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase();
+                  const c = t.charAt(0); return /[A-Z]/.test(c) ? c : "#";
+                };
                 const sequenza = [];
-                if(autoNome){
-                  sezioni.length = 0; senzaGruppo.length = 0;
-                  // Gruppi per LETTERA INIZIALE del titolo (A, B, C...; accenti ignorati; cifre/simboli = "#").
-                  const letteraDi = m => {
-                    const t = String(m.titolo||"").trim().normalize("NFD").replace(/[̀-ͯ]/g,"").toUpperCase();
-                    const c = t.charAt(0); return /[A-Z]/.test(c) ? c : "#";
-                  };
+                sezioni.forEach(sz=>sequenza.push({tipo:"gruppo", sz}));
+                if(ordineModelli==="A"){
                   const usate = new Set();
                   let i = 0;
-                  while(i<modelliVisibili.length){
-                    const k = letteraDi(modelliVisibili[i]); let j = i+1;
-                    while(j<modelliVisibili.length && letteraDi(modelliVisibili[j])===k) j++;
-                    const run = modelliVisibili.slice(i,j);
+                  while(i<senzaGruppo.length){
+                    const k = letteraDi(senzaGruppo[i]); let j = i+1;
+                    while(j<senzaGruppo.length && letteraDi(senzaGruppo[j])===k) j++;
                     let chiave = "L:"+k; if(usate.has(chiave)) chiave += ":"+i; usate.add(chiave);
-                    const sz = {key:chiave, label:k, gruppo:null, modelli:run};
-                    sezioni.push(sz); sequenza.push({tipo:"gruppo", sz});
+                    sequenza.push({tipo:"gruppo", sz:{key:chiave, label:k, gruppo:null, modelli:senzaGruppo.slice(i,j)}});
                     i = j;
                   }
                 } else {
-                  sezioni.forEach(sz=>sequenza.push({tipo:"gruppo", sz}));
                   senzaGruppo.forEach(m=>sequenza.push({tipo:"modello", m}));
                 }
-                // "Blocchi" = i gruppi nell'ordine + in fondo il blocco dei modelli senza gruppo (in A: un solo blocco, tutta la lista).
-                const blocchi = autoNome
-                  ? [{key:"__TUTTI__", gruppo:null, senza:true, modelli:modelliVisibili}]
-                  : [...sezioni, {key:"__SENZA__", gruppo:null, senza:true, modelli:senzaGruppo}];
+                // "Blocchi" = i gruppi veri nell'ordine + in fondo il blocco dei modelli senza gruppo.
+                const blocchi = [...sezioni, {key:"__SENZA__", gruppo:null, senza:true, modelli:senzaGruppo}];
                 const ordinati = blocchi.flatMap(b=>b.modelli);
                 const infoMod = new Map();
                 blocchi.forEach((b,sIdx)=>b.modelli.forEach((m,k)=>infoMod.set(m.id,{lst:b.modelli,k,s:sIdx})));
-                const gestibile = calId!==null && !q && !autoNome;
+                const gestibile = calId!==null && !q;
                 // Trascinamento: sullo stesso gruppo = riordino; su un altro gruppo (o sulla sua intestazione) = cambia gruppo;
                 // nella zona "in fondo" = senza gruppo, in fondo. Con la ricerca attiva resta il vecchio riordino semplice.
                 const riordina = async (src, dst)=>{
@@ -606,17 +602,17 @@ export default function VistaModelli({ C }){
                   const idxS = sezioni.indexOf(sz);
                   const bersaglio = !!draggingId && dragOverId==="__G:"+sz.key;
                   return (
-                    <div data-gruppo-key={gestibile ? sz.key : undefined}
+                    <div data-gruppo-key={gestibile && sz.gruppo ? sz.key : undefined}
                       // PC (mouse): l'intestazione del gruppo accetta il rilascio (evidenziata come sul telefono):
                       // il modello trascinato, o tutti i selezionati, entrano in fondo a quel gruppo (anche se chiuso).
-                      onDragOver={gestibile&&modalitaSpostamento&&draggingId?(e)=>{
+                      onDragOver={gestibile&&sz.gruppo&&modalitaSpostamento&&draggingId?(e)=>{
                         e.preventDefault();
                         updateAutoScroll(e.clientY);
                         const id="__G:"+sz.key;
                         dragTargetId.current=id;
                         if(dragOverId!==id) setDragOverId(id);
                       }:undefined}
-                      onDrop={gestibile&&modalitaSpostamento&&draggingId?async(e)=>{
+                      onDrop={gestibile&&sz.gruppo&&modalitaSpostamento&&draggingId?async(e)=>{
                         e.preventDefault();
                         stopAutoScroll();
                         await riordina(dragSrcId.current, "__G:"+sz.key);
@@ -830,7 +826,7 @@ export default function VistaModelli({ C }){
                   onDragOver={(e)=>{ e.preventDefault(); dragTargetId.current="__FONDO__"; if(dragOverId!=="__FONDO__") setDragOverId("__FONDO__"); }}
                   onDrop={async()=>{
                     stopAutoScroll();
-                    await ((ricercaModelli.trim() || ordineModelli==="A") ? reorderModelli(dragSrcId.current, "__FONDO__", calId) : (selSpost.includes(dragSrcId.current) ? spostaModelliInGruppo(selSpost, null, null, calId) : spostaModelloInGruppo(dragSrcId.current, null, null, calId)));
+                    await ((ricercaModelli.trim()) ? reorderModelli(dragSrcId.current, "__FONDO__", calId) : (selSpost.includes(dragSrcId.current) ? spostaModelliInGruppo(selSpost, null, null, calId) : spostaModelloInGruppo(dragSrcId.current, null, null, calId)));
                     dragSrcId.current=null; dragTargetId.current=null;
                     setDraggingId(null); setDragOverId(null);
                   }}
@@ -839,7 +835,7 @@ export default function VistaModelli({ C }){
                     color:dragOverId==="__FONDO__"?accent:T.sub,
                     borderTop:dragOverId==="__FONDO__"?`3px solid ${accent}`:`1px dashed ${T.border}`,
                     background:dragOverId==="__FONDO__"?`${accent}14`:"transparent"}}>
-                  {ordineModelli==="A" ? "⬇ Rilascia qui per mettere in fondo" : "⬇ Rilascia qui per mettere in fondo (senza gruppo)"}
+                  {"⬇ Rilascia qui per mettere in fondo (senza gruppo)"}
                 </div>
               )}
             </div>
@@ -849,7 +845,14 @@ export default function VistaModelli({ C }){
           <div style={{position:"sticky",bottom:0,background:T.surface,border:`1px solid ${T.border}`,
             borderRadius:14,padding:"10px 14px",marginTop:10,display:"flex",alignItems:"center",
             justifyContent:"space-between",gap:10,boxShadow:"0 -4px 16px rgba(0,0,0,0.08)"}}>
-            <span style={{fontSize:13,fontWeight:700,color:T.text}}>{selSpost.length} selezionati · tieni premuto uno di essi e trascinali</span>
+            <span style={{fontSize:13,fontWeight:700,color:T.text}}>{selSpost.length} selezionati</span>
+            <select value="" title="Sposta i modelli selezionati in un gruppo"
+              onChange={async e=>{ const v=e.target.value; if(!v) return; await spostaModelliInGruppo(selSpost, v==="__NESSUNO__"?null:v, null, calId); setSelSpost([]); }}
+              style={{flex:1,minWidth:0,background:accent,border:"none",borderRadius:8,color:getContrastTextColor(accent),padding:"8px 10px",fontWeight:800,fontSize:12,cursor:"pointer"}}>
+              <option value="">Sposta nel gruppo…</option>
+              {gruppiDelCalendario(calId, ordineModelli).map(g=><option key={g.id} value={g.id} style={{color:"#000"}}>{g.nome}</option>)}
+              <option value="__NESSUNO__" style={{color:"#000"}}>Senza gruppo{ordineModelli==="A"?" (lettere)":""}</option>
+            </select>
             <button onClick={()=>setSelSpost([])}
               style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,flexShrink:0,
                 color:T.sub,padding:"7px 12px",cursor:"pointer",fontWeight:700,fontSize:12}}>

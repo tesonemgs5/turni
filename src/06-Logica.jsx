@@ -4922,10 +4922,8 @@ const importsRecenti = useMemo(()=>{
     if(!m) return null;
     let nome = null;
     if(ordine==="A"){
-      if(/^DF?\s/i.test(String(m.titolo||"").trim())) nome = "DISTACCATI";
-      else if(m.categoriaAppAuto==="auto") nome = "AUTO";
-      else if(m.categoriaAppAuto==="app") nome = "APPIEDATI";
-      else nome = "ALTRI";
+      // Ordine A: i modelli nuovi/modificati restano senza gruppo e si vedono nella tendina della loro lettera iniziale.
+      nome = null;
     } else {
       const NOMI = { mattina:"MATTINA", pomeriggio:"POMERIGGIO", terzo_turno:"TERZO TURNO", notte:"NOTTE" };
       if(m.tempo==="h24"){
