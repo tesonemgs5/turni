@@ -7663,6 +7663,7 @@ const importsRecenti = useMemo(()=>{
     const aggiunti = cfg?.modelliAggiunti || [];
     const default6h15 = modelli.filter(m=>isModelloTurnazioneDefault(m) && !esclusi.includes(m.id)).map(m=>m.id);
     const modelliInclusi = [...new Set([...default6h15, ...aggiunti])];
+    if(modelliInclusi.length===0) modelliInclusi.push("__nessuno__"); // nessun modello scelto = nessun evento (non «tutti»)
     const gruppiManuali = cfg?.gruppiManuali || {}; // { modelloId: "primo"|"secondo", "modelloId_appauto": "app"|"auto" }
     const filtraCollega = (cfg?.filtraCollega||"").trim().toUpperCase();
     const result = { totale:0, primo:0, secondo:0, app:0, auto:0 };
@@ -7760,7 +7761,7 @@ const importsRecenti = useMemo(()=>{
     Object.values(perModello).forEach(v=>v.dates.sort());
     Object.values(perCollega).forEach(v=>v.dates.sort());
     Object.values(perGruppo).forEach(g=>Object.values(g).forEach(v=>v.dates.sort()));
-    return {...result, perModello, perCollega, perGruppo, modelliInclusiEffettivi:modelliInclusi};
+    return {...result, perModello, perCollega, perGruppo, modelliInclusiEffettivi:modelliInclusi.filter(id=>id!=="__nessuno__")};
   }
 
   function computeConteggio(){

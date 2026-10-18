@@ -2228,12 +2228,13 @@ export function ModelForm({
               else updateConteggioConfig(r.id, {...cfg, modelliAggiunti: aggiunti.filter(id=>id!==form.id)});
             }
           } else {
-            const whitelist = cfg.modelliInclusi || [];
+            const whitelist = (cfg.modelliInclusi || []).filter(id=>id!=="__nessuno__");
+            const eraNessuno = (cfg.modelliInclusi || []).includes("__nessuno__");
             if(incluso){
-              const nuova = whitelist.length === 0
+              const nuova = (whitelist.length === 0 && !eraNessuno)
                 ? modelli.filter(mm=>mm.id!==form.id).map(mm=>mm.id)
                 : whitelist.filter(id=>id!==form.id);
-              updateConteggioConfig(r.id, {...cfg, modelliInclusi: nuova});
+              updateConteggioConfig(r.id, {...cfg, modelliInclusi: nuova.length===0 ? ["__nessuno__"] : nuova});
             } else {
               updateConteggioConfig(r.id, {...cfg, modelliInclusi: [...new Set([...whitelist, form.id])]});
             }

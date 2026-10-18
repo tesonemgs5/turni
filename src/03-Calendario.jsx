@@ -634,8 +634,15 @@ export default function VistaCalendario({ C }){
                 {(()=>{
                   const count = r.type==="turnazione"
                     ? [...modelli.filter(m=>isModelloTurnazioneDefault(m)&&!(cfg.modelliEsclusi||[]).includes(m.id)).map(m=>m.id), ...(cfg.modelliAggiunti||[])].length
-                    : (cfg.modelliInclusi||[]).length;
-                  return count>0&&(
+                    : (()=>{
+                        const inc = cfg.modelliInclusi||[];
+                        if(inc.includes("__nessuno__")) return 0; // scelto «nessun modello»
+                        if(inc.length>0) return inc.length;
+                        // nessun filtro = TUTTI i modelli dei calendari del report: mostro quanti sono
+                        const calOk = reportCalIds.length>0 ? [...new Set([...reportCalIds, ...(cfg.calendariExtra||[])])] : store.calendars.map(c=>c.id);
+                        return modelli.filter(m=>calOk.includes(m.calendarId||mainCalId)).length;
+                      })();
+                  return (
                     <span style={{background:"#ffffff",color:"#0f172a",border:"1px solid #cbd5e1",borderRadius:10,
                       padding:"1px 7px",fontSize:13,fontWeight:800}}>{count}</span>
                   );
@@ -968,9 +975,11 @@ export default function VistaCalendario({ C }){
           .filter(g=>g.modelli.length>0);
         function toggleModello(m){
           if(!isTurnazione){
-            const selezionato = (cfg.modelliInclusi||[]).includes(m.id);
-            const next = selezionato ? (cfg.modelliInclusi||[]).filter(id=>id!==m.id) : [...(cfg.modelliInclusi||[]), m.id];
-            updateConteggioConfig(reportId, {...cfg, modelliInclusi: next});
+            const baseInc = (cfg.modelliInclusi||[]).filter(id=>id!=="__nessuno__");
+            const selezionato = baseInc.includes(m.id);
+            const next = selezionato ? baseInc.filter(id=>id!==m.id) : [...baseInc, m.id];
+            // tolti tutti = ZERO modelli (non «tutti»)
+            updateConteggioConfig(reportId, {...cfg, modelliInclusi: next.length===0 ? ["__nessuno__"] : next});
             return;
           }
           if(isModelloTurnazioneDefault(m)){
@@ -987,9 +996,9 @@ export default function VistaCalendario({ C }){
         function toggleGruppo(lista, seleziona){
           const ids = lista.map(m=>m.id);
           if(!isTurnazione){
-            const base = cfg.modelliInclusi||[];
+            const base = (cfg.modelliInclusi||[]).filter(id=>id!=="__nessuno__");
             const next = seleziona ? [...new Set([...base, ...ids])] : base.filter(id=>!ids.includes(id));
-            updateConteggioConfig(reportId, {...cfg, modelliInclusi: next});
+            updateConteggioConfig(reportId, {...cfg, modelliInclusi: next.length===0 ? ["__nessuno__"] : next});
             return;
           }
           let nextEsclusi = [...esclusi], nextAggiunti = [...aggiunti];
@@ -1055,7 +1064,7 @@ export default function VistaCalendario({ C }){
                   <div style={{display:"flex",justifyContent:"flex-end"}}><PulsanteOrdineAB/></div>
                   {!isTurnazione&&(
                     <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
-                      <div onClick={()=>updateConteggioConfig(reportId, {...cfg, modelliInclusi:[]})}
+                      <div onClick={()=>updateConteggioConfig(reportId, {...cfg, modelliInclusi: inclusi.length===0 ? ["__nessuno__"] : []})}
                         style={{display:"flex",alignItems:"center",padding:"12px 14px",cursor:"pointer"}}>
                         <div style={{width:20,height:20,borderRadius:6,marginRight:12,flexShrink:0,
                           border:`2px solid ${inclusi.length===0?accent:T.border}`,

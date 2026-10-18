@@ -485,10 +485,10 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
     } else if(tipo==="modello"){
       nuovo = { id, tipo:"modello", nome:"Per modello" };
     } else {
-      // "libero": due gruppi di partenza modificabili, come punto di
-      // partenza minimo utile — l'utente può rinominarli/aggiungerne altri.
-      nuovo = { id, tipo:"libero", nome:"Nuovo sottomenu",
-        gruppi:[{key:"a",label:"Gruppo A",color:"#3b82f6"},{key:"b",label:"Gruppo B",color:"#8b5cf6"}],
+      // Sottomenu libero VUOTO: senza nome e senza gruppi. I gruppi (es. 1° e 2° turno, APP e AUTO)
+      // si creano dentro con «+ Aggiungi gruppo».
+      nuovo = { id, tipo:"libero", nome:"",
+        gruppi:[],
         assegnazioni:{} };
     }
     onUpdateCfg({...cfg, sottomenu:[...sottomenu, nuovo]});
@@ -550,7 +550,7 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
               <div onClick={()=>setOpenSottomenu(isOpen?null:sm.id)}
                 style={{display:"flex",alignItems:"center",justifyContent:"space-between",
                   padding:"10px 12px",cursor:"pointer"}}>
-                <span style={{fontSize:12,fontWeight:700,color:T.text}}>{sm.nome}</span>
+                <span style={{fontSize:12,fontWeight:700,color:sm.nome?T.text:T.sub}}>{sm.nome||"SENZA NOME"}</span>
                 <div style={{display:"flex",alignItems:"center",gap:10}}>
                   <button onClick={e=>{e.stopPropagation();setConfermaEliminaSottomenu(sm.id);}}
                     style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:13,padding:"2px 4px"}}>🗑️</button>
@@ -558,7 +558,7 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
                 </div>
               </div>
               {confermaEliminaSottomenu===sm.id&&(
-                <ConfermaEliminazione T={T} testo={`Vuoi eliminare "${sm.nome}"?`}
+                <ConfermaEliminazione T={T} testo={`Vuoi eliminare "${sm.nome||"sottomenu senza nome"}"?`}
                   onConferma={()=>{setConfermaEliminaSottomenu(null);rimuoviSottomenu(sm.id);}}
                   onAnnulla={()=>setConfermaEliminaSottomenu(null)}/>
               )}
@@ -566,7 +566,7 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
                 <div style={{padding:"0 12px 12px"}}>
                   {sm.tipo==="libero" && (
                     <div style={{marginBottom:8,display:"flex",gap:6}}>
-                      <input value={sm.nome} onChange={e=>{const fix=preparaFixCursore(e);aggiornaSottomenu(sm.id,{nome:e.target.value.toUpperCase()});fix();}}
+                      <input value={sm.nome} placeholder="NOME (FACOLTATIVO)" onChange={e=>{const fix=preparaFixCursore(e);aggiornaSottomenu(sm.id,{nome:e.target.value.toUpperCase()});fix();}}
                         style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
                           borderRadius:8,padding:"6px 10px",color:T.text,fontSize:12,outline:"none"}}/>
                     </div>
@@ -748,30 +748,11 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
             al numero di sottomenu: 0 se non servono, quanti se ne vogliono
             se servono. */}
         <div style={{background:T.surface,borderRadius:10,overflow:"hidden"}}>
-          <div onClick={()=>setShowAggiungiMenu(s=>!s)}
+          <div onClick={()=>aggiungiSottomenu("libero")}
             style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,
               padding:"10px 12px",cursor:"pointer",color:accent,fontWeight:700,fontSize:13}}>
-            + Aggiungi sottomenu {showAggiungiMenu?"▲":"▼"}
+            + Aggiungi sottomenu
           </div>
-          {showAggiungiMenu && (
-            <div style={{padding:"0 12px 12px",display:"flex",flexDirection:"column",gap:6}}>
-              <button onClick={()=>aggiungiSottomenu("collega")}
-                style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,
-                  background:T.s2,color:T.text,textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:700}}>
-                Per collega <span style={{fontWeight:400,color:T.sub}}>— elenco automatico, con date</span>
-              </button>
-              <button onClick={()=>aggiungiSottomenu("modello")}
-                style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,
-                  background:T.s2,color:T.text,textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:700}}>
-                Per modello <span style={{fontWeight:400,color:T.sub}}>— elenco automatico, con date</span>
-              </button>
-              <button onClick={()=>aggiungiSottomenu("libero")}
-                style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,
-                  background:T.s2,color:T.text,textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:700}}>
-                Sottomenu libero <span style={{fontWeight:400,color:T.sub}}>— gruppi a scelta, assegnazione manuale</span>
-              </button>
-            </div>
-          )}
         </div>
       </div>
     </div>
@@ -822,8 +803,8 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
     } else if(tipo==="modello"){
       nuovo = { id, tipo:"modello", nome:"Per modello" };
     } else {
-      nuovo = { id, tipo:"libero", nome:"Nuovo sottomenu",
-        gruppi:[{key:"a",label:"Gruppo A",color:"#3b82f6"},{key:"b",label:"Gruppo B",color:"#8b5cf6"}],
+      nuovo = { id, tipo:"libero", nome:"",
+        gruppi:[],
         assegnazioni:{} };
     }
     onUpdateCfg({...cfg, sottomenu:[...sottomenu, nuovo]});
@@ -880,7 +861,7 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
               <div onClick={()=>setOpenSottomenu(isOpen?null:sm.id)}
                 style={{display:"flex",alignItems:"center",justifyContent:"space-between",
                   padding:"10px 12px",cursor:"pointer"}}>
-                <span style={{fontSize:12,fontWeight:700,color:T.text}}>{sm.nome}</span>
+                <span style={{fontSize:12,fontWeight:700,color:sm.nome?T.text:T.sub}}>{sm.nome||"SENZA NOME"}</span>
                 <div style={{display:"flex",alignItems:"center",gap:10}}>
                   <button onClick={e=>{e.stopPropagation();setConfermaEliminaSottomenu(sm.id);}}
                     style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:13,padding:"2px 4px"}}>🗑️</button>
@@ -888,7 +869,7 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
                 </div>
               </div>
               {confermaEliminaSottomenu===sm.id&&(
-                <ConfermaEliminazione T={T} testo={`Vuoi eliminare "${sm.nome}"?`}
+                <ConfermaEliminazione T={T} testo={`Vuoi eliminare "${sm.nome||"sottomenu senza nome"}"?`}
                   onConferma={()=>{setConfermaEliminaSottomenu(null);rimuoviSottomenu(sm.id);}}
                   onAnnulla={()=>setConfermaEliminaSottomenu(null)}/>
               )}
@@ -896,7 +877,7 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
                 <div style={{padding:"0 12px 12px"}}>
                   {sm.tipo==="libero" && (
                     <div style={{marginBottom:8,display:"flex",gap:6}}>
-                      <input value={sm.nome} onChange={e=>{const fix=preparaFixCursore(e);aggiornaSottomenu(sm.id,{nome:e.target.value.toUpperCase()});fix();}}
+                      <input value={sm.nome} placeholder="NOME (FACOLTATIVO)" onChange={e=>{const fix=preparaFixCursore(e);aggiornaSottomenu(sm.id,{nome:e.target.value.toUpperCase()});fix();}}
                         style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,
                           borderRadius:8,padding:"6px 10px",color:T.text,fontSize:12,outline:"none"}}/>
                     </div>
@@ -1069,30 +1050,11 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
         })}
 
         <div style={{background:T.surface,borderRadius:10,overflow:"hidden"}}>
-          <div onClick={()=>setShowAggiungiMenu(s=>!s)}
+          <div onClick={()=>aggiungiSottomenu("libero")}
             style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,
               padding:"10px 12px",cursor:"pointer",color:accent,fontWeight:700,fontSize:13}}>
-            + Aggiungi sottomenu {showAggiungiMenu?"▲":"▼"}
+            + Aggiungi sottomenu
           </div>
-          {showAggiungiMenu && (
-            <div style={{padding:"0 12px 12px",display:"flex",flexDirection:"column",gap:6}}>
-              <button onClick={()=>aggiungiSottomenu("collega")}
-                style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,
-                  background:T.s2,color:T.text,textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:700}}>
-                Per collega <span style={{fontWeight:400,color:T.sub}}>— elenco automatico, con date</span>
-              </button>
-              <button onClick={()=>aggiungiSottomenu("modello")}
-                style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,
-                  background:T.s2,color:T.text,textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:700}}>
-                Per modello <span style={{fontWeight:400,color:T.sub}}>— elenco automatico, con date</span>
-              </button>
-              <button onClick={()=>aggiungiSottomenu("libero")}
-                style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,
-                  background:T.s2,color:T.text,textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:700}}>
-                Sottomenu libero <span style={{fontWeight:400,color:T.sub}}>— gruppi a scelta, assegnazione manuale</span>
-              </button>
-            </div>
-          )}
         </div>
       </div>
     </div>
@@ -1430,7 +1392,7 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
                   </div>
                 </div>
               {confermaEliminaSottomenu===sm.id&&(
-                <ConfermaEliminazione T={T} testo={`Vuoi eliminare "${sm.nome}"?`}
+                <ConfermaEliminazione T={T} testo={`Vuoi eliminare "${sm.nome||"sottomenu senza nome"}"?`}
                   onConferma={()=>{setConfermaEliminaSottomenu(null);rimuoviSottomenu(sm.id);}}
                   onAnnulla={()=>setConfermaEliminaSottomenu(null)}/>
               )}
