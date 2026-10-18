@@ -623,3 +623,8 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - **Turnazione**: PER MODELLO e PER COLLEGA sono menu espandibili, chiusi di partenza, con il totale accanto al nome; aperto/chiuso ricordato per dispositivo.
 - **Piano incentivante (sottomenu libero)**: accanto al nome di ogni tendina (APP, AUTO, H24…) c'è la casella «seleziona tutto il gruppo»: assegna in un colpo solo tutti i modelli della tendina al gruppo.
 - Annullamento: ripristinare il commit.
+
+### Report — seconda correzione dalle foto del 18/10 (sera) ✅
+- **Turnazione, aggiungere calendari non deve cambiare il numero dei turni** (22 → 32 → 51 con PR e COT). Causa: la regola della prima riga valeva solo nei giorni in cui TURNI ha eventi; negli altri giorni si sommavano gli eventi degli altri calendari. Ora, se TURNI fa parte dei calendari del report, conta **solo la prima riga di TURNI di ogni giorno** e gli altri calendari non contano mai (nemmeno nei giorni senza eventi TURNI). Se la prima riga non passa i filtri, quel giorno non conta. Se TURNI **non** è tra i calendari del report: somma degli eventi dei calendari selezionati. Provata in isolamento (aggiungere PR/COT lascia il totale invariato).
+- **Turnazione, «seleziona tutto il gruppo»**: dentro 1° TURNO, 2° TURNO, APP e AUTO i modelli non sono più un elenco piatto ma le tendine della lista Modelli (NOTTE, MATTINA, …) con la tendina SELEZIONATI in testa; accanto al nome di ogni tendina c'è la casella «seleziona / deseleziona tutto il gruppo» e il conteggio selezionati/totale. Una sola scrittura della configurazione per tutto il gruppo.
+- Annullamento: ripristinare il commit.

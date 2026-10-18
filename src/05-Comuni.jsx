@@ -1142,6 +1142,12 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
     else next[mid] = gruppo;
     onUpdateCfg({...cfg, gruppiManuali:next});
   }
+  // Come sopra ma per tanti modelli insieme (casella «seleziona tutto il gruppo» accanto al nome della tendina): una sola scrittura.
+  function setGruppoModelli(ids, gruppo){
+    const next = {...gruppiManuali};
+    ids.forEach(mid=>{ if(!gruppo) delete next[mid]; else next[mid] = gruppo; });
+    onUpdateCfg({...cfg, gruppiManuali:next});
+  }
 
   const GRUPPI = [
     {key:"primo",  label:"1° TURNO", color:"#f59e0b", count:data.primo||0,  pct:pct1},
@@ -1199,34 +1205,40 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
                 borderTop:"none",padding:"8px 10px"}}>
                 {modelliPerLista.length===0?(
                   <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"6px 0"}}>Nessun modello</div>
-                ):[...modelliPerLista].sort((a,b)=>{
-                  const attA = gruppiManuali[a.id] ? gruppiManuali[a.id]===f.key : (data.perGruppo?.[f.key]?.[a.id]!==undefined);
-                  const attB = gruppiManuali[b.id] ? gruppiManuali[b.id]===f.key : (data.perGruppo?.[f.key]?.[b.id]!==undefined);
-                  if(attA!==attB) return attA?-1:1;
-                  return 0;
-                }).map(m=>{
-                  const attivo = gruppiManuali[m.id]
+                ):(()=>{
+                  const attivoDi = (m)=> gruppiManuali[m.id]
                     ? gruppiManuali[m.id]===f.key
                     : (data.perGruppo?.[f.key]?.[m.id]!==undefined);
-                  const info = data.perGruppo?.[f.key]?.[m.id];
-                  const c = m?.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
+                  const attiviIds = modelliPerLista.filter(attivoDi).map(m=>m.id);
+                  // Modelli a TENDINE come nella lista Modelli (NOTTE, MATTINA, ...): accanto al nome di ogni tendina la casella
+                  // «seleziona / deseleziona tutto il gruppo» e il conteggio selezionati/totale; in testa la tendina SELEZIONATI.
                   return (
-                    <div key={m.id} style={{display:"flex",alignItems:"center",gap:10,
-                      padding:"7px 8px",borderRadius:8,marginBottom:4,background:T.surface}}>
-                      <input type="checkbox" checked={attivo}
-                        onChange={()=>setGruppoModello(m.id, attivo?"":f.key)}
-                        style={{cursor:"pointer",flexShrink:0,width:17,height:17}}/>
-                      <div style={{width:10,height:10,borderRadius:"50%",background:c,flexShrink:0}}/>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:16,color:T.text,fontWeight:600}}>{m.label||m.titolo}</div>
-                        <div style={{fontSize:13,color:T.sub}}>
-                          {m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${m.fine?` - ${m.fine}`:""}`:""}
-                        </div>
-                      </div>
-                      <span style={{fontSize:17,fontWeight:800,color:T.text}}>{info?.count||0}</span>
-                    </div>
+                    <ElencoModelliTendine chiave={"turnazione_"+r.id+"_"+f.key} modelli={modelliPerLista} selezionati={attiviIds}
+                      onSelezionaGruppo={(ms, seleziona)=>setGruppoModelli(ms.map(x=>x.id), seleziona ? f.key : "")}
+                      stileContenitore={{border:"none",borderRadius:6,marginBottom:0}}
+                      renderRiga={(m)=>{
+                        const attivo = attivoDi(m);
+                        const info = data.perGruppo?.[f.key]?.[m.id];
+                        const c = m?.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
+                        return (
+                          <div key={m.id} style={{display:"flex",alignItems:"center",gap:10,
+                            padding:"7px 8px",borderRadius:8,marginBottom:4,background:T.surface}}>
+                            <input type="checkbox" checked={attivo}
+                              onChange={()=>setGruppoModello(m.id, attivo?"":f.key)}
+                              style={{cursor:"pointer",flexShrink:0,width:17,height:17}}/>
+                            <div style={{width:10,height:10,borderRadius:"50%",background:c,flexShrink:0}}/>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{fontSize:16,color:T.text,fontWeight:600}}>{m.label||m.titolo}</div>
+                              <div style={{fontSize:13,color:T.sub}}>
+                                {m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${m.fine?` - ${m.fine}`:""}`:""}
+                              </div>
+                            </div>
+                            <span style={{fontSize:17,fontWeight:800,color:T.text}}>{info?.count||0}</span>
+                          </div>
+                        );
+                      }}/>
                   );
-                })}
+                })()}
               </div>
             )}
           </div>
