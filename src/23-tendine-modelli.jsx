@@ -65,7 +65,7 @@ export function PulsanteOrdineAB(props) {
 // chiave = nome della lista (ricorda quali tendine erano aperte). renderRiga(m, i, arr) disegna la riga del modello.
 export function ElencoModelliTendine(props) {
   const ctx = useContext(ContestoTendine) || {};
-  const { modelli, calId, cercando, chiave, renderRiga, estrai, stileContenitore, selezionati } = props;
+  const { modelli, calId, cercando, chiave, renderRiga, estrai, stileContenitore, selezionati, onSelezionaGruppo } = props;
   const ordine = props.ordine ?? ctx.ordine, mainCalId = props.mainCalId ?? ctx.mainCalId, gruppiDelCalendario = props.gruppiDelCalendario || ctx.gruppiDelCalendario, gruppi = props.gruppi || ctx.gruppi, T = props.T || ctx.T;
   const LS = "turnipm_tendine_aperte_" + (chiave || "x");
   const [aperte, setAperte] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem(LS) || "[]")); } catch (e) { return new Set(); } });
@@ -95,8 +95,9 @@ export function ElencoModelliTendine(props) {
         <Fragment key="__SEL__">
           <div onClick={toggleSel}
             style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 12px", background: T.s2, fontSize: 12, fontWeight: 900, letterSpacing: 0.5, color: T.text, cursor: "pointer", borderBottom: `1px solid ${T.border}` }}>
-            <span>{selAperta ? "▼" : "▶"}&nbsp; ✅ SELEZIONATI</span>
-            <span style={{ color: T.sub, fontWeight: 700 }}>{selLista.length}</span>
+            <span style={{ flex: 1, minWidth: 0 }}>✅ SELEZIONATI</span>
+            <span style={{ color: T.sub, fontWeight: 700, marginRight: 10 }}>{selLista.length}</span>
+            <span style={{ fontSize: 13 }}>{selAperta ? "▼" : "▶"}</span>
           </div>
           {selAperta && selLista.map((m) => renderRiga(m, selLista.indexOf(m), selLista))}
         </Fragment>
@@ -107,8 +108,23 @@ export function ElencoModelliTendine(props) {
           <Fragment key={b.key}>
             <div onClick={() => toggle(b.key)}
               style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 12px", background: T.s2, fontSize: 12, fontWeight: 900, letterSpacing: 0.5, color: T.text, borderBottom: `1px solid ${T.border}`, cursor: "pointer", width: "100%", boxSizing: "border-box" }}>
-              <span>{aperto ? "▼" : "▶"}&nbsp; {b.label}</span>
-              <span style={{ color: T.sub, fontWeight: 700 }}>{b.modelli.length}</span>
+              {onSelezionaGruppo && (() => {
+                const ids = b.modelli.map((m) => (estrai ? estrai(m) : m).id);
+                const n = ids.filter((id) => selSet.has(id)).length;
+                const tutti = n === ids.length && n > 0, parziale = n > 0 && !tutti;
+                const acc = props.accent || ctx.accent || "#2563eb";
+                return (
+                  <div onClick={(e) => { e.stopPropagation(); onSelezionaGruppo(b.modelli, !tutti); }}
+                    title={tutti ? "Deseleziona tutto il gruppo" : "Seleziona tutto il gruppo"}
+                    style={{ width: 20, height: 20, borderRadius: 6, marginRight: 10, flexShrink: 0, border: `2px solid ${n > 0 ? acc : T.border}`, background: tutti ? acc : "transparent", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                    {tutti && <span style={{ color: "#fff", fontSize: 13, fontWeight: 900 }}>✓</span>}
+                    {parziale && <span style={{ color: acc, fontSize: 14, fontWeight: 900, lineHeight: 1 }}>–</span>}
+                  </div>
+                );
+              })()}
+              <span style={{ flex: 1, minWidth: 0 }}>{b.label}</span>
+              <span style={{ color: T.sub, fontWeight: 700, marginRight: 10 }}>{b.modelli.length}</span>
+              <span style={{ fontSize: 13 }}>{aperto ? "▼" : "▶"}</span>
             </div>
             {aperto && b.modelli.map((m) => renderRiga(m, ordinati.indexOf(m), ordinati))}
           </Fragment>

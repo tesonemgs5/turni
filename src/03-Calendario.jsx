@@ -983,6 +983,27 @@ export default function VistaCalendario({ C }){
             updateConteggioConfig(reportId, {...cfg, modelliAggiunti: nextAggiunti});
           }
         }
+        // Seleziona / deseleziona TUTTI i modelli di un gruppo (una sola scrittura della configurazione).
+        function toggleGruppo(lista, seleziona){
+          const ids = lista.map(m=>m.id);
+          if(!isTurnazione){
+            const base = cfg.modelliInclusi||[];
+            const next = seleziona ? [...new Set([...base, ...ids])] : base.filter(id=>!ids.includes(id));
+            updateConteggioConfig(reportId, {...cfg, modelliInclusi: next});
+            return;
+          }
+          let nextEsclusi = [...esclusi], nextAggiunti = [...aggiunti];
+          lista.forEach(m=>{
+            if(isModelloTurnazioneDefault(m)){
+              if(seleziona) nextEsclusi = nextEsclusi.filter(id=>id!==m.id);
+              else if(!nextEsclusi.includes(m.id)) nextEsclusi.push(m.id);
+            } else {
+              if(seleziona){ if(!nextAggiunti.includes(m.id)) nextAggiunti.push(m.id); }
+              else nextAggiunti = nextAggiunti.filter(id=>id!==m.id);
+            }
+          });
+          updateConteggioConfig(reportId, {...cfg, modelliEsclusi: nextEsclusi, modelliAggiunti: nextAggiunti});
+        }
         return (
           <div style={{position:"fixed",top:0,left:0,right:0,bottom:NAV_HEIGHT_CSS,background:"rgba(0,0,0,0.85)",zIndex:600,
             display:"flex",flexDirection:"column"}}>
@@ -1053,7 +1074,7 @@ export default function VistaCalendario({ C }){
                         <div style={{width:8,height:8,borderRadius:"50%",background:cal.color}}/>
                         <span style={{fontSize:12,fontWeight:800,color:T.sub,textTransform:"uppercase"}}>{cal.name}</span>
                       </div>
-                      <ElencoModelliTendine chiave={"reportpicker_"+cal.id} modelli={modelliCal} calId={cal.id} cercando={cercando} selezionati={inclusi}
+                      <ElencoModelliTendine chiave={"reportpicker_"+cal.id} modelli={modelliCal} calId={cal.id} cercando={cercando} selezionati={inclusi} onSelezionaGruppo={toggleGruppo}
                         stileContenitore={{marginBottom:0}} renderRiga={(m,i,arr)=>{
                           const selezionato = inclusi.includes(m.id);
                           const colore = m?.coloreCustom||colByTime(m.inizio);
