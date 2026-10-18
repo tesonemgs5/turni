@@ -7419,8 +7419,22 @@ const importsRecenti = useMemo(()=>{
       if(filtraCollega && !splitColleghi(e.collega).some(c=>c.toUpperCase().includes(filtraCollega))) return false;
       return true;
     };
-    for(const [dateKey, calMap] of Object.entries(store.events)){
-      if(dateKey < from || dateKey > to) continue;
+    // Gruppi dei sottomenu liberi: l'evento conta nel gruppo a cui è stato assegnato il suo modello,
+    // anche se quel modello è fuori dal filtro del report principale (in quel caso non entra nei totali).
+    const contaSottomenu = (e, dateKey, overrideReportRaw)=>{
+      sottomenu.forEach(sm=>{
+        if(sm.tipo!=="libero") return;
+        const gruppoKeyEvento = (overrideReportRaw?.sottomenu||{})[sm.id];
+        const gruppoKey = gruppoKeyEvento || (e.modelloId ? (sm.assegnazioni||{})[e.modelloId] : null);
+        if(!gruppoKey) return;
+        if(!perSottomenu[sm.id][gruppoKey]) perSottomenu[sm.id][gruppoKey] = {};
+        if(!perSottomenu[sm.id][gruppoKey][e.modelloId]) perSottomenu[sm.id][gruppoKey][e.modelloId] = { count:0, dates:[] };
+        perSottomenu[sm.id][gruppoKey][e.modelloId].count++;
+        perSottomenu[sm.id][gruppoKey][e.modelloId].dates.push(dateKey);
+      });
+    };
+    for(const [dateKey, calMap] of Object.entries(store.events)){
+      if(dateKey < from || dateKey > to) continue;
       const fuSalta = fuDaSaltare(calMap, passaEv);
       for(const [cid, evts] of Object.entries(calMap)){
         if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
@@ -7431,9 +7445,10 @@ const importsRecenti = useMemo(()=>{
           const overrideReportRaw = reportId ? (e.reportOverrides||{})[reportId] : null;
           const overrideReportEvento = overrideReportRaw?.stato || null;
           if(overrideReportEvento==="escluso") continue;
-          if(overrideReportEvento!=="incluso" && modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
+          const fuoriFiltro = overrideReportEvento!=="incluso" && modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId);
           const collegList = splitColleghi(e.collega);
           if(filtraCollega && !collegList.some(c=>c.toUpperCase().includes(filtraCollega))) continue;
+          if(fuoriFiltro){ contaSottomenu(e, dateKey, overrideReportRaw); continue; }
 
           result.totale++;
           if(e.modelloId){
@@ -7456,16 +7471,7 @@ const importsRecenti = useMemo(()=>{
           // semplicemente non compare in nessun gruppo di quell'asse
           // (comportamento identico a "escluso" nei report esistenti: niente
           // auto-classificazione).
-          sottomenu.forEach(sm=>{
-            if(sm.tipo!=="libero") return;
-            const gruppoKeyEvento = (overrideReportRaw?.sottomenu||{})[sm.id];
-            const gruppoKey = gruppoKeyEvento || (e.modelloId ? (sm.assegnazioni||{})[e.modelloId] : null);
-            if(!gruppoKey) return;
-            if(!perSottomenu[sm.id][gruppoKey]) perSottomenu[sm.id][gruppoKey] = {};
-            if(!perSottomenu[sm.id][gruppoKey][e.modelloId]) perSottomenu[sm.id][gruppoKey][e.modelloId] = { count:0, dates:[] };
-            perSottomenu[sm.id][gruppoKey][e.modelloId].count++;
-            perSottomenu[sm.id][gruppoKey][e.modelloId].dates.push(dateKey);
-          });
+          contaSottomenu(e, dateKey, overrideReportRaw);
         }
       }
     }
@@ -7511,8 +7517,20 @@ const importsRecenti = useMemo(()=>{
       if(filtraCollega && !splitColleghi(e.collega).some(c=>c.toUpperCase().includes(filtraCollega))) return false;
       return true;
     };
-    for(const [dateKey, calMap] of Object.entries(store.events)){
-      if(dateKey < from || dateKey > to) continue;
+    const contaSottomenu = (e, dateKey, overrideReportRaw, mins)=>{
+      sottomenu.forEach(sm=>{
+        if(sm.tipo!=="libero" || !e.modelloId) return;
+        const gruppoKeyEvento = (overrideReportRaw?.sottomenu||{})[sm.id];
+        const gruppoKey = gruppoKeyEvento || (sm.assegnazioni||{})[e.modelloId];
+        if(!gruppoKey) return;
+        if(!perSottomenu[sm.id][gruppoKey]) perSottomenu[sm.id][gruppoKey] = {};
+        if(!perSottomenu[sm.id][gruppoKey][e.modelloId]) perSottomenu[sm.id][gruppoKey][e.modelloId] = { minuti:0, dates:[] };
+        perSottomenu[sm.id][gruppoKey][e.modelloId].minuti += mins;
+        perSottomenu[sm.id][gruppoKey][e.modelloId].dates.push(dateKey);
+      });
+    };
+    for(const [dateKey, calMap] of Object.entries(store.events)){
+      if(dateKey < from || dateKey > to) continue;
       const fuSalta = fuDaSaltare(calMap, passaEv);
       for(const [cid, evts] of Object.entries(calMap)){
         if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
@@ -7523,7 +7541,7 @@ const importsRecenti = useMemo(()=>{
           const overrideReportRaw = reportId ? (e.reportOverrides||{})[reportId] : null;
           const overrideReportEvento = overrideReportRaw?.stato || null;
           if(overrideReportEvento==="escluso") continue;
-          if(overrideReportEvento!=="incluso" && modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
+          const fuoriFiltro = overrideReportEvento!=="incluso" && modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId);
           const collegList = splitColleghi(e.collega);
           if(filtraCollega && !collegList.some(c=>c.toUpperCase().includes(filtraCollega))) continue;
 
@@ -7533,6 +7551,7 @@ const importsRecenti = useMemo(()=>{
           // "-PROTRAZIONE A RECUPERO" è un CONSUMO di credito, non un altro
           // turno lavorato: nel totale ore va sottratto, non sommato.
           if(rcGiornata || tipoModelloProtrazione(e.modelloId)==="meno_recupero") mins = -mins;
+          if(fuoriFiltro){ contaSottomenu(e, dateKey, overrideReportRaw, mins); continue; }
 
           result.totaleMin += mins;
           if(e.modelloId){
@@ -7546,16 +7565,7 @@ const importsRecenti = useMemo(()=>{
             perCollega[c].dates.push(dateKey);
           });
 
-          sottomenu.forEach(sm=>{
-            if(sm.tipo!=="libero" || !e.modelloId) return;
-            const gruppoKeyEvento = (overrideReportRaw?.sottomenu||{})[sm.id];
-            const gruppoKey = gruppoKeyEvento || (sm.assegnazioni||{})[e.modelloId];
-            if(!gruppoKey) return;
-            if(!perSottomenu[sm.id][gruppoKey]) perSottomenu[sm.id][gruppoKey] = {};
-            if(!perSottomenu[sm.id][gruppoKey][e.modelloId]) perSottomenu[sm.id][gruppoKey][e.modelloId] = { minuti:0, dates:[] };
-            perSottomenu[sm.id][gruppoKey][e.modelloId].minuti += mins;
-            perSottomenu[sm.id][gruppoKey][e.modelloId].dates.push(dateKey);
-          });
+          contaSottomenu(e, dateKey, overrideReportRaw, mins);
         }
       }
     }

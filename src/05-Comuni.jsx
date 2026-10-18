@@ -547,6 +547,11 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
         {sottomenu.map(sm=>{
           const isOpen = openSottomenu===sm.id;
+          if(sm.tipo==="libero") return (
+            <SottomenuLibero key={sm.id} T={T} accent={accent} sm={sm} perGruppoSm={data.perSottomenu?.[sm.id]||{}}
+              valore={v=>v.count||0} formatta={n=>String(n)} modelli={modelliOrdinati||modelli} fasceAutomatiche={fasceAutomatiche}
+              onPatch={patch=>aggiornaSottomenu(sm.id,patch)} onRemove={()=>rimuoviSottomenu(sm.id)}/>
+          );
           return (
             <div key={sm.id} style={{background:T.surface,borderRadius:10,overflow:"hidden"}}>
               <div onClick={()=>setOpenSottomenu(isOpen?null:sm.id)}
@@ -879,6 +884,11 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
         {sottomenu.map(sm=>{
           const isOpen = openSottomenu===sm.id;
+          if(sm.tipo==="libero") return (
+            <SottomenuLibero key={sm.id} T={T} accent={accent} sm={sm} perGruppoSm={data.perSottomenu?.[sm.id]||{}}
+              valore={v=>v.minuti||0} formatta={fmtOreMin} modelli={modelliOrdinati||modelli} fasceAutomatiche={fasceAutomatiche}
+              onPatch={patch=>aggiornaSottomenu(sm.id,patch)} onRemove={()=>rimuoviSottomenu(sm.id)}/>
+          );
           return (
             <div key={sm.id} style={{background:T.surface,borderRadius:10,overflow:"hidden"}}>
               <div onClick={()=>setOpenSottomenu(isOpen?null:sm.id)}
@@ -2688,3 +2698,104 @@ export function Sec({label,children,T}){
 // #endregion
 
     
+
+
+// ── Sottomenu LIBERO, come i gruppi della Turnazione (1° TURNO ▼ …): nessun involucro con nome, ogni gruppo è una riga
+// con nome, (percentuale se i gruppi sono 2 o più), totale e freccia. La freccia apre TUTTI i modelli del report:
+// prima quelli già nel gruppo, sotto tutti gli altri (a tendine, come la lista Modelli) da aggiungere con una spunta.
+// «+ Aggiungi gruppo» aggiunge un altro gruppo collegato (liberi, senza percentuali obbligatorie).
+function SottomenuLibero({T, accent, sm, perGruppoSm, valore, formatta, modelli, fasceAutomatiche, onPatch, onRemove}){
+  const gruppi = sm.gruppi||[];
+  const asseg = sm.assegnazioni||{};
+  const [nuovoKey, setNuovoKey] = useState(()=> (gruppi.length===1 && !gruppi[0].label) ? gruppi[0].key : null);
+  const [aperto, setAperto] = useState(()=> (gruppi.length===1 && !gruppi[0].label) ? gruppi[0].key : null);
+  const [confElimina, setConfElimina] = useState(null);
+  const COLORI = ["#3b82f6","#10b981","#f59e0b","#8b5cf6","#ef4444","#06b6d4"];
+  const totGruppo = (g)=>Object.values(perGruppoSm[g.key]||{}).reduce((a,v)=>a+valore(v),0);
+  const tot = gruppi.reduce((a,g)=>a+Math.max(0,totGruppo(g)),0);
+  function setAss(mid, key){
+    const next = {...asseg};
+    if(next[mid]===key) delete next[mid]; else next[mid]=key;
+    onPatch({assegnazioni:next});
+  }
+  function aggiungiGruppo(){
+    const key = "g"+Date.now().toString(36);
+    onPatch({gruppi:[...gruppi, {key,label:"",color:COLORI[gruppi.length%COLORI.length]}]});
+    setNuovoKey(key); setAperto(key);
+  }
+  function rinomina(key,label){ onPatch({gruppi:gruppi.map(g=>g.key===key?{...g,label}:g)}); }
+  function elimina(key){
+    if(gruppi.length<=1){ onRemove(); return; } // era l'unico gruppo: sparisce tutto il sottomenu
+    const na = {...asseg};
+    Object.keys(na).forEach(mid=>{ if(na[mid]===key) delete na[mid]; });
+    onPatch({gruppi:gruppi.filter(g=>g.key!==key), assegnazioni:na});
+    if(aperto===key) setAperto(null);
+  }
+  const nomeGruppo = (key)=>{ const g = gruppi.find(x=>x.key===key); return g ? (g.label||"SENZA NOME") : ""; };
+  return (
+    <div style={{background:T.surface,borderRadius:10,padding:8,display:"flex",flexDirection:"column",gap:6}}>
+      {gruppi.map(g=>{
+        const isOpen = aperto===g.key;
+        const val = totGruppo(g);
+        const pct = (gruppi.length>=2 && tot>0) ? Math.round(100*Math.max(0,val)/tot) : null;
+        const riga = (m)=>{
+          const attivo = asseg[m.id]===g.key;
+          const altroGruppo = asseg[m.id] && asseg[m.id]!==g.key ? nomeGruppo(asseg[m.id]) : "";
+          const c = m?.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
+          const info = perGruppoSm[g.key]?.[m.id];
+          return (
+            <div key={m.id} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 6px",borderRadius:6,background:T.surface,marginBottom:3}}>
+              <input type="checkbox" checked={attivo} onChange={()=>setAss(m.id,g.key)} style={{cursor:"pointer",flexShrink:0}}/>
+              <div style={{width:8,height:8,borderRadius:"50%",background:c,flexShrink:0}}/>
+              <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>
+                {m.label||m.titolo}
+                {m.tempo!=="h24"&&m.inizio&&(<span style={{opacity:0.7,fontWeight:500,marginLeft:5}}>{m.inizio}→{m.fine||""}</span>)}
+                {altroGruppo&&(<span style={{opacity:0.6,fontWeight:500,marginLeft:5,fontSize:11}}>· in {altroGruppo}</span>)}
+              </span>
+              <span style={{fontSize:13,fontWeight:800,color:T.text}}>{info?formatta(valore(info)):formatta(0)}</span>
+            </div>
+          );
+        };
+        const assegnati = modelli.filter(m=>asseg[m.id]===g.key);
+        const altri = modelli.filter(m=>asseg[m.id]!==g.key);
+        return (
+          <div key={g.key}>
+            <div style={{display:"flex",alignItems:"center",gap:6,padding:"8px 10px",background:g.color+"22",
+              borderRadius:isOpen?"8px 8px 0 0":8,border:`1px solid ${g.color}44`}}>
+              <input value={g.label} placeholder="NOME GRUPPO" autoFocus={nuovoKey===g.key}
+                onChange={e=>{const fix=preparaFixCursore(e);rinomina(g.key,e.target.value.toUpperCase());fix();}}
+                style={{flex:1,minWidth:0,background:"transparent",border:"none",outline:"none",fontSize:13,fontWeight:800,color:"#0f172a"}}/>
+              {pct!==null&&(<span style={{fontSize:11,fontWeight:800,color:"#0f172a",background:g.color+"33",borderRadius:8,padding:"1px 6px"}}>{pct}%</span>)}
+              <span style={{fontSize:14,fontWeight:900,color:"#0f172a"}}>{formatta(val)}</span>
+              <span onClick={()=>setConfElimina(g.key)} style={{cursor:"pointer",fontSize:12,color:"#ef4444"}}>🗑️</span>
+              <span onClick={()=>setAperto(isOpen?null:g.key)} style={{cursor:"pointer",fontSize:12,color:"#0f172a"}}>{isOpen?"▲":"▼"}</span>
+            </div>
+            {confElimina===g.key&&(
+              <ConfermaEliminazione T={T} testo={gruppi.length<=1?`Vuoi eliminare "${g.label||"sottomenu senza nome"}"?`:`Vuoi eliminare il gruppo "${g.label||"senza nome"}"?`}
+                onConferma={()=>{setConfElimina(null);elimina(g.key);}} onAnnulla={()=>setConfElimina(null)}/>
+            )}
+            {isOpen&&(
+              <div style={{background:T.s2,borderRadius:"0 0 8px 8px",border:`1px solid ${g.color}44`,borderTop:"none",padding:"8px 10px"}}>
+                {assegnati.length>0&&(
+                  <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden",marginBottom:8}}>
+                    <div style={{padding:"6px 8px",background:T.surface,fontSize:10,fontWeight:900,color:T.text,letterSpacing:0.5}}>✓ NEL GRUPPO · {assegnati.length}</div>
+                    {assegnati.map(riga)}
+                  </div>
+                )}
+                {altri.length>0&&(
+                  <ElencoModelliTendine chiave={"libero_"+sm.id+"_"+g.key} modelli={altri} renderRiga={riga}
+                    stileContenitore={{border:"none",borderRadius:6,marginBottom:0}}/>
+                )}
+                {modelli.length===0&&(<div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"6px 0"}}>Nessun modello</div>)}
+              </div>
+            )}
+          </div>
+        );
+      })}
+      <button onClick={aggiungiGruppo}
+        style={{padding:"8px 0",borderRadius:8,border:`1px dashed ${T.border}`,background:"transparent",color:accent,fontWeight:700,fontSize:12,cursor:"pointer"}}>
+        + Aggiungi gruppo
+      </button>
+    </div>
+  );
+}
