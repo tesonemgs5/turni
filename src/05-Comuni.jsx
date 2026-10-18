@@ -2767,8 +2767,10 @@ function SottomenuLibero({T, accent, sm, perGruppoSm, valore, formatta, modelli,
                 style={{flex:1,minWidth:0,background:"transparent",border:"none",outline:"none",fontSize:13,fontWeight:800,color:"#0f172a"}}/>
               {pct!==null&&(<span style={{fontSize:11,fontWeight:800,color:"#0f172a",background:g.color+"33",borderRadius:8,padding:"1px 6px"}}>{pct}%</span>)}
               <span style={{fontSize:14,fontWeight:900,color:"#0f172a"}}>{formatta(val)}</span>
-              <span onClick={()=>setConfElimina(g.key)} style={{cursor:"pointer",fontSize:12,color:"#ef4444"}}>🗑️</span>
-              <span onClick={()=>setAperto(isOpen?null:g.key)} style={{cursor:"pointer",fontSize:12,color:"#0f172a"}}>{isOpen?"▲":"▼"}</span>
+              <span onClick={()=>setConfElimina(g.key)} style={{cursor:"pointer",fontSize:13,color:"#ef4444",marginLeft:8,padding:"2px 2px"}}>🗑️</span>
+              <span onClick={aggiungiGruppo} title="Aggiungi gruppo"
+                style={{cursor:"pointer",fontSize:20,fontWeight:900,lineHeight:1,color:accent,margin:"0 14px",padding:"0 4px"}}>+</span>
+              <span onClick={()=>setAperto(isOpen?null:g.key)} style={{cursor:"pointer",fontSize:12,color:"#0f172a",padding:"4px 2px"}}>{isOpen?"▲":"▼"}</span>
             </div>
             {confElimina===g.key&&(
               <ConfermaEliminazione T={T} testo={gruppi.length<=1?`Vuoi eliminare "${g.label||"sottomenu senza nome"}"?`:`Vuoi eliminare il gruppo "${g.label||"senza nome"}"?`}
@@ -2792,10 +2794,6 @@ function SottomenuLibero({T, accent, sm, perGruppoSm, valore, formatta, modelli,
           </div>
         );
       })}
-      <button onClick={aggiungiGruppo}
-        style={{padding:"8px 0",borderRadius:8,border:`1px dashed ${T.border}`,background:"transparent",color:accent,fontWeight:700,fontSize:12,cursor:"pointer"}}>
-        + Aggiungi gruppo
-      </button>
     </div>
   );
 }
