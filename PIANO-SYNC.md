@@ -639,3 +639,7 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - **Filtra modelli invariato**: per contare ART 32, ART 40, PI RC, RS, NL o i FU (PRIMO, SECONDO, NOTTE, 3°TURNO) quando sono la prima riga, quei modelli devono essere selezionati nel filtro.
 - Gli altri report (conteggi, per modello, per collega) non cambiano.
 - Annullamento: ripristinare il commit.
+
+#### Report: tendina SELEZIONATI in ordine di inizio turno (18/10) ✅
+- In ordine A la tendina **SELEZIONATI** (Filtra modelli e gruppi della Turnazione) mostra i modelli scelti in **ordine di inizio turno** (ora d'inizio crescente, senza orario come gli H24 in fondo), non piu' per classe (prima APP, poi AUTO...): es. AUTO 06:00, AUTO 06:45, APP 07:00, AUTO 07:15, poi FU. A parita' di orario resta l'ordine delle tendine sotto. Le tendine di classe sotto non cambiano. In ordine B invariato (23-tendine-modelli.jsx).
+- Annullamento: ripristinare il commit.

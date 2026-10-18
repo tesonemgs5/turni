@@ -79,7 +79,12 @@ export function ElencoModelliTendine(props) {
   const LS_SEL = "turnipm_sel_aperta_" + (chiave || "x");
   const [selAperta, setSelAperta] = useState(() => { try { return localStorage.getItem(LS_SEL) !== "0"; } catch (e) { return true; } });
   const selSet = new Set(selezionati || []);
-  const selLista = (!cercando && selSet.size > 0) ? ordinati.filter((m) => selSet.has((estrai ? estrai(m) : m).id)) : [];
+  // In ordine A la lista dei selezionati e' in ORDINE DI INIZIO TURNO (ora d'inizio crescente, senza orario in fondo);
+  // a parita' resta l'ordine delle tendine sotto. In ordine B resta l'ordine per orario che gia' hanno.
+  const selBase = (!cercando && selSet.size > 0) ? ordinati.filter((m) => selSet.has((estrai ? estrai(m) : m).id)) : [];
+  const selLista = ordine === "A"
+    ? selBase.map((m, i) => ({ m, i })).sort((a, b) => (minutiInizio(estrai ? estrai(a.m) : a.m) - minutiInizio(estrai ? estrai(b.m) : b.m)) || (a.i - b.i)).map((x) => x.m)
+    : selBase;
   const toggleSel = () => { const n = !selAperta; setSelAperta(n); try { localStorage.setItem(LS_SEL, n ? "1" : "0"); } catch (e) {} };
   return (
     <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden", marginBottom: 12, ...(stileContenitore || {}) }}>
