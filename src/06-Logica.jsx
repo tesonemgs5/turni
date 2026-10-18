@@ -813,6 +813,7 @@ export function useAppCore(session){
   const [indennita, setIndennita] = useState({ diurno:"", notturno:"", festivo:"", notturno_festivo:"" });
   const [valoreTicket, setValoreTicket] = useState("");
   const [conteggioConfigs, setConteggioConfigs] = useState({});
+  const conteggioConfigsRef = useRef({}); // sempre l'ultimo valore: serve alla sincronizzazione automatica (evita il valore "vecchio" della closure)
 
   // ── PERSISTENZA LOCALE AUTOMATICA per i dati che prima vivevano SOLO in
   // RAM (arrivavano unicamente da Supabase ad ogni avvio, mai scritti su
@@ -837,6 +838,7 @@ export function useAppCore(session){
       primoRenderDatiSessioneFatto.current = true;
       return;
     }
+    conteggioConfigsRef.current = conteggioConfigs;
     saveDatiSessioneLocale({ rotazioni, coloriExtra, gruppi, autocompleteValori, indennita, valoreTicket, conteggioConfigs });
   }, [rotazioni, coloriExtra, gruppi, autocompleteValori, indennita, valoreTicket, conteggioConfigs]);
 
@@ -3876,10 +3878,10 @@ export function useAppCore(session){
       // ── IMPOSTAZIONI (user_settings): giorni importanti/festivi personali, colore domeniche e festivi,
       // quartine (dentro report_settings), colori delle fasce, festività attive. Non stanno nelle tabelle di get_changes.
       // Si rilegge la riga dal server e si applica solo ciò che è DIVERSO; i giorni importanti si fondono con le modifiche locali in coda.
-      let extraHolsNuovi = null; let impostazioniNuove = null; let nExtra = 0;
+      let extraHolsNuovi = null; let impostazioniNuove = null; let nExtra = 0; let configReportNuove = null;
       try{
         const {data:rigaSett, error:errSett} = await supabase.from("user_settings")
-          .select("extra_hols,sunday_color,holiday_color,report_settings,fasce_automatiche,national_hols_enabled").eq("user_id",userId).maybeSingle();
+          .select("extra_hols,sunday_color,holiday_color,report_settings,fasce_automatiche,national_hols_enabled,conteggio_configs").eq("user_id",userId).maybeSingle();
         if(errSett) throw errSett;
         if(rigaSett){
           const dalServer = applicaOpExtraHols(rigaSett.extra_hols||[], leggiOpExtraHols());
@@ -3902,6 +3904,13 @@ export function useAppCore(session){
             if(JSON.stringify(loc[k] ?? null) !== JSON.stringify(v)) cambiati[k] = v;
           });
           if(Object.keys(cambiati).length>0){ impostazioniNuove = cambiati; nExtra += Object.keys(cambiati).length; }
+          // Filtra modelli e configurazione dei report (conteggio_configs): senza questo restavano diverse fra i dispositivi.
+          // Si applica solo se il server ne ha una e se e' diversa da quella di questo dispositivo (mai sovrascritta con un valore vuoto).
+          const jsonStabile = (v)=>JSON.stringify(v, (k,val)=> (val && typeof val==="object" && !Array.isArray(val)) ? Object.keys(val).sort().reduce((o,kk)=>{ o[kk]=val[kk]; return o; },{}) : val);
+          const cfgSrv = rigaSett.conteggio_configs;
+          if(cfgSrv && typeof cfgSrv==="object" && Object.keys(cfgSrv).length>0 && jsonStabile(conteggioConfigsRef.current||{})!==jsonStabile(cfgSrv)){ // confronto indipendente dall'ordine delle chiavi (Supabase le riordina)
+            configReportNuove = cfgSrv; nExtra += 1;
+          }
         }
       }catch(e){ segnalaErroreSoloLog(e?.message||String(e), "Sincronizzazione impostazioni e giorni importanti"); }
 
@@ -3928,6 +3937,7 @@ export function useAppCore(session){
         if(nRot>0 || elimRot.size>0) setRotazioni(rotNuove);
         if(coloriNuovi) setColoriExtra(coloriNuovi);
         if(gruppiNuovi) setGruppi(gruppiNuovi);
+        if(configReportNuove) setConteggioConfigs(configReportNuove);
         saveToLocalStorage(events, calendars, modelliNuovi, calId, impostazioniNuove||{});
         setTimeout(()=>impostaSorgenteLog("locale"), 1500);
       }
@@ -7667,6 +7677,22 @@ const importsRecenti = useMemo(()=>{
     return { perEvento, creditoResiduoTotale };
   }
 
+  // Prima riga di un calendario in un giorno, con lo stesso ordine con cui il calendario le mostra:
+  // posizione del modello nella lista Modelli, poi orario di inizio (senza orario in coda), poi id.
+  function primaRigaCalendario(eventi){
+    if(!eventi || eventi.length===0) return null;
+    const modOrderIdx = new Map(modelliOrdinati.map((m,i)=>[m.id,i]));
+    const idx = (e)=> (e.modelloId && modOrderIdx.has(e.modelloId)) ? modOrderIdx.get(e.modelloId) : 9999;
+    return [...eventi].sort((a,b)=>{
+      const ma=idx(a), mb=idx(b); if(ma!==mb) return ma-mb;
+      const ta=a.tIn?oraInMinuti(a.tIn):null, tb=b.tIn?oraInMinuti(b.tIn):null;
+      if(ta==null && tb!=null) return 1;
+      if(ta!=null && tb==null) return -1;
+      if(ta!=null && tb!=null && ta!==tb) return ta-tb;
+      return String(a.id).localeCompare(String(b.id));
+    })[0];
+  }
+
   function computeTurnazioneForReport(cfg, reportId){
     const {from, to} = getReportRange();
     const esclusi = cfg?.modelliEsclusi || [];
@@ -7689,11 +7715,17 @@ const importsRecenti = useMemo(()=>{
     };
     for(const [dateKey, calMap] of Object.entries(store.events)){
       if(dateKey < from || dateKey > to) continue;
-      const fuSalta = fuDaSaltare(calMap, passaEv, true);
+      // Regola Turnazione: se il calendario TURNI (principale) fa parte dei calendari del report e quel giorno ha almeno
+      // un evento, conta SOLO la sua prima riga (la prima che il calendario mostra), anche con più calendari selezionati;
+      // se la prima riga non passa i filtri, quel giorno non conta nulla. Se TURNI quel giorno non ha eventi
+      // (o non è selezionato) si fa la somma degli eventi dei calendari del report.
+      const turniNelReport = !!mainCalId && (reportCalIds.length===0 || reportCalIds.includes(mainCalId));
+      const primaRigaTurni = turniNelReport ? primaRigaCalendario(calMap[mainCalId]||[]) : null;
       for(const [cid, evts] of Object.entries(calMap)){
         if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
-        if(cid===fuSalta) continue;
+        if(primaRigaTurni && cid!==mainCalId) continue;
         for(const e of evts){
+          if(primaRigaTurni && e.id!==primaRigaTurni.id) continue;
           // Override "solo questo evento" su CATEGORIA REPORT: priorità massima,
           // sopra l'inclusione/esclusione decisa a livello di modello.
           const overrideReportEvento = (reportId ? (e.reportOverrides||{})[reportId] : null)?.stato || null;

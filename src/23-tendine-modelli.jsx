@@ -104,6 +104,8 @@ export function ElencoModelliTendine(props) {
       )}
       {blocchi.map((b) => {
         const aperto = aperte.has(b.key);
+        // Con una selezione (prop `selezionati`): accanto al nome si vede «selezionati / totale del gruppo», non solo il totale.
+        const nSelB = selezionati ? b.modelli.filter((m) => selSet.has((estrai ? estrai(m) : m).id)).length : 0;
         return (
           <Fragment key={b.key}>
             <div onClick={() => toggle(b.key)}
@@ -123,7 +125,7 @@ export function ElencoModelliTendine(props) {
                 );
               })()}
               <span style={{ flex: 1, minWidth: 0 }}>{b.label}</span>
-              <span style={{ color: T.sub, fontWeight: 700, marginRight: 10 }}>{b.modelli.length}</span>
+              <span style={{ color: T.sub, fontWeight: 700, marginRight: 10 }}>{selezionati ? (<span title="modelli selezionati / modelli del gruppo"><b style={{ color: nSelB > 0 ? (props.accent || ctx.accent || T.text) : T.sub }}>{nSelB}</b>/{b.modelli.length}</span>) : b.modelli.length}</span>
               <span style={{ fontSize: 13 }}>{aperto ? "▼" : "▶"}</span>
             </div>
             {aperto && b.modelli.map((m) => renderRiga(m, ordinati.indexOf(m), ordinati))}

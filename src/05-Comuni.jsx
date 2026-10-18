@@ -1119,6 +1119,11 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
   const [tmpName, setTmpName] = useState(r.label);
   const [openModello, setOpenModello] = useState(null);
   const [openCollega, setOpenCollega] = useState(null);
+  // PER MODELLO e PER COLLEGA sono menu espandibili (chiusi di partenza); aperto/chiuso vale per dispositivo.
+  const leggiAperto = (k)=>{ try{ return localStorage.getItem(k)==="1"; }catch(e){ return false; } };
+  const [perModelloAperto, setPerModelloAperto] = useState(()=>leggiAperto("turnipm_turnazione_permodello_aperto"));
+  const [perCollegaAperto, setPerCollegaAperto] = useState(()=>leggiAperto("turnipm_turnazione_percollega_aperto"));
+  const alternaAperto = (k, corrente, setter)=>{ const n=!corrente; setter(n); try{ localStorage.setItem(k, n?"1":"0"); }catch(e){} };
   const [openGruppo, setOpenGruppo] = useState(null);
   const pct1 = data.totale>0 ? Math.round(((data.primo||0)/data.totale)*100) : 0;
   const pct2 = data.totale>0 ? Math.round(((data.secondo||0)/data.totale)*100) : 0;
@@ -1243,8 +1248,12 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
 
       {modelli.length>0&&data.perModello&&Object.keys(data.perModello).length>0&&(
         <div style={{background:T.surface,borderRadius:10,padding:12}}>
-          <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:8}}>PER MODELLO</div>
-          {Object.entries(data.perModello).sort(([a],[b])=>{
+          <div onClick={()=>alternaAperto("turnipm_turnazione_permodello_aperto", perModelloAperto, setPerModelloAperto)}
+            style={{display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",fontSize:10,color:T.sub,fontWeight:700,marginBottom:perModelloAperto?8:0}}>
+            <span>PER MODELLO · {Object.values(data.perModello).reduce((a,v)=>a+(v.count||0),0)}</span>
+            <span style={{fontSize:12}}>{perModelloAperto?"▼":"▶"}</span>
+          </div>
+          {perModelloAperto&&Object.entries(data.perModello).sort(([a],[b])=>{
                       const _ord=modelliOrdinati||modelli; const ia=_ord.findIndex(m=>m.id===a), ib=_ord.findIndex(m=>m.id===b);
                       return (ia<0?9999:ia)-(ib<0?9999:ib);
                     }).map(([mid,info])=>{
@@ -1290,8 +1299,12 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
           solo un campo di testo senza nessun elenco sotto da consultare. */}
       {data.perCollega&&Object.keys(data.perCollega).length>0&&(
         <div style={{background:T.surface,borderRadius:10,padding:12}}>
-          <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:8}}>PER COLLEGA</div>
-          {Object.entries(data.perCollega).sort((a,b)=>b[1].count-a[1].count).map(([nome,info])=>{
+          <div onClick={()=>alternaAperto("turnipm_turnazione_percollega_aperto", perCollegaAperto, setPerCollegaAperto)}
+            style={{display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",fontSize:10,color:T.sub,fontWeight:700,marginBottom:perCollegaAperto?8:0}}>
+            <span>PER COLLEGA · {Object.values(data.perCollega).reduce((a,v)=>a+(v.count||0),0)}</span>
+            <span style={{fontSize:12}}>{perCollegaAperto?"▼":"▶"}</span>
+          </div>
+          {perCollegaAperto&&Object.entries(data.perCollega).sort((a,b)=>b[1].count-a[1].count).map(([nome,info])=>{
             const isOpen = openCollega===nome;
             return (
               <div key={nome} style={{marginBottom:4}}>
@@ -2718,6 +2731,12 @@ function SottomenuLibero({T, accent, sm, perGruppoSm, valore, formatta, modelli,
     if(next[mid]===key) delete next[mid]; else next[mid]=key;
     onPatch({assegnazioni:next});
   }
+  // Assegna in un colpo solo tutti i modelli di una tendina (APP, AUTO, H24...) a questo gruppo: casella accanto al nome della tendina.
+  function assegnaMolti(ids, key){
+    const next = {...asseg};
+    ids.forEach(mid=>{ next[mid]=key; });
+    onPatch({assegnazioni:next});
+  }
   function aggiungiGruppo(){
     const key = "g"+Date.now().toString(36);
     onPatch({gruppi:[...gruppi, {key,label:"",color:COLORI[gruppi.length%COLORI.length]}]});
@@ -2786,6 +2805,7 @@ function SottomenuLibero({T, accent, sm, perGruppoSm, valore, formatta, modelli,
                 )}
                 {altri.length>0&&(
                   <ElencoModelliTendine chiave={"libero_"+sm.id+"_"+g.key} modelli={altri} renderRiga={riga}
+                    onSelezionaGruppo={(ms)=>assegnaMolti(ms.map(x=>x.id), g.key)}
                     stileContenitore={{border:"none",borderRadius:6,marginBottom:0}}/>
                 )}
                 {modelli.length===0&&(<div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"6px 0"}}>Nessun modello</div>)}
