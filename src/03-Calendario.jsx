@@ -1053,7 +1053,7 @@ export default function VistaCalendario({ C }){
                         <div style={{width:8,height:8,borderRadius:"50%",background:cal.color}}/>
                         <span style={{fontSize:12,fontWeight:800,color:T.sub,textTransform:"uppercase"}}>{cal.name}</span>
                       </div>
-                      <ElencoModelliTendine chiave={"reportpicker_"+cal.id} modelli={modelliCal} calId={cal.id} cercando={cercando}
+                      <ElencoModelliTendine chiave={"reportpicker_"+cal.id} modelli={modelliCal} calId={cal.id} cercando={cercando} selezionati={inclusi}
                         stileContenitore={{marginBottom:0}} renderRiga={(m,i,arr)=>{
                           const selezionato = inclusi.includes(m.id);
                           const colore = m?.coloreCustom||colByTime(m.inizio);

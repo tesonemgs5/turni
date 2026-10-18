@@ -65,7 +65,7 @@ export function PulsanteOrdineAB(props) {
 // chiave = nome della lista (ricorda quali tendine erano aperte). renderRiga(m, i, arr) disegna la riga del modello.
 export function ElencoModelliTendine(props) {
   const ctx = useContext(ContestoTendine) || {};
-  const { modelli, calId, cercando, chiave, renderRiga, estrai, stileContenitore } = props;
+  const { modelli, calId, cercando, chiave, renderRiga, estrai, stileContenitore, selezionati } = props;
   const ordine = props.ordine ?? ctx.ordine, mainCalId = props.mainCalId ?? ctx.mainCalId, gruppiDelCalendario = props.gruppiDelCalendario || ctx.gruppiDelCalendario, gruppi = props.gruppi || ctx.gruppi, T = props.T || ctx.T;
   const LS = "turnipm_tendine_aperte_" + (chiave || "x");
   const [aperte, setAperte] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem(LS) || "[]")); } catch (e) { return new Set(); } });
@@ -75,6 +75,12 @@ export function ElencoModelliTendine(props) {
   const tutteAperte = chiavi.length > 0 && chiavi.every((k) => aperte.has(k));
   const ordinati = [...blocchi.flatMap((b) => b.modelli), ...senza];
   const toggle = (k) => { const s = new Set(aperte); if (s.has(k)) s.delete(k); else s.add(k); salva(s); };
+  // Tendina «SELEZIONATI» in testa (solo se chi usa l'elenco passa `selezionati`): i modelli scelti, nell'ordine attivo.
+  const LS_SEL = "turnipm_sel_aperta_" + (chiave || "x");
+  const [selAperta, setSelAperta] = useState(() => { try { return localStorage.getItem(LS_SEL) !== "0"; } catch (e) { return true; } });
+  const selSet = new Set(selezionati || []);
+  const selLista = (!cercando && selSet.size > 0) ? ordinati.filter((m) => selSet.has((estrai ? estrai(m) : m).id)) : [];
+  const toggleSel = () => { const n = !selAperta; setSelAperta(n); try { localStorage.setItem(LS_SEL, n ? "1" : "0"); } catch (e) {} };
   return (
     <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden", marginBottom: 12, ...(stileContenitore || {}) }}>
       {chiavi.length > 0 && (
@@ -84,6 +90,16 @@ export function ElencoModelliTendine(props) {
             {tutteAperte ? "▶ Chiudi tutti" : "▼ Apri tutti"}
           </button>
         </div>
+      )}
+      {selLista.length > 0 && (
+        <Fragment key="__SEL__">
+          <div onClick={toggleSel}
+            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 12px", background: T.s2, fontSize: 12, fontWeight: 900, letterSpacing: 0.5, color: T.text, cursor: "pointer", borderBottom: `1px solid ${T.border}` }}>
+            <span>{selAperta ? "▼" : "▶"}&nbsp; ✅ SELEZIONATI</span>
+            <span style={{ color: T.sub, fontWeight: 700 }}>{selLista.length}</span>
+          </div>
+          {selAperta && selLista.map((m) => renderRiga(m, selLista.indexOf(m), selLista))}
+        </Fragment>
       )}
       {blocchi.map((b) => {
         const aperto = aperte.has(b.key);
