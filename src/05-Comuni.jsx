@@ -1,5 +1,6 @@
     import { useState, useEffect, useRef, useMemo, Fragment } from "react";
 import { ElencoModelliTendine, PulsanteOrdineAB } from "./23-tendine-modelli";
+import { GIORNI_FASCIA, fasceIndennitaDi } from "./24-fasce-indennita";
 // NOTA: COLORE_H24, getColorByTime e getContrastTextColor sono copiate qui
 // (invece di importate da 4.Rotazione) per evitare un import circolare
 // 4.Rotazione <-> 5.Comuni. Se cambi la formula del contrasto o le fasce
@@ -1389,12 +1390,18 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
     if(openSottomenu===id) setOpenSottomenu(null);
   }
 
-  const fasce = [
-    { key:"diurno",          label:"Diurno (06:00 - 22:00)", count:calc.diurno },
-    { key:"notturno",        label:"Notturno",                count:calc.notturno },
-    { key:"festivo",         label:"Festivo",                 count:calc.festivo },
-    { key:"notturno_festivo",label:"Notturno festivo",        count:calc.notturno_festivo },
-  ];
+  // Fasce modificabili: nome, orario (da → a), giorni (Lun…Dom, Festivi) e compenso. Senza modifiche valgono le 4 di sempre.
+  const fasceCfg = fasceIndennitaDi(cfg);
+  const fasce = fasceCfg.map(f=>({...f, count:calc[f.key]||0}));
+  const salvaFasce = (nuove)=>onUpdateCfg({...(cfg||{}), fasceIndennita:nuove});
+  const patchFascia = (key, patch)=>salvaFasce(fasceCfg.map(f=>f.key===key?{...f,...patch}:f));
+  const toggleGiorno = (key, cod)=>{
+    const f = fasceCfg.find(x=>x.key===key); if(!f) return;
+    patchFascia(key, {giorni: f.giorni.includes(cod) ? f.giorni.filter(c=>c!==cod) : [...f.giorni, cod]});
+  };
+  const aggiungiFascia = ()=>salvaFasce([...fasceCfg, {key:"f_"+Date.now().toString(36), label:"", da:"06:00", a:"22:00", giorni:["lun","mar","mer","gio","ven","sab"]}]);
+  const eliminaFascia = (key)=>{ if(fasceCfg.length>1) salvaFasce(fasceCfg.filter(f=>f.key!==key)); };
+  const PRESET_GIORNI = [["Feriale",["lun","mar","mer","gio","ven","sab"]],["Sabato",["sab"]],["Domenica",["dom"]],["Festivo",["dom","fes"]]];
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
@@ -1422,13 +1429,36 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
 
       <div style={{fontSize:10,color:T.sub,marginBottom:-4}}>Imposta il compenso per ora</div>
       {fasce.map(f=>(
-        <div key={f.key} style={{background:T.surface,borderRadius:10,padding:"10px 12px",
-          display:"flex",alignItems:"center",gap:10}}>
-          <div style={{flex:1}}>
-            <div style={{fontSize:12,fontWeight:700,color:T.text}}>{f.label}</div>
-            <div style={{fontSize:11,color:T.sub}}>{fmtOreDecimali(f.count)} nel periodo</div>
+        <div key={f.key} style={{background:T.surface,borderRadius:10,padding:"10px 12px",display:"flex",flexDirection:"column",gap:8}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <input value={f.label} placeholder="NOME FASCIA" onChange={e=>patchFascia(f.key,{label:e.target.value})}
+              style={{flex:1,minWidth:0,background:"transparent",border:"none",outline:"none",fontSize:13,fontWeight:800,color:T.text}}/>
+            {fasceCfg.length>1&&(<span onClick={()=>eliminaFascia(f.key)} style={{cursor:"pointer",fontSize:13,color:"#ef4444",padding:"2px 6px"}}>🗑️</span>)}
           </div>
-          <div style={{display:"flex",alignItems:"center",gap:4}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <input type="time" value={f.da} onChange={e=>patchFascia(f.key,{da:e.target.value})}
+              style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,padding:"5px 8px",color:T.text,fontSize:13,outline:"none"}}/>
+            <span style={{color:T.sub}}>→</span>
+            <input type="time" value={f.a} onChange={e=>patchFascia(f.key,{a:e.target.value})}
+              style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,padding:"5px 8px",color:T.text,fontSize:13,outline:"none"}}/>
+            <span style={{fontSize:11,color:T.sub,flex:1,textAlign:"right"}}>{fmtOreDecimali(f.count)} nel periodo</span>
+          </div>
+          <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+            {GIORNI_FASCIA.map(([cod,lab])=>{
+              const on = (f.giorni||[]).includes(cod);
+              return (
+                <span key={cod} onClick={()=>toggleGiorno(f.key,cod)}
+                  style={{cursor:"pointer",fontSize:11,fontWeight:700,padding:"4px 8px",borderRadius:14,
+                    background:on?accent:T.s2,color:on?getContrastTextColor(accent):T.text,border:`1px solid ${on?accent:T.border}`}}>{lab}</span>
+              );
+            })}
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+            {PRESET_GIORNI.map(([lab,g])=>(
+              <span key={lab} onClick={()=>patchFascia(f.key,{giorni:g})}
+                style={{cursor:"pointer",fontSize:11,color:accent,fontWeight:700,padding:"2px 6px",border:`1px dashed ${T.border}`,borderRadius:10}}>{lab}</span>
+            ))}
+            <span style={{flex:1}}/>
             <span style={{fontSize:13,color:T.sub}}>€</span>
             <input type="number" value={values[f.key]||""} onChange={e=>setValues(v=>({...v,[f.key]:e.target.value}))}
               onBlur={onSave} placeholder="0.00" step="0.01"
@@ -1437,6 +1467,10 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
           </div>
         </div>
       ))}
+      <button onClick={aggiungiFascia}
+        style={{padding:"9px 0",borderRadius:10,border:`1px dashed ${T.border}`,background:"transparent",color:accent,fontWeight:700,fontSize:12,cursor:"pointer"}}>
+        + Aggiungi fascia
+      </button>
       <div style={{background:T.surface,borderRadius:10,padding:"10px 12px",
         display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <span style={{fontSize:13,fontWeight:800,color:T.text}}>Totale stimato</span>
@@ -1651,8 +1685,8 @@ export function StraordinariView({T, data, store, reportRange, modelliInclusi=[]
 }
 
 export function GuadagniView({T, indennita, calc}){
-  const tot = ["diurno","notturno","festivo","notturno_festivo"].reduce((s,k)=>{
-    return s+(parseFloat(indennita[k])||0)*calc[k];
+  const tot = Object.keys(calc||{}).reduce((s,k)=>{
+    return s+(parseFloat(indennita[k])||0)*(calc[k]||0);
   },0);
   return (
     <div style={{background:T.surface,borderRadius:10,padding:12}}>
@@ -2827,5 +2861,45 @@ function SottomenuLibero({T, accent, sm, perGruppoSm, valore, formatta, modelli,
         );
       })}
     </div>
+  );
+}
+
+
+// Periodo PERSONALIZZATO di un singolo report (es. Piano incentivante): da / a. Senza periodo vale quello scelto in alto.
+export function PeriodoReportButton({T, accent, intervallo, labelGlobale, onChange}){
+  const [aperto, setAperto] = useState(false);
+  const [da, setDa] = useState("");
+  const [a, setA] = useState("");
+  const fmt = (d)=>d ? d.split("-").reverse().join("/") : "";
+  const attivo = !!(intervallo && intervallo.from && intervallo.to);
+  const valido = !!da && !!a && da<=a;
+  return (
+    <>
+      <button onClick={()=>{setDa(intervallo?.from||"");setA(intervallo?.to||"");setAperto(true);}}
+        style={{display:"flex",alignItems:"center",gap:6,background:"#ffffff",border:`1px solid ${attivo?accent:T.border}`,
+          borderRadius:20,padding:"6px 12px",fontSize:14,fontWeight:700,color:"#0f172a",cursor:"pointer"}}>
+        📅 {attivo ? `${fmt(intervallo.from)} – ${fmt(intervallo.to)}` : "Periodo"}
+      </button>
+      {aperto&&(
+        <div onClick={()=>setAperto(false)} style={{position:"fixed",inset:0,zIndex:1000,background:"rgba(0,0,0,0.45)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:T.surface,borderRadius:16,padding:18,width:"100%",maxWidth:380,display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{fontSize:16,fontWeight:900,color:T.text}}>Periodo di questo report</div>
+            <div style={{fontSize:12,color:T.sub}}>Vale solo per questo report. Senza periodo vale quello scelto in alto{labelGlobale?` (${labelGlobale})`:""}.</div>
+            <label style={{display:"flex",flexDirection:"column",gap:4,fontSize:12,fontWeight:700,color:T.text}}>Dal
+              <input type="date" value={da} onChange={e=>setDa(e.target.value)} style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 10px",color:T.text,fontSize:14,outline:"none"}}/>
+            </label>
+            <label style={{display:"flex",flexDirection:"column",gap:4,fontSize:12,fontWeight:700,color:T.text}}>Al
+              <input type="date" value={a} onChange={e=>setA(e.target.value)} style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 10px",color:T.text,fontSize:14,outline:"none"}}/>
+            </label>
+            {da&&a&&da>a&&(<div style={{fontSize:12,color:"#dc2626"}}>La data iniziale è dopo quella finale.</div>)}
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>{onChange(null);setAperto(false);}} style={{flex:1,padding:"10px 0",borderRadius:10,border:`1px solid ${T.border}`,background:T.s2,color:T.text,fontWeight:700,fontSize:12,cursor:"pointer"}}>Usa il periodo generale</button>
+              <button disabled={!valido} onClick={()=>{onChange({from:da,to:a});setAperto(false);}}
+                style={{flex:1,padding:"10px 0",borderRadius:10,border:"none",background:valido?accent:T.s2,color:valido?getContrastTextColor(accent):T.sub,fontWeight:800,fontSize:13,cursor:valido?"pointer":"default"}}>Salva</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

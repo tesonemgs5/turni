@@ -5,6 +5,7 @@ import { ordineAttivo, impostaOrdineAttivo, posDaRiga, colonnePosizione, payload
 import { calcolaAllineamentoColori } from "./13-allinea-colori";
 import { widgetDisponibile, inviaAlWidget, descriviStatoWidget } from "./17-widget";
 import { scaricaFileTesto } from "./18-scarica-file";
+import { fasceIndennitaDi, fasceDelGiorno, minutiPerFascia } from "./24-fasce-indennita";
 import {
   FASCE_AUTOMATICHE_DEFAULT, FESTIVITA_DEFAULT_ATTIVE, MONTHS, NOMI_GIORNI_IT, PALETTE, COLORE_H24,
   calcFine6h15, calcFine6h30, calcFineModello, categoriaAppAutoAutomatica, categoriaTurnoAutomatica,
@@ -7375,7 +7376,10 @@ const importsRecenti = useMemo(()=>{
 
 // #region SEZIONE 14: REPORT HELPERS
 // ═══════════════════════════════════════════════════════════════
-  function getReportRange(){
+  function getReportRange(cfg){
+    // Periodo PERSONALIZZATO di questo report (se impostato): vale al posto di quello scelto in alto.
+    const iv = cfg && cfg.intervallo;
+    if(iv && iv.from && iv.to && iv.from<=iv.to) return {from:iv.from, to:iv.to, label:iv.from+" - "+iv.to, personalizzato:true};
     if(reportInterval==="mese"){
       const y=reportMeseSel.anno, mIdx=reportMeseSel.mese-1; // mIdx 0-based per daysInMonth/MONTHS
       const from=`${y}-${String(mIdx+1).padStart(2,"0")}-01`;
@@ -7411,7 +7415,7 @@ const importsRecenti = useMemo(()=>{
   }
 
   function computeConteggioForReport(cfg, reportId){
-    const {from, to} = getReportRange();
+    const {from, to} = getReportRange(cfg);
     const result = { totale:0 };
     const perModello = {};
     const perCollega = {};
@@ -7505,7 +7509,7 @@ const importsRecenti = useMemo(()=>{
   // ricalcolata "quanto dura la giornata di lavoro", solo sommati i minuti
   // che risultano già sull'evento.
   function computeMinutiForReport(cfg, reportId){
-    const {from, to} = getReportRange();
+    const {from, to} = getReportRange(cfg);
     const result = { totaleMin:0 };
     const perModello = {};
     const perCollega = {};
@@ -7694,7 +7698,7 @@ const importsRecenti = useMemo(()=>{
   }
 
   function computeTurnazioneForReport(cfg, reportId){
-    const {from, to} = getReportRange();
+    const {from, to} = getReportRange(cfg);
     const esclusi = cfg?.modelliEsclusi || [];
     const aggiunti = cfg?.modelliAggiunti || [];
     const default6h15 = modelli.filter(m=>isModelloTurnazioneDefault(m) && !esclusi.includes(m.id)).map(m=>m.id);
@@ -7838,8 +7842,16 @@ const importsRecenti = useMemo(()=>{
   // attraversa le 06:00 o le 22:00. "Festivo" e "Festivo notturno" sono le
   // stesse fasce orarie ma applicate nei giorni festivi (isFestivo).
   function computeIndennita(modelliInclusi=[], reportId=null){
-    const {from, to} = getReportRange();
-    const totaliMin = { diurno:0, notturno:0, festivo:0, notturno_festivo:0 };
+    const cfgRep = reportId ? conteggioConfigs[reportId] : null;
+    const {from, to} = getReportRange(cfgRep);
+    // Fasce (nome, orario, giorni) del report; il report «guadagni» usa quelle del primo report «indennita».
+    let cfgFasce = cfgRep;
+    if(!(cfgFasce && Array.isArray(cfgFasce.fasceIndennita) && cfgFasce.fasceIndennita.length)){
+      const rInd = (activeReports||[]).find(x=>x.type==="indennita");
+      if(rInd && conteggioConfigs[rInd.id]) cfgFasce = conteggioConfigs[rInd.id];
+    }
+    const fasceInd = fasceIndennitaDi(cfgFasce);
+    const totaliMin = {}; fasceInd.forEach(f=>{ totaliMin[f.key]=0; });
     const passaEv = (e)=>{
       const ov = (reportId ? (e.reportOverrides||{})[reportId] : null)?.stato || null;
       if(ov==="escluso") return false;
@@ -7860,20 +7872,17 @@ const importsRecenti = useMemo(()=>{
           if(overrideReportEvento!=="incluso" && modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
           if(e.allDay) continue;
           if(!e.tIn||!e.tOut) continue;
-          const {diurno, notturno} = spezzaDiurnoNotturno(e.tIn, e.tOut);
-          if(fest){ totaliMin.festivo += diurno; totaliMin.notturno_festivo += notturno; }
-          else    { totaliMin.diurno  += diurno; totaliMin.notturno         += notturno; }
+          const mm = minutiPerFascia(oraInMinuti(e.tIn), oraInMinuti(e.tOut), fasceDelGiorno(fasceInd, dateKey, fest));
+          for(const k in mm) totaliMin[k] += mm[k];
         }
       }
     }
     // Restituite in ORE (decimali), non in minuti: chi consuma questo
     // oggetto (IndennitaConfig) moltiplica direttamente ore*tariffa_oraria.
-    return {
-      diurno: totaliMin.diurno/60,
-      notturno: totaliMin.notturno/60,
-      festivo: totaliMin.festivo/60,
-      notturno_festivo: totaliMin.notturno_festivo/60,
-    };
+    const out = {};
+    fasceInd.forEach(f=>{ out[f.key] = totaliMin[f.key]/60; });
+    ["diurno","notturno","festivo","notturno_festivo"].forEach(k=>{ if(out[k]===undefined) out[k]=0; }); // compatibilità con chi legge i 4 valori storici
+    return out;
   }
 
   // Durata PREVISTA di un evento in minuti, basata sul modello collegato
@@ -7938,8 +7947,8 @@ const importsRecenti = useMemo(()=>{
   // MENO rispetto alle ore previste dal modello di quel turno.
   const TARIFFA_VIABILITA = 15;
   const PENALE_VIABILITA_ORA = 2.4;
-  function computeViabilita(modelliInclusi=[]){
-    const {from, to} = getReportRange();
+  function computeViabilita(modelliInclusi=[], cfgReport=null){
+    const {from, to} = getReportRange(cfgReport);
     let giorni=0, totale=0, oreMancantiTot=0;
     const passaEv = (e)=>{
       if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) return false;
@@ -7973,8 +7982,8 @@ const importsRecenti = useMemo(()=>{
   // lavorate (sommando tutti i turni validi di quel giorno) raggiungono
   // almeno 6h15 (375 minuti).
   const SOGLIA_TICKET_MIN = 375; // 6h15
-  function computeTicket(modelliInclusi=[], valoreTicket=0){
-    const {from, to} = getReportRange();
+  function computeTicket(modelliInclusi=[], valoreTicket=0, cfgReport=null){
+    const {from, to} = getReportRange(cfgReport);
     let giorniConDiritto=0;
     const passaEv = (e)=>{
       if(modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) return false;

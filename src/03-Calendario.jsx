@@ -11,7 +11,7 @@ import {
 } from "./04-Rotazione";
 import { CalBadge, SmartTimeInput, AutocompleteInput, ColorPickerModal,
   ModaleErroriMultipli, FasceExpand, ConteggioConfigCard, TurnazioneConfigCard, OreTurnoConfigCard, fmtOreMin,
-  IndennitaConfig, OrePerTurnoView, StraordinariView, GuadagniView,
+  IndennitaConfig, PeriodoReportButton, OrePerTurnoView, StraordinariView, GuadagniView,
   ViabilitaView, TicketConfig, NAV_HEIGHT_CSS, ConfermaEliminazione, CercaModelli, NessunModello } from "./05-Comuni";
 import { ElencoModelliTendine, PulsanteOrdineAB } from "./23-tendine-modelli";
 import { ModelloCard, ModelForm, RotazioneCard, RotazioneForm, ModelloSelector,
@@ -625,7 +625,9 @@ export default function VistaCalendario({ C }){
         </div>
         {isOpen && (
           <div style={{background:T.s2,padding:14,borderBottom:`1px solid ${T.border}`}}>
-            <div style={{display:"flex",justifyContent:"flex-end",marginBottom:10}}>
+            <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
+              <PeriodoReportButton T={T} accent={accent} intervallo={cfg.intervallo} labelGlobale={range.label}
+                onChange={iv=>{ const {intervallo:_vecchio, ...resto} = cfg; updateConteggioConfig(r.id, iv ? {...resto, intervallo:iv} : resto); }}/>
               <button onClick={()=>setShowReportModelliPicker(r.id)}
                 style={{display:"flex",alignItems:"center",gap:6,background:"#ffffff",
                   border:`1px solid ${T.border}`,borderRadius:20,padding:"6px 12px",
@@ -675,8 +677,8 @@ export default function VistaCalendario({ C }){
                 calc={computeIndennita(cfg.modelliInclusi||[], r.id)} onSave={()=>saveSettings({indennita})}
                 onRename={label=>renameReport(r.id, label)}
                 cfg={cfg} onUpdateCfg={newCfg=>updateConteggioConfig(r.id, newCfg)} accent={accent}
-                viabilitaCalc={computeViabilita(cfg.modelliInclusi||[])}
-                ticketCalc={computeTicket(cfg.modelliInclusi||[], valoreTicket)}
+                viabilitaCalc={computeViabilita(cfg.modelliInclusi||[], cfg)}
+                ticketCalc={computeTicket(cfg.modelliInclusi||[], valoreTicket, cfg)}
                 valoreTicket={valoreTicket} setValoreTicket={setValoreTicket}
                 onSaveValoreTicket={()=>saveSettings({valore_ticket:valoreTicket})}/>
             )}
@@ -686,7 +688,7 @@ export default function VistaCalendario({ C }){
                 onRename={label=>renameReport(r.id, label)}
                 onUpdateCfg={newCfg=>updateConteggioConfig(r.id, newCfg)}/>
             )}
-            {r.type==="straordinari" && <StraordinariView T={T} data={data} store={store} reportRange={{from:range.from,to:range.to}} modelliInclusi={cfg.modelliInclusi||[]} reportCalIds={reportCalIds} calTurniId={mainCalId} calFuId={calFuId}/>}
+            {r.type==="straordinari" && <StraordinariView T={T} data={data} store={store} reportRange={(()=>{const rr=getReportRange(cfg);return {from:rr.from,to:rr.to};})()} modelliInclusi={cfg.modelliInclusi||[]} reportCalIds={reportCalIds} calTurniId={mainCalId} calFuId={calFuId}/>}
             {r.type==="guadagni" && (
               <GuadagniView T={T} indennita={indennita} calc={computeIndennita(cfg.modelliInclusi||[], r.id)}/>
             )}
