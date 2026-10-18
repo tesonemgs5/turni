@@ -485,11 +485,13 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
     } else if(tipo==="modello"){
       nuovo = { id, tipo:"modello", nome:"Per modello" };
     } else {
-      // Sottomenu libero VUOTO: senza nome e senza gruppi. I gruppi (es. 1° e 2° turno, APP e AUTO)
-      // si creano dentro con «+ Aggiungi gruppo».
+      // Sottomenu libero: senza nome, con UN solo gruppo (senza nome) che contiene già i modelli scelti
+      // nel report principale. Altri gruppi si aggiungono dentro con «+ Aggiungi gruppo».
+      const gk = "g"+Date.now().toString(36);
+      const scelti = (cfg.modelliInclusi||[]).filter(i=>i!=="__nessuno__");
       nuovo = { id, tipo:"libero", nome:"",
-        gruppi:[],
-        assegnazioni:{} };
+        gruppi:[{key:gk,label:"",color:"#3b82f6"}],
+        assegnazioni:Object.fromEntries(scelti.map(mid=>[mid,gk])) };
     }
     onUpdateCfg({...cfg, sottomenu:[...sottomenu, nuovo]});
     setShowAggiungiMenu(false);
@@ -684,7 +686,7 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
                               <div style={{display:"flex",alignItems:"center",gap:6,
                                 padding:"8px 10px",background:g.color+"22",borderRadius:isOpenG?"8px 8px 0 0":8,
                                 border:`1px solid ${g.color}44`}}>
-                                <input value={g.label} onChange={e=>{const fix=preparaFixCursore(e);rinominaGruppo(g.key,e.target.value.toUpperCase());fix();}}
+                                <input value={g.label} placeholder="NOME GRUPPO" onChange={e=>{const fix=preparaFixCursore(e);rinominaGruppo(g.key,e.target.value.toUpperCase());fix();}}
                                   style={{flex:1,background:"transparent",border:"none",outline:"none",
                                     fontSize:13,fontWeight:800,color:"#0f172a"}}/>
                                 <span style={{fontSize:14,fontWeight:900,color:"#0f172a"}}>{count}</span>
@@ -748,11 +750,30 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
             al numero di sottomenu: 0 se non servono, quanti se ne vogliono
             se servono. */}
         <div style={{background:T.surface,borderRadius:10,overflow:"hidden"}}>
-          <div onClick={()=>aggiungiSottomenu("libero")}
+          <div onClick={()=>setShowAggiungiMenu(s=>!s)}
             style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,
               padding:"10px 12px",cursor:"pointer",color:accent,fontWeight:700,fontSize:13}}>
-            + Aggiungi sottomenu
+            + Aggiungi sottomenu {showAggiungiMenu?"▲":"▼"}
           </div>
+          {showAggiungiMenu && (
+            <div style={{padding:"0 12px 12px",display:"flex",flexDirection:"column",gap:6}}>
+              <button onClick={()=>aggiungiSottomenu("collega")}
+                style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,
+                  background:T.s2,color:T.text,textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:700}}>
+                Per collega <span style={{fontWeight:400,color:T.sub}}>— elenco automatico, con date</span>
+              </button>
+              <button onClick={()=>aggiungiSottomenu("modello")}
+                style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,
+                  background:T.s2,color:T.text,textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:700}}>
+                Per modello <span style={{fontWeight:400,color:T.sub}}>— elenco automatico, con date</span>
+              </button>
+              <button onClick={()=>aggiungiSottomenu("libero")}
+                style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,
+                  background:T.s2,color:T.text,textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:700}}>
+                Sottomenu libero <span style={{fontWeight:400,color:T.sub}}>— gruppi a scelta, assegnazione manuale</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -803,9 +824,11 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
     } else if(tipo==="modello"){
       nuovo = { id, tipo:"modello", nome:"Per modello" };
     } else {
+      const gk = "g"+Date.now().toString(36);
+      const scelti = (cfg.modelliInclusi||[]).filter(i=>i!=="__nessuno__");
       nuovo = { id, tipo:"libero", nome:"",
-        gruppi:[],
-        assegnazioni:{} };
+        gruppi:[{key:gk,label:"",color:"#3b82f6"}],
+        assegnazioni:Object.fromEntries(scelti.map(mid=>[mid,gk])) };
     }
     onUpdateCfg({...cfg, sottomenu:[...sottomenu, nuovo]});
     setShowAggiungiMenu(false);
@@ -989,7 +1012,7 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
                               <div style={{display:"flex",alignItems:"center",gap:6,
                                 padding:"8px 10px",background:g.color+"22",borderRadius:isOpenG?"8px 8px 0 0":8,
                                 border:`1px solid ${g.color}44`}}>
-                                <input value={g.label} onChange={e=>{const fix=preparaFixCursore(e);rinominaGruppo(g.key,e.target.value.toUpperCase());fix();}}
+                                <input value={g.label} placeholder="NOME GRUPPO" onChange={e=>{const fix=preparaFixCursore(e);rinominaGruppo(g.key,e.target.value.toUpperCase());fix();}}
                                   style={{flex:1,background:"transparent",border:"none",outline:"none",
                                     fontSize:13,fontWeight:800,color:"#0f172a"}}/>
                                 <span style={{fontSize:14,fontWeight:900,color:"#0f172a"}}>{fmtOreMin(minutiGruppo)}</span>
@@ -1050,11 +1073,30 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
         })}
 
         <div style={{background:T.surface,borderRadius:10,overflow:"hidden"}}>
-          <div onClick={()=>aggiungiSottomenu("libero")}
+          <div onClick={()=>setShowAggiungiMenu(s=>!s)}
             style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,
               padding:"10px 12px",cursor:"pointer",color:accent,fontWeight:700,fontSize:13}}>
-            + Aggiungi sottomenu
+            + Aggiungi sottomenu {showAggiungiMenu?"▲":"▼"}
           </div>
+          {showAggiungiMenu && (
+            <div style={{padding:"0 12px 12px",display:"flex",flexDirection:"column",gap:6}}>
+              <button onClick={()=>aggiungiSottomenu("collega")}
+                style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,
+                  background:T.s2,color:T.text,textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:700}}>
+                Per collega <span style={{fontWeight:400,color:T.sub}}>— elenco automatico, con date</span>
+              </button>
+              <button onClick={()=>aggiungiSottomenu("modello")}
+                style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,
+                  background:T.s2,color:T.text,textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:700}}>
+                Per modello <span style={{fontWeight:400,color:T.sub}}>— elenco automatico, con date</span>
+              </button>
+              <button onClick={()=>aggiungiSottomenu("libero")}
+                style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,
+                  background:T.s2,color:T.text,textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:700}}>
+                Sottomenu libero <span style={{fontWeight:400,color:T.sub}}>— gruppi a scelta, assegnazione manuale</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
