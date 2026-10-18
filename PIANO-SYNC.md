@@ -632,3 +632,10 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - **Richiesta**: in ordine alfabetico i gruppi devono essere la **prima lettera** (A, B, C…), non piu' i gruppi per nome uguale; tutti i modelli in ordine alfabetico, con controllo dell'appartenenza ai gruppi.
 - **Stato**: lavori fermati su richiesta. **Nessuna modifica fatta** al database (solo letture di controllo: 225 modelli, 198 nel calendario principale con posizioni da rinumerare in ordine alfabetico) e **nessuna modifica al codice** oltre al commit `19749bd` (gruppi automatici per nome uguale).
 - **Se si riprende**: (1) copia di sicurezza di `modelli.sort_order_a`; (2) rinumerare `sort_order_a` in ordine alfabetico per calendario (stesso confronto dell'app, passo 1000); (3) in ordine A tendine per prima lettera (# per cifre e simboli), modelli in ordine alfabetico dentro; (4) l'inserimento di un modello nuovo in A non separa piu' gli H24; (5) controllo finale dell'appartenenza.
+
+#### Turnazione: ogni giorno conta la prima riga di qualsiasi calendario (18/10) ✅
+- **Regola nuova** (`computeTurnazioneForReport`, 06-Logica.jsx): per ogni giorno si conta **una sola riga, la prima che si vede nel calendario fra i calendari del report**, di qualsiasi calendario e modello. I calendari sono nell'ordine in cui compaiono (TURNI per primo se ha eventi quel giorno, poi FU, poi gli altri); dentro un calendario vale l'ordine dei modelli e poi l'orario. Prima contava solo la prima riga di TURNI e i giorni senza eventi in TURNI (es. solo FU) restavano vuoti.
+- **Giorno vuoto**: se la prima riga non e' conteggiabile (modello non selezionato in «Filtra modelli», escluso, collega o override «escluso») il giorno **resta vuoto**: non si passa alla riga successiva.
+- **Filtra modelli invariato**: per contare ART 32, ART 40, PI RC, RS, NL o i FU (PRIMO, SECONDO, NOTTE, 3°TURNO) quando sono la prima riga, quei modelli devono essere selezionati nel filtro.
+- Gli altri report (conteggi, per modello, per collega) non cambiano.
+- Annullamento: ripristinare il commit.

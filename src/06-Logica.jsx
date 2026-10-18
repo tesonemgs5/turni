@@ -7715,19 +7715,23 @@ const importsRecenti = useMemo(()=>{
     };
     for(const [dateKey, calMap] of Object.entries(store.events)){
       if(dateKey < from || dateKey > to) continue;
-      // Regola Turnazione: se il calendario TURNI (principale) fa parte dei calendari del report, conta SOLO la prima riga
-      // di TURNI di ogni giorno (la prima che il calendario mostra): gli altri calendari selezionati NON contano mai,
-      // nemmeno nei giorni in cui TURNI non ha eventi, così aggiungere calendari non cambia il numero dei turni.
-      // Se la prima riga non passa i filtri, quel giorno non conta nulla.
-      // Se TURNI non è tra i calendari del report si fa la somma degli eventi dei calendari selezionati.
-      const turniNelReport = !!mainCalId && (reportCalIds.length===0 || reportCalIds.includes(mainCalId));
-      const primaRigaTurni = turniNelReport ? primaRigaCalendario(calMap[mainCalId]||[]) : null;
-      if(turniNelReport && !primaRigaTurni) continue;
+      // Regola Turnazione: ogni giorno conta UNA sola riga, la PRIMA che si vede nel calendario fra i calendari del
+      // report, di qualsiasi calendario e qualsiasi modello sia: i calendari sono nell'ordine in cui compaiono
+      // (TURNI per primo se c'e', poi FU, poi gli altri); dentro un calendario vale l'ordine dei modelli e poi
+      // l'orario. Se quella prima riga non passa i filtri del report (modello non selezionato, escluso,
+      // collega...) il giorno resta VUOTO: non si passa alla riga successiva.
+      const ordineCal = [...store.calendars.map(c=>c.id), ...Object.keys(calMap).filter(id=>!store.calendars.some(c=>c.id===id))];
+      let primaRigaGiorno = null;
+      for(const cid of ordineCal){
+        if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
+        const r = primaRigaCalendario(calMap[cid]||[]);
+        if(r){ primaRigaGiorno = r; break; }
+      }
+      if(!primaRigaGiorno) continue;
       for(const [cid, evts] of Object.entries(calMap)){
         if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
-        if(turniNelReport && cid!==mainCalId) continue;
         for(const e of evts){
-          if(turniNelReport && e.id!==primaRigaTurni.id) continue;
+          if(e.id!==primaRigaGiorno.id) continue;
           // Override "solo questo evento" su CATEGORIA REPORT: priorità massima,
           // sopra l'inclusione/esclusione decisa a livello di modello.
           const overrideReportEvento = (reportId ? (e.reportOverrides||{})[reportId] : null)?.stato || null;
