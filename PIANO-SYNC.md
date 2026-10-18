@@ -580,3 +580,12 @@ Ogni passo è piccolo, non blocca l'app e ha una copia di sicurezza o è solo "a
 - **Non cambia**: i dati già salvati in minuscolo (cambia solo ciò che si digita da ora in poi); database nessuna modifica.
 - **Annullamento**: ripristinare il commit.
 - **Eseguito** (18/10): `src/24-maiuscolo.js` + attivazione in `09-main.jsx`. **Provato** in un ambiente simulato con React (campo controllato): scrivendo «pi avvocata» lo stato di React riceve «PI AVVOCATA», il cursore resta dov'era e il campo ha `autocapitalize="characters"`; il campo «URL Script Google Sheets» resta in minuscolo. Build locale riuscita; pubblicato con nuova APK. Da provare sul telefono con la tastiera vera (suggerimenti Android).
+
+### Turnazione: in un giorno conta solo la prima riga (TURNI prima di FU) (18/10) 🔄 (scritto prima)
+- **Regola già presente**: se il calendario TURNI ha, in un giorno, un evento che passa il filtro del report, gli eventi del calendario FU di quel giorno non vengono contati (`fuDaSaltare`).
+- **Problema** (dagli screenshot di ottobre): se la prima riga del giorno è un articolo, una ferie, un RC recupero o un PI recupero (modelli che il report Turnazione non conta), il FU veniva contato lo stesso. Esempi: 03/10 «ART. 32 + FU SECONDO», 07/10 «ART. 40 + FU PRIMO», 19/10 «PI RC + FU SECONDO».
+- **Cosa cambio**: nel solo report **Turnazione**, se il calendario TURNI ha **qualsiasi** evento nel giorno (non solo quelli che passano il filtro), i FU di quel giorno **non** vengono contati: conta solo la prima riga. `fuDaSaltare` riceve un parametro opzionale (`qualsiasiEvento`), usato solo da `computeTurnazioneForReport`.
+- **Non cambia**: gli altri report (conteggio, ore, indennità, viabilità, ticket) restano con la regola di prima; nessun dato salvato.
+- **Atteso sui dati di ottobre**: FU PRIMO da 6 a 5 giorni (via il 07/10), FU SECONDO da 5 a 3 (via il 03/10 e il 19/10).
+- **Annullamento**: ripristinare il commit.
+- **Eseguito** (18/10): `fuDaSaltare(calMap, passa, qualsiasiEvento)` e chiamata con `true` solo in `computeTurnazioneForReport`; gli altri 5 report invariati. Controllo sugli screenshot: il 01/10 «AUTO + FU SECONDO» già non contava il FU (il 01/10 non è nell'elenco FU SECONDO); con la modifica non contano più il 03/10 (ART. 32), il 07/10 (ART. 40) e il 19/10 (PI RC). Build locale riuscita; pubblicato con nuova APK. Da controllare sul telefono: FU PRIMO 5 giorni, FU SECONDO 3.

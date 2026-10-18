@@ -7390,11 +7390,14 @@ const importsRecenti = useMemo(()=>{
   // calendario FU di quel giorno NON vengono contati. Se TURNI non ha eventi utili
   // quel giorno, o non è tra i calendari del report, i FU contano normalmente.
   // Restituisce l'id del calendario FU da saltare per quel giorno (o null).
-  function fuDaSaltare(calMap, passa){
+  // qualsiasiEvento=true (usato dal report Turnazione): basta QUALSIASI evento di TURNI in quel giorno
+  // (articoli, ferie, RC recupero, PI recupero...) per non contare i FU: conta solo la prima riga.
+  function fuDaSaltare(calMap, passa, qualsiasiEvento){
     const fuId = calFuId;
     if(!fuId || !mainCalId || fuId===mainCalId || !calMap[fuId]) return null;
     if(reportCalIds.length>0 && !reportCalIds.includes(mainCalId)) return null;
-    return (calMap[mainCalId]||[]).some(passa) ? fuId : null;
+    const turni = calMap[mainCalId]||[];
+    return (qualsiasiEvento ? turni.length>0 : turni.some(passa)) ? fuId : null;
   }
 
   function computeConteggioForReport(cfg, reportId){
@@ -7675,7 +7678,7 @@ const importsRecenti = useMemo(()=>{
     };
     for(const [dateKey, calMap] of Object.entries(store.events)){
       if(dateKey < from || dateKey > to) continue;
-      const fuSalta = fuDaSaltare(calMap, passaEv);
+      const fuSalta = fuDaSaltare(calMap, passaEv, true);
       for(const [cid, evts] of Object.entries(calMap)){
         if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
         if(cid===fuSalta) continue;
