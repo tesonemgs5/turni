@@ -1401,6 +1401,14 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
   };
   const aggiungiFascia = ()=>salvaFasce([...fasceCfg, {key:"f_"+Date.now().toString(36), label:"", da:"06:00", a:"22:00", giorni:["lun","mar","mer","gio","ven","sab"]}]);
   const eliminaFascia = (key)=>{ if(fasceCfg.length>1) salvaFasce(fasceCfg.filter(f=>f.key!==key)); };
+  const spostaFascia = (key, dir)=>{
+    const i = fasceCfg.findIndex(f=>f.key===key), j = i+dir;
+    if(i<0 || j<0 || j>=fasceCfg.length) return;
+    const n = [...fasceCfg]; [n[i], n[j]] = [n[j], n[i]];
+    salvaFasce(n);
+  };
+  const ripristinaFasce = ()=>{ const {fasceIndennita:_x, ...resto} = (cfg||{}); onUpdateCfg(resto); };
+  const PRESET_ORARIO = [["Diurno 06–22","06:00","22:00"],["Notturno 22–06","22:00","06:00"]];
   const PRESET_GIORNI = [["Feriale",["lun","mar","mer","gio","ven","sab"]],["Sabato",["sab"]],["Domenica",["dom"]],["Festivo",["dom","fes"]]];
 
   return (
@@ -1433,7 +1441,13 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <input value={f.label} placeholder="NOME FASCIA" onChange={e=>patchFascia(f.key,{label:e.target.value})}
               style={{flex:1,minWidth:0,background:"transparent",border:"none",outline:"none",fontSize:13,fontWeight:800,color:T.text}}/>
-            {fasceCfg.length>1&&(<span onClick={()=>eliminaFascia(f.key)} style={{cursor:"pointer",fontSize:13,color:"#ef4444",padding:"2px 6px"}}>🗑️</span>)}
+            {fasceCfg.length>1&&(
+              <>
+                <span onClick={()=>spostaFascia(f.key,-1)} style={{cursor:fasceCfg[0].key===f.key?"default":"pointer",fontSize:15,padding:"4px 8px",color:T.text,opacity:fasceCfg[0].key===f.key?0.25:1}}>▲</span>
+                <span onClick={()=>spostaFascia(f.key,1)} style={{cursor:fasceCfg[fasceCfg.length-1].key===f.key?"default":"pointer",fontSize:15,padding:"4px 8px",color:T.text,opacity:fasceCfg[fasceCfg.length-1].key===f.key?0.25:1}}>▼</span>
+                <span onClick={()=>eliminaFascia(f.key)} style={{cursor:"pointer",fontSize:13,color:"#ef4444",padding:"2px 6px",marginLeft:16}}>🗑️</span>
+              </>
+            )}
           </div>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <input type="time" value={f.da} onChange={e=>patchFascia(f.key,{da:e.target.value})}
@@ -1458,6 +1472,10 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
               <span key={lab} onClick={()=>patchFascia(f.key,{giorni:g})}
                 style={{cursor:"pointer",fontSize:11,color:accent,fontWeight:700,padding:"2px 6px",border:`1px dashed ${T.border}`,borderRadius:10}}>{lab}</span>
             ))}
+            {PRESET_ORARIO.map(([lab,da,a])=>(
+              <span key={lab} onClick={()=>patchFascia(f.key,{da,a})}
+                style={{cursor:"pointer",fontSize:11,color:accent,fontWeight:700,padding:"2px 6px",border:`1px dashed ${T.border}`,borderRadius:10}}>{lab}</span>
+            ))}
             <span style={{flex:1}}/>
             <span style={{fontSize:13,color:T.sub}}>€</span>
             <input type="number" value={values[f.key]||""} onChange={e=>setValues(v=>({...v,[f.key]:e.target.value}))}
@@ -1471,6 +1489,11 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
         style={{padding:"9px 0",borderRadius:10,border:`1px dashed ${T.border}`,background:"transparent",color:accent,fontWeight:700,fontSize:12,cursor:"pointer"}}>
         + Aggiungi fascia
       </button>
+      {cfg&&Array.isArray(cfg.fasceIndennita)&&cfg.fasceIndennita.length>0&&(
+        <div onClick={ripristinaFasce} style={{textAlign:"center",fontSize:11,color:T.sub,cursor:"pointer",textDecoration:"underline",padding:"2px 0"}}>
+          Ripristina le 4 fasce di sempre (compensi invariati)
+        </div>
+      )}
       <div style={{background:T.surface,borderRadius:10,padding:"10px 12px",
         display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <span style={{fontSize:13,fontWeight:800,color:T.text}}>Totale stimato</span>
