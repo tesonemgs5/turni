@@ -1,6 +1,6 @@
     import { useState, useEffect, useRef, useMemo, Fragment } from "react";
 import { ElencoModelliTendine, PulsanteOrdineAB } from "./23-tendine-modelli";
-import { GIORNI_FASCIA, fasceIndennitaDi } from "./24-fasce-indennita";
+import { GIORNI_FASCIA, fasceIndennitaDi, pulsantiFasciaDi } from "./24-fasce-indennita";
 // NOTA: COLORE_H24, getColorByTime e getContrastTextColor sono copiate qui
 // (invece di importate da 4.Rotazione) per evitare un import circolare
 // 4.Rotazione <-> 5.Comuni. Se cambi la formula del contrasto o le fasce
@@ -1390,16 +1390,24 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
     if(openSottomenu===id) setOpenSottomenu(null);
   }
 
-  // Fasce modificabili: nome, orario (da → a), giorni (Lun…Dom, Festivi) e compenso. Senza modifiche valgono le 4 di sempre.
+  // Fasce modificabili (nome, orario, giorni, pulsanti, % e compenso). Senza modifiche valgono le fasce standard del CCNL.
   const fasceCfg = fasceIndennitaDi(cfg);
+  const pulsanti = pulsantiFasciaDi(cfg);
+  const baseOraria = (cfg && cfg.baseOraria!==undefined && cfg.baseOraria!==null) ? String(cfg.baseOraria) : "";
   const fasce = fasceCfg.map(f=>({...f, count:calc[f.key]||0}));
+  const [modPulsanti, setModPulsanti] = useState(false);
+  const [nuovoP, setNuovoP] = useState(null);
+  const [salvaDopo, setSalvaDopo] = useState(0);
+  useEffect(()=>{ if(salvaDopo>0) onSave(); }, [salvaDopo]);
+  const GIORNI_COD = GIORNI_FASCIA.map(g=>g[0]);
+  const TUTTI_COD = [...GIORNI_COD, ...pulsanti.map(p=>p.cod)];
   const salvaFasce = (nuove)=>onUpdateCfg({...(cfg||{}), fasceIndennita:nuove});
   const patchFascia = (key, patch)=>salvaFasce(fasceCfg.map(f=>f.key===key?{...f,...patch}:f));
-  const toggleGiorno = (key, cod)=>{
+  const toggleCod = (key, cod)=>{
     const f = fasceCfg.find(x=>x.key===key); if(!f) return;
     patchFascia(key, {giorni: f.giorni.includes(cod) ? f.giorni.filter(c=>c!==cod) : [...f.giorni, cod]});
   };
-  const aggiungiFascia = ()=>salvaFasce([...fasceCfg, {key:"f_"+Date.now().toString(36), label:"", da:"06:00", a:"22:00", giorni:["lun","mar","mer","gio","ven","sab"]}]);
+  const aggiungiFascia = ()=>salvaFasce([...fasceCfg, {key:"f_"+Date.now().toString(36), label:"", da:"06:00", a:"22:00", giorni:[], perc:"", v:2}]);
   const eliminaFascia = (key)=>{ if(fasceCfg.length>1) salvaFasce(fasceCfg.filter(f=>f.key!==key)); };
   const spostaFascia = (key, dir)=>{
     const i = fasceCfg.findIndex(f=>f.key===key), j = i+dir;
@@ -1407,9 +1415,22 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
     const n = [...fasceCfg]; [n[i], n[j]] = [n[j], n[i]];
     salvaFasce(n);
   };
-  const ripristinaFasce = ()=>{ const {fasceIndennita:_x, ...resto} = (cfg||{}); onUpdateCfg(resto); };
-  const PRESET_ORARIO = [["Diurno 06–22","06:00","22:00"],["Notturno 22–06","22:00","06:00"]];
-  const PRESET_GIORNI = [["Feriale",["lun","mar","mer","gio","ven","sab"]],["Sabato",["sab"]],["Domenica",["dom"]],["Festivo",["dom","fes"]]];
+  const ripristinaFasce = ()=>{ const {fasceIndennita:_a, pulsantiFascia:_b, ...resto} = (cfg||{}); onUpdateCfg(resto); };
+  const salvaBase = (v)=>onUpdateCfg({...(cfg||{}), fasceIndennita:fasceCfg, baseOraria:v});
+  const applicaPerc = ()=>{
+    const b = parseFloat(baseOraria); if(!(b>0)) return;
+    const nv = {...values};
+    fasceCfg.forEach(f=>{ const p = parseFloat(f.perc); if(!isNaN(p)) nv[f.key] = (b*p/100).toFixed(2); });
+    setValues(nv); setSalvaDopo(x=>x+1);
+  };
+  const aggiungiPulsante = ()=>{
+    if(!nuovoP || !nuovoP.nome.trim() || !nuovoP.data) return;
+    const p = {cod:"c_"+Date.now().toString(36), label:nuovoP.nome.trim().toUpperCase(), mmdd:[nuovoP.data.slice(5)]};
+    onUpdateCfg({...(cfg||{}), fasceIndennita:fasceCfg, pulsantiFascia:[...pulsanti, p]});
+    setNuovoP(null);
+  };
+  const togliPulsante = (cod)=>onUpdateCfg({...(cfg||{}), pulsantiFascia:pulsanti.filter(p=>p.cod!==cod),
+    fasceIndennita:fasceCfg.map(f=>({...f, giorni:f.giorni.filter(c=>c!==cod)}))});
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
@@ -1436,7 +1457,44 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
       )}
 
       <div style={{fontSize:10,color:T.sub,marginBottom:-4}}>Imposta il compenso per ora</div>
-      {fasce.map(f=>(
+      <div style={{background:T.surface,borderRadius:10,padding:"10px 12px",display:"flex",flexDirection:"column",gap:8}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{flex:1,fontSize:12,fontWeight:800,color:T.text}}>Retribuzione oraria base (€)</span>
+          <input type="number" value={baseOraria} placeholder="0.00" step="0.01" onChange={e=>salvaBase(e.target.value)}
+            style={{width:80,background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,padding:"6px 8px",color:T.text,fontSize:13,outline:"none",textAlign:"right"}}/>
+          <span onClick={applicaPerc} style={{cursor:"pointer",fontSize:11,fontWeight:800,color:accent,padding:"5px 8px",border:`1px solid ${accent}`,borderRadius:10}}>Applica %</span>
+        </div>
+        <div style={{display:"flex",flexWrap:"wrap",alignItems:"center",gap:6}}>
+          <span style={{fontSize:11,fontWeight:800,color:T.sub}}>PULSANTI</span>
+          {pulsanti.map(p=>(
+            <span key={p.cod} style={{fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:12,background:T.s2,border:`1px solid ${T.border}`,color:T.text}}>
+              {p.label}{p.mmdd?` · ${p.mmdd[0].split("-").reverse().join("/")}`:""}
+              {modPulsanti&&(<span onClick={()=>togliPulsante(p.cod)} style={{cursor:"pointer",marginLeft:6,color:"#ef4444",fontWeight:900}}>✕</span>)}
+            </span>
+          ))}
+          <span onClick={()=>{setModPulsanti(v=>!v);setNuovoP(null);}} style={{cursor:"pointer",fontSize:11,fontWeight:800,color:accent,padding:"3px 8px",border:`1px dashed ${T.border}`,borderRadius:12}}>{modPulsanti?"Fatto":"✎ Modifica"}</span>
+          {modPulsanti&&!nuovoP&&(<span onClick={()=>setNuovoP({nome:"",data:""})} style={{cursor:"pointer",fontSize:11,fontWeight:800,color:accent,padding:"3px 8px",border:`1px dashed ${T.border}`,borderRadius:12}}>+ Nuovo pulsante</span>)}
+        </div>
+        {modPulsanti&&nuovoP&&(
+          <div style={{display:"flex",flexWrap:"wrap",alignItems:"center",gap:6}}>
+            <input value={nuovoP.nome} placeholder="NOME (es. SAN GENNARO)" onChange={e=>setNuovoP({...nuovoP,nome:e.target.value})}
+              style={{flex:1,minWidth:120,background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,padding:"6px 8px",color:T.text,fontSize:12,outline:"none"}}/>
+            <input type="date" value={nuovoP.data} onChange={e=>setNuovoP({...nuovoP,data:e.target.value})}
+              style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,padding:"5px 8px",color:T.text,fontSize:12,outline:"none"}}/>
+            <span onClick={aggiungiPulsante} style={{cursor:"pointer",fontSize:11,fontWeight:800,color:getContrastTextColor(accent),background:accent,padding:"6px 10px",borderRadius:10}}>Aggiungi</span>
+            <span style={{fontSize:10,color:T.sub,flexBasis:"100%"}}>Il pulsante personale vale per quel giorno e mese, ogni anno.</span>
+          </div>
+        )}
+        <div style={{fontSize:10,color:T.sub}}>Giorni: ne basta uno (nessuno = ogni giorno). Pulsanti: devono valere tutti quelli scelti. Vale la prima fascia dall'alto che combacia.</div>
+      </div>
+      {fasce.map(f=>{
+        const on = (cod)=>f.giorni.includes(cod);
+        const giorniTutti = GIORNI_COD.every(c=>on(c));
+        const tuttiSel = TUTTI_COD.every(c=>on(c));
+        const chip = (cod,lab)=>(
+          <span key={cod} onClick={()=>toggleCod(f.key,cod)} style={{cursor:"pointer",fontSize:12,fontWeight:700,padding:"5px 10px",borderRadius:14,background:on(cod)?accent:T.s2,color:on(cod)?getContrastTextColor(accent):T.text,border:`1px solid ${on(cod)?accent:T.border}`}}>{lab}</span>
+        );
+        return (
         <div key={f.key} style={{background:T.surface,borderRadius:10,padding:"10px 12px",display:"flex",flexDirection:"column",gap:8}}>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <input value={f.label} placeholder="NOME FASCIA" onChange={e=>patchFascia(f.key,{label:e.target.value})}
@@ -1457,26 +1515,21 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
               style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,padding:"5px 8px",color:T.text,fontSize:13,outline:"none"}}/>
             <span style={{fontSize:11,color:T.sub,flex:1,textAlign:"right"}}>{fmtOreDecimali(f.count)} nel periodo</span>
           </div>
-          <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-            {GIORNI_FASCIA.map(([cod,lab])=>{
-              const on = (f.giorni||[]).includes(cod);
-              return (
-                <span key={cod} onClick={()=>toggleGiorno(f.key,cod)}
-                  style={{cursor:"pointer",fontSize:11,fontWeight:700,padding:"4px 8px",borderRadius:14,
-                    background:on?accent:T.s2,color:on?getContrastTextColor(accent):T.text,border:`1px solid ${on?accent:T.border}`}}>{lab}</span>
-              );
-            })}
+          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+            {GIORNI_FASCIA.map(([cod,lab])=>chip(cod,lab))}
+          </div>
+          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+            {pulsanti.map(p=>chip(p.cod,p.label))}
           </div>
           <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-            {PRESET_GIORNI.map(([lab,g])=>(
-              <span key={lab} onClick={()=>patchFascia(f.key,{giorni:g})}
-                style={{cursor:"pointer",fontSize:11,color:accent,fontWeight:700,padding:"2px 6px",border:`1px dashed ${T.border}`,borderRadius:10}}>{lab}</span>
-            ))}
-            {PRESET_ORARIO.map(([lab,da,a])=>(
-              <span key={lab} onClick={()=>patchFascia(f.key,{da,a})}
-                style={{cursor:"pointer",fontSize:11,color:accent,fontWeight:700,padding:"2px 6px",border:`1px dashed ${T.border}`,borderRadius:10}}>{lab}</span>
-            ))}
+            <span onClick={()=>patchFascia(f.key,{giorni: giorniTutti ? f.giorni.filter(c=>!GIORNI_COD.includes(c)) : [...new Set([...f.giorni,...GIORNI_COD])]})}
+              style={{cursor:"pointer",fontSize:11,fontWeight:800,color:accent,padding:"3px 9px",border:`1px dashed ${T.border}`,borderRadius:10}}>L–D</span>
+            <span onClick={()=>patchFascia(f.key,{giorni: tuttiSel ? [] : TUTTI_COD})}
+              style={{cursor:"pointer",fontSize:11,fontWeight:800,color:accent,padding:"3px 9px",border:`1px dashed ${T.border}`,borderRadius:10}}>{tuttiSel?"Nessuno":"Tutti"}</span>
             <span style={{flex:1}}/>
+            <input type="number" value={f.perc??""} placeholder="%" onChange={e=>patchFascia(f.key,{perc:e.target.value})}
+              style={{width:52,background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,padding:"6px 6px",color:T.text,fontSize:13,outline:"none",textAlign:"right"}}/>
+            <span style={{fontSize:12,color:T.sub}}>%</span>
             <span style={{fontSize:13,color:T.sub}}>€</span>
             <input type="number" value={values[f.key]||""} onChange={e=>setValues(v=>({...v,[f.key]:e.target.value}))}
               onBlur={onSave} placeholder="0.00" step="0.01"
@@ -1484,14 +1537,15 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
                 padding:"6px 8px",color:T.text,fontSize:13,outline:"none",textAlign:"right"}}/>
           </div>
         </div>
-      ))}
+        );
+      })}
       <button onClick={aggiungiFascia}
         style={{padding:"9px 0",borderRadius:10,border:`1px dashed ${T.border}`,background:"transparent",color:accent,fontWeight:700,fontSize:12,cursor:"pointer"}}>
         + Aggiungi fascia
       </button>
       {cfg&&Array.isArray(cfg.fasceIndennita)&&cfg.fasceIndennita.length>0&&(
         <div onClick={ripristinaFasce} style={{textAlign:"center",fontSize:11,color:T.sub,cursor:"pointer",textDecoration:"underline",padding:"2px 0"}}>
-          Ripristina le 4 fasce di sempre (compensi invariati)
+          Ripristina le fasce standard del CCNL (i compensi restano)
         </div>
       )}
       <div style={{background:T.surface,borderRadius:10,padding:"10px 12px",

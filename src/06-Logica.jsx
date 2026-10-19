@@ -5,7 +5,7 @@ import { ordineAttivo, impostaOrdineAttivo, posDaRiga, colonnePosizione, payload
 import { calcolaAllineamentoColori } from "./13-allinea-colori";
 import { widgetDisponibile, inviaAlWidget, descriviStatoWidget } from "./17-widget";
 import { scaricaFileTesto } from "./18-scarica-file";
-import { fasceIndennitaDi, fasceDelGiorno, minutiPerFascia } from "./24-fasce-indennita";
+import { fasceIndennitaDi, pulsantiFasciaDi, minutiPerFasceEvento } from "./24-fasce-indennita";
 import {
   FASCE_AUTOMATICHE_DEFAULT, FESTIVITA_DEFAULT_ATTIVE, MONTHS, NOMI_GIORNI_IT, PALETTE, COLORE_H24,
   calcFine6h15, calcFine6h30, calcFineModello, categoriaAppAutoAutomatica, categoriaTurnoAutomatica,
@@ -7851,6 +7851,7 @@ const importsRecenti = useMemo(()=>{
       if(rInd && conteggioConfigs[rInd.id]) cfgFasce = conteggioConfigs[rInd.id];
     }
     const fasceInd = fasceIndennitaDi(cfgFasce);
+    const pulsantiInd = pulsantiFasciaDi(cfgFasce);
     const totaliMin = {}; fasceInd.forEach(f=>{ totaliMin[f.key]=0; });
     const passaEv = (e)=>{
       const ov = (reportId ? (e.reportOverrides||{})[reportId] : null)?.stato || null;
@@ -7872,7 +7873,10 @@ const importsRecenti = useMemo(()=>{
           if(overrideReportEvento!=="incluso" && modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
           if(e.allDay) continue;
           if(!e.tIn||!e.tOut) continue;
-          const mm = minutiPerFascia(oraInMinuti(e.tIn), oraInMinuti(e.tOut), fasceDelGiorno(fasceInd, dateKey, fest));
+          // Ogni minuto vale per il giorno in cui cade; giorni, pulsanti (notturno/festivo/infrasettimanale/personali) e orari
+          // sono quelli delle fasce del report (modificabili); vale la prima fascia della lista che combacia.
+          const mm = minutiPerFasceEvento({ dateKey, m1:oraInMinuti(e.tIn), m2raw:oraInMinuti(e.tOut), fasce:fasceInd, pulsanti:pulsantiInd,
+            eFest:(dk)=>isFestivo(dk, store.nationalHolsEnabled, store.extraHols) });
           for(const k in mm) totaliMin[k] += mm[k];
         }
       }
