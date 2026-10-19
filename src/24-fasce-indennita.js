@@ -19,7 +19,7 @@ export const PULSANTI_DEFAULT = [
   { cod:"inf", label:"INFRASETTIMANALE" },
 ];
 export const FASCE_INDENNITA_DEFAULT = [
-  { key:"infrasettimanale", label:"Festivo infrasettimanale", da:"00:00", a:"00:00", giorni:["inf"],        perc:"100", v:2 },
+  { key:"infrasettimanale", label:"Festivo infrasettimanale", da:"00:00", a:"24:00", giorni:["inf"],        perc:"100", v:2 },
   { key:"notturno_festivo", label:"Notturno festivo",         da:"22:00", a:"06:00", giorni:["not","fes"], perc:"50",  v:2 },
   { key:"festivo",          label:"Festivo",                  da:"06:00", a:"22:00", giorni:["fes"],       perc:"30",  v:2 },
   { key:"notturno",         label:"Notturno",                 da:"22:00", a:"06:00", giorni:["not"],       perc:"30",  v:2 },
@@ -35,9 +35,14 @@ export function fasceIndennitaDi(cfg){
 export function pulsantiFasciaDi(cfg){
   return (cfg && Array.isArray(cfg.pulsantiFascia)) ? cfg.pulsantiFascia : PULSANTI_DEFAULT;
 }
+// Convenzione: 00:00 = INIZIO della giornata (minuto 0); 24:00 = FINE della giornata (il minuto dopo le 23:59 = 1440).
+// L'inizio di una fascia è incluso, la fine è esclusa. Fine prima dell'inizio (es. 22:00 → 06:00) = oltre la mezzanotte.
 export function orarioInMinuti(hm){
   const t = /^(\d{1,2}):(\d{2})/.exec(String(hm||""));
-  return t ? (+t[1])*60 + (+t[2]) : null;
+  if(!t) return null;
+  const h = +t[1], m = +t[2];
+  if(m>59 || h>24 || (h===24 && m>0)) return null;
+  return h*60 + m;
 }
 function pad(n){ return String(n).padStart(2,"0"); }
 function addDays(dateKey, n){
@@ -75,7 +80,11 @@ export function minutiPerFasceEvento({ dateKey, m1, m2raw, fasce, pulsanti, eFes
   const mmdd = dk.map(d=>d.slice(5));
   const personali = (pulsanti||[]).filter(p=>p && p.mmdd && p.mmdd.length);
   const customDi = dk.map((_,i)=>new Set(personali.filter(p=>p.mmdd.includes(mmdd[i])).map(p=>p.cod)));
-  const iv = fasce.map(f=>({ key:f.key, s:orarioInMinuti(f.da), e:orarioInMinuti(f.a), giorni:f.giorni||[] })).filter(x=>x.s!==null && x.e!==null);
+  const iv = fasce.map(f=>{
+    let s = orarioInMinuti(f.da), e = orarioInMinuti(f.a);
+    if(s===0 && e===0) e = 24*60;      // vecchio «00:00 → 00:00» = tutta la giornata (ora si scrive 00:00 → 24:00)
+    return { key:f.key, s, e, giorni:f.giorni||[] };
+  }).filter(x=>x.s!==null && x.e!==null);
   for(let t=m1; t<m2; t++){
     const di = t>=24*60 ? 2 : 1;                         // indice del giorno in cui cade il minuto
     const md = t % (24*60);
@@ -89,9 +98,27 @@ export function minutiPerFasceEvento({ dateKey, m1, m2raw, fasce, pulsanti, eFes
       custom: customDi[di],
     };
     for(const x of iv){
-      const dentro = x.s<x.e ? (md>=x.s && md<x.e) : x.s>x.e ? (md>=x.s || md<x.e) : true;
+      const dentro = x.s<x.e ? (md>=x.s && md<x.e) : x.s>x.e ? (md>=x.s || md<x.e) : false; // inizio = fine: nessun minuto
       if(dentro && combacia(x.giorni, att)){ out[x.key]++; break; }
     }
   }
   return out;
+}
+
+// ── AUMENTI: elenco di periodi «dal giorno X» con retribuzione oraria base e, se serve, percentuali diverse per fascia.
+// Ogni turno usa il periodo in vigore nel giorno in cui INIZIA (arretrati: si inserisce l'aumento con la data passata).
+export function periodiDi(cfg){
+  return [...((cfg && cfg.periodiRetribuzione) || [])].filter(p=>p && p.da).sort((a,b)=>String(a.da).localeCompare(String(b.da)));
+}
+// € all'ora di una fascia in un giorno: retribuzione del periodo × percentuale (del periodo, altrimenti quella standard
+// della fascia). Senza periodo in vigore vale il compenso fisso in € della fascia (campo «€ fisso»).
+export function tariffaOraria(cfg, fascia, dateKey, fisso){
+  const per = periodiDi(cfg).filter(p=>p.da<=dateKey).pop();
+  if(per){
+    const b = parseFloat(per.base);
+    const o = per.perc && per.perc[fascia.key];
+    const pc = parseFloat(o!==undefined && o!=="" ? o : fascia.perc);
+    if(b>0 && !isNaN(pc)) return b*pc/100;
+  }
+  return parseFloat(fisso)||0;
 }

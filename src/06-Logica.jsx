@@ -5,7 +5,7 @@ import { ordineAttivo, impostaOrdineAttivo, posDaRiga, colonnePosizione, payload
 import { calcolaAllineamentoColori } from "./13-allinea-colori";
 import { widgetDisponibile, inviaAlWidget, descriviStatoWidget } from "./17-widget";
 import { scaricaFileTesto } from "./18-scarica-file";
-import { fasceIndennitaDi, pulsantiFasciaDi, minutiPerFasceEvento } from "./24-fasce-indennita";
+import { fasceIndennitaDi, pulsantiFasciaDi, minutiPerFasceEvento, tariffaOraria } from "./24-fasce-indennita";
 import {
   FASCE_AUTOMATICHE_DEFAULT, FESTIVITA_DEFAULT_ATTIVE, MONTHS, NOMI_GIORNI_IT, PALETTE, COLORE_H24,
   calcFine6h15, calcFine6h30, calcFineModello, categoriaAppAutoAutomatica, categoriaTurnoAutomatica,
@@ -7853,6 +7853,7 @@ const importsRecenti = useMemo(()=>{
     const fasceInd = fasceIndennitaDi(cfgFasce);
     const pulsantiInd = pulsantiFasciaDi(cfgFasce);
     const totaliMin = {}; fasceInd.forEach(f=>{ totaliMin[f.key]=0; });
+    const importiFascia = {}; fasceInd.forEach(f=>{ importiFascia[f.key]=0; });
     const passaEv = (e)=>{
       const ov = (reportId ? (e.reportOverrides||{})[reportId] : null)?.stato || null;
       if(ov==="escluso") return false;
@@ -7877,7 +7878,10 @@ const importsRecenti = useMemo(()=>{
           // sono quelli delle fasce del report (modificabili); vale la prima fascia della lista che combacia.
           const mm = minutiPerFasceEvento({ dateKey, m1:oraInMinuti(e.tIn), m2raw:oraInMinuti(e.tOut), fasce:fasceInd, pulsanti:pulsantiInd,
             eFest:(dk)=>isFestivo(dk, store.nationalHolsEnabled, store.extraHols) });
-          for(const k in mm) totaliMin[k] += mm[k];
+          for(const k in mm){
+            totaliMin[k] += mm[k];
+            if(mm[k]>0){ const fa = fasceInd.find(x=>x.key===k); importiFascia[k] += (mm[k]/60) * tariffaOraria(cfgFasce, fa, dateKey, (indennita||{})[k]); }
+          }
         }
       }
     }
@@ -7886,6 +7890,8 @@ const importsRecenti = useMemo(()=>{
     const out = {};
     fasceInd.forEach(f=>{ out[f.key] = totaliMin[f.key]/60; });
     ["diurno","notturno","festivo","notturno_festivo"].forEach(k=>{ if(out[k]===undefined) out[k]=0; }); // compatibilità con chi legge i 4 valori storici
+    // Importi in € calcolati giorno per giorno con la retribuzione in vigore (non enumerabile: non finisce tra le ore)
+    Object.defineProperty(out, "importi", { enumerable:false, value:{ perFascia:importiFascia, totale:Object.values(importiFascia).reduce((a,b)=>a+b,0) } });
     return out;
   }
 

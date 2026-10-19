@@ -1,6 +1,6 @@
     import { useState, useEffect, useRef, useMemo, Fragment } from "react";
 import { ElencoModelliTendine, PulsanteOrdineAB } from "./23-tendine-modelli";
-import { GIORNI_FASCIA, fasceIndennitaDi, pulsantiFasciaDi } from "./24-fasce-indennita";
+import { GIORNI_FASCIA, fasceIndennitaDi, pulsantiFasciaDi, periodiDi } from "./24-fasce-indennita";
 // NOTA: COLORE_H24, getColorByTime e getContrastTextColor sono copiate qui
 // (invece di importate da 4.Rotazione) per evitare un import circolare
 // 4.Rotazione <-> 5.Comuni. Se cambi la formula del contrasto o le fasce
@@ -1393,12 +1393,12 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
   // Fasce modificabili (nome, orario, giorni, pulsanti, % e compenso). Senza modifiche valgono le fasce standard del CCNL.
   const fasceCfg = fasceIndennitaDi(cfg);
   const pulsanti = pulsantiFasciaDi(cfg);
-  const baseOraria = (cfg && cfg.baseOraria!==undefined && cfg.baseOraria!==null) ? String(cfg.baseOraria) : "";
+  const periodi = periodiDi(cfg);
+  const importiFascia = (calc && calc.importi && calc.importi.perFascia) || {};
+  const [percAperto, setPercAperto] = useState(null);
   const fasce = fasceCfg.map(f=>({...f, count:calc[f.key]||0}));
   const [modPulsanti, setModPulsanti] = useState(false);
   const [nuovoP, setNuovoP] = useState(null);
-  const [salvaDopo, setSalvaDopo] = useState(0);
-  useEffect(()=>{ if(salvaDopo>0) onSave(); }, [salvaDopo]);
   const GIORNI_COD = GIORNI_FASCIA.map(g=>g[0]);
   const TUTTI_COD = [...GIORNI_COD, ...pulsanti.map(p=>p.cod)];
   const salvaFasce = (nuove)=>onUpdateCfg({...(cfg||{}), fasceIndennita:nuove});
@@ -1416,12 +1416,14 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
     salvaFasce(n);
   };
   const ripristinaFasce = ()=>{ const {fasceIndennita:_a, pulsantiFascia:_b, ...resto} = (cfg||{}); onUpdateCfg(resto); };
-  const salvaBase = (v)=>onUpdateCfg({...(cfg||{}), fasceIndennita:fasceCfg, baseOraria:v});
-  const applicaPerc = ()=>{
-    const b = parseFloat(baseOraria); if(!(b>0)) return;
-    const nv = {...values};
-    fasceCfg.forEach(f=>{ const p = parseFloat(f.perc); if(!isNaN(p)) nv[f.key] = (b*p/100).toFixed(2); });
-    setValues(nv); setSalvaDopo(x=>x+1);
+  const salvaPeriodi = (nuovi)=>onUpdateCfg({...(cfg||{}), fasceIndennita:fasceCfg, periodiRetribuzione:nuovi});
+  const patchPeriodo = (id, patch)=>salvaPeriodi(periodi.map(p=>p.id===id?{...p,...patch}:p));
+  const eliminaPeriodo = (id)=>salvaPeriodi(periodi.filter(p=>p.id!==id));
+  const aggiungiAumento = ()=>{
+    const ult = periodi[periodi.length-1];
+    const oggi = new Date();
+    const da = `${oggi.getFullYear()}-${String(oggi.getMonth()+1).padStart(2,"0")}-01`;
+    salvaPeriodi([...periodi, {id:"p_"+Date.now().toString(36), da, base:ult?ult.base:"", perc:{...((ult&&ult.perc)||{})}}]);
   };
   const aggiungiPulsante = ()=>{
     if(!nuovoP || !nuovoP.nome.trim() || !nuovoP.data) return;
@@ -1458,12 +1460,43 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
 
       <div style={{fontSize:10,color:T.sub,marginBottom:-4}}>Imposta il compenso per ora</div>
       <div style={{background:T.surface,borderRadius:10,padding:"10px 12px",display:"flex",flexDirection:"column",gap:8}}>
-        <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <span style={{flex:1,fontSize:12,fontWeight:800,color:T.text}}>Retribuzione oraria base (€)</span>
-          <input type="number" value={baseOraria} placeholder="0.00" step="0.01" onChange={e=>salvaBase(e.target.value)}
-            style={{width:80,background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,padding:"6px 8px",color:T.text,fontSize:13,outline:"none",textAlign:"right"}}/>
-          <span onClick={applicaPerc} style={{cursor:"pointer",fontSize:11,fontWeight:800,color:accent,padding:"5px 8px",border:`1px solid ${accent}`,borderRadius:10}}>Applica %</span>
-        </div>
+        <div style={{fontSize:12,fontWeight:800,color:T.text}}>Retribuzione oraria e aumenti</div>
+        <div style={{fontSize:10,color:T.sub}}>Ogni turno usa la retribuzione in vigore nel giorno in cui inizia; l'importo di una fascia = retribuzione × percentuale. Per un aumento retroattivo inserisci la data passata. Senza retribuzione valgono gli € fissi di ogni fascia.</div>
+        {periodi.map(p=>(
+          <div key={p.id} style={{border:`1px solid ${T.border}`,borderRadius:10,padding:8,display:"flex",flexDirection:"column",gap:6}}>
+            <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+              <span style={{fontSize:11,color:T.sub}}>Dal</span>
+              <input type="date" value={p.da} onChange={e=>patchPeriodo(p.id,{da:e.target.value})}
+                style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,padding:"5px 6px",color:T.text,fontSize:12,outline:"none"}}/>
+              <span style={{flex:1}}/>
+              <span style={{fontSize:12,color:T.sub}}>€/h</span>
+              <input type="number" value={p.base} placeholder="0.00" step="0.01" onChange={e=>patchPeriodo(p.id,{base:e.target.value})}
+                style={{width:72,background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,padding:"5px 6px",color:T.text,fontSize:13,outline:"none",textAlign:"right"}}/>
+              <span onClick={()=>setPercAperto(percAperto===p.id?null:p.id)} style={{cursor:"pointer",fontSize:11,fontWeight:800,color:accent,padding:"4px 8px",border:`1px dashed ${T.border}`,borderRadius:10}}>% {percAperto===p.id?"▲":"▼"}</span>
+              <span onClick={()=>eliminaPeriodo(p.id)} style={{cursor:"pointer",fontSize:13,color:"#ef4444",padding:"2px 6px",marginLeft:10}}>🗑️</span>
+            </div>
+            {percAperto===p.id&&fasceCfg.map(f=>{
+              const pc = parseFloat((p.perc&&p.perc[f.key]!==undefined&&p.perc[f.key]!=="") ? p.perc[f.key] : f.perc);
+              const b = parseFloat(p.base);
+              return (
+                <div key={f.key} style={{display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{flex:1,fontSize:12,color:T.text}}>{f.label||"Senza nome"}</span>
+                  <input type="number" value={(p.perc&&p.perc[f.key])??""} placeholder={String(f.perc??"")}
+                    onChange={e=>patchPeriodo(p.id,{perc:{...(p.perc||{}),[f.key]:e.target.value}})}
+                    style={{width:56,background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,padding:"5px 6px",color:T.text,fontSize:13,outline:"none",textAlign:"right"}}/>
+                  <span style={{fontSize:12,color:T.sub}}>%</span>
+                  <span style={{fontSize:11,color:T.sub,width:70,textAlign:"right"}}>{(b>0&&!isNaN(pc))?`€ ${(b*pc/100).toFixed(2)}/h`:""}</span>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+        <button onClick={aggiungiAumento}
+          style={{padding:"8px 0",borderRadius:10,border:`1px dashed ${T.border}`,background:"transparent",color:accent,fontWeight:700,fontSize:12,cursor:"pointer"}}>
+          + Aggiungi retribuzione / aumento
+        </button>
+      </div>
+      <div style={{background:T.surface,borderRadius:10,padding:"10px 12px",display:"flex",flexDirection:"column",gap:8}}>
         <div style={{display:"flex",flexWrap:"wrap",alignItems:"center",gap:6}}>
           <span style={{fontSize:11,fontWeight:800,color:T.sub}}>PULSANTI</span>
           {pulsanti.map(p=>(
@@ -1485,7 +1518,7 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
             <span style={{fontSize:10,color:T.sub,flexBasis:"100%"}}>Il pulsante personale vale per quel giorno e mese, ogni anno.</span>
           </div>
         )}
-        <div style={{fontSize:10,color:T.sub}}>Giorni: ne basta uno (nessuno = ogni giorno). Pulsanti: devono valere tutti quelli scelti. Vale la prima fascia dall'alto che combacia.</div>
+        <div style={{fontSize:10,color:T.sub}}>Giorni: ne basta uno (nessuno = ogni giorno). Pulsanti: devono valere tutti quelli scelti. Vale la prima fascia dall'alto che combacia. Orari: 00:00 = inizio giornata, 24:00 = fine giornata (dopo le 23:59). FESTIVO di notte comprende anche la sera prima (sabato 22–24) e la mattina dopo (lunedì 00–06 dopo la domenica).</div>
       </div>
       {fasce.map(f=>{
         const on = (cod)=>f.giorni.includes(cod);
@@ -1508,13 +1541,12 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
             )}
           </div>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-            <input type="time" value={f.da} onChange={e=>patchFascia(f.key,{da:e.target.value})}
-              style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,padding:"5px 8px",color:T.text,fontSize:13,outline:"none"}}/>
+            <OraInput T={T} value={f.da} onChange={v=>patchFascia(f.key,{da:v})}/>
             <span style={{color:T.sub}}>→</span>
-            <input type="time" value={f.a} onChange={e=>patchFascia(f.key,{a:e.target.value})}
-              style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,padding:"5px 8px",color:T.text,fontSize:13,outline:"none"}}/>
-            <span style={{fontSize:11,color:T.sub,flex:1,textAlign:"right"}}>{fmtOreDecimali(f.count)} nel periodo</span>
+            <OraInput T={T} fine value={f.a} onChange={v=>patchFascia(f.key,{a:v})}/>
+            <span style={{fontSize:11,color:T.sub,flex:1,textAlign:"right"}}>{fmtOreDecimali(f.count)} nel periodo{importiFascia[f.key]>0?` · € ${importiFascia[f.key].toFixed(2)}`:""}</span>
           </div>
+          {f.da===f.a&&(<div style={{fontSize:11,color:"#dc2626"}}>Inizio e fine uguali: nessuna ora conteggiata. Per tutta la giornata usa 00:00 → 24:00.</div>)}
           <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
             {GIORNI_FASCIA.map(([cod,lab])=>chip(cod,lab))}
           </div>
@@ -1532,7 +1564,7 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
             <span style={{fontSize:12,color:T.sub}}>%</span>
             <span style={{fontSize:13,color:T.sub}}>€</span>
             <input type="number" value={values[f.key]||""} onChange={e=>setValues(v=>({...v,[f.key]:e.target.value}))}
-              onBlur={onSave} placeholder="0.00" step="0.01"
+              onBlur={onSave} placeholder="€ fisso" step="0.01"
               style={{width:70,background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
                 padding:"6px 8px",color:T.text,fontSize:13,outline:"none",textAlign:"right"}}/>
           </div>
@@ -1552,10 +1584,7 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
         display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <span style={{fontSize:13,fontWeight:800,color:T.text}}>Totale stimato</span>
         <span style={{fontSize:16,fontWeight:900,color:"#22c55e"}}>
-          € {fasce.reduce((sum,f)=>{
-            const v=parseFloat(values[f.key])||0;
-            return sum+v*f.count;
-          },0).toFixed(2)}
+          € {((calc&&calc.importi&&calc.importi.totale)||0).toFixed(2)}
         </span>
       </div>
 
@@ -1762,7 +1791,7 @@ export function StraordinariView({T, data, store, reportRange, modelliInclusi=[]
 }
 
 export function GuadagniView({T, indennita, calc}){
-  const tot = Object.keys(calc||{}).reduce((s,k)=>{
+  const tot = (calc && calc.importi) ? calc.importi.totale : Object.keys(calc||{}).reduce((s,k)=>{
     return s+(parseFloat(indennita[k])||0)*(calc[k]||0);
   },0);
   return (
@@ -2978,5 +3007,29 @@ export function PeriodoReportButton({T, accent, intervallo, labelGlobale, onChan
         </div>
       )}
     </>
+  );
+}
+
+
+// Campo orario HH:MM scritto a mano. 00:00 = inizio giornata; 24:00 (solo nel campo «a») = fine giornata, dopo le 23:59.
+function OraInput({T, value, onChange, fine}){
+  const [txt, setTxt] = useState(value||"");
+  useEffect(()=>{ setTxt(value||""); }, [value]);
+  const valido = (v)=>{
+    const m = /^(\d{2}):(\d{2})$/.exec(v); if(!m) return false;
+    const h = +m[1], mi = +m[2];
+    if(mi>59) return false;
+    return fine ? (h<24 || (h===24 && mi===0)) : h<24;
+  };
+  return (
+    <input value={txt} inputMode="numeric" maxLength={5} placeholder="HH:MM"
+      onChange={e=>{
+        let d = e.target.value.replace(/\D/g,"").slice(0,4);
+        if(d.length>=3) d = d.slice(0,2)+":"+d.slice(2);
+        setTxt(d);
+        if(valido(d)) onChange(d);
+      }}
+      onBlur={()=>{ if(!valido(txt)) setTxt(value||""); }}
+      style={{width:64,background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,padding:"6px 8px",color:T.text,fontSize:14,outline:"none",textAlign:"center"}}/>
   );
 }
