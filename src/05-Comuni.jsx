@@ -1559,7 +1559,7 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
               {p.label}{p.mmdd?` · ${p.mmdd[0].split("-").reverse().join("/")}`:""}
               {p.cod==="fes"&&(modPulsanti ? (
                 <span style={{display:"inline-flex",flexWrap:"wrap",alignItems:"center",gap:4,marginLeft:6}}>
-                  {[["dom","Domenica",p.dom!==false],["fest","Festività",p.fest!==false],["sab","Sabato",p.sab===true],["vigilia","Sera prima (notte)",p.vigilia!==false],["dopo","Mattina dopo (notte)",p.dopo!==false]].map(([c,lab,on])=>(
+                  {[["dom","Domenica",p.dom!==false],["fest","Festività",p.fest!==false],["sab","Sabato",p.sab===true],["vigilia","Sera prima (notte)",p.vigilia!==false],["dopo","Mattina dopo (notte)",p.dopo!==false],["infNotte","Notti adiacenti · infrasettimanale",p.infNotte!==false]].map(([c,lab,on])=>(
                     <span key={c} onClick={()=>cambiaFes(c,!on)}
                       style={{cursor:"pointer",fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:10,background:on?accent:"transparent",color:on?getContrastTextColor(accent):T.sub,border:`1px solid ${on?accent:T.border}`}}>{lab}</span>
                   ))}
@@ -1588,7 +1588,7 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
         )}
         <div style={{fontSize:10,color:T.sub}}>
           Le categorie sono: FERIALE, NOTTURNO O FESTIVO, NOTTURNO E FESTIVO e FESTIVO INFRASETTIMANALE. Vale la prima fascia dall'alto che combacia (frecce ▲▼).
-          Orari: 00:00 = inizio giornata, 24:00 = fine giornata (dopo le 23:59); In ✎ puoi configurare i pulsanti: NOTTURNO (orario) e FESTIVO (domenica, festività, sabato e, di notte, se contano la sera prima, es. sabato 22–24, e la mattina dopo, es. lunedì 00–06).
+          Orari: 00:00 = inizio giornata, 24:00 = fine giornata (dopo le 23:59); in ✎ puoi configurare NOTTURNO e FESTIVO. L'opzione «Notti adiacenti · infrasettimanale» include nella fascia infrasettimanale al 100% le ore notturne prima e dopo il festivo; puoi cambiarne la percentuale nella relativa fascia o disattivare l'opzione.
         </div>
       </div>
       {fasce.map(f=>{

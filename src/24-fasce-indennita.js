@@ -17,7 +17,7 @@ export const GIORNI_FASCIA = [["lun","L"],["mar","M"],["mer","M"],["gio","G"],["
 export const PULSANTI_DEFAULT = [
   { cod:"fer", label:"FERIALE",          v:4 },
   { cod:"not", label:"NOTTURNO",         v:4, da:"22:00", a:"06:00" },
-  { cod:"fes", label:"FESTIVO",          v:4, dom:true, fest:true, sab:false, vigilia:true, dopo:true },
+  { cod:"fes", label:"FESTIVO",          v:4, dom:true, fest:true, sab:false, vigilia:true, dopo:true, infNotte:true },
   { cod:"inf", label:"INFRASETTIMANALE", v:4 },
 ];
 // Le 4 voci del CCNL, in ordine di priorità (vale la prima che combacia). modo "e" = devono valere TUTTE le condizioni,
@@ -86,7 +86,7 @@ export function minutiPerFasceEvento({ dateKey, m1, m2raw, fasce, pulsanti, eFes
   // FESTIVO configurabile: quali giorni sono festivi (domenica / festività / sabato) e, di notte, se contano anche
   // la sera prima e la mattina dopo il festivo.
   const pFes = (pulsanti||[]).find(x=>x && x.cod==="fes") || {};
-  const oDom = pFes.dom!==false, oFest = pFes.fest!==false, oSab = pFes.sab===true, oVig = pFes.vigilia!==false, oDopo = pFes.dopo!==false;
+  const oDom = pFes.dom!==false, oFest = pFes.fest!==false, oSab = pFes.sab===true, oVig = pFes.vigilia!==false, oDopo = pFes.dopo!==false, oInfNotte = pFes.infNotte!==false;
   const festaDi = (d,i)=> eFesta ? !!eFesta(d) : (!!eFest(d) && dow[i]!==0);   // festività (non domenica semplice)
   const festaArr = dk.map((d,i)=>festaDi(d,i));
   const fest = dk.map((d,i)=> (dow[i]===0 && oDom) || (festaArr[i] && oFest) || (dow[i]===6 && oSab));
@@ -118,7 +118,10 @@ export function minutiPerFasceEvento({ dateKey, m1, m2raw, fasce, pulsanti, eFes
       not: notte,
       fes,
       fer: !fes,
-      inf: festaArr[di] && dow[di]!==0,
+      inf: (festaArr[di] && dow[di]!==0) || (oInfNotte && notte && nottePassaMezzanotte && (
+        (md>=nS && festaArr[di+1] && dow[di+1]!==0) ||
+        (md<nE && festaArr[di-1] && dow[di-1]!==0)
+      )),
       custom: customDi[di],
     };
     for(const x of iv){
