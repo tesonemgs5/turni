@@ -1569,7 +1569,10 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
             <span style={{fontSize:10,color:T.sub,flexBasis:"100%"}}>Il pulsante personale vale per quel giorno e mese, ogni anno.</span>
           </div>
         )}
-        <div style={{fontSize:10,color:T.sub}}>Ogni fascia ha le sue condizioni: «E» = devono valere tutte, «O» = ne basta una. Vale la prima fascia dall'alto che combacia (frecce ▲▼). Orari: 00:00 = inizio giornata, 24:00 = fine giornata (dopo le 23:59); In ✎ puoi configurare i pulsanti: NOTTURNO (orario) e FESTIVO (domenica, festività, sabato e, di notte, se contano la sera prima, es. sabato 22–24, e la mattina dopo, es. lunedì 00–06).</div>
+        <div style={{fontSize:10,color:T.sub}}>
+          Le categorie sono: FERIALE, NOTTURNO O FESTIVO, NOTTURNO E FESTIVO e FESTIVO INFRASETTIMANALE. Vale la prima fascia dall'alto che combacia (frecce ▲▼).
+          Orari: 00:00 = inizio giornata, 24:00 = fine giornata (dopo le 23:59); In ✎ puoi configurare i pulsanti: NOTTURNO (orario) e FESTIVO (domenica, festività, sabato e, di notte, se contano la sera prima, es. sabato 22–24, e la mattina dopo, es. lunedì 00–06).
+        </div>
       </div>
       {fasce.map(f=>{
         const on = (cod)=>f.giorni.includes(cod);
