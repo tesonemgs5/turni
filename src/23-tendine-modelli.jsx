@@ -65,7 +65,7 @@ export function PulsanteOrdineAB(props) {
 // chiave = nome della lista (ricorda quali tendine erano aperte). renderRiga(m, i, arr) disegna la riga del modello.
 export function ElencoModelliTendine(props) {
   const ctx = useContext(ContestoTendine) || {};
-  const { modelli, calId, cercando, chiave, renderRiga, estrai, stileContenitore, selezionati, onSelezionaGruppo } = props;
+  const { modelli, calId, cercando, chiave, renderRiga, estrai, stileContenitore, selezionati, onSelezionaGruppo, soloInTesta } = props;
   const ordine = props.ordine ?? ctx.ordine, mainCalId = props.mainCalId ?? ctx.mainCalId, gruppiDelCalendario = props.gruppiDelCalendario || ctx.gruppiDelCalendario, gruppi = props.gruppi || ctx.gruppi, T = props.T || ctx.T;
   const LS = "turnipm_tendine_aperte_" + (chiave || "x");
   const [aperte, setAperte] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem(LS) || "[]")); } catch (e) { return new Set(); } });
@@ -81,7 +81,10 @@ export function ElencoModelliTendine(props) {
   const selSet = new Set(selezionati || []);
   // In ordine A la lista dei selezionati e' in ORDINE ALFABETICO A-Z (a parità per orario di inizio);
   // in ordine B e' in ORDINE DI INIZIO TURNO crescente (a parità per nome).
-  const selBase = (!cercando && selSet.size > 0) ? ordinati.filter((m) => selSet.has((estrai ? estrai(m) : m).id)) : [];
+  // `soloInTesta` (opzionale): se presente, nella tendina SELEZIONATI entrano solo i selezionati che stanno in questo elenco (es. presenti nel periodo);
+  // gli altri restano solo nelle tendine sotto, con la loro casella.
+  const inTestaSet = soloInTesta ? new Set(soloInTesta) : null;
+  const selBase = (!cercando && selSet.size > 0) ? ordinati.filter((m) => { const id = (estrai ? estrai(m) : m).id; return selSet.has(id) && (!inTestaSet || inTestaSet.has(id)); }) : [];
   const selLista = ordine === "A"
     ? selBase.map((m, i) => ({ m, i })).sort((a, b) => {
         const ma = estrai ? estrai(a.m) : a.m;

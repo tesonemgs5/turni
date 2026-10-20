@@ -1245,10 +1245,12 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
                     return (data.perGruppo?.[f.key]?.[m.id]!==undefined);
                   };
                   const attiviIds = modelliPerLista.filter(attivoDi).map(m=>m.id);
+                  // In testa (SELEZIONATI) solo i selezionati PRESENTI nel periodo (conteggio > 0); gli altri stanno nelle tendine sotto.
+                  const presentiIds = modelliPerLista.filter(m=>attivoDi(m) && (data.perGruppo?.[f.key]?.[m.id]?.count||0)>0).map(m=>m.id);
                   // Modelli a TENDINE come nella lista Modelli (NOTTE, MATTINA, ...): accanto al nome di ogni tendina la casella
                   // «seleziona / deseleziona tutto il gruppo» e il conteggio selezionati/totale; in testa la tendina SELEZIONATI.
                   return (
-                    <ElencoModelliTendine chiave={"turnazione_"+r.id+"_"+f.key} modelli={modelliPerLista} selezionati={attiviIds}
+                    <ElencoModelliTendine chiave={"turnazione_"+r.id+"_"+f.key} modelli={modelliPerLista} selezionati={attiviIds} soloInTesta={presentiIds}
                       onSelezionaGruppo={(ms, seleziona)=>setGruppoModelli(ms.map(x=>x.id), seleziona ? f.key : "", f.key)}
                       stileContenitore={{border:"none",borderRadius:6,marginBottom:0}}
                       renderRiga={(m)=>{
