@@ -7760,19 +7760,21 @@ const importsRecenti = useMemo(()=>{
       // poi categoria manuale del modello, poi override di questo
       // report, poi automatico per orario.
       // Se l'utente ha esplicitamente deselezionato questo asse (modello o report), niente auto: nessun gruppo.
-      const gruppoTurno = eventoTurnoVuoto ? null : (overrideEventoTurno || ((modelloEvt?.turnoVuoto || escludiTurno)
+      // La scelta fatta IN QUESTO REPORT per il modello (spunta nel gruppo) vale per TUTTI gli eventi del modello,
+      // anche con orario modificato, e passa davanti a evento e modello: ma resta solo di questo report.
+      const gruppoTurno = escludiTurno ? null : (overrideTurno ? overrideTurno : (eventoTurnoVuoto ? null : (overrideEventoTurno || (modelloEvt?.turnoVuoto
         ? null
         : ((modelloEvt?.categoria==="primo"||modelloEvt?.categoria==="secondo")
           ? modelloEvt.categoria
-          : (overrideTurno || categoriaTurnoAutomatica(modelloEvt)))));
+          : categoriaTurnoAutomatica(modelloEvt))))));
 
       // ── Asse 2: APP/AUTO — indipendente, stessa priorità ma decide su titolo.
       // Se l'utente ha esplicitamente deselezionato questo asse (modello o report), niente auto: nessun gruppo.
-      const gruppoAppAuto = eventoAppAutoVuoto ? null : (overrideEventoAppAuto || ((modelloEvt?.appAutoVuoto || escludiAppAuto)
+      const gruppoAppAuto = escludiAppAuto ? null : (overrideAppAuto ? overrideAppAuto : (eventoAppAutoVuoto ? null : (overrideEventoAppAuto || (modelloEvt?.appAutoVuoto
         ? null
         : ((modelloEvt?.categoriaAppAuto==="app"||modelloEvt?.categoriaAppAuto==="auto")
           ? modelloEvt.categoriaAppAuto
-          : (overrideAppAuto || categoriaAppAutoAutomatica(modelloEvt) || "auto"))));
+          : (categoriaAppAutoAutomatica(modelloEvt) || "auto"))))));
 
       if(e.modelloId){
         if(!perModello[e.modelloId]) perModello[e.modelloId] = { count:0, dates:[] };
