@@ -2089,8 +2089,9 @@ export function useAppCore(session){
     }
     return { perEvento };
   }
-  function allEvts(key){
-    if(!selectedCalIds || selectedCalIds.length===0) return [];
+  function calcolaEventiGiorno(key, calIds=null){
+    const calList = calIds || selectedCalIds;
+    if(!calList || calList.length===0) return [];
     const res=[];
     // Un evento "specchiato" (visibileAncheIn) resta UN SOLO evento: quando
     // più calendari che lo vedono sono selezionati insieme (es. TURNI + FU +
@@ -2107,8 +2108,8 @@ export function useAppCore(session){
       vistiIds.add(e.id);
       res.push({...e,_cid:cid});
     }
-    if(mainCal && selectedCalIds.includes(mainCal.id)) getEvts(key,mainCal.id).forEach(e=>pushUnico(e,mainCal.id));
-    store.calendars.filter(c=>!c.isMain && selectedCalIds.includes(c.id)).forEach(c=>
+    if(mainCal && calList.includes(mainCal.id)) getEvts(key,mainCal.id).forEach(e=>pushUnico(e,mainCal.id));
+    store.calendars.filter(c=>!c.isMain && calList.includes(c.id)).forEach(c=>
       getEvts(key,c.id).forEach(e=>pushUnico(e,c.id)));
     // Ordine calendario: posizione dell'evento nell'elenco calendari configurato in Impostazioni
     const calOrderIdx = new Map(store.calendars.map((c,i)=>[c.id,i]));
@@ -2187,6 +2188,7 @@ export function useAppCore(session){
     }
     return risultatoFinale;
   }
+  function allEvts(key){ return calcolaEventiGiorno(key, selectedCalIds); }
   function dots(key){ return store.calendars.filter(c=>getEvts(key,c.id).length>0); }
 
   // Invia al server le modifiche in coda a giorni importanti / festivi personali.
@@ -7717,96 +7719,85 @@ const importsRecenti = useMemo(()=>{
       if(filtraCollega && !splitColleghi(e.collega).some(c=>c.toUpperCase().includes(filtraCollega))) return false;
       return true;
     };
+    const calsReport = reportCalIds.length > 0 ? reportCalIds : store.calendars.map(c=>c.id);
+
     for(const [dateKey, calMap] of Object.entries(store.events)){
       if(dateKey < from || dateKey > to) continue;
-      // Regola Turnazione: ogni giorno conta UNA sola riga, la PRIMA che si vede nel calendario fra i calendari del
-      // report, di qualsiasi calendario e qualsiasi modello sia: i calendari sono nell'ordine in cui compaiono
-      // (TURNI per primo se c'e', poi FU, poi gli altri); dentro un calendario vale l'ordine dei modelli e poi
-      // l'orario. Se quella prima riga non passa i filtri del report (modello non selezionato, escluso,
-      // collega...) il giorno resta VUOTO: non si passa alla riga successiva.
-      const ordineCal = [...store.calendars.map(c=>c.id), ...Object.keys(calMap).filter(id=>!store.calendars.some(c=>c.id===id))];
-      let primaRigaGiorno = null;
-      for(const cid of ordineCal){
-        if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
-        const r = primaRigaCalendario(calMap[cid]||[]);
-        if(r){ primaRigaGiorno = r; break; }
-      }
+      // Regola Turnazione: ogni giorno prende SEMPRE E SOLO il primo rigo visibile del giorno fra i calendari del report.
+      const evtsGiorno = calcolaEventiGiorno(dateKey, calsReport);
+      const primaRigaGiorno = evtsGiorno[0] || null;
       if(!primaRigaGiorno) continue;
-      for(const [cid, evts] of Object.entries(calMap)){
-        if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
-        for(const e of evts){
-          if(e.id!==primaRigaGiorno.id) continue;
-          // Override "solo questo evento" su CATEGORIA REPORT: priorità massima,
-          // sopra l'inclusione/esclusione decisa a livello di modello.
-          const overrideReportEvento = (reportId ? (e.reportOverrides||{})[reportId] : null)?.stato || null;
-          if(overrideReportEvento==="escluso") continue;
-          if(overrideReportEvento!=="incluso" && modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
-          const collegList = splitColleghi(e.collega);
-          if(filtraCollega && !collegList.some(c=>c.toUpperCase().includes(filtraCollega))) continue;
-          result.totale++;
-          const modelloEvt = e.modelloId ? modelli.find(mm=>mm.id===e.modelloId) : null;
-          const overrideTurnoRaw = e.modelloId ? gruppiManuali[e.modelloId] : null;
-          const escludiTurno = overrideTurnoRaw==="escluso";
-          const overrideTurno = (overrideTurnoRaw==="primo"||overrideTurnoRaw==="secondo") ? overrideTurnoRaw : null;
-          const overrideAppAutoRaw = e.modelloId ? gruppiManuali[e.modelloId+"_appauto"] : null;
-          const escludiAppAuto = overrideAppAutoRaw==="escluso";
-          const overrideAppAuto = (overrideAppAutoRaw==="app"||overrideAppAutoRaw==="auto") ? overrideAppAutoRaw : null;
-          // Override a livello di SINGOLO EVENTO (scelto dall'utente nel form
-          // di modifica evento, opzione "solo questo evento"): ha PRIORITÀ
-          // MASSIMA, sopra la categoria del modello e sopra l'override del
-          // report, perché è la scelta più specifica possibile.
-          const overrideEventoTurno = (e.categoriaTurno==="primo"||e.categoriaTurno==="secondo") ? e.categoriaTurno : null;
-          const overrideEventoAppAuto = (e.categoriaAppAuto==="app"||e.categoriaAppAuto==="auto") ? e.categoriaAppAuto : null;
-          // "Nessuna categoria" scelto esplicitamente sul singolo evento: come
-          // sopra, priorità massima — nessun asse anche se modello/report
-          // avrebbero altrimenti un automatismo.
-          const eventoTurnoVuoto = !!e.turnoVuoto;
-          const eventoAppAutoVuoto = !!e.appAutoVuoto;
 
-          // ── Asse 1: TURNO (1°/2°) — indipendente, decide su override evento,
-          // poi categoria manuale del modello, poi override di questo
-          // report, poi automatico per orario.
-          // Se l'utente ha esplicitamente deselezionato questo asse (modello o report), niente auto: nessun gruppo.
-          const gruppoTurno = eventoTurnoVuoto ? null : (overrideEventoTurno || ((modelloEvt?.turnoVuoto || escludiTurno)
-            ? null
-            : ((modelloEvt?.categoria==="primo"||modelloEvt?.categoria==="secondo")
-              ? modelloEvt.categoria
-              : (overrideTurno || categoriaTurnoAutomatica(modelloEvt)))));
+      const e = primaRigaGiorno;
+      // Override "solo questo evento" su CATEGORIA REPORT: priorità massima,
+      // sopra l'inclusione/esclusione decisa a livello di modello.
+      const overrideReportEvento = (reportId ? (e.reportOverrides||{})[reportId] : null)?.stato || null;
+      if(overrideReportEvento==="escluso") continue;
+      if(overrideReportEvento!=="incluso" && modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) continue;
+      const collegList = splitColleghi(e.collega);
+      if(filtraCollega && !collegList.some(c=>c.toUpperCase().includes(filtraCollega))) continue;
+      result.totale++;
+      const modelloEvt = e.modelloId ? modelli.find(mm=>mm.id===e.modelloId) : null;
+      const overrideTurnoRaw = e.modelloId ? gruppiManuali[e.modelloId] : null;
+      const escludiTurno = overrideTurnoRaw==="escluso";
+      const overrideTurno = (overrideTurnoRaw==="primo"||overrideTurnoRaw==="secondo") ? overrideTurnoRaw : null;
+      const overrideAppAutoRaw = e.modelloId ? (gruppiManuali[e.modelloId+"_appauto"] || (gruppiManuali[e.modelloId]==="app"||gruppiManuali[e.modelloId]==="auto" ? gruppiManuali[e.modelloId] : null)) : null;
+      const escludiAppAuto = overrideAppAutoRaw==="escluso";
+      const overrideAppAuto = (overrideAppAutoRaw==="app"||overrideAppAutoRaw==="auto") ? overrideAppAutoRaw : null;
+      // Override a livello di SINGOLO EVENTO (scelto dall'utente nel form
+      // di modifica evento, opzione "solo questo evento"): ha PRIORITÀ
+      // MASSIMA, sopra la categoria del modello e sopra l'override del
+      // report, perché è la scelta più specifica possibile.
+      const overrideEventoTurno = (e.categoriaTurno==="primo"||e.categoriaTurno==="secondo") ? e.categoriaTurno : null;
+      const overrideEventoAppAuto = (e.categoriaAppAuto==="app"||e.categoriaAppAuto==="auto") ? e.categoriaAppAuto : null;
+      // "Nessuna categoria" scelto esplicitamente sul singolo evento: come
+      // sopra, priorità massima — nessun asse anche se modello/report
+      // avrebbero altrimenti un automatismo.
+      const eventoTurnoVuoto = !!e.turnoVuoto;
+      const eventoAppAutoVuoto = !!e.appAutoVuoto;
 
-          // ── Asse 2: APP/AUTO — indipendente, stessa priorità ma decide su titolo.
-          // Se l'utente ha esplicitamente deselezionato questo asse (modello o report), niente auto: nessun gruppo.
-          const gruppoAppAuto = eventoAppAutoVuoto ? null : (overrideEventoAppAuto || ((modelloEvt?.appAutoVuoto || escludiAppAuto)
-            ? null
-            : ((modelloEvt?.categoriaAppAuto==="app"||modelloEvt?.categoriaAppAuto==="auto")
-              ? modelloEvt.categoriaAppAuto
-              : (overrideAppAuto || categoriaAppAutoAutomatica(modelloEvt) || "auto"))));
+      // ── Asse 1: TURNO (1°/2°) — indipendente, decide su override evento,
+      // poi categoria manuale del modello, poi override di questo
+      // report, poi automatico per orario.
+      // Se l'utente ha esplicitamente deselezionato questo asse (modello o report), niente auto: nessun gruppo.
+      const gruppoTurno = eventoTurnoVuoto ? null : (overrideEventoTurno || ((modelloEvt?.turnoVuoto || escludiTurno)
+        ? null
+        : ((modelloEvt?.categoria==="primo"||modelloEvt?.categoria==="secondo")
+          ? modelloEvt.categoria
+          : (overrideTurno || categoriaTurnoAutomatica(modelloEvt)))));
 
-          if(e.modelloId){
-            if(!perModello[e.modelloId]) perModello[e.modelloId] = { count:0, dates:[] };
-            perModello[e.modelloId].count++;
-            perModello[e.modelloId].dates.push(dateKey);
-          }
-          collegList.forEach(c=>{
-            if(!perCollega[c]) perCollega[c] = { count:0, dates:[] };
-            perCollega[c].count++;
-            perCollega[c].dates.push(dateKey);
-          });
-          if(gruppoTurno){
-            result[gruppoTurno] = (result[gruppoTurno]||0)+1;
-            if(e.modelloId){
-              if(!perGruppo[gruppoTurno][e.modelloId]) perGruppo[gruppoTurno][e.modelloId] = { count:0, dates:[] };
-              perGruppo[gruppoTurno][e.modelloId].count++;
-              perGruppo[gruppoTurno][e.modelloId].dates.push(dateKey);
-            }
-          }
-          if(gruppoAppAuto){
-            result[gruppoAppAuto] = (result[gruppoAppAuto]||0)+1;
-            if(e.modelloId){
-              if(!perGruppo[gruppoAppAuto][e.modelloId]) perGruppo[gruppoAppAuto][e.modelloId] = { count:0, dates:[] };
-              perGruppo[gruppoAppAuto][e.modelloId].count++;
-              perGruppo[gruppoAppAuto][e.modelloId].dates.push(dateKey);
-            }
-          }
+      // ── Asse 2: APP/AUTO — indipendente, stessa priorità ma decide su titolo.
+      // Se l'utente ha esplicitamente deselezionato questo asse (modello o report), niente auto: nessun gruppo.
+      const gruppoAppAuto = eventoAppAutoVuoto ? null : (overrideEventoAppAuto || ((modelloEvt?.appAutoVuoto || escludiAppAuto)
+        ? null
+        : ((modelloEvt?.categoriaAppAuto==="app"||modelloEvt?.categoriaAppAuto==="auto")
+          ? modelloEvt.categoriaAppAuto
+          : (overrideAppAuto || categoriaAppAutoAutomatica(modelloEvt) || "auto"))));
+
+      if(e.modelloId){
+        if(!perModello[e.modelloId]) perModello[e.modelloId] = { count:0, dates:[] };
+        perModello[e.modelloId].count++;
+        perModello[e.modelloId].dates.push(dateKey);
+      }
+      collegList.forEach(c=>{
+        if(!perCollega[c]) perCollega[c] = { count:0, dates:[] };
+        perCollega[c].count++;
+        perCollega[c].dates.push(dateKey);
+      });
+      if(gruppoTurno){
+        result[gruppoTurno] = (result[gruppoTurno]||0)+1;
+        if(e.modelloId){
+          if(!perGruppo[gruppoTurno][e.modelloId]) perGruppo[gruppoTurno][e.modelloId] = { count:0, dates:[] };
+          perGruppo[gruppoTurno][e.modelloId].count++;
+          perGruppo[gruppoTurno][e.modelloId].dates.push(dateKey);
+        }
+      }
+      if(gruppoAppAuto){
+        result[gruppoAppAuto] = (result[gruppoAppAuto]||0)+1;
+        if(e.modelloId){
+          if(!perGruppo[gruppoAppAuto][e.modelloId]) perGruppo[gruppoAppAuto][e.modelloId] = { count:0, dates:[] };
+          perGruppo[gruppoAppAuto][e.modelloId].count++;
+          perGruppo[gruppoAppAuto][e.modelloId].dates.push(dateKey);
         }
       }
     }

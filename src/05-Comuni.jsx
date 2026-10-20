@@ -1,6 +1,34 @@
     import { useState, useEffect, useRef, useMemo, Fragment } from "react";
 import { ElencoModelliTendine, PulsanteOrdineAB } from "./23-tendine-modelli";
 import { GIORNI_FASCIA, fasceIndennitaDi, pulsantiFasciaDi, periodiDi } from "./24-fasce-indennita";
+import { ordineAttivo, minutiInizio } from "./21-ordine";
+
+// Ordina le voci di data.perModello:
+// in ordine A (alfabetico) per nome A-Z; in ordine B (orario) per orario d'inizio crescente.
+export function ordinaEntriesPerModello(entries, modelli){
+  const o = ordineAttivo();
+  return [...entries].sort(([a],[b])=>{
+    const ma = (modelli||[]).find(x=>x.id===a);
+    const mb = (modelli||[]).find(x=>x.id===b);
+    if(!ma && !mb) return 0;
+    if(!ma) return 1;
+    if(!mb) return -1;
+    if(o === "A"){
+      const na = String(ma.label || ma.titolo || "").toUpperCase();
+      const nb = String(mb.label || mb.titolo || "").toUpperCase();
+      const diff = na.localeCompare(nb);
+      if(diff !== 0) return diff;
+      return (minutiInizio(ma) - minutiInizio(mb));
+    } else {
+      const ta = minutiInizio(ma);
+      const tb = minutiInizio(mb);
+      if(ta !== tb) return ta - tb;
+      const na = String(ma.label || ma.titolo || "").toUpperCase();
+      const nb = String(mb.label || mb.titolo || "").toUpperCase();
+      return na.localeCompare(nb);
+    }
+  });
+}
 // NOTA: COLORE_H24, getColorByTime e getContrastTextColor sono copiate qui
 // (invece di importate da 4.Rotazione) per evitare un import circolare
 // 4.Rotazione <-> 5.Comuni. Se cambi la formula del contrasto o le fasce
@@ -616,10 +644,7 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
                   {sm.tipo==="modello" && (
                     !data.perModello||Object.keys(data.perModello).length===0 ? (
                       <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"10px 0"}}>Nessun turno nel periodo</div>
-                    ) : Object.entries(data.perModello).sort(([a],[b])=>{
-                      const _ord=modelliOrdinati||modelli; const ia=_ord.findIndex(m=>m.id===a), ib=_ord.findIndex(m=>m.id===b);
-                      return (ia<0?9999:ia)-(ib<0?9999:ib);
-                    }).map(([mid,info])=>{
+                    ) : ordinaEntriesPerModello(Object.entries(data.perModello), modelli).map(([mid,info])=>{
                       const m=modelli.find(x=>x.id===mid);
                       if(!m) return null;
                       const c=m?.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
@@ -951,10 +976,7 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
                   {sm.tipo==="modello" && (
                     !data.perModello||Object.keys(data.perModello).length===0 ? (
                       <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"10px 0"}}>Nessun turno nel periodo</div>
-                    ) : Object.entries(data.perModello).sort(([a],[b])=>{
-                      const _ord=modelliOrdinati||modelli; const ia=_ord.findIndex(m=>m.id===a), ib=_ord.findIndex(m=>m.id===b);
-                      return (ia<0?9999:ia)-(ib<0?9999:ib);
-                    }).map(([mid,info])=>{
+                    ) : ordinaEntriesPerModello(Object.entries(data.perModello), modelli).map(([mid,info])=>{
                       const m=modelli.find(x=>x.id===mid);
                       if(!m) return null;
                       const c=m?.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
@@ -1137,16 +1159,23 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
   }
 
   const gruppiManuali = cfg.gruppiManuali || {};
-  function setGruppoModello(mid, gruppo){
+  function setGruppoModello(mid, gruppo, asseKey){
+    const isAppAuto = asseKey === "app" || asseKey === "auto";
+    const k = isAppAuto ? (mid + "_appauto") : mid;
     const next = {...gruppiManuali};
-    if(!gruppo) delete next[mid];
-    else next[mid] = gruppo;
+    if(!gruppo) next[k] = "escluso";
+    else next[k] = gruppo;
     onUpdateCfg({...cfg, gruppiManuali:next});
   }
   // Come sopra ma per tanti modelli insieme (casella «seleziona tutto il gruppo» accanto al nome della tendina): una sola scrittura.
-  function setGruppoModelli(ids, gruppo){
+  function setGruppoModelli(ids, gruppo, asseKey){
+    const isAppAuto = asseKey === "app" || asseKey === "auto";
     const next = {...gruppiManuali};
-    ids.forEach(mid=>{ if(!gruppo) delete next[mid]; else next[mid] = gruppo; });
+    ids.forEach(mid=>{
+      const k = isAppAuto ? (mid + "_appauto") : mid;
+      if(!gruppo) next[k] = "escluso";
+      else next[k] = gruppo;
+    });
     onUpdateCfg({...cfg, gruppiManuali:next});
   }
 
@@ -1207,15 +1236,20 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
                 {modelliPerLista.length===0?(
                   <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"6px 0"}}>Nessun modello</div>
                 ):(()=>{
-                  const attivoDi = (m)=> gruppiManuali[m.id]
-                    ? gruppiManuali[m.id]===f.key
-                    : (data.perGruppo?.[f.key]?.[m.id]!==undefined);
+                  const isAppAuto = f.key === "app" || f.key === "auto";
+                  const manualKey = (m) => isAppAuto ? (m.id + "_appauto") : m.id;
+                  const attivoDi = (m)=> {
+                    const mk = manualKey(m);
+                    if(gruppiManuali[mk]) return gruppiManuali[mk] === f.key;
+                    if(isAppAuto && (gruppiManuali[m.id]==="app" || gruppiManuali[m.id]==="auto")) return gruppiManuali[m.id] === f.key;
+                    return (data.perGruppo?.[f.key]?.[m.id]!==undefined);
+                  };
                   const attiviIds = modelliPerLista.filter(attivoDi).map(m=>m.id);
                   // Modelli a TENDINE come nella lista Modelli (NOTTE, MATTINA, ...): accanto al nome di ogni tendina la casella
                   // «seleziona / deseleziona tutto il gruppo» e il conteggio selezionati/totale; in testa la tendina SELEZIONATI.
                   return (
                     <ElencoModelliTendine chiave={"turnazione_"+r.id+"_"+f.key} modelli={modelliPerLista} selezionati={attiviIds}
-                      onSelezionaGruppo={(ms, seleziona)=>setGruppoModelli(ms.map(x=>x.id), seleziona ? f.key : "")}
+                      onSelezionaGruppo={(ms, seleziona)=>setGruppoModelli(ms.map(x=>x.id), seleziona ? f.key : "", f.key)}
                       stileContenitore={{border:"none",borderRadius:6,marginBottom:0}}
                       renderRiga={(m)=>{
                         const attivo = attivoDi(m);
@@ -1225,7 +1259,7 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
                           <div key={m.id} style={{display:"flex",alignItems:"center",gap:10,
                             padding:"7px 8px",borderRadius:8,marginBottom:4,background:T.surface}}>
                             <input type="checkbox" checked={attivo}
-                              onChange={()=>setGruppoModello(m.id, attivo?"":f.key)}
+                              onChange={()=>setGruppoModello(m.id, attivo?"":f.key, f.key)}
                               style={{cursor:"pointer",flexShrink:0,width:17,height:17}}/>
                             <div style={{width:10,height:10,borderRadius:"50%",background:c,flexShrink:0}}/>
                             <div style={{flex:1,minWidth:0}}>
@@ -1264,12 +1298,12 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
           <div onClick={()=>alternaAperto("turnipm_turnazione_permodello_aperto", perModelloAperto, setPerModelloAperto)}
             style={{display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",fontSize:10,color:T.sub,fontWeight:700,marginBottom:perModelloAperto?8:0}}>
             <span>PER MODELLO · {Object.values(data.perModello).reduce((a,v)=>a+(v.count||0),0)}</span>
-            <span style={{fontSize:12}}>{perModelloAperto?"▼":"▶"}</span>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <PulsanteOrdineAB/>
+              <span style={{fontSize:12}}>{perModelloAperto?"▼":"▶"}</span>
+            </div>
           </div>
-          {perModelloAperto&&Object.entries(data.perModello).sort(([a],[b])=>{
-                      const _ord=modelliOrdinati||modelli; const ia=_ord.findIndex(m=>m.id===a), ib=_ord.findIndex(m=>m.id===b);
-                      return (ia<0?9999:ia)-(ib<0?9999:ib);
-                    }).map(([mid,info])=>{
+          {perModelloAperto&&ordinaEntriesPerModello(Object.entries(data.perModello), modelli).map(([mid,info])=>{
             const m=modelli.find(x=>x.id===mid);
             if(!m) return null;
             const c=m?.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);

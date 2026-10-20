@@ -79,12 +79,31 @@ export function ElencoModelliTendine(props) {
   const LS_SEL = "turnipm_sel_aperta_" + (chiave || "x");
   const [selAperta, setSelAperta] = useState(() => { try { return localStorage.getItem(LS_SEL) !== "0"; } catch (e) { return true; } });
   const selSet = new Set(selezionati || []);
-  // In ordine A la lista dei selezionati e' in ORDINE DI INIZIO TURNO (ora d'inizio crescente, senza orario in fondo);
-  // a parita' resta l'ordine delle tendine sotto. In ordine B resta l'ordine per orario che gia' hanno.
+  // In ordine A la lista dei selezionati e' in ORDINE ALFABETICO A-Z (a parità per orario di inizio);
+  // in ordine B e' in ORDINE DI INIZIO TURNO crescente (a parità per nome).
   const selBase = (!cercando && selSet.size > 0) ? ordinati.filter((m) => selSet.has((estrai ? estrai(m) : m).id)) : [];
   const selLista = ordine === "A"
-    ? selBase.map((m, i) => ({ m, i })).sort((a, b) => (minutiInizio(estrai ? estrai(a.m) : a.m) - minutiInizio(estrai ? estrai(b.m) : b.m)) || (a.i - b.i)).map((x) => x.m)
-    : selBase;
+    ? selBase.map((m, i) => ({ m, i })).sort((a, b) => {
+        const ma = estrai ? estrai(a.m) : a.m;
+        const mb = estrai ? estrai(b.m) : b.m;
+        const na = String(ma?.label || ma?.titolo || "").toUpperCase();
+        const nb = String(mb?.label || mb?.titolo || "").toUpperCase();
+        const diff = na.localeCompare(nb);
+        if (diff !== 0) return diff;
+        return (minutiInizio(ma) - minutiInizio(mb)) || (a.i - b.i);
+      }).map((x) => x.m)
+    : selBase.map((m, i) => ({ m, i })).sort((a, b) => {
+        const ma = estrai ? estrai(a.m) : a.m;
+        const mb = estrai ? estrai(b.m) : b.m;
+        const ta = minutiInizio(ma);
+        const tb = minutiInizio(mb);
+        if (ta !== tb) return ta - tb;
+        const na = String(ma?.label || ma?.titolo || "").toUpperCase();
+        const nb = String(mb?.label || mb?.titolo || "").toUpperCase();
+        const diff = na.localeCompare(nb);
+        if (diff !== 0) return diff;
+        return a.i - b.i;
+      }).map((x) => x.m);
   const toggleSel = () => { const n = !selAperta; setSelAperta(n); try { localStorage.setItem(LS_SEL, n ? "1" : "0"); } catch (e) {} };
   return (
     <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden", marginBottom: 12, ...(stileContenitore || {}) }}>

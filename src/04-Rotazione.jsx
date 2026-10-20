@@ -254,13 +254,17 @@ export function getColorLabel(tIn, fasceAutomatiche) {
   return f?.label || "";
 }
 
-// Usata per l'asse "1°/2° turno" nei report: mattina/pomeriggio ->
-// "primo", notte -> "secondo". Da verificare rispetto al criterio reale.
+// Usata per l'asse "1°/2° turno" nei report:
+// 1) Riconoscimento da titolo/label (PRIMO/1°/MATTINA -> primo; SECONDO/2°/POMERIGGIO/NOTTE/3° -> secondo).
+// 2) Per orario: 06:00-11:45 -> primo; >11:45 o notte (<06:00) -> secondo.
 export function categoriaTurnoAutomatica(mod) {
   if (!mod) return null;
+  const t = `${mod.titolo || ""} ${mod.label || ""}`.toUpperCase();
+  if (t.includes("PRIMO") || t.includes("1°") || t.includes("1 TURNO") || t.includes("MATTINA")) return "primo";
+  if (t.includes("SECONDO") || t.includes("2°") || t.includes("2 TURNO") || t.includes("POMERIGGIO") || t.includes("NOTTE") || t.includes("3°")) return "secondo";
   const m = oraInMinuti(mod.inizio);
   if (m == null) return null;
-  return (m >= oraInMinuti("06:00") && m < oraInMinuti("18:00")) ? "primo" : "secondo";
+  return (m >= oraInMinuti("06:00") && m <= oraInMinuti("11:45")) ? "primo" : "secondo";
 }
 
 // Usata per l'asse "app/auto" nei report: se il titolo/etichetta del
