@@ -5,36 +5,37 @@ export default async function handler(req, res) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const SHEETS_URL = process.env.VITE_SHEETS_URL;
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    return res.status(405).json({ error: 'Metodo non consentito' });
+  }
+
+  const sheetsUrl = process.env.SHEETS_URL || process.env.VITE_SHEETS_URL;
+  if (!sheetsUrl) {
+    console.error('SHEETS_URL non configurata');
+    return res.status(503).json({ error: 'Servizio Sheets non configurato' });
+  }
+  if (!process.env.SHEETS_URL) console.warn('VITE_SHEETS_URL è deprecata: configurare SHEETS_URL');
 
   try {
-    if (req.method === 'POST') {
-      const response = await fetch(SHEETS_URL, {
+    const response = req.method === 'POST'
+      ? await fetch(sheetsUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify(req.body),
-      });
-      const text = await response.text();
-      try {
-        return res.status(200).json(JSON.parse(text));
-      } catch {
-        return res.status(200).send(text);
-      }
+      })
+      : await fetch(`${sheetsUrl}?${new URLSearchParams(req.query || {}).toString()}`);
+    const text = await response.text();
+    if (!response.ok) {
+      console.error(`Servizio Sheets ha risposto con HTTP ${response.status}`);
+      return res.status(502).json({ error: 'Errore dal servizio Sheets', status: response.status });
     }
-
-    if (req.method === 'GET') {
-      const params = new URLSearchParams(req.query).toString();
-      const response = await fetch(`${SHEETS_URL}?${params}`);
-      const text = await response.text();
-      try {
-        return res.status(200).json(JSON.parse(text));
-      } catch {
-        return res.status(200).send(text);
-      }
+    try {
+      return res.status(200).json(JSON.parse(text));
+    } catch {
+      return res.status(200).send(text);
     }
-
-    return res.status(405).json({ error: 'Metodo non consentito' });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    console.error('Richiesta al servizio Sheets non riuscita:', err);
+    return res.status(502).json({ error: 'Servizio Sheets non raggiungibile' });
   }
 }
