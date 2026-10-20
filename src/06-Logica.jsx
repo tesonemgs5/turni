@@ -10,7 +10,7 @@ import {
   FASCE_AUTOMATICHE_DEFAULT, FESTIVITA_DEFAULT_ATTIVE, MONTHS, NOMI_GIORNI_IT, PALETTE, COLORE_H24,
   calcFine6h15, calcFine6h30, calcFineModello, categoriaAppAutoAutomatica, categoriaTurnoAutomatica,
   daysInMonth, dkey, generaIdLocale, getColorByTime, getColorLabel,
-  getContrastTextColor, getShiftBand, isFestivo, isModelloTurnazioneDefault, italianHols,
+  getContrastTextColor, getShiftBand, isFestivo, isFestivita, isModelloTurnazioneDefault, italianHols,
   leggiCodaSync, leggiErroriSilenziati, leggiLogErrori, loadFromLocalStorage, clearLocalStorageCache, minsOf,
   minutiTurnoModello, normalizzaOraHHMM, oraInMinuti, registraListenerCodaErrori, registraProblemiImport,
   registraAttivita, confermaSupabase, segnaInCodaSupabase, segnaEsitoSheets, aggiornaEsitoVoceLog, segnaContestoLog, impostaSorgenteLog,
@@ -7877,7 +7877,8 @@ const importsRecenti = useMemo(()=>{
           // Ogni minuto vale per il giorno in cui cade; giorni, pulsanti (notturno/festivo/infrasettimanale/personali) e orari
           // sono quelli delle fasce del report (modificabili); vale la prima fascia della lista che combacia.
           const mm = minutiPerFasceEvento({ dateKey, m1:oraInMinuti(e.tIn), m2raw:oraInMinuti(e.tOut), fasce:fasceInd, pulsanti:pulsantiInd,
-            eFest:(dk)=>isFestivo(dk, store.nationalHolsEnabled, store.extraHols) });
+            eFest:(dk)=>isFestivo(dk, store.nationalHolsEnabled, store.extraHols),
+            eFesta:(dk)=>isFestivita(dk, store.nationalHolsEnabled, store.extraHols) });
           for(const k in mm){
             totaliMin[k] += mm[k];
             if(mm[k]>0){ const fa = fasceInd.find(x=>x.key===k); importiFascia[k] += (mm[k]/60) * tariffaOraria(cfgFasce, fa, dateKey, (indennita||{})[k]); }

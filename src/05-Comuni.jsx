@@ -1432,6 +1432,7 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
     setNuovoP(null);
   };
   const cambiaNotte = (campo, v)=>onUpdateCfg({...(cfg||{}), fasceIndennita:fasceCfg, pulsantiFascia:pulsanti.map(x=>x.cod==="not"?{...x,[campo]:v}:x)});
+  const cambiaFes = (campo, val)=>onUpdateCfg({...(cfg||{}), fasceIndennita:fasceCfg, pulsantiFascia:pulsanti.map(x=>x.cod==="fes"?{...x,[campo]:val}:x)});
   const togliPulsante = (cod)=>onUpdateCfg({...(cfg||{}), pulsantiFascia:pulsanti.filter(p=>p.cod!==cod),
     fasceIndennita:fasceCfg.map(f=>({...f, giorni:f.giorni.filter(c=>c!==cod)}))});
 
@@ -1503,6 +1504,14 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
           {pulsanti.map(p=>(
             <span key={p.cod} style={{fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:12,background:T.s2,border:`1px solid ${T.border}`,color:T.text}}>
               {p.label}{p.mmdd?` · ${p.mmdd[0].split("-").reverse().join("/")}`:""}
+              {p.cod==="fes"&&(modPulsanti ? (
+                <span style={{display:"inline-flex",flexWrap:"wrap",alignItems:"center",gap:4,marginLeft:6}}>
+                  {[["dom","Domenica",p.dom!==false],["fest","Festività",p.fest!==false],["sab","Sabato",p.sab===true],["vigilia","Sera prima (notte)",p.vigilia!==false],["dopo","Mattina dopo (notte)",p.dopo!==false]].map(([c,lab,on])=>(
+                    <span key={c} onClick={()=>cambiaFes(c,!on)}
+                      style={{cursor:"pointer",fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:10,background:on?accent:"transparent",color:on?getContrastTextColor(accent):T.sub,border:`1px solid ${on?accent:T.border}`}}>{lab}</span>
+                  ))}
+                </span>
+              ) : (<span style={{marginLeft:6,fontWeight:500,color:T.sub}}>{[p.dom!==false&&"dom",p.fest!==false&&"festività",p.sab===true&&"sab",p.vigilia!==false&&"sera prima",p.dopo!==false&&"mattina dopo"].filter(Boolean).join(" · ")}</span>))}
               {p.cod==="not"&&(modPulsanti ? (
                 <span style={{display:"inline-flex",alignItems:"center",gap:4,marginLeft:6}}>
                   <OraInput T={T} value={p.da||"22:00"} onChange={v=>cambiaNotte("da",v)}/>→<OraInput T={T} value={p.a||"06:00"} onChange={v=>cambiaNotte("a",v)}/>
@@ -1524,7 +1533,7 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
             <span style={{fontSize:10,color:T.sub,flexBasis:"100%"}}>Il pulsante personale vale per quel giorno e mese, ogni anno.</span>
           </div>
         )}
-        <div style={{fontSize:10,color:T.sub}}>Ogni fascia ha le sue condizioni: «E» = devono valere tutte, «O» = ne basta una. Vale la prima fascia dall'alto che combacia (frecce ▲▼). Orari: 00:00 = inizio giornata, 24:00 = fine giornata (dopo le 23:59); NOTTURNO è modificabile con ✎. FESTIVO di notte comprende anche la sera prima (sabato 22–24) e la mattina dopo (lunedì 00–06 dopo la domenica).</div>
+        <div style={{fontSize:10,color:T.sub}}>Ogni fascia ha le sue condizioni: «E» = devono valere tutte, «O» = ne basta una. Vale la prima fascia dall'alto che combacia (frecce ▲▼). Orari: 00:00 = inizio giornata, 24:00 = fine giornata (dopo le 23:59); In ✎ puoi configurare i pulsanti: NOTTURNO (orario) e FESTIVO (domenica, festività, sabato e, di notte, se contano la sera prima, es. sabato 22–24, e la mattina dopo, es. lunedì 00–06).</div>
       </div>
       {fasce.map(f=>{
         const on = (cod)=>f.giorni.includes(cod);

@@ -558,6 +558,21 @@ export function italianHols(year, nationalHolsEnabled = true) {
 // mese del dateKey (anch'esso 1-based) fallisce sempre). Un extraHol può
 // avere anche `y`: in quel caso vale solo per quell'anno (data personale
 // non ricorrente), altrimenti si ripete ogni anno.
+// Solo le FESTIVITA' (nazionali attive + personalizzate), senza considerare la domenica: serve a distinguere
+// «domenica» da «festività» (es. fasce dell'indennità di servizio).
+export function isFestivita(dateKey, nationalHolsEnabled = true, extraHols = []) {
+  if (!dateKey) return false;
+  const [y, m, d] = dateKey.split("-").map(Number);
+  if (!y || !m || !d) return false;
+  const keys = chiaviAttive(nationalHolsEnabled);
+  if (keys.length > 0) {
+    const attive = resolveFestivitaCatalogo(y).filter(f => keys.includes(f.key));
+    if (attive.some(h => h.m === m && h.d === d)) return true;
+  }
+  return (extraHols || []).some(h =>
+    !h.importante && +h.m === m && +h.d === d && (h.y == null || +h.y === y));
+}
+
 export function isFestivo(dateKey, nationalHolsEnabled = true, extraHols = []) {
   if (!dateKey) return false;
   const [y, m, d] = dateKey.split("-").map(Number);

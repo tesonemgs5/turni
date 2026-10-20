@@ -17,7 +17,7 @@ export const GIORNI_FASCIA = [["lun","L"],["mar","M"],["mer","M"],["gio","G"],["
 export const PULSANTI_DEFAULT = [
   { cod:"fer", label:"FERIALE",          v:4 },
   { cod:"not", label:"NOTTURNO",         v:4, da:"22:00", a:"06:00" },
-  { cod:"fes", label:"FESTIVO",          v:4 },
+  { cod:"fes", label:"FESTIVO",          v:4, dom:true, fest:true, sab:false, vigilia:true, dopo:true },
   { cod:"inf", label:"INFRASETTIMANALE", v:4 },
 ];
 // Le 4 voci del CCNL, in ordine di priorità (vale la prima che combacia). modo "e" = devono valere TUTTE le condizioni,
@@ -77,13 +77,19 @@ function combacia(giorni, att, modo){
 }
 // Minuti del turno per ogni fascia. dateKey = giorno d'inizio; m1/m2raw = minuti dalla mezzanotte
 // (m2<=m1: il turno finisce il giorno dopo); eFest(dateKey) = true se domenica o festività.
-export function minutiPerFasceEvento({ dateKey, m1, m2raw, fasce, pulsanti, eFest }){
+export function minutiPerFasceEvento({ dateKey, m1, m2raw, fasce, pulsanti, eFest, eFesta }){
   const out = {}; fasce.forEach(f=>{ out[f.key] = 0; });
   if(m1===null || m2raw===null || m1===undefined || m2raw===undefined) return out;
   let m2 = m2raw; if(m2<=m1) m2 += 24*60;
   const dk = [-1,0,1,2].map(n=>addDays(dateKey, n));     // giorno prima, oggi, domani, dopodomani
-  const fest = dk.map(d=>!!eFest(d));
   const dow = dk.map(d=>dowDi(d));
+  // FESTIVO configurabile: quali giorni sono festivi (domenica / festività / sabato) e, di notte, se contano anche
+  // la sera prima e la mattina dopo il festivo.
+  const pFes = (pulsanti||[]).find(x=>x && x.cod==="fes") || {};
+  const oDom = pFes.dom!==false, oFest = pFes.fest!==false, oSab = pFes.sab===true, oVig = pFes.vigilia!==false, oDopo = pFes.dopo!==false;
+  const festaDi = (d,i)=> eFesta ? !!eFesta(d) : (!!eFest(d) && dow[i]!==0);   // festività (non domenica semplice)
+  const festaArr = dk.map((d,i)=>festaDi(d,i));
+  const fest = dk.map((d,i)=> (dow[i]===0 && oDom) || (festaArr[i] && oFest) || (dow[i]===6 && oSab));
   const mmdd = dk.map(d=>d.slice(5));
   const personali = (pulsanti||[]).filter(p=>p && p.mmdd && p.mmdd.length);
   const customDi = dk.map((_,i)=>new Set(personali.filter(p=>p.mmdd.includes(mmdd[i])).map(p=>p.cod)));
@@ -102,13 +108,17 @@ export function minutiPerFasceEvento({ dateKey, m1, m2raw, fasce, pulsanti, eFes
     const md = t % (24*60);
     const notte = nottePassaMezzanotte ? (md>=nS || md<nE) : (md>=nS && md<nE);
     const sera = nottePassaMezzanotte ? (md>=nS ? di : di-1) : di;   // giorno in cui è iniziata la notte
-    const fes = notte ? (nottePassaMezzanotte ? (fest[sera] || fest[sera+1]) : fest[di]) : fest[di];
+    let fes = fest[di];
+    if(notte && nottePassaMezzanotte){
+      if(md>=nS) fes = fest[di] || (oVig && fest[di+1]);          // sera: festivo se lo è il giorno, o la sera prima del festivo
+      else       fes = fest[di] || (oDopo && fest[di-1]);         // mattina: festivo se lo è il giorno, o la mattina dopo il festivo
+    }
     const att = {
       dow: DOW[dow[di]],
       not: notte,
       fes,
       fer: !fes,
-      inf: fest[di] && dow[di]!==0,
+      inf: festaArr[di] && dow[di]!==0,
       custom: customDi[di],
     };
     for(const x of iv){
