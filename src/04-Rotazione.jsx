@@ -1957,7 +1957,7 @@ const TEMPI_MODELLO = [
 
 export function ModelForm({
   T, form, setForm, accent, dark, fasceAutomatiche, modelli, coloriExtra = [],
-  reports = [], getConteggioConfig, updateConteggioConfig,
+  reports = [], getConteggioConfig, updateConteggioConfig, onApplicaScelteReport,
   suggerimentiTitolo = [], suggerimentiNomeVis = [], onRimuoviSuggerimento,
   onSave,
   calendari = [], onCopia, onSposta, onColoreNome, coloriUsatiTutti = null,
@@ -2218,7 +2218,21 @@ export function ModelForm({
         // riguarda sempre tutti gli eventi futuri generati da questo modello.
         const modelloFittizio = { id: form.id, tempo: form.tempo, inizio: form.inizio, fine: form.fine };
 
+        // Scelte fatte prima del primo salvataggio (il modello non ha ancora un id): restano nel form e si applicano al salvataggio.
+        const pend = (r) => (form.scelteReport || {})[r.id] || {};
+        function patch(r, p){
+          if(form.id){ if(onApplicaScelteReport) onApplicaScelteReport({ [r.id]: p }); return; }
+          setForm(f => {
+            const tutte = f.scelteReport || {};
+            const prec = tutte[r.id] || {};
+            const nuovo = { ...prec, ...p };
+            if(p.sottomenu) nuovo.sottomenu = { ...(prec.sottomenu || {}), ...p.sottomenu };
+            return { ...f, scelteReport: { ...tutte, [r.id]: nuovo } };
+          });
+        }
+
         function statoInclusione(r){
+          if(!form.id && pend(r).incluso !== undefined) return pend(r).incluso;
           const cfg = getConteggioConfig(r.id, r.type);
           if(r.type === "turnazione"){
             const esclusi = cfg.modelliEsclusi || [];
@@ -2232,36 +2246,11 @@ export function ModelForm({
           return whitelist.length === 0 || whitelist.includes(form.id);
         }
 
-        function setInclusione(r, incluso){
-          if(!form.id) return; // serve un id di modello salvato per poter comparire nelle liste
-          const cfg = getConteggioConfig(r.id, r.type);
-          if(r.type === "turnazione"){
-            const esclusi = cfg.modelliEsclusi || [];
-            const aggiunti = cfg.modelliAggiunti || [];
-            const isDefault = isModelloTurnazioneDefault(modelloFittizio);
-            if(incluso){
-              if(isDefault) updateConteggioConfig(r.id, {...cfg, modelliEsclusi: esclusi.filter(id=>id!==form.id)});
-              else updateConteggioConfig(r.id, {...cfg, modelliAggiunti: [...new Set([...aggiunti, form.id])]});
-            } else {
-              if(isDefault) updateConteggioConfig(r.id, {...cfg, modelliEsclusi: [...new Set([...esclusi, form.id])]});
-              else updateConteggioConfig(r.id, {...cfg, modelliAggiunti: aggiunti.filter(id=>id!==form.id)});
-            }
-          } else {
-            const whitelist = (cfg.modelliInclusi || []).filter(id=>id!=="__nessuno__");
-            const eraNessuno = (cfg.modelliInclusi || []).includes("__nessuno__");
-            if(incluso){
-              const nuova = (whitelist.length === 0 && !eraNessuno)
-                ? modelli.filter(mm=>mm.id!==form.id).map(mm=>mm.id)
-                : whitelist.filter(id=>id!==form.id);
-              updateConteggioConfig(r.id, {...cfg, modelliInclusi: nuova.length===0 ? ["__nessuno__"] : nuova});
-            } else {
-              updateConteggioConfig(r.id, {...cfg, modelliInclusi: [...new Set([...whitelist, form.id])]});
-            }
-          }
-        }
+        // Incluso / Escluso: stessa funzione per modello nuovo (si applica al salvataggio) e salvato (subito).
+        function setInclusione(r, incluso){ patch(r, { incluso }); }
 
         function setSottomenuGruppo(r, sm, gruppoKey){
-          if(!form.id) return;
+          if(!form.id){ patch(r, { sottomenu: { [sm.id]: gruppoKey || null } }); return; }
           const cfg = getConteggioConfig(r.id, r.type);
           const nuoviSottomenu = (cfg.sottomenu || []).map(s => {
             if(s.id !== sm.id) return s;
@@ -2282,7 +2271,7 @@ export function ModelForm({
             </button>
             {!form.id && (
               <div style={{ fontSize: 10, color: T.sub, marginBottom: 8 }}>
-                Salva il modello per poter scegliere in quali report includerlo.
+                Puoi scegliere subito i report: le scelte si applicano quando salvi il modello.
               </div>
             )}
             {reportListaAperta && (
@@ -2311,18 +2300,42 @@ export function ModelForm({
                         <div style={{ padding: "0 12px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
                           <div style={{ display: "flex", gap: 6 }}>
                             {[["incluso", true], ["escluso", false]].map(([key, val]) => (
-                              <button key={key} type="button" disabled={!form.id} onClick={() => setInclusione(r, val)}
-                                style={{ flex: 1, padding: "7px 4px", borderRadius: 8, cursor: form.id ? "pointer" : "not-allowed",
-                                  fontWeight: 700, fontSize: 11, border: "none", opacity: form.id ? 1 : 0.5,
+                              <button key={key} type="button" onClick={() => setInclusione(r, val)}
+                                style={{ flex: 1, padding: "7px 4px", borderRadius: 8, cursor: "pointer",
+                                  fontWeight: 700, fontSize: 11, border: "none",
                                   background: incluso === val ? accent : T.surface,
                                   color: incluso === val ? "#fff" : T.sub }}>
                                 {key === "incluso" ? "Incluso" : "Escluso"}
                               </button>
                             ))}
                           </div>
+                          {r.type === "turnazione" && (() => {
+                            // Gruppo di QUESTO modello in QUESTO report (vale per tutti i suoi eventi, solo qui): non cambia modello ne' altri report.
+                            const gm = cfgReport.gruppiManuali || {};
+                            const vTurno = form.id ? ((gm[form.id] === "primo" || gm[form.id] === "secondo" || gm[form.id] === "escluso") ? gm[form.id] : "") : (pend(r).turno || "");
+                            const vAA = form.id ? (gm[form.id + "_appauto"] || ((gm[form.id] === "app" || gm[form.id] === "auto") ? gm[form.id] : "")) : (pend(r).appauto || "");
+                            const riga = (titolo, valore, opzioni, chiave) => (
+                              <div>
+                                <div style={{ fontSize: 10, color: T.sub, fontWeight: 700, marginBottom: 4 }}>{titolo}</div>
+                                <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                                  {opzioni.map(([v, l]) => (
+                                    <button key={v || "auto"} type="button" onClick={() => patch(r, { [chiave]: v })}
+                                      style={{ flex: "1 1 22%", padding: "7px 4px", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 11, border: "none",
+                                        background: valore === v ? accent : T.surface, color: valore === v ? "#fff" : T.sub }}>{l}</button>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                            return (
+                              <>
+                                {riga("TURNO IN QUESTO REPORT", vTurno, [["", "Come il modello"], ["primo", "1° TURNO"], ["secondo", "2° TURNO"], ["escluso", "Nessuno"]], "turno")}
+                                {form.tempo !== "h24" && riga("APP / AUTO IN QUESTO REPORT", vAA, [["", "Come il modello"], ["app", "APP"], ["auto", "AUTO"], ["escluso", "Nessuno"]], "appauto")}
+                              </>
+                            );
+                          })()}
                           {sottomenuLiberi.map(sm => {
                             const smAperto = smEspanso === sm.id;
-                            const gruppoScelto = form.id ? (sm.assegnazioni || {})[form.id] || "" : "";
+                            const gruppoScelto = form.id ? (sm.assegnazioni || {})[form.id] || "" : ((pend(r).sottomenu || {})[sm.id] || "");
                             return (
                               <div key={sm.id} style={{ background: T.surface, borderRadius: 8, overflow: "hidden" }}>
                                 <button type="button" onClick={() => setSottomenuEspanso(prev => ({ ...prev, [r.id]: smAperto ? null : sm.id }))}
@@ -2340,10 +2353,10 @@ export function ModelForm({
                                 {smAperto && (
                                   <div style={{ padding: "0 10px 10px", display: "flex", gap: 6, flexWrap: "wrap" }}>
                                     {(sm.gruppi || []).map(g => (
-                                      <button key={g.key} type="button" disabled={!form.id}
+                                      <button key={g.key} type="button"
                                         onClick={() => setSottomenuGruppo(r, sm, gruppoScelto === g.key ? null : g.key)}
-                                        style={{ padding: "6px 10px", borderRadius: 8, cursor: form.id ? "pointer" : "not-allowed",
-                                          fontWeight: 700, fontSize: 11, border: "none", opacity: form.id ? 1 : 0.5,
+                                        style={{ padding: "6px 10px", borderRadius: 8, cursor: "pointer",
+                                          fontWeight: 700, fontSize: 11, border: "none",
                                           background: gruppoScelto === g.key ? accent : T.s2,
                                           color: gruppoScelto === g.key ? "#fff" : T.sub }}>
                                         {g.label}

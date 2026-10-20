@@ -178,7 +178,7 @@ function AppInterno({ session }){
     inserisciEventoGenerico, normOrarioImport, trovaModelloPerTitoloOrario, isRigaProtrazione, tipoProtrazione, importaTurniPdfJson,
     delTuttiEventiImport, importaEventiSingoli, applyRotazione, getReportRange, splitColleghi, computeConteggioForReport,
     computeTurnazioneForReport, computeConteggio, computeIndennita, activeReports, inactiveTypes, addReport,
-    removeReport, renameReport, moveReport, getConteggioConfig, updateConteggioConfig, totaleTurni,
+    removeReport, renameReport, moveReport, getConteggioConfig, updateConteggioConfig, applicaScelteReportModello, totaleTurni,
     setPrevGrid, REPORT_TEMPLATES, calcolaOrdineModelli, updateFascia,
   } = C;
 
@@ -454,6 +454,7 @@ function AppInterno({ session }){
               fasceAutomatiche={fasceAutomatiche} modelli={modelli} coloriExtra={coloriExtra} coloriUsatiTutti={coloriUsatiTutti()}
               onColoreNome={ensureColoreRegistrato}
               reports={store.reports||[]} getConteggioConfig={getConteggioConfig} updateConteggioConfig={updateConteggioConfig}
+              onApplicaScelteReport={(scelte)=>applicaScelteReportModello(modelForm, scelte)}
               suggerimentiTitolo={autocompleteValori.titolo} suggerimentiNomeVis={autocompleteValori.nome_visualizzato}
               onRimuoviSuggerimento={rimuoviValoreAutocomplete}
               calendari={store.calendars}
@@ -498,8 +499,11 @@ function AppInterno({ session }){
                 // spiegazioni. Ora qualsiasi eccezione, attesa o no, arriva
                 // comunque al modale di errore standard dell'app.
                 try{
-                  const esito = await saveModello({...modelForm,id:editModello?.id});
+                  const { scelteReport, ...datiModello } = modelForm; // le scelte dei report non fanno parte del modello
+                  const esito = await saveModello({...datiModello,id:editModello?.id});
                   if(esito?.ok){
+                    // Scelte fatte nei report DURANTE la creazione (il modello non aveva ancora un id): si applicano ora, in una sola scrittura.
+                    if(scelteReport && esito.modello) applicaScelteReportModello(esito.modello, scelteReport);
                     setShowModelForm(false);
                     // Se il form era stato aperto dal picker "Scegli modello"
                     // (creazione/modifica al volo mentre si sceglieva un

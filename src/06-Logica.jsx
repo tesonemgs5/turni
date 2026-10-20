@@ -8076,6 +8076,70 @@ const importsRecenti = useMemo(()=>{
     saveSettings({conteggio_configs: newCfg});
   }
 
+  // Applica in UNA sola scrittura le scelte fatte per un modello nei report (dal form del modello, anche alla creazione).
+  // scelte = { [reportId]: { incluso?:bool, turno?:""|"primo"|"secondo"|"escluso", appauto?:""|"app"|"auto"|"escluso", sottomenu?:{[smId]:chiaveGruppo|null} } }
+  // "" = il report non ha una scelta per questo modello (segue evento/modello); "escluso" = nessun gruppo in quel report.
+  // Tocca SOLO la configurazione dei report indicati: nessuna modifica a modello, eventi o altri report.
+  function applicaScelteReportModello(modello, scelte){
+    if(!modello?.id || !scelte || Object.keys(scelte).length===0) return;
+    const id = modello.id;
+    const base = {...(conteggioConfigsRef.current||{})};
+    let toccato = false;
+    Object.entries(scelte).forEach(([rid, sc])=>{
+      const r = (store.reports||[]).find(x=>x.id===rid);
+      if(!r || !sc) return;
+      const cfg = {...(base[rid] || getConteggioConfig(rid, r.type))};
+      if(sc.incluso!==undefined){
+        if(r.type==="turnazione"){
+          const esclusi = cfg.modelliEsclusi||[], aggiunti = cfg.modelliAggiunti||[];
+          const isDefault = isModelloTurnazioneDefault({id, tempo:modello.tempo, inizio:modello.inizio, fine:modello.fine});
+          if(sc.incluso){
+            if(isDefault) cfg.modelliEsclusi = esclusi.filter(x=>x!==id);
+            else cfg.modelliAggiunti = [...new Set([...aggiunti, id])];
+          } else {
+            if(isDefault) cfg.modelliEsclusi = [...new Set([...esclusi, id])];
+            else cfg.modelliAggiunti = aggiunti.filter(x=>x!==id);
+          }
+        } else {
+          const whitelist = (cfg.modelliInclusi||[]).filter(x=>x!=="__nessuno__");
+          const eraNessuno = (cfg.modelliInclusi||[]).includes("__nessuno__");
+          const tuttiIncl = whitelist.length===0 && !eraNessuno; // elenco vuoto = tutti i modelli inclusi
+          if(sc.incluso){
+            if(!tuttiIncl) cfg.modelliInclusi = [...new Set([...whitelist, id])];
+          } else {
+            const nuova = tuttiIncl ? modelli.filter(mm=>mm.id!==id).map(mm=>mm.id) : whitelist.filter(x=>x!==id);
+            cfg.modelliInclusi = nuova.length===0 ? ["__nessuno__"] : nuova;
+          }
+        }
+        toccato = true;
+      }
+      if(r.type==="turnazione" && (sc.turno!==undefined || sc.appauto!==undefined)){
+        const gm = {...(cfg.gruppiManuali||{})};
+        // vecchio formato: gm[id] puo' contenere «app»/«auto» (asse APP/AUTO): lo sposto su id_appauto prima di scrivere il turno
+        if((gm[id]==="app"||gm[id]==="auto") && !gm[id+"_appauto"]) gm[id+"_appauto"] = gm[id];
+        if(sc.turno!==undefined){ if(sc.turno) gm[id] = sc.turno; else delete gm[id]; }
+        else if(gm[id]==="app"||gm[id]==="auto") delete gm[id];
+        if(sc.appauto!==undefined){ if(sc.appauto) gm[id+"_appauto"] = sc.appauto; else delete gm[id+"_appauto"]; }
+        cfg.gruppiManuali = gm;
+        toccato = true;
+      }
+      if(sc.sottomenu && Object.keys(sc.sottomenu).length>0){
+        cfg.sottomenu = (cfg.sottomenu||[]).map(sm=>{
+          if(!(sm.id in sc.sottomenu)) return sm;
+          const ass = {...(sm.assegnazioni||{})};
+          if(sc.sottomenu[sm.id]) ass[id] = sc.sottomenu[sm.id]; else delete ass[id];
+          return {...sm, assegnazioni: ass};
+        });
+        toccato = true;
+      }
+      base[rid] = cfg;
+    });
+    if(!toccato) return;
+    conteggioConfigsRef.current = base;
+    setConteggioConfigs(base);
+    saveSettings({conteggio_configs: base});
+  }
+
   const totaleTurni = computeConteggio().totale;
   const totaleMinTurni = computeMinutiForReport({fasceFiltro:[]}).totaleMin;
 // #endregion
@@ -8608,6 +8672,7 @@ const importsRecenti = useMemo(()=>{
     moveReport,
     getConteggioConfig,
     updateConteggioConfig,
+    applicaScelteReportModello,
     applicaReportOverrideATuttiGliEventi,
     totaleTurni,
     totaleMinTurni,
