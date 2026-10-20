@@ -19,17 +19,17 @@ export const PULSANTI_DEFAULT = [
   { cod:"inf", label:"INFRASETTIMANALE" },
 ];
 export const FASCE_INDENNITA_DEFAULT = [
-  { key:"infrasettimanale", label:"Festivo infrasettimanale", da:"00:00", a:"24:00", giorni:["inf"],        perc:"100", v:2 },
-  { key:"notturno_festivo", label:"Notturno festivo",         da:"22:00", a:"06:00", giorni:["not","fes"], perc:"50",  v:2 },
-  { key:"festivo",          label:"Festivo",                  da:"06:00", a:"22:00", giorni:["fes"],       perc:"30",  v:2 },
-  { key:"notturno",         label:"Notturno",                 da:"22:00", a:"06:00", giorni:["not"],       perc:"30",  v:2 },
-  { key:"diurno",           label:"Diurno",                   da:"06:00", a:"22:00", giorni:[],            perc:"10",  v:2 },
+  { key:"infrasettimanale", label:"Festivo infrasettimanale", da:"00:00", a:"24:00", giorni:["inf"],        perc:"100", v:3 },
+  { key:"notturno_festivo", label:"Notturno festivo",         da:"22:00", a:"06:00", giorni:["not","fes"], perc:"50",  v:3 },
+  { key:"festivo",          label:"Festivo",                  da:"06:00", a:"22:00", giorni:["fes"],       perc:"30",  v:3 },
+  { key:"notturno",         label:"Notturno",                 da:"22:00", a:"06:00", giorni:["not"],       perc:"30",  v:3 },
+  { key:"diurno",           label:"Diurno",                   da:"06:00", a:"22:00", giorni:[],            perc:"10",  v:3 },
 ];
 const DOW = ["dom","lun","mar","mer","gio","ven","sab"]; // getDay()
 const DOWSET = new Set(DOW);
 export function fasceIndennitaDi(cfg){
-  // Le fasce salvate con la versione provvisoria (senza v:2) non hanno i nuovi pulsanti: valgono quelle standard.
-  const f = cfg && Array.isArray(cfg.fasceIndennita) && cfg.fasceIndennita.length && cfg.fasceIndennita.every(x=>x && x.v===2) ? cfg.fasceIndennita : null;
+  // Le fasce salvate con una versione precedente (senza v:3) vengono ignorate: vale l'elenco standard (retribuzioni e aumenti restano).
+  const f = cfg && Array.isArray(cfg.fasceIndennita) && cfg.fasceIndennita.length && cfg.fasceIndennita.every(x=>x && x.v===3) ? cfg.fasceIndennita : null;
   return f || FASCE_INDENNITA_DEFAULT;
 }
 export function pulsantiFasciaDi(cfg){

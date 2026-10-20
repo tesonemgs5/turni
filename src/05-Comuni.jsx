@@ -1407,7 +1407,7 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
     const f = fasceCfg.find(x=>x.key===key); if(!f) return;
     patchFascia(key, {giorni: f.giorni.includes(cod) ? f.giorni.filter(c=>c!==cod) : [...f.giorni, cod]});
   };
-  const aggiungiFascia = ()=>salvaFasce([...fasceCfg, {key:"f_"+Date.now().toString(36), label:"", da:"06:00", a:"22:00", giorni:[], perc:"", v:2}]);
+  const aggiungiFascia = ()=>salvaFasce([...fasceCfg, {key:"f_"+Date.now().toString(36), label:"", da:"06:00", a:"22:00", giorni:[], perc:"", v:3}]);
   const eliminaFascia = (key)=>{ if(fasceCfg.length>1) salvaFasce(fasceCfg.filter(f=>f.key!==key)); };
   const spostaFascia = (key, dir)=>{
     const i = fasceCfg.findIndex(f=>f.key===key), j = i+dir;
@@ -1547,17 +1547,20 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
             <span style={{fontSize:11,color:T.sub,flex:1,textAlign:"right"}}>{fmtOreDecimali(f.count)} nel periodo{importiFascia[f.key]>0?` · € ${importiFascia[f.key].toFixed(2)}`:""}</span>
           </div>
           {f.da===f.a&&(<div style={{fontSize:11,color:"#dc2626"}}>Inizio e fine uguali: nessuna ora conteggiata. Per tutta la giornata usa 00:00 → 24:00.</div>)}
+          <div style={{fontSize:10,fontWeight:800,color:T.sub,letterSpacing:0.4}}>GIORNI · UNO QUALSIASI (nessuno = ogni giorno)</div>
           <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
             {GIORNI_FASCIA.map(([cod,lab])=>chip(cod,lab))}
           </div>
+          <div style={{fontSize:10,fontWeight:800,color:T.sub,letterSpacing:0.4}}>CONDIZIONI · DEVONO VALERE TUTTE INSIEME (nessuna = nessuna condizione)</div>
           <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
             {pulsanti.map(p=>chip(p.cod,p.label))}
           </div>
+          {pulsanti.length>1&&pulsanti.every(p=>on(p.cod))&&(<div style={{fontSize:11,color:"#dc2626"}}>Hai selezionato tutte le condizioni: la fascia vale solo quando sono tutte vere insieme, quasi mai. Tocca «Nessuno» e scegli solo quelle che servono.</div>)}
           <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
             <span onClick={()=>patchFascia(f.key,{giorni: giorniTutti ? f.giorni.filter(c=>!GIORNI_COD.includes(c)) : [...new Set([...f.giorni,...GIORNI_COD])]})}
               style={{cursor:"pointer",fontSize:11,fontWeight:800,color:accent,padding:"3px 9px",border:`1px dashed ${T.border}`,borderRadius:10}}>L–D</span>
-            <span onClick={()=>patchFascia(f.key,{giorni: tuttiSel ? [] : TUTTI_COD})}
-              style={{cursor:"pointer",fontSize:11,fontWeight:800,color:accent,padding:"3px 9px",border:`1px dashed ${T.border}`,borderRadius:10}}>{tuttiSel?"Nessuno":"Tutti"}</span>
+            <span onClick={()=>patchFascia(f.key,{giorni:[]})}
+              style={{cursor:"pointer",fontSize:11,fontWeight:800,color:accent,padding:"3px 9px",border:`1px dashed ${T.border}`,borderRadius:10}}>Nessuno</span>
             <span style={{flex:1}}/>
             <input type="number" value={f.perc??""} placeholder="%" onChange={e=>patchFascia(f.key,{perc:e.target.value})}
               style={{width:52,background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,padding:"6px 6px",color:T.text,fontSize:13,outline:"none",textAlign:"right"}}/>
