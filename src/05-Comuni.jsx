@@ -1136,8 +1136,15 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
   );
 }
 
-export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati, accent, fasceAutomatiche, onRename, onUpdateCfg}){
-  const modelliPerLista = modelliOrdinati || modelli;
+export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati, ordineModelli="B", accent, fasceAutomatiche, onRename, onUpdateCfg}){
+  const [ordineLista, setOrdineLista] = useState(()=>ordineModelli==="A"?"A":"B");
+  const modelliPerLista = useMemo(()=>{
+    const lista = modelliOrdinati || modelli || [];
+    const campoPosizione = ordineLista===ordineModelli ? "sortOrder" : "sortOrderAltro";
+    return lista.map((m,i)=>({m,i}))
+      .sort((a,b)=>(a.m[campoPosizione]||0)-(b.m[campoPosizione]||0)||a.i-b.i)
+      .map(x=>x.m);
+  }, [modelliOrdinati, modelli, ordineLista, ordineModelli]);
   const [editingName, setEditingName] = useState(false);
   const [tmpName, setTmpName] = useState(r.label);
   const [openModello, setOpenModello] = useState(null);
@@ -1214,6 +1221,10 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
         <span style={{fontSize:20,fontWeight:900,color:T.text}}>{data.totale}</span>
       </div>
 
+      <div style={{display:"flex",justifyContent:"flex-end"}}>
+        <PulsanteOrdineAB ordine={ordineLista} onCambia={setOrdineLista} T={T} accent={accent}/>
+      </div>
+
       <div style={{display:"flex",flexDirection:"column",gap:6}}>
         {GRUPPI.map(f=>{
           const isOpen = openGruppo===f.key;
@@ -1250,7 +1261,7 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
                   // Modelli a TENDINE come nella lista Modelli (NOTTE, MATTINA, ...): accanto al nome di ogni tendina la casella
                   // «seleziona / deseleziona tutto il gruppo» e il conteggio selezionati/totale; in testa la tendina SELEZIONATI.
                   return (
-                    <ElencoModelliTendine chiave={"turnazione_"+r.id+"_"+f.key} modelli={modelliPerLista} selezionati={attiviIds} soloInTesta={presentiIds}
+                    <ElencoModelliTendine chiave={"turnazione_"+r.id+"_"+f.key} modelli={modelliPerLista} ordine={ordineLista} selezionati={attiviIds} soloInTesta={presentiIds}
                       onSelezionaGruppo={(ms, seleziona)=>setGruppoModelli(ms.map(x=>x.id), seleziona ? f.key : "", f.key)}
                       stileContenitore={{border:"none",borderRadius:6,marginBottom:0}}
                       renderRiga={(m)=>{

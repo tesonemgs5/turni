@@ -666,7 +666,7 @@ export default function VistaCalendario({ C }){
                 ? modelliOrdinati.filter(m=>reportCalIds.includes(m.calendarId||mainCalId))
                 : modelliOrdinati;
               return (
-                <TurnazioneConfigCard T={T} r={r} cfg={cfg} data={computeTurnazioneForReport(cfg, r.id)}
+                 <TurnazioneConfigCard T={T} r={r} cfg={cfg} data={computeTurnazioneForReport(cfg, r.id)} ordineModelli={C.ordineModelli}
                   modelli={modelliFiltratiPerCal} modelliOrdinati={modelliOrdinatiFiltratiPerCal} accent={accent} fasceAutomatiche={fasceAutomatiche}
                   onRename={label=>renameReport(r.id, label)}
                   onUpdateCfg={newCfg=>updateConteggioConfig(r.id, newCfg)}/>

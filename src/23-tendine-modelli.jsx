@@ -72,7 +72,6 @@ export function ElencoModelliTendine(props) {
   const salva = (s) => { setAperte(s); try { localStorage.setItem(LS, JSON.stringify([...s])); } catch (e) {} };
   const { blocchi, senza } = costruisciSezioni({ modelli, ordine, calId, mainCalId, gruppiDelCalendario, gruppi, cercando, estrai });
   const chiavi = blocchi.map((b) => b.key);
-  const tutteAperte = chiavi.length > 0 && chiavi.every((k) => aperte.has(k));
   const ordinati = [...blocchi.flatMap((b) => b.modelli), ...senza];
   const toggle = (k) => { const s = new Set(aperte); if (s.has(k)) s.delete(k); else s.add(k); salva(s); };
   // Tendina «SELEZIONATI» in testa (solo se chi usa l'elenco passa `selezionati`): i modelli scelti, nell'ordine attivo.
@@ -108,11 +107,24 @@ export function ElencoModelliTendine(props) {
         return a.i - b.i;
       }).map((x) => x.m);
   const toggleSel = () => { const n = !selAperta; setSelAperta(n); try { localStorage.setItem(LS_SEL, n ? "1" : "0"); } catch (e) {} };
+  const haSelezionati = selLista.length > 0;
+  const haSezioniApribili = chiavi.length > 0 || haSelezionati;
+  const tutteAperte = haSezioniApribili
+    && chiavi.every((k) => aperte.has(k))
+    && (!haSelezionati || selAperta);
+  const impostaTutteAperte = () => {
+    const apri = !tutteAperte;
+    salva(apri ? new Set(chiavi) : new Set());
+    if (haSelezionati) {
+      setSelAperta(apri);
+      try { localStorage.setItem(LS_SEL, apri ? "1" : "0"); } catch (e) {}
+    }
+  };
   return (
     <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden", marginBottom: 12, ...(stileContenitore || {}) }}>
-      {chiavi.length > 0 && (
+      {haSezioniApribili && (
         <div style={{ display: "flex", justifyContent: "flex-end", padding: "6px 12px", background: T.surface, borderBottom: `1px solid ${T.border}`, width: "100%", boxSizing: "border-box" }}>
-          <button onClick={() => salva(tutteAperte ? new Set() : new Set(chiavi))}
+          <button onClick={impostaTutteAperte}
             style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text, padding: "5px 10px", cursor: "pointer", fontWeight: 800, fontSize: 12 }}>
             {tutteAperte ? "▶ Chiudi tutti" : "▼ Apri tutti"}
           </button>
