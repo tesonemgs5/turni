@@ -1136,7 +1136,7 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
   );
 }
 
-export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati, accent, fasceAutomatiche, onRename, onUpdateCfg}){
+export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati, accent, fasceAutomatiche, onRename, onUpdateCfg, onAssegnaCategoria}){
   const modelliPerLista = modelliOrdinati || modelli;
   const [editingName, setEditingName] = useState(false);
   const [tmpName, setTmpName] = useState(r.label);
@@ -1166,6 +1166,8 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
     if(!gruppo) next[k] = "escluso";
     else next[k] = gruppo;
     onUpdateCfg({...cfg, gruppiManuali:next});
+    // La scelta vale per il MODELLO e per tutti i suoi eventi (anche con orario modificato).
+    if(onAssegnaCategoria) onAssegnaCategoria([mid], isAppAuto ? "appauto" : "turno", gruppo||"");
   }
   // Come sopra ma per tanti modelli insieme (casella «seleziona tutto il gruppo» accanto al nome della tendina): una sola scrittura.
   function setGruppoModelli(ids, gruppo, asseKey){
@@ -1177,6 +1179,7 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
       else next[k] = gruppo;
     });
     onUpdateCfg({...cfg, gruppiManuali:next});
+    if(onAssegnaCategoria) onAssegnaCategoria(ids, isAppAuto ? "appauto" : "turno", gruppo||"");
   }
 
   const GRUPPI = [

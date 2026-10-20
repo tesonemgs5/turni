@@ -5371,6 +5371,55 @@ const importsRecenti = useMemo(()=>{
     return nuovoStore.events;
   }
 
+  // ── Dal REPORT (Turnazione): spuntare / togliere un modello in un gruppo (1° TURNO, 2° TURNO, APP, AUTO)
+  // cambia il MODELLO stesso e TUTTI i suoi eventi (anche quelli con l'orario modificato: si cerca per modello, non per orario).
+  // asse "turno": valore "primo" | "secondo" | "" (""= nessuna categoria); asse "appauto": "app" | "auto" | "".
+  // Gli eventi perdono ogni scelta fatta sul singolo evento (categoria o "nessuna categoria") e seguono il modello.
+  // Locale subito, poi UNA richiesta a blocchi su Supabase (modelli + eventi).
+  async function assegnaCategoriaModelli(ids, asse, valore){
+    const lista = [...new Set((ids||[]).filter(Boolean))];
+    if(lista.length===0 || !userId) return null;
+    const turno = asse!=="appauto";
+    const set = new Set(lista);
+    const modelliAgg = modelli.map(m=>{
+      if(!set.has(m.id)) return m;
+      return turno
+        ? {...m, categoria: valore||"", turnoVuoto: !valore}
+        : {...m, categoriaAppAuto: valore||"", appAutoVuoto: !valore};
+    });
+    const nuovoStore = JSON.parse(JSON.stringify(store));
+    Object.keys(nuovoStore.events||{}).forEach(dk=>{
+      Object.keys(nuovoStore.events[dk]||{}).forEach(cid=>{
+        nuovoStore.events[dk][cid] = (nuovoStore.events[dk][cid]||[]).map(e=>
+          (e.modelloId && set.has(e.modelloId))
+            ? (turno ? {...e, categoriaTurno:"", turnoVuoto:false} : {...e, categoriaAppAuto:"", appAutoVuoto:false})
+            : e
+        );
+      });
+    });
+    saveToLocalStorage(nuovoStore.events, nuovoStore.calendars, modelliAgg);
+    setStore(s=>({...s, events:nuovoStore.events}));
+    setModelli(modelliAgg);
+    const ts = new Date().toISOString();
+    const payModello = turno
+      ? { categoria: valore||null, categoria_turno_vuoto: !valore }
+      : { categoria_app_auto: valore||null, categoria_app_auto_vuoto: !valore };
+    const payEventi = turno
+      ? { categoria_turno: null, categoria_turno_vuoto: false }
+      : { categoria_app_auto: null, categoria_app_auto_vuoto: false };
+    const ctx = "Report: categoria assegnata al modello e ai suoi eventi";
+    (async()=>{
+      const ops = [];
+      lista.forEach(idMod=>{
+        ops.push({ tipo:"update", table:"modelli", payload:payModello, matchObj:{ id:idMod, user_id:userId }, contesto:ctx });
+        ops.push({ tipo:"update", table:"events", payload:payEventi, matchObj:{ modello_id:idMod, user_id:userId }, contesto:ctx, zeroOk:true });
+      });
+      const ris = await scriviBatchConBackup({ ops, contesto:ctx, ts, opzioni:{ soloLog:true } });
+      if(ris?.errori>0) segnalaErroreSoloLog(`${ris.errori} modifiche non confermate (categoria dal report)`, ctx);
+    })();
+    return nuovoStore.events;
+  }
+
   // -- Ricolora gli eventi gia' in calendario (anche quelli scritti a mano) come il loro
   // modello. Cambia solo il colore (e il collegamento al modello se nome+orari coincidono).
   // Aggiorna SOLO gli eventi nello store: fasce, calendari e il resto restano come sono.
@@ -8594,6 +8643,7 @@ const importsRecenti = useMemo(()=>{
     computeStornoPI,
     tipoModelloPI, eRecuperoGiornata,
     computeTurnazioneForReport,
+    assegnaCategoriaModelli,
     computeConteggio,
     computeIndennita,
     computeViabilita,
