@@ -1261,30 +1261,32 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
                   // Modelli a TENDINE come nella lista Modelli (NOTTE, MATTINA, ...): accanto al nome di ogni tendina la casella
                   // «seleziona / deseleziona tutto il gruppo» e il conteggio selezionati/totale; in testa la tendina SELEZIONATI.
                   return (
-                    <ElencoModelliTendine chiave={"turnazione_"+r.id+"_"+f.key} modelli={modelliPerLista} ordine={ordineLista} selezionati={attiviIds} soloInTesta={presentiIds}
-                      onSelezionaGruppo={(ms, seleziona)=>setGruppoModelli(ms.map(x=>x.id), seleziona ? f.key : "", f.key)}
-                      stileContenitore={{border:"none",borderRadius:6,marginBottom:0}}
-                      renderRiga={(m)=>{
-                        const attivo = attivoDi(m);
-                        const info = data.perGruppo?.[f.key]?.[m.id];
-                        const c = m?.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
-                        return (
-                          <div key={m.id} style={{display:"flex",alignItems:"center",gap:10,
-                            padding:"7px 8px",borderRadius:8,marginBottom:4,background:T.surface}}>
-                            <input type="checkbox" checked={attivo}
-                              onChange={()=>setGruppoModello(m.id, attivo?"":f.key, f.key)}
-                              style={{cursor:"pointer",flexShrink:0,width:17,height:17}}/>
-                            <div style={{width:10,height:10,borderRadius:"50%",background:c,flexShrink:0}}/>
-                            <div style={{flex:1,minWidth:0}}>
-                              <div style={{fontSize:16,color:T.text,fontWeight:600}}>{m.label||m.titolo}</div>
-                              <div style={{fontSize:13,color:T.sub}}>
-                                {m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${m.fine?` - ${m.fine}`:""}`:""}
+                    <CercaModelli T={T}>{(filtra,cercando)=>(
+                      <ElencoModelliTendine chiave={"turnazione_"+r.id+"_"+f.key} modelli={filtra(modelliPerLista)} ordine={ordineLista} cercando={cercando} selezionati={attiviIds} soloInTesta={presentiIds}
+                        onSelezionaGruppo={(ms, seleziona)=>setGruppoModelli(ms.map(x=>x.id), seleziona ? f.key : "", f.key)}
+                        stileContenitore={{border:"none",borderRadius:6,marginBottom:0}}
+                        renderRiga={(m)=>{
+                          const attivo = attivoDi(m);
+                          const info = data.perGruppo?.[f.key]?.[m.id];
+                          const c = m?.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
+                          return (
+                            <div key={m.id} style={{display:"flex",alignItems:"center",gap:10,
+                              padding:"7px 8px",borderRadius:8,marginBottom:4,background:T.surface}}>
+                              <input type="checkbox" checked={attivo}
+                                onChange={()=>setGruppoModello(m.id, attivo?"":f.key, f.key)}
+                                style={{cursor:"pointer",flexShrink:0,width:17,height:17}}/>
+                              <div style={{width:10,height:10,borderRadius:"50%",background:c,flexShrink:0}}/>
+                              <div style={{flex:1,minWidth:0}}>
+                                <div style={{fontSize:16,color:T.text,fontWeight:600}}>{m.label||m.titolo}</div>
+                                <div style={{fontSize:13,color:T.sub}}>
+                                  {m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${m.fine?` - ${m.fine}`:""}`:""}
+                                </div>
                               </div>
+                              <span style={{fontSize:17,fontWeight:800,color:T.text}}>{info?.count||0}</span>
                             </div>
-                            <span style={{fontSize:17,fontWeight:800,color:T.text}}>{info?.count||0}</span>
-                          </div>
-                        );
-                      }}/>
+                          );
+                        }}/>
+                    )}</CercaModelli>
                   );
                 })()}
               </div>
