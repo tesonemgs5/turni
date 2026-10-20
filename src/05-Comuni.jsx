@@ -1,6 +1,6 @@
     import { useState, useEffect, useRef, useMemo, Fragment } from "react";
 import { ElencoModelliTendine, PulsanteOrdineAB } from "./23-tendine-modelli";
-import { GIORNI_FASCIA, fasceIndennitaDi, pulsantiFasciaDi, periodiDi } from "./24-fasce-indennita";
+import { fasceIndennitaDi, pulsantiFasciaDi, periodiDi } from "./24-fasce-indennita";
 import { ordineAttivo, minutiInizio } from "./21-ordine";
 
 // Ordina le voci di data.perModello:
@@ -1448,13 +1448,17 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
   const fasce = fasceCfg.map(f=>({...f, count:calc[f.key]||0}));
   const [modPulsanti, setModPulsanti] = useState(false);
   const [nuovoP, setNuovoP] = useState(null);
-  const GIORNI_COD = GIORNI_FASCIA.map(g=>g[0]);
-  const TUTTI_COD = [...GIORNI_COD, ...pulsanti.map(p=>p.cod)];
+  const CATEGORIE_FASCIA = [
+    {key:"fer", label:"FERIALE", giorni:["fer"], modo:"e"},
+    {key:"not_o_fes", label:"NOTTURNO O FESTIVO", giorni:["not","fes"], modo:"o"},
+    {key:"not_e_fes", label:"NOTTURNO E FESTIVO", giorni:["not","fes"], modo:"e"},
+    {key:"inf", label:"INFRASETTIMANALE", giorni:["inf"], modo:"e"},
+  ];
   const salvaFasce = (nuove)=>onUpdateCfg({...(cfg||{}), fasceIndennita:nuove});
   const patchFascia = (key, patch)=>salvaFasce(fasceCfg.map(f=>f.key===key?{...f,...patch}:f));
-  const toggleCod = (key, cod)=>{
-    const f = fasceCfg.find(x=>x.key===key); if(!f) return;
-    patchFascia(key, {giorni: f.giorni.includes(cod) ? f.giorni.filter(c=>c!==cod) : [...f.giorni, cod]});
+  const selezionaCategoria = (key, categoriaKey)=>{
+    const categoria = CATEGORIE_FASCIA.find(c=>c.key===categoriaKey);
+    if(categoria) patchFascia(key, {giorni:categoria.giorni, modo:categoria.modo});
   };
   const aggiungiFascia = ()=>salvaFasce([...fasceCfg, {key:"f_"+Date.now().toString(36), label:"", da:"06:00", a:"22:00", giorni:[], modo:"e", perc:"", v:4}]);
   const eliminaFascia = (key)=>{ if(fasceCfg.length>1) salvaFasce(fasceCfg.filter(f=>f.key!==key)); };
@@ -1589,11 +1593,11 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
       </div>
       {fasce.map(f=>{
         const on = (cod)=>f.giorni.includes(cod);
-        const giorniTutti = GIORNI_COD.every(c=>on(c));
-        const tuttiSel = TUTTI_COD.every(c=>on(c));
-        const chip = (cod,lab)=>(
-          <span key={cod} onClick={()=>toggleCod(f.key,cod)} style={{cursor:"pointer",fontSize:12,fontWeight:700,padding:"5px 10px",borderRadius:14,background:on(cod)?accent:T.s2,color:on(cod)?getContrastTextColor(accent):T.text,border:`1px solid ${on(cod)?accent:T.border}`}}>{lab}</span>
-        );
+        const categoriaSelezionata = CATEGORIE_FASCIA.find(c=>
+          c.modo===(f.modo||"e") &&
+          c.giorni.length===(f.giorni||[]).length &&
+          c.giorni.every(cod=>on(cod))
+        )?.key;
         return (
         <div key={f.key} style={{background:T.surface,borderRadius:10,padding:"10px 12px",display:"flex",flexDirection:"column",gap:8}}>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -1614,17 +1618,17 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
             <span style={{fontSize:11,color:T.sub,flex:1,textAlign:"right"}}>{fmtOreDecimali(f.count)} nel periodo{importiFascia[f.key]>0?` · € ${importiFascia[f.key].toFixed(2)}`:""}</span>
           </div>
           {f.da===f.a&&(<div style={{fontSize:11,color:"#dc2626"}}>Inizio e fine uguali: nessuna ora conteggiata. Per tutta la giornata usa 00:00 → 24:00.</div>)}
-          <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-            <span style={{fontSize:10,fontWeight:800,color:T.sub,letterSpacing:0.4}}>CONDIZIONI · VALGONO</span>
-            {[["e","TUTTE (E)"],["o","UNA QUALSIASI (O)"]].map(([md,lab])=>{
-              const sel = (f.modo||"e")===md;
-              return (<span key={md} onClick={()=>patchFascia(f.key,{modo:md})}
-                style={{cursor:"pointer",fontSize:10,fontWeight:800,padding:"3px 8px",borderRadius:10,
-                  background:sel?T.text:"transparent",color:sel?T.surface:T.sub,border:`1px solid ${sel?T.text:T.border}`}}>{lab}</span>);
-            })}
-          </div>
           <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-            {pulsanti.map(p=>chip(p.cod,p.label))}
+            {CATEGORIE_FASCIA.map(c=>{
+              const sel = categoriaSelezionata===c.key;
+              return (
+                <span key={c.key} onClick={()=>selezionaCategoria(f.key,c.key)}
+                  style={{cursor:"pointer",fontSize:12,fontWeight:700,padding:"5px 10px",borderRadius:14,
+                    background:sel?accent:T.s2,color:sel?getContrastTextColor(accent):T.text,border:`1px solid ${sel?accent:T.border}`}}>
+                  {c.label}
+                </span>
+              );
+            })}
           </div>
           <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
             <span style={{flex:1}}/>
