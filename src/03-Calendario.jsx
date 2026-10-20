@@ -103,7 +103,7 @@ export default function VistaCalendario({ C }){
     removeColoreExtra, updateColoreExtraLabel, replaceColoreEverywhere, saveRotazione, deleteRotazione, updateGrigliaRotazione,
     inserisciEventoGenerico, normOrarioImport, trovaModelloPerTitoloOrario, isRigaProtrazione, tipoProtrazione, importaTurniPdfJson,
     delTuttiEventiImport, importaEventiSingoli, applyRotazione, getReportRange, splitColleghi, computeConteggioForReport,
-    computeMinutiForReport, computeTurnazioneForReport, assegnaCategoriaModelli, computeConteggio, computeIndennita, computeViabilita, computeTicket, activeReports, inactiveTypes, addReport,
+    computeMinutiForReport, computeTurnazioneForReport, computeConteggio, computeIndennita, computeViabilita, computeTicket, activeReports, inactiveTypes, addReport,
     removeReport, renameReport, moveReport, getConteggioConfig, updateConteggioConfig, totaleTurni, totaleMinTurni,
     setPrevGrid, REPORT_TEMPLATES, calcolaOrdineModelli, updateFascia, session,
   } = C;
@@ -669,8 +669,7 @@ export default function VistaCalendario({ C }){
                 <TurnazioneConfigCard T={T} r={r} cfg={cfg} data={computeTurnazioneForReport(cfg, r.id)}
                   modelli={modelliFiltratiPerCal} modelliOrdinati={modelliOrdinatiFiltratiPerCal} accent={accent} fasceAutomatiche={fasceAutomatiche}
                   onRename={label=>renameReport(r.id, label)}
-                  onUpdateCfg={newCfg=>updateConteggioConfig(r.id, newCfg)}
-                  onAssegnaCategoria={assegnaCategoriaModelli}/>
+                  onUpdateCfg={newCfg=>updateConteggioConfig(r.id, newCfg)}/>
               );
             })()}
             {r.type==="indennita" && (
