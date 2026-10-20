@@ -1407,7 +1407,7 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
     const f = fasceCfg.find(x=>x.key===key); if(!f) return;
     patchFascia(key, {giorni: f.giorni.includes(cod) ? f.giorni.filter(c=>c!==cod) : [...f.giorni, cod]});
   };
-  const aggiungiFascia = ()=>salvaFasce([...fasceCfg, {key:"f_"+Date.now().toString(36), label:"", da:"06:00", a:"22:00", giorni:[], perc:"", v:3}]);
+  const aggiungiFascia = ()=>salvaFasce([...fasceCfg, {key:"f_"+Date.now().toString(36), label:"", da:"06:00", a:"22:00", giorni:[], modo:"e", perc:"", v:4}]);
   const eliminaFascia = (key)=>{ if(fasceCfg.length>1) salvaFasce(fasceCfg.filter(f=>f.key!==key)); };
   const spostaFascia = (key, dir)=>{
     const i = fasceCfg.findIndex(f=>f.key===key), j = i+dir;
@@ -1427,10 +1427,11 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
   };
   const aggiungiPulsante = ()=>{
     if(!nuovoP || !nuovoP.nome.trim() || !nuovoP.data) return;
-    const p = {cod:"c_"+Date.now().toString(36), label:nuovoP.nome.trim().toUpperCase(), mmdd:[nuovoP.data.slice(5)]};
+    const p = {cod:"c_"+Date.now().toString(36), label:nuovoP.nome.trim().toUpperCase(), mmdd:[nuovoP.data.slice(5)], v:4};
     onUpdateCfg({...(cfg||{}), fasceIndennita:fasceCfg, pulsantiFascia:[...pulsanti, p]});
     setNuovoP(null);
   };
+  const cambiaNotte = (campo, v)=>onUpdateCfg({...(cfg||{}), fasceIndennita:fasceCfg, pulsantiFascia:pulsanti.map(x=>x.cod==="not"?{...x,[campo]:v}:x)});
   const togliPulsante = (cod)=>onUpdateCfg({...(cfg||{}), pulsantiFascia:pulsanti.filter(p=>p.cod!==cod),
     fasceIndennita:fasceCfg.map(f=>({...f, giorni:f.giorni.filter(c=>c!==cod)}))});
 
@@ -1502,6 +1503,11 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
           {pulsanti.map(p=>(
             <span key={p.cod} style={{fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:12,background:T.s2,border:`1px solid ${T.border}`,color:T.text}}>
               {p.label}{p.mmdd?` · ${p.mmdd[0].split("-").reverse().join("/")}`:""}
+              {p.cod==="not"&&(modPulsanti ? (
+                <span style={{display:"inline-flex",alignItems:"center",gap:4,marginLeft:6}}>
+                  <OraInput T={T} value={p.da||"22:00"} onChange={v=>cambiaNotte("da",v)}/>→<OraInput T={T} value={p.a||"06:00"} onChange={v=>cambiaNotte("a",v)}/>
+                </span>
+              ) : (<span style={{marginLeft:6,fontWeight:500,color:T.sub}}>{p.da||"22:00"}→{p.a||"06:00"}</span>))}
               {modPulsanti&&(<span onClick={()=>togliPulsante(p.cod)} style={{cursor:"pointer",marginLeft:6,color:"#ef4444",fontWeight:900}}>✕</span>)}
             </span>
           ))}
@@ -1518,7 +1524,7 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
             <span style={{fontSize:10,color:T.sub,flexBasis:"100%"}}>Il pulsante personale vale per quel giorno e mese, ogni anno.</span>
           </div>
         )}
-        <div style={{fontSize:10,color:T.sub}}>Giorni: ne basta uno (nessuno = ogni giorno). Pulsanti: devono valere tutti quelli scelti. Vale la prima fascia dall'alto che combacia. Orari: 00:00 = inizio giornata, 24:00 = fine giornata (dopo le 23:59). FESTIVO di notte comprende anche la sera prima (sabato 22–24) e la mattina dopo (lunedì 00–06 dopo la domenica).</div>
+        <div style={{fontSize:10,color:T.sub}}>Ogni fascia ha le sue condizioni: «E» = devono valere tutte, «O» = ne basta una. Vale la prima fascia dall'alto che combacia (frecce ▲▼). Orari: 00:00 = inizio giornata, 24:00 = fine giornata (dopo le 23:59); NOTTURNO è modificabile con ✎. FESTIVO di notte comprende anche la sera prima (sabato 22–24) e la mattina dopo (lunedì 00–06 dopo la domenica).</div>
       </div>
       {fasce.map(f=>{
         const on = (cod)=>f.giorni.includes(cod);
@@ -1547,20 +1553,19 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
             <span style={{fontSize:11,color:T.sub,flex:1,textAlign:"right"}}>{fmtOreDecimali(f.count)} nel periodo{importiFascia[f.key]>0?` · € ${importiFascia[f.key].toFixed(2)}`:""}</span>
           </div>
           {f.da===f.a&&(<div style={{fontSize:11,color:"#dc2626"}}>Inizio e fine uguali: nessuna ora conteggiata. Per tutta la giornata usa 00:00 → 24:00.</div>)}
-          <div style={{fontSize:10,fontWeight:800,color:T.sub,letterSpacing:0.4}}>GIORNI · UNO QUALSIASI (nessuno = ogni giorno)</div>
-          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-            {GIORNI_FASCIA.map(([cod,lab])=>chip(cod,lab))}
+          <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+            <span style={{fontSize:10,fontWeight:800,color:T.sub,letterSpacing:0.4}}>CONDIZIONI · VALGONO</span>
+            {[["e","TUTTE (E)"],["o","UNA QUALSIASI (O)"]].map(([md,lab])=>{
+              const sel = (f.modo||"e")===md;
+              return (<span key={md} onClick={()=>patchFascia(f.key,{modo:md})}
+                style={{cursor:"pointer",fontSize:10,fontWeight:800,padding:"3px 8px",borderRadius:10,
+                  background:sel?T.text:"transparent",color:sel?T.surface:T.sub,border:`1px solid ${sel?T.text:T.border}`}}>{lab}</span>);
+            })}
           </div>
-          <div style={{fontSize:10,fontWeight:800,color:T.sub,letterSpacing:0.4}}>CONDIZIONI · DEVONO VALERE TUTTE INSIEME (nessuna = nessuna condizione)</div>
           <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
             {pulsanti.map(p=>chip(p.cod,p.label))}
           </div>
-          {pulsanti.length>1&&pulsanti.every(p=>on(p.cod))&&(<div style={{fontSize:11,color:"#dc2626"}}>Hai selezionato tutte le condizioni: la fascia vale solo quando sono tutte vere insieme, quasi mai. Tocca «Nessuno» e scegli solo quelle che servono.</div>)}
           <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-            <span onClick={()=>patchFascia(f.key,{giorni: giorniTutti ? f.giorni.filter(c=>!GIORNI_COD.includes(c)) : [...new Set([...f.giorni,...GIORNI_COD])]})}
-              style={{cursor:"pointer",fontSize:11,fontWeight:800,color:accent,padding:"3px 9px",border:`1px dashed ${T.border}`,borderRadius:10}}>L–D</span>
-            <span onClick={()=>patchFascia(f.key,{giorni:[]})}
-              style={{cursor:"pointer",fontSize:11,fontWeight:800,color:accent,padding:"3px 9px",border:`1px dashed ${T.border}`,borderRadius:10}}>Nessuno</span>
             <span style={{flex:1}}/>
             <input type="number" value={f.perc??""} placeholder="%" onChange={e=>patchFascia(f.key,{perc:e.target.value})}
               style={{width:52,background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,padding:"6px 6px",color:T.text,fontSize:13,outline:"none",textAlign:"right"}}/>
