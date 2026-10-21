@@ -481,7 +481,7 @@ export function FasceExpand({data, pct1, pct2, T, modelli, accent, cfg}){
                     <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>
                     {m.label||m.titolo}
                     {m.tempo!=="h24"&&m.inizio&&(
-                      <span style={{opacity:0.7,fontWeight:500,marginLeft:5}}>{m.inizio}→{m.fine||""}</span>
+                      <span style={{opacity:0.7,fontWeight:500,marginLeft:5}}>{m.inizio}→{fineModelloRicerca(m)}</span>
                     )}
                   </span>
                     <span style={{fontSize:13,fontWeight:800,color:T.text}}>{cnt}</span>
@@ -691,7 +691,7 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
                             <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>
                     {m.label||m.titolo}
                     {m.tempo!=="h24"&&m.inizio&&(
-                      <span style={{opacity:0.7,fontWeight:500,marginLeft:5}}>{m.inizio}→{m.fine||""}</span>
+                      <span style={{opacity:0.7,fontWeight:500,marginLeft:5}}>{m.inizio}→{fineModelloRicerca(m)}</span>
                     )}
                   </span>
                             <span style={{fontSize:13,fontWeight:800,color:T.text}}>{info.count}</span>
@@ -782,7 +782,7 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
                                           <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>
                     {m.label||m.titolo}
                     {m.tempo!=="h24"&&m.inizio&&(
-                      <span style={{opacity:0.7,fontWeight:500,marginLeft:5}}>{m.inizio}→{m.fine||""}</span>
+                      <span style={{opacity:0.7,fontWeight:500,marginLeft:5}}>{m.inizio}→{fineModelloRicerca(m)}</span>
                     )}
                   </span>
                                           <span style={{fontSize:13,fontWeight:800,color:T.text}}>{info?.count||0}</span>
@@ -1020,7 +1020,7 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
                             <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>
                     {m.label||m.titolo}
                     {m.tempo!=="h24"&&m.inizio&&(
-                      <span style={{opacity:0.7,fontWeight:500,marginLeft:5}}>{m.inizio}→{m.fine||""}</span>
+                      <span style={{opacity:0.7,fontWeight:500,marginLeft:5}}>{m.inizio}→{fineModelloRicerca(m)}</span>
                     )}
                   </span>
                             <span style={{fontSize:13,fontWeight:800,color:T.text}}>{fmtOreMin(info.minuti)}</span>
@@ -1107,7 +1107,7 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
                                           <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>
                     {m.label||m.titolo}
                     {m.tempo!=="h24"&&m.inizio&&(
-                      <span style={{opacity:0.7,fontWeight:500,marginLeft:5}}>{m.inizio}→{m.fine||""}</span>
+                      <span style={{opacity:0.7,fontWeight:500,marginLeft:5}}>{m.inizio}→{fineModelloRicerca(m)}</span>
                     )}
                   </span>
                                           <span style={{fontSize:13,fontWeight:800,color:T.text}}>{fmtOreMin(info?.minuti||0)}</span>
@@ -1287,7 +1287,7 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
                               <div style={{flex:1,minWidth:0}}>
                                 <div style={{fontSize:16,color:T.text,fontWeight:600}}>{m.label||m.titolo}</div>
                                 <div style={{fontSize:13,color:T.sub}}>
-                                  {m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${m.fine?` - ${m.fine}`:""}`:""}
+                                  {m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${fineModelloRicerca(m)?` - ${fineModelloRicerca(m)}`:""}`:""}
                                 </div>
                               </div>
                               <span style={{fontSize:17,fontWeight:800,color:T.text}}>{info?.count||0}</span>
@@ -1340,7 +1340,7 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
                   <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>
                     {m.label||m.titolo}
                     {m.tempo!=="h24"&&m.inizio&&(
-                      <span style={{opacity:0.7,fontWeight:500,marginLeft:5}}>{m.inizio}→{m.fine||""}</span>
+                      <span style={{opacity:0.7,fontWeight:500,marginLeft:5}}>{m.inizio}→{fineModelloRicerca(m)}</span>
                     )}
                   </span>
                   <span style={{fontSize:14,fontWeight:800,color:T.text}}>{info.count}</span>
@@ -3272,7 +3272,7 @@ function SottomenuLibero({T, accent, sm, ordineRoot, perGruppoSm, perCollGruppoS
               <div style={{width:8,height:8,borderRadius:"50%",background:c,flexShrink:0}}/>
               <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>
                 {m.label||m.titolo}
-                {m.tempo!=="h24"&&m.inizio&&(<span style={{opacity:0.7,fontWeight:500,marginLeft:5}}>{m.inizio}→{m.fine||""}</span>)}
+                {m.tempo!=="h24"&&m.inizio&&(<span style={{opacity:0.7,fontWeight:500,marginLeft:5}}>{m.inizio}→{fineModelloRicerca(m)}</span>)}
                 {altroGruppo&&(<span style={{opacity:0.6,fontWeight:500,marginLeft:5,fontSize:11}}>· in {altroGruppo}</span>)}
               </span>
               <span style={{fontSize:13,fontWeight:800,color:T.text}}>{info?formatta(valore(info)):formatta(0)}</span>
