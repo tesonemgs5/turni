@@ -529,6 +529,12 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
   function aggiornaSottomenu(id, patch){
     onUpdateCfg({...cfg, sottomenu: sottomenu.map(sm=>sm.id===id?{...sm,...patch}:sm)});
   }
+  function muoviSottomenu(id, dir){
+    const i = sottomenu.findIndex(x=>x.id===id), j = i+dir;
+    if(i<0 || j<0 || j>=sottomenu.length) return;
+    const a = [...sottomenu]; [a[i],a[j]] = [a[j],a[i]];
+    onUpdateCfg({...cfg, sottomenu:a});
+  }
   function rimuoviSottomenu(id){
     onUpdateCfg({...cfg, sottomenu: sottomenu.filter(sm=>sm.id!==id)});
     if(openSottomenu===id) setOpenSottomenu(null);
@@ -574,10 +580,10 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
           a piacere con assegnazione manuale dei modelli, come 1°/2° Turno e
           APP/AUTO fanno in Turnazione. */}
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
-        {sottomenu.map(sm=>{
+        {sottomenu.map((sm,idxSm)=>{
           const isOpen = openSottomenu===sm.id;
           if(sm.tipo==="libero") return (
-            <SottomenuLibero key={sm.id} T={T} accent={accent} sm={sm} perGruppoSm={data.perSottomenu?.[sm.id]||{}}
+            <SottomenuLibero key={sm.id} T={T} accent={accent} sm={sm} perGruppoSm={data.perSottomenu?.[sm.id]||{}} perCollGruppoSm={data.perSottomenuColl?.[sm.id]||{}} onMoveBlock={dir=>muoviSottomenu(sm.id,dir)} blockUp={idxSm>0} blockDown={idxSm<sottomenu.length-1}
               valore={v=>v.count||0} formatta={n=>String(n)} modelli={modelliOrdinati||modelli} fasceAutomatiche={fasceAutomatiche}
               onPatch={patch=>aggiornaSottomenu(sm.id,patch)} onRemove={()=>rimuoviSottomenu(sm.id)}/>
           );
@@ -588,6 +594,8 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
                   padding:"10px 12px",cursor:"pointer"}}>
                 <span style={{fontSize:12,fontWeight:700,color:sm.nome?T.text:T.sub}}>{sm.nome||"SENZA NOME"}</span>
                 <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <span onClick={e=>{e.stopPropagation();muoviSottomenu(sm.id,-1);}} style={{cursor:"pointer",fontSize:15,fontWeight:900,color:T.sub,opacity:idxSm>0?1:0.25,padding:"0 3px"}}>↑</span>
+                  <span onClick={e=>{e.stopPropagation();muoviSottomenu(sm.id,1);}} style={{cursor:"pointer",fontSize:15,fontWeight:900,color:T.sub,opacity:idxSm<sottomenu.length-1?1:0.25,padding:"0 3px"}}>↓</span>
                   <button onClick={e=>{e.stopPropagation();setConfermaEliminaSottomenu(sm.id);}}
                     style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:13,padding:"2px 4px"}}>🗑️</button>
                   <span style={{fontSize:12,color:T.sub}}>{isOpen?"▲":"▼"}</span>
@@ -780,31 +788,10 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
         {/* + Aggiungi sottomenu: apre la scelta fra i tre tipi. Nessun limite
             al numero di sottomenu: 0 se non servono, quanti se ne vogliono
             se servono. */}
-        <div style={{background:T.surface,borderRadius:10,overflow:"hidden"}}>
-          <div onClick={()=>setShowAggiungiMenu(s=>!s)}
-            style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,
-              padding:"10px 12px",cursor:"pointer",color:accent,fontWeight:700,fontSize:13}}>
-            + Aggiungi sottomenu {showAggiungiMenu?"▲":"▼"}
-          </div>
-          {showAggiungiMenu && (
-            <div style={{padding:"0 12px 12px",display:"flex",flexDirection:"column",gap:6}}>
-              <button onClick={()=>aggiungiSottomenu("collega")}
-                style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,
-                  background:T.s2,color:T.text,textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:700}}>
-                Per collega <span style={{fontWeight:400,color:T.sub}}>— elenco automatico, con date</span>
-              </button>
-              <button onClick={()=>aggiungiSottomenu("modello")}
-                style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,
-                  background:T.s2,color:T.text,textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:700}}>
-                Per modello <span style={{fontWeight:400,color:T.sub}}>— elenco automatico, con date</span>
-              </button>
-              <button onClick={()=>aggiungiSottomenu("libero")}
-                style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,
-                  background:T.s2,color:T.text,textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:700}}>
-                Sottomenu libero <span style={{fontWeight:400,color:T.sub}}>— gruppi a scelta, assegnazione manuale</span>
-              </button>
-            </div>
-          )}
+        <div onClick={()=>aggiungiSottomenu("libero")}
+          style={{background:T.surface,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",gap:6,
+            padding:"10px 12px",cursor:"pointer",color:accent,fontWeight:700,fontSize:13}}>
+          + Crea menu
         </div>
       </div>
     </div>
@@ -868,6 +855,12 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
   function aggiornaSottomenu(id, patch){
     onUpdateCfg({...cfg, sottomenu: sottomenu.map(sm=>sm.id===id?{...sm,...patch}:sm)});
   }
+  function muoviSottomenu(id, dir){
+    const i = sottomenu.findIndex(x=>x.id===id), j = i+dir;
+    if(i<0 || j<0 || j>=sottomenu.length) return;
+    const a = [...sottomenu]; [a[i],a[j]] = [a[j],a[i]];
+    onUpdateCfg({...cfg, sottomenu:a});
+  }
   function rimuoviSottomenu(id){
     onUpdateCfg({...cfg, sottomenu: sottomenu.filter(sm=>sm.id!==id)});
     if(openSottomenu===id) setOpenSottomenu(null);
@@ -908,10 +901,10 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
       </div>
 
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
-        {sottomenu.map(sm=>{
+        {sottomenu.map((sm,idxSm)=>{
           const isOpen = openSottomenu===sm.id;
           if(sm.tipo==="libero") return (
-            <SottomenuLibero key={sm.id} T={T} accent={accent} sm={sm} perGruppoSm={data.perSottomenu?.[sm.id]||{}}
+            <SottomenuLibero key={sm.id} T={T} accent={accent} sm={sm} perGruppoSm={data.perSottomenu?.[sm.id]||{}} perCollGruppoSm={data.perSottomenuColl?.[sm.id]||{}} onMoveBlock={dir=>muoviSottomenu(sm.id,dir)} blockUp={idxSm>0} blockDown={idxSm<sottomenu.length-1}
               valore={v=>v.minuti||0} formatta={fmtOreMin} modelli={modelliOrdinati||modelli} fasceAutomatiche={fasceAutomatiche}
               onPatch={patch=>aggiornaSottomenu(sm.id,patch)} onRemove={()=>rimuoviSottomenu(sm.id)}/>
           );
@@ -922,6 +915,8 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
                   padding:"10px 12px",cursor:"pointer"}}>
                 <span style={{fontSize:12,fontWeight:700,color:sm.nome?T.text:T.sub}}>{sm.nome||"SENZA NOME"}</span>
                 <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <span onClick={e=>{e.stopPropagation();muoviSottomenu(sm.id,-1);}} style={{cursor:"pointer",fontSize:15,fontWeight:900,color:T.sub,opacity:idxSm>0?1:0.25,padding:"0 3px"}}>↑</span>
+                  <span onClick={e=>{e.stopPropagation();muoviSottomenu(sm.id,1);}} style={{cursor:"pointer",fontSize:15,fontWeight:900,color:T.sub,opacity:idxSm<sottomenu.length-1?1:0.25,padding:"0 3px"}}>↓</span>
                   <button onClick={e=>{e.stopPropagation();setConfermaEliminaSottomenu(sm.id);}}
                     style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:13,padding:"2px 4px"}}>🗑️</button>
                   <span style={{fontSize:12,color:T.sub}}>{isOpen?"▲":"▼"}</span>
@@ -1105,31 +1100,10 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
           );
         })}
 
-        <div style={{background:T.surface,borderRadius:10,overflow:"hidden"}}>
-          <div onClick={()=>setShowAggiungiMenu(s=>!s)}
-            style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,
-              padding:"10px 12px",cursor:"pointer",color:accent,fontWeight:700,fontSize:13}}>
-            + Aggiungi sottomenu {showAggiungiMenu?"▲":"▼"}
-          </div>
-          {showAggiungiMenu && (
-            <div style={{padding:"0 12px 12px",display:"flex",flexDirection:"column",gap:6}}>
-              <button onClick={()=>aggiungiSottomenu("collega")}
-                style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,
-                  background:T.s2,color:T.text,textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:700}}>
-                Per collega <span style={{fontWeight:400,color:T.sub}}>— elenco automatico, con date</span>
-              </button>
-              <button onClick={()=>aggiungiSottomenu("modello")}
-                style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,
-                  background:T.s2,color:T.text,textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:700}}>
-                Per modello <span style={{fontWeight:400,color:T.sub}}>— elenco automatico, con date</span>
-              </button>
-              <button onClick={()=>aggiungiSottomenu("libero")}
-                style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,
-                  background:T.s2,color:T.text,textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:700}}>
-                Sottomenu libero <span style={{fontWeight:400,color:T.sub}}>— gruppi a scelta, assegnazione manuale</span>
-              </button>
-            </div>
-          )}
+        <div onClick={()=>aggiungiSottomenu("libero")}
+          style={{background:T.surface,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",gap:6,
+            padding:"10px 12px",cursor:"pointer",color:accent,fontWeight:700,fontSize:13}}>
+          + Crea menu
         </div>
       </div>
     </div>
@@ -2957,12 +2931,158 @@ export function Sec({label,children,T}){
 // con nome, (percentuale se i gruppi sono 2 o più), totale e freccia. La freccia apre TUTTI i modelli del report:
 // prima quelli già nel gruppo, sotto tutti gli altri (a tendine, come la lista Modelli) da aggiungere con una spunta.
 // «+ Aggiungi gruppo» aggiunge un altro gruppo collegato (liberi, senza percentuali obbligatorie).
-function SottomenuLibero({T, accent, sm, perGruppoSm, valore, formatta, modelli, fasceAutomatiche, onPatch, onRemove}){
+// ---- Menu annidati dentro un menu (gruppo) di un sottomenu libero ----
+function _aggregaScope(perMod, scopeIds, valore){
+  return scopeIds.reduce((a,mid)=>a+(perMod[mid]?valore(perMod[mid]):0),0);
+}
+function _fmtDataDK(dk){ const [y,m,d]=dk.split("-"); return `${d}/${m}/${y}`; }
+function ScegliTipoFiglio({T, onScegli}){
+  const voci=[["menu","Altro menu collegato","da rinominare"],["collega","Per collega","elenco automatico, con date"],["modello","Per modello","elenco automatico, con date"]];
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:6,padding:"8px 0"}}>
+      {voci.map(([k,t,d])=>(
+        <button key={k} onClick={()=>onScegli(k)}
+          style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,background:T.surface,color:T.text,textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:700}}>
+          {t} <span style={{fontWeight:400,color:T.sub}}>— {d}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+function ListaFigli({T, accent, figli, onChange, scope, perMod, perColl, modelli, valore, formatta, fasceAutomatiche}){
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+      {figli.map((n,i)=>(
+        <FiglioMenu key={n.id} T={T} accent={accent} nodo={n} scope={scope} perMod={perMod} perColl={perColl}
+          modelli={modelli} valore={valore} formatta={formatta} fasceAutomatiche={fasceAutomatiche}
+          primo={i===0} ultimo={i===figli.length-1}
+          onChange={nn=>onChange(figli.map(x=>x.id===n.id?nn:x))}
+          onRemove={()=>onChange(figli.filter(x=>x.id!==n.id))}
+          onMove={dir=>{ const j=i+dir; if(j<0||j>=figli.length) return; const a=[...figli]; [a[i],a[j]]=[a[j],a[i]]; onChange(a); }}/>
+      ))}
+    </div>
+  );
+}
+function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, formatta, fasceAutomatiche, primo, ultimo, onChange, onRemove, onMove}){
+  const [aperto,setAperto] = useState(!!nodo.nuovo);
+  const [conf,setConf] = useState(false);
+  const [picker,setPicker] = useState(false);
+  const [dateAperte,setDateAperte] = useState(null);
+  const isMenu = nodo.tipo==="menu";
+  const scopeNodo = isMenu ? (nodo.modelli||[]).filter(id=>scope.includes(id)) : scope;
+  const val = _aggregaScope(perMod, scopeNodo, valore);
+  const modelliScope = modelli.filter(m=>scope.includes(m.id));
+  const figli = nodo.figli||[];
+  function toggleModello(mid){
+    const cur = nodo.modelli||[];
+    onChange({...nodo, nuovo:undefined, modelli: cur.includes(mid) ? cur.filter(x=>x!==mid) : [...cur,mid]});
+  }
+  function aggiungiFiglio(tipo){
+    const id = "f_"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+    const f = tipo==="menu" ? {id,tipo,nome:"",modelli:[...scopeNodo],figli:[],nuovo:true}
+      : {id,tipo,nome:tipo==="collega"?"Per collega":"Per modello"};
+    onChange({...nodo, nuovo:undefined, figli:[...figli,f]});
+    setPicker(false); setAperto(true);
+  }
+  const chip = (dk,c)=>(<span key={dk} style={{fontSize:11,fontWeight:600,color:T.text,background:c+"18",border:`1px solid ${c}44`,borderRadius:6,padding:"3px 7px"}}>{_fmtDataDK(dk)}</span>);
+  const riga = (chiave,etichetta,valoreRiga,date,colore)=>(
+    <div key={chiave} style={{marginBottom:4}}>
+      <div onClick={()=>setDateAperte(dateAperte===chiave?null:chiave)}
+        style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",background:T.surface,borderRadius:dateAperte===chiave?"6px 6px 0 0":6,cursor:"pointer"}}>
+        {colore&&<div style={{width:8,height:8,borderRadius:"50%",background:colore,flexShrink:0}}/>}
+        <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>{etichetta}</span>
+        <span style={{fontSize:13,fontWeight:800,color:T.text}}>{formatta(valoreRiga)}</span>
+        <span style={{fontSize:11,color:T.sub}}>{dateAperte===chiave?"▲":"▼"}</span>
+      </div>
+      {dateAperte===chiave&&(
+        <div style={{background:T.surface,border:`1px solid ${T.border}`,borderTop:"none",borderRadius:"0 0 6px 6px",padding:"8px 10px",display:"flex",flexWrap:"wrap",gap:6}}>
+          {(date||[]).map(dk=>chip(dk,colore||accent))}
+        </div>
+      )}
+    </div>
+  );
+  let corpo = null;
+  if(aperto){
+    if(nodo.tipo==="modello"){
+      const righe = modelliScope.filter(m=>perMod[m.id]);
+      corpo = righe.length===0 ? (<div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"8px 0"}}>Nessun turno nel periodo</div>)
+        : righe.map(m=>riga("m"+m.id, (m.label||m.titolo), valore(perMod[m.id]), perMod[m.id].dates, m?.coloreCustom||getColorByTime(m.inizio,fasceAutomatiche)));
+    } else if(nodo.tipo==="collega"){
+      const agg = {};
+      scope.forEach(mid=>{ Object.entries((perColl||{})[mid]||{}).forEach(([nome,info])=>{
+        if(!agg[nome]) agg[nome]={v:0,dates:[]};
+        agg[nome].v += valore(info); agg[nome].dates.push(...(info.dates||[]));
+      }); });
+      const nomi = Object.keys(agg).sort((a,b)=>agg[b].v-agg[a].v);
+      corpo = nomi.length===0 ? (<div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"8px 0"}}>Nessun collega nel periodo</div>)
+        : nomi.map(nome=>riga("c"+nome, nome, agg[nome].v, agg[nome].dates.sort(), null));
+    } else {
+      corpo = (
+        <div>
+          {modelliScope.length===0 ? (<div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"6px 0"}}>Nessun modello nel menu collegato</div>)
+            : modelliScope.map(m=>{
+              const c = m?.coloreCustom||getColorByTime(m.inizio,fasceAutomatiche);
+              return (
+                <div key={m.id} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 6px",borderRadius:6,background:T.surface,marginBottom:3}}>
+                  <input type="checkbox" checked={(nodo.modelli||[]).includes(m.id)} onChange={()=>toggleModello(m.id)} style={{cursor:"pointer",flexShrink:0}}/>
+                  <div style={{width:8,height:8,borderRadius:"50%",background:c,flexShrink:0}}/>
+                  <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>{m.label||m.titolo}</span>
+                  <span style={{fontSize:13,fontWeight:800,color:T.text}}>{formatta(perMod[m.id]?valore(perMod[m.id]):0)}</span>
+                </div>
+              );
+            })}
+          {figli.length>0&&(
+            <div style={{marginTop:8}}>
+              <ListaFigli T={T} accent={accent} figli={figli} onChange={nf=>onChange({...nodo,figli:nf})} scope={scopeNodo}
+                perMod={perMod} perColl={perColl} modelli={modelli} valore={valore} formatta={formatta} fasceAutomatiche={fasceAutomatiche}/>
+            </div>
+          )}
+        </div>
+      );
+    }
+  }
+  const freccia = (dir,attivo)=>(<span onClick={()=>attivo&&onMove(dir)} style={{cursor:attivo?"pointer":"default",fontSize:15,fontWeight:900,color:T.sub,opacity:attivo?1:0.25,padding:"0 3px"}}>{dir<0?"↑":"↓"}</span>);
+  return (
+    <div>
+      <div style={{display:"flex",alignItems:"center",gap:6,padding:"7px 10px",background:accent+"14",border:`1px solid ${accent}44`,borderRadius:aperto?"8px 8px 0 0":8}}>
+        {isMenu ? (
+          <input value={nodo.nome||""} placeholder="NOME MENU" autoFocus={!!nodo.nuovo}
+            onChange={e=>onChange({...nodo,nuovo:undefined,nome:e.target.value.toUpperCase()})}
+            style={{flex:1,minWidth:0,background:"transparent",border:"none",outline:"none",fontSize:12,fontWeight:800,color:T.text}}/>
+        ) : (<span style={{flex:1,fontSize:12,fontWeight:800,color:T.text}}>{nodo.nome}</span>)}
+        <span style={{fontSize:13,fontWeight:900,color:T.text}}>{formatta(val)}</span>
+        {freccia(-1,!primo)}{freccia(1,!ultimo)}
+        <span onClick={()=>setConf(true)} style={{cursor:"pointer",fontSize:12,color:"#ef4444",padding:"2px 2px"}}>🗑️</span>
+        {isMenu&&(<span onClick={()=>setPicker(x=>!x)} style={{cursor:"pointer",fontSize:18,fontWeight:900,lineHeight:1,color:accent,padding:"0 6px"}}>+</span>)}
+        <span onClick={()=>setAperto(a=>!a)} style={{cursor:"pointer",fontSize:12,color:T.text,padding:"4px 2px"}}>{aperto?"▲":"▼"}</span>
+      </div>
+      {conf&&(<ConfermaEliminazione T={T} testo={`Vuoi eliminare "${nodo.nome||"menu senza nome"}"?`} onConferma={()=>{setConf(false);onRemove();}} onAnnulla={()=>setConf(false)}/>)}
+      {picker&&<ScegliTipoFiglio T={T} onScegli={aggiungiFiglio}/>}
+      {aperto&&(<div style={{background:T.s2,border:`1px solid ${accent}44`,borderTop:"none",borderRadius:"0 0 8px 8px",padding:"8px 10px"}}>{corpo}</div>)}
+    </div>
+  );
+}
+
+function SottomenuLibero({T, accent, sm, perGruppoSm, perCollGruppoSm={}, valore, formatta, modelli, fasceAutomatiche, onPatch, onRemove, onMoveBlock, blockUp, blockDown}){
   const gruppi = sm.gruppi||[];
   const asseg = sm.assegnazioni||{};
   const [nuovoKey, setNuovoKey] = useState(()=> (gruppi.length===1 && !gruppi[0].label) ? gruppi[0].key : null);
   const [aperto, setAperto] = useState(()=> (gruppi.length===1 && !gruppi[0].label) ? gruppi[0].key : null);
   const [confElimina, setConfElimina] = useState(null);
+  const [pickerKey, setPickerKey] = useState(null);
+  function muoviGruppo(key, dir){
+    const i = gruppi.findIndex(x=>x.key===key), j = i+dir;
+    if(j<0 || j>=gruppi.length){ if(onMoveBlock) onMoveBlock(dir); return; }
+    const a = [...gruppi]; [a[i],a[j]] = [a[j],a[i]];
+    onPatch({gruppi:a});
+  }
+  function aggiungiFiglioGruppo(g, tipo, scopeIds){
+    const id = "f_"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+    const f = tipo==="menu" ? {id,tipo,nome:"",modelli:[...scopeIds],figli:[],nuovo:true}
+      : {id,tipo,nome:tipo==="collega"?"Per collega":"Per modello"};
+    onPatch({gruppi:gruppi.map(x=>x.key===g.key?{...x,figli:[...(x.figli||[]),f]}:x)});
+    setPickerKey(null); setAperto(g.key);
+  }
   const COLORI = ["#3b82f6","#10b981","#f59e0b","#8b5cf6","#ef4444","#06b6d4"];
   const totGruppo = (g)=>Object.values(perGruppoSm[g.key]||{}).reduce((a,v)=>a+valore(v),0);
   const tot = gruppi.reduce((a,g)=>a+Math.max(0,totGruppo(g)),0);
@@ -3026,15 +3146,20 @@ function SottomenuLibero({T, accent, sm, perGruppoSm, valore, formatta, modelli,
                 style={{flex:1,minWidth:0,background:"transparent",border:"none",outline:"none",fontSize:13,fontWeight:800,color:"#0f172a"}}/>
               {pct!==null&&(<span style={{fontSize:11,fontWeight:800,color:"#0f172a",background:g.color+"33",borderRadius:8,padding:"1px 6px"}}>{pct}%</span>)}
               <span style={{fontSize:14,fontWeight:900,color:"#0f172a"}}>{formatta(val)}</span>
-              <span onClick={()=>setConfElimina(g.key)} style={{cursor:"pointer",fontSize:13,color:"#ef4444",marginLeft:8,padding:"2px 2px"}}>🗑️</span>
-              <span onClick={aggiungiGruppo} title="Aggiungi gruppo"
-                style={{cursor:"pointer",fontSize:20,fontWeight:900,lineHeight:1,color:accent,margin:"0 14px",padding:"0 4px"}}>+</span>
+              {(()=>{ const idx=gruppi.findIndex(x=>x.key===g.key); const su=idx>0||!!blockUp; const giu=idx<gruppi.length-1||!!blockDown; return (<>
+                <span onClick={()=>su&&muoviGruppo(g.key,-1)} style={{cursor:su?"pointer":"default",fontSize:15,fontWeight:900,color:"#0f172a",opacity:su?1:0.25,padding:"0 3px",marginLeft:4}}>↑</span>
+                <span onClick={()=>giu&&muoviGruppo(g.key,1)} style={{cursor:giu?"pointer":"default",fontSize:15,fontWeight:900,color:"#0f172a",opacity:giu?1:0.25,padding:"0 3px"}}>↓</span>
+              </>); })()}
+              <span onClick={()=>setConfElimina(g.key)} style={{cursor:"pointer",fontSize:13,color:"#ef4444",marginLeft:4,padding:"2px 2px"}}>🗑️</span>
+              <span onClick={()=>setPickerKey(pickerKey===g.key?null:g.key)} title="Crea sotto menu"
+                style={{cursor:"pointer",fontSize:20,fontWeight:900,lineHeight:1,color:accent,margin:"0 8px",padding:"0 4px"}}>+</span>
               <span onClick={()=>setAperto(isOpen?null:g.key)} style={{cursor:"pointer",fontSize:12,color:"#0f172a",padding:"4px 2px"}}>{isOpen?"▲":"▼"}</span>
             </div>
             {confElimina===g.key&&(
               <ConfermaEliminazione T={T} testo={gruppi.length<=1?`Vuoi eliminare "${g.label||"sottomenu senza nome"}"?`:`Vuoi eliminare il gruppo "${g.label||"senza nome"}"?`}
                 onConferma={()=>{setConfElimina(null);elimina(g.key);}} onAnnulla={()=>setConfElimina(null)}/>
             )}
+            {pickerKey===g.key&&(<ScegliTipoFiglio T={T} onScegli={tipo=>aggiungiFiglioGruppo(g,tipo,Object.keys({...Object.fromEntries(Object.entries(asseg).filter(([,k])=>k===g.key)),...(perGruppoSm[g.key]||{})}))}/>)}
             {isOpen&&(
               <div style={{background:T.s2,borderRadius:"0 0 8px 8px",border:`1px solid ${g.color}44`,borderTop:"none",padding:"8px 10px"}}>
                 {assegnati.length>0&&(
@@ -3049,6 +3174,13 @@ function SottomenuLibero({T, accent, sm, perGruppoSm, valore, formatta, modelli,
                     stileContenitore={{border:"none",borderRadius:6,marginBottom:0}}/>
                 )}
                 {modelli.length===0&&(<div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"6px 0"}}>Nessun modello</div>)}
+                {(g.figli||[]).length>0&&(
+                  <div style={{marginTop:8}}>
+                    <ListaFigli T={T} accent={accent} figli={g.figli} scope={Object.keys({...Object.fromEntries(Object.entries(asseg).filter(([,k])=>k===g.key)),...(perGruppoSm[g.key]||{})})}
+                      perMod={perGruppoSm[g.key]||{}} perColl={perCollGruppoSm[g.key]||{}} modelli={modelli} valore={valore} formatta={formatta} fasceAutomatiche={fasceAutomatiche}
+                      onChange={nf=>onPatch({gruppi:gruppi.map(x=>x.key===g.key?{...x,figli:nf}:x)})}/>
+                  </div>
+                )}
               </div>
             )}
           </div>

@@ -7286,6 +7286,9 @@ const importsRecenti = useMemo(()=>{
     // perSottomenu[sottomenuId][gruppoKey][modelloId] = {count, dates}
     const perSottomenu = {};
     sottomenu.forEach(sm=>{ perSottomenu[sm.id] = {}; });
+    // perSottomenuColl[sottomenuId][gruppoKey][modelloId][collega] = {count, dates}
+    const perSottomenuColl = {};
+    sottomenu.forEach(sm=>{ perSottomenuColl[sm.id] = {}; });
 
     const passaEv = (e)=>{
       const ov = (reportId ? (e.reportOverrides||{})[reportId] : null)?.stato || null;
@@ -7306,6 +7309,14 @@ const importsRecenti = useMemo(()=>{
         if(!perSottomenu[sm.id][gruppoKey][e.modelloId]) perSottomenu[sm.id][gruppoKey][e.modelloId] = { count:0, dates:[] };
         perSottomenu[sm.id][gruppoKey][e.modelloId].count++;
         perSottomenu[sm.id][gruppoKey][e.modelloId].dates.push(dateKey);
+        const pc = perSottomenuColl[sm.id];
+        if(!pc[gruppoKey]) pc[gruppoKey] = {};
+        if(!pc[gruppoKey][e.modelloId]) pc[gruppoKey][e.modelloId] = {};
+        splitColleghi(e.collega).forEach(c=>{
+          if(!pc[gruppoKey][e.modelloId][c]) pc[gruppoKey][e.modelloId][c] = { count:0, dates:[] };
+          pc[gruppoKey][e.modelloId][c].count++;
+          pc[gruppoKey][e.modelloId][c].dates.push(dateKey);
+        });
       });
     };
     for(const [dateKey, calMap] of Object.entries(store.events)){
@@ -7355,7 +7366,7 @@ const importsRecenti = useMemo(()=>{
     Object.values(perSottomenu).forEach(gruppi=>
       Object.values(gruppi).forEach(perMod=>
         Object.values(perMod).forEach(v=>v.dates.sort())));
-    return {...result, perModello, perCollega, perSottomenu};
+    return {...result, perModello, perCollega, perSottomenu, perSottomenuColl};
   }
 
   // Gemella di computeConteggioForReport, stessa struttura (stesso cfg,
@@ -7379,6 +7390,8 @@ const importsRecenti = useMemo(()=>{
     const sottomenu = cfg?.sottomenu || [];
     const perSottomenu = {};
     sottomenu.forEach(sm=>{ perSottomenu[sm.id] = {}; });
+    const perSottomenuColl = {};
+    sottomenu.forEach(sm=>{ perSottomenuColl[sm.id] = {}; });
 
     function minutiEvento(e){
       if(e.allDay) return 24*60; // H24: durata fissa, non ha senso/tIn/tOut
@@ -7402,6 +7415,14 @@ const importsRecenti = useMemo(()=>{
         if(!perSottomenu[sm.id][gruppoKey][e.modelloId]) perSottomenu[sm.id][gruppoKey][e.modelloId] = { minuti:0, dates:[] };
         perSottomenu[sm.id][gruppoKey][e.modelloId].minuti += mins;
         perSottomenu[sm.id][gruppoKey][e.modelloId].dates.push(dateKey);
+        const pc = perSottomenuColl[sm.id];
+        if(!pc[gruppoKey]) pc[gruppoKey] = {};
+        if(!pc[gruppoKey][e.modelloId]) pc[gruppoKey][e.modelloId] = {};
+        splitColleghi(e.collega).forEach(c=>{
+          if(!pc[gruppoKey][e.modelloId][c]) pc[gruppoKey][e.modelloId][c] = { minuti:0, dates:[] };
+          pc[gruppoKey][e.modelloId][c].minuti += mins;
+          pc[gruppoKey][e.modelloId][c].dates.push(dateKey);
+        });
       });
     };
     for(const [dateKey, calMap] of Object.entries(store.events)){
@@ -7449,7 +7470,7 @@ const importsRecenti = useMemo(()=>{
     Object.values(perSottomenu).forEach(gruppi=>
       Object.values(gruppi).forEach(perMod=>
         Object.values(perMod).forEach(v=>v.dates.sort())));
-    return {...result, perModello, perCollega, perSottomenu};
+    return {...result, perModello, perCollega, perSottomenu, perSottomenuColl};
   }
 
 
