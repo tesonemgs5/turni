@@ -2200,6 +2200,10 @@ export default function VistaModelli({ C }){
                       <div key={i} style={{padding:"6px 0",borderTop:i?`1px solid ${T.border}`:"none",wordBreak:"break-word"}}>
                         <strong>{x.tipo==="mancante"?"❌ Mancante":x.tipo==="permessi"?"⚠️ Senza permessi":"⚠️ Errore"}: {x.nome}</strong>
                         {x.dettaglio ? <div style={{color:T.sub}}>{x.dettaglio}</div> : null}
+                        {x.sql&&<div style={{marginTop:6,padding:8,background:T.s2,borderRadius:6}}>
+                          <div style={{fontSize:10,fontWeight:800,marginBottom:4}}>Correzione da eseguire una volta in Supabase → SQL Editor:</div>
+                          <code style={{display:"block",whiteSpace:"normal",overflowWrap:"anywhere",fontSize:10}}>{x.sql}</code>
+                        </div>}
                       </div>
                     ))}
                   </div>

@@ -1067,9 +1067,12 @@ export const TABELLE_SUPABASE_ATTESE = [
   "autocomplete_valori","disposizione_auto","log_attivita","modelli_sortorder_backup",
   "impostazioni_backup","colori","gruppi_modelli",
 ];
+const COLONNE_SUPABASE_ATTESE = {
+  gruppi_modelli: ["ordine_modelli"],
+};
 function classificaErroreSupabase(err){
   const code = String(err?.code||""); const msg = String(err?.message||"");
-  if(code==="42P01" || code==="PGRST205" || code==="PGRST202" || /does not exist|could not find the (table|function)/i.test(msg)) return "mancante";
+  if(code==="42P01" || code==="PGRST205" || code==="PGRST202" || /does not exist|could not find the (table|column|function)/i.test(msg)) return "mancante";
   if(code==="42501" || /permission denied|row-level security/i.test(msg)) return "permessi";
   return "errore";
 }
@@ -1078,7 +1081,21 @@ export async function verificaStrutturaSupabase(supabase, userId, { popup=true }
   for(const t of TABELLE_SUPABASE_ATTESE){
     try{
       const { error } = await supabase.from(t).select("*", { head:true }).limit(1);
-      if(error) problemi.push({ nome:t, tipo:classificaErroreSupabase(error), dettaglio:error.message||error.code||"" });
+      if(error){
+        problemi.push({ nome:t, tipo:classificaErroreSupabase(error), dettaglio:error.message||error.code||"" });
+        continue;
+      }
+      for(const colonna of COLONNE_SUPABASE_ATTESE[t]||[]){
+        const { error:erroreColonna } = await supabase.from(t).select(colonna, { head:true }).limit(1);
+        if(erroreColonna) problemi.push({
+          nome:`${t}.${colonna}`,
+          tipo:classificaErroreSupabase(erroreColonna),
+          dettaglio:erroreColonna.message||erroreColonna.code||"",
+          sql: t==="gruppi_modelli" && colonna==="ordine_modelli"
+            ? "ALTER TABLE public.gruppi_modelli ADD COLUMN IF NOT EXISTS ordine_modelli TEXT NOT NULL DEFAULT 'manuale' CHECK (ordine_modelli IN ('manuale', 'orario', 'alfabetico'));"
+            : null,
+        });
+      }
     }catch(e){ problemi.push({ nome:t, tipo:"errore", dettaglio:e?.message||String(e) }); }
   }
   try{
@@ -1090,7 +1107,7 @@ export async function verificaStrutturaSupabase(supabase, userId, { popup=true }
   const ts = new Date().toISOString();
   if(problemi.length===0){
     scriviLogErrori({ id:generaIdLocale(), ts, contesto:CONTESTO_CONTROLLO_SUPABASE, tipo:"controllo",
-      message:`✅ Struttura OK: ${TABELLE_SUPABASE_ATTESE.length} tabelle + funzione get_user_data presenti.` });
+      message:`✅ Struttura OK: ${TABELLE_SUPABASE_ATTESE.length} tabelle, colonne verificate e funzione get_user_data presenti.` });
     return { ok:true, problemi };
   }
   const icona = {mancante:"❌ mancante", permessi:"⚠️ senza permessi", errore:"⚠️ errore"};
