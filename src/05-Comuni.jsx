@@ -587,12 +587,17 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
               valore={v=>v.count||0} formatta={n=>String(n)} modelli={modelliOrdinati||modelli} fasceAutomatiche={fasceAutomatiche}
               onPatch={patch=>aggiornaSottomenu(sm.id,patch)} onRemove={()=>rimuoviSottomenu(sm.id)}/>
           );
+          // "Per modello" / "Per collega" sono collegati al menu che sta sopra: contano solo i suoi turni.
+          const prevSm = idxSm>0 ? sottomenu[idxSm-1] : null;
+          const collegato = prevSm && prevSm.tipo==="libero";
+          const pmSm = collegato ? unisciScopeMenu(data.perSottomenu?.[prevSm.id]) : data.perModello;
+          const pcSm = collegato ? unisciScopeColl(data.perSottomenuColl?.[prevSm.id]) : data.perCollega;
           return (
             <div key={sm.id} style={{background:T.surface,borderRadius:10,overflow:"hidden"}}>
               <div onClick={()=>setOpenSottomenu(isOpen?null:sm.id)}
                 style={{display:"flex",alignItems:"center",justifyContent:"space-between",
                   padding:"10px 12px",cursor:"pointer"}}>
-                <span style={{fontSize:12,fontWeight:700,color:sm.nome?T.text:T.sub}}>{sm.nome||"SENZA NOME"}</span>
+                <span style={{fontSize:12,fontWeight:700,color:sm.nome?T.text:T.sub}}>{sm.nome||"SENZA NOME"}{collegato&&(<span style={{fontWeight:500,color:T.sub}}> · {etichettaMenuLibero(prevSm)}</span>)}</span>
                 <div style={{display:"flex",alignItems:"center",gap:10}}>
                   <span onClick={e=>{e.stopPropagation();muoviSottomenu(sm.id,-1);}} style={{cursor:"pointer",fontSize:15,fontWeight:900,color:T.sub,opacity:idxSm>0?1:0.25,padding:"0 3px"}}>↑</span>
                   <span onClick={e=>{e.stopPropagation();muoviSottomenu(sm.id,1);}} style={{cursor:"pointer",fontSize:15,fontWeight:900,color:T.sub,opacity:idxSm<sottomenu.length-1?1:0.25,padding:"0 3px"}}>↓</span>
@@ -618,9 +623,9 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
 
                   {/* Tipo "collega": elenco automatico di tutti i colleghi, come PER COLLEGA di Turnazione */}
                   {sm.tipo==="collega" && (
-                    Object.keys(data.perCollega||{}).length===0 ? (
+                    Object.keys(pcSm||{}).length===0 ? (
                       <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"10px 0"}}>Nessun collega nel periodo</div>
-                    ) : Object.entries(data.perCollega).sort((a,b)=>b[1].count-a[1].count).map(([nome,info])=>{
+                    ) : Object.entries(pcSm).sort((a,b)=>b[1].count-a[1].count).map(([nome,info])=>{
                       const gk = sm.id+":"+nome;
                       const isOpenG = openGruppoDentro===gk;
                       return (
@@ -650,9 +655,9 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
 
                   {/* Tipo "modello": elenco automatico dei modelli inclusi nel report, come PER MODELLO */}
                   {sm.tipo==="modello" && (
-                    !data.perModello||Object.keys(data.perModello).length===0 ? (
+                    !pmSm||Object.keys(pmSm).length===0 ? (
                       <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"10px 0"}}>Nessun turno nel periodo</div>
-                    ) : ordinaEntriesPerModello(Object.entries(data.perModello), modelli).map(([mid,info])=>{
+                    ) : ordinaEntriesPerModello(Object.entries(pmSm), modelli).map(([mid,info])=>{
                       const m=modelli.find(x=>x.id===mid);
                       if(!m) return null;
                       const c=m?.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
@@ -908,12 +913,17 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
               valore={v=>v.minuti||0} formatta={fmtOreMin} modelli={modelliOrdinati||modelli} fasceAutomatiche={fasceAutomatiche}
               onPatch={patch=>aggiornaSottomenu(sm.id,patch)} onRemove={()=>rimuoviSottomenu(sm.id)}/>
           );
+          // "Per modello" / "Per collega" sono collegati al menu che sta sopra: contano solo i suoi turni.
+          const prevSm = idxSm>0 ? sottomenu[idxSm-1] : null;
+          const collegato = prevSm && prevSm.tipo==="libero";
+          const pmSm = collegato ? unisciScopeMenu(data.perSottomenu?.[prevSm.id]) : data.perModello;
+          const pcSm = collegato ? unisciScopeColl(data.perSottomenuColl?.[prevSm.id]) : data.perCollega;
           return (
             <div key={sm.id} style={{background:T.surface,borderRadius:10,overflow:"hidden"}}>
               <div onClick={()=>setOpenSottomenu(isOpen?null:sm.id)}
                 style={{display:"flex",alignItems:"center",justifyContent:"space-between",
                   padding:"10px 12px",cursor:"pointer"}}>
-                <span style={{fontSize:12,fontWeight:700,color:sm.nome?T.text:T.sub}}>{sm.nome||"SENZA NOME"}</span>
+                <span style={{fontSize:12,fontWeight:700,color:sm.nome?T.text:T.sub}}>{sm.nome||"SENZA NOME"}{collegato&&(<span style={{fontWeight:500,color:T.sub}}> · {etichettaMenuLibero(prevSm)}</span>)}</span>
                 <div style={{display:"flex",alignItems:"center",gap:10}}>
                   <span onClick={e=>{e.stopPropagation();muoviSottomenu(sm.id,-1);}} style={{cursor:"pointer",fontSize:15,fontWeight:900,color:T.sub,opacity:idxSm>0?1:0.25,padding:"0 3px"}}>↑</span>
                   <span onClick={e=>{e.stopPropagation();muoviSottomenu(sm.id,1);}} style={{cursor:"pointer",fontSize:15,fontWeight:900,color:T.sub,opacity:idxSm<sottomenu.length-1?1:0.25,padding:"0 3px"}}>↓</span>
@@ -938,9 +948,9 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
                   )}
 
                   {sm.tipo==="collega" && (
-                    Object.keys(data.perCollega||{}).length===0 ? (
+                    Object.keys(pcSm||{}).length===0 ? (
                       <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"10px 0"}}>Nessun collega nel periodo</div>
-                    ) : Object.entries(data.perCollega).sort((a,b)=>b[1].minuti-a[1].minuti).map(([nome,info])=>{
+                    ) : Object.entries(pcSm).sort((a,b)=>b[1].minuti-a[1].minuti).map(([nome,info])=>{
                       const gk = sm.id+":"+nome;
                       const isOpenG = openGruppoDentro===gk;
                       return (
@@ -969,9 +979,9 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
                   )}
 
                   {sm.tipo==="modello" && (
-                    !data.perModello||Object.keys(data.perModello).length===0 ? (
+                    !pmSm||Object.keys(pmSm).length===0 ? (
                       <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"10px 0"}}>Nessun turno nel periodo</div>
-                    ) : ordinaEntriesPerModello(Object.entries(data.perModello), modelli).map(([mid,info])=>{
+                    ) : ordinaEntriesPerModello(Object.entries(pmSm), modelli).map(([mid,info])=>{
                       const m=modelli.find(x=>x.id===mid);
                       if(!m) return null;
                       const c=m?.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
@@ -2969,6 +2979,30 @@ export function Sec({label,children,T}){
 // con nome, (percentuale se i gruppi sono 2 o più), totale e freccia. La freccia apre TUTTI i modelli del report:
 // prima quelli già nel gruppo, sotto tutti gli altri (a tendine, come la lista Modelli) da aggiungere con una spunta.
 // «+ Aggiungi gruppo» aggiunge un altro gruppo collegato (liberi, senza percentuali obbligatorie).
+// Unisce i dati di tutti i gruppi di un menu libero (modelloId -> {count, minuti, dates}).
+function unisciScopeMenu(perSm){
+  const out = {};
+  Object.values(perSm||{}).forEach(perMod=>Object.entries(perMod||{}).forEach(([mid,info])=>{
+    if(!out[mid]) out[mid] = {count:0, minuti:0, dates:[]};
+    out[mid].count += info.count||0; out[mid].minuti += info.minuti||0; out[mid].dates.push(...(info.dates||[]));
+  }));
+  Object.values(out).forEach(v=>v.dates.sort());
+  return out;
+}
+// Idem per collega (nome -> {count, minuti, dates}) sommando tutti i modelli del menu.
+function unisciScopeColl(perCollSm){
+  const out = {};
+  Object.values(perCollSm||{}).forEach(perMod=>Object.values(perMod||{}).forEach(perNome=>Object.entries(perNome||{}).forEach(([nome,info])=>{
+    if(!out[nome]) out[nome] = {count:0, minuti:0, dates:[]};
+    out[nome].count += info.count||0; out[nome].minuti += info.minuti||0; out[nome].dates.push(...(info.dates||[]));
+  })));
+  Object.values(out).forEach(v=>v.dates.sort());
+  return out;
+}
+function etichettaMenuLibero(sm){
+  const nomi = (sm.gruppi||[]).map(g=>g.label).filter(Boolean);
+  return nomi.length ? nomi.join(" / ") : (sm.nome||"menu sopra");
+}
 // ---- Menu annidati dentro un menu (gruppo) di un sottomenu libero ----
 function _aggregaScope(perMod, scopeIds, valore){
   return scopeIds.reduce((a,mid)=>a+(perMod[mid]?valore(perMod[mid]):0),0);
