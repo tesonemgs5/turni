@@ -264,10 +264,11 @@ export default function VistaModelli({ C }){
     return base.map(m=>{
       const cid = m.calendarId || mainCalId;
       const cal = (store.calendars||[]).find(c=>c.id===cid);
+      const orario = m.tempo==="h24" ? "H24" : m.inizio ? `${m.inizio} - ${calcFineModello(m)||m.fine||""}`.trimEnd() : "";
       return {
         id:m.id, label:m.label||m.titolo||"Senza nome",
-        sub:(m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${m.fine?` - ${m.fine}`:""}`:"")+(cal?` · ${cal.name}`:""),
-        orario:(m.tempo==="h24"?"H24":m.inizio?`${m.inizio}${m.fine?` - ${m.fine}`:""}`:""),
+        sub:(orario?`${orario}${cal?` · ${cal.name}`:""}`:(cal?cal.name:"")),
+        orario,
         hex:m.coloreCustom||m.colore||null,
         cal:cal?cal.name:"", calId:cal?cal.id:null, m,
       };

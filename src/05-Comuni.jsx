@@ -508,6 +508,7 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, labelGlobale,
   const [confermaEliminaSottomenu, setConfermaEliminaSottomenu] = useState(null);
 
   const sottomenu = cfg.sottomenu || [];
+  const sottomenuPerModello = sottomenu.filter(sm=>sm.tipo==="modello");
 
   function fmtData(dateKey){
     const [y,m,d] = dateKey.split("-");
@@ -601,6 +602,23 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, labelGlobale,
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
         {sottomenu.map((sm,idxSm)=>{
           const isOpen = openSottomenu===sm.id;
+          if(sm.tipo==="modello"){
+            if(idxSm!==sottomenu.findIndex(x=>x.tipo==="modello")) return null;
+            return (
+              <SezionePerModello key="sezione-modelli" T={T} conteggio={sottomenuPerModello.length}>
+                {sottomenuPerModello.map(menuModello=>{
+                  const indice=sottomenu.findIndex(x=>x.id===menuModello.id);
+                  const menuPrecedente=indice>0?sottomenu[indice-1]:null;
+                  const collegato=menuPrecedente?.tipo==="libero";
+                  const datiModello=collegato?unisciScopeMenu(data.perSottomenu?.[menuPrecedente.id]):data.perModello;
+                  return <SottomenuPerModelloReport key={menuModello.id} T={T} accent={accent} sm={menuModello} ordineRoot={ordineRoot}
+                    perModello={datiModello} modelli={modelli} fasceAutomatiche={fasceAutomatiche} formatta={n=>String(n)}
+                    onPatch={patch=>aggiornaSottomenu(menuModello.id,patch)} onRemove={()=>rimuoviSottomenu(menuModello.id)}
+                    onMove={dir=>muoviSottomenu(menuModello.id,dir)} primo={indice===0} ultimo={indice===sottomenu.length-1}/>;
+                })}
+              </SezionePerModello>
+            );
+          }
           if(sm.tipo==="libero") return (
             <SottomenuLibero key={sm.id} T={T} accent={accent} sm={sm} labelGlobale={labelGlobale} perGruppoSm={data.perSottomenu?.[sm.id]||{}} ordineRoot={ordineRoot} perCollGruppoSm={data.perSottomenuColl?.[sm.id]||{}} onMoveBlock={dir=>muoviSottomenu(sm.id,dir)} blockUp={idxSm>0} blockDown={idxSm<sottomenu.length-1}
               valore={v=>v.count||0} formatta={n=>String(n)} modelli={modelliOrdinati||modelli} fasceAutomatiche={fasceAutomatiche}
@@ -853,6 +871,7 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, labelGlob
   const [confermaEliminaSottomenu, setConfermaEliminaSottomenu] = useState(null);
 
   const sottomenu = cfg.sottomenu || [];
+  const sottomenuPerModello = sottomenu.filter(sm=>sm.tipo==="modello");
 
   function fmtData(dateKey){
     const [y,m,d] = dateKey.split("-");
@@ -932,6 +951,23 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, labelGlob
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
         {sottomenu.map((sm,idxSm)=>{
           const isOpen = openSottomenu===sm.id;
+          if(sm.tipo==="modello"){
+            if(idxSm!==sottomenu.findIndex(x=>x.tipo==="modello")) return null;
+            return (
+              <SezionePerModello key="sezione-modelli" T={T} conteggio={sottomenuPerModello.length}>
+                {sottomenuPerModello.map(menuModello=>{
+                  const indice=sottomenu.findIndex(x=>x.id===menuModello.id);
+                  const menuPrecedente=indice>0?sottomenu[indice-1]:null;
+                  const collegato=menuPrecedente?.tipo==="libero";
+                  const datiModello=collegato?unisciScopeMenu(data.perSottomenu?.[menuPrecedente.id]):data.perModello;
+                  return <SottomenuPerModelloReport key={menuModello.id} T={T} accent={accent} sm={menuModello} ordineRoot={ordineRoot}
+                    perModello={datiModello} modelli={modelli} fasceAutomatiche={fasceAutomatiche} formatta={fmtOreMin}
+                    onPatch={patch=>aggiornaSottomenu(menuModello.id,patch)} onRemove={()=>rimuoviSottomenu(menuModello.id)}
+                    onMove={dir=>muoviSottomenu(menuModello.id,dir)} primo={indice===0} ultimo={indice===sottomenu.length-1}/>;
+                })}
+              </SezionePerModello>
+            );
+          }
           if(sm.tipo==="libero") return (
             <SottomenuLibero key={sm.id} T={T} accent={accent} sm={sm} labelGlobale={labelGlobale} perGruppoSm={data.perSottomenu?.[sm.id]||{}} ordineRoot={ordineRoot} perCollGruppoSm={data.perSottomenuColl?.[sm.id]||{}} onMoveBlock={dir=>muoviSottomenu(sm.id,dir)} blockUp={idxSm>0} blockDown={idxSm<sottomenu.length-1}
               valore={v=>v.minuti||0} formatta={fmtOreMin} modelli={modelliOrdinati||modelli} fasceAutomatiche={fasceAutomatiche}
@@ -1607,6 +1643,9 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
         <div style={{fontSize:10,color:T.sub}}>
           Le categorie sono: FERIALE, NOTTURNO O FESTIVO, NOTTURNO E FESTIVO e FESTIVO INFRASETTIMANALE. Vale la prima fascia dall'alto che combacia (frecce ▲▼).
           Orari: 00:00 = inizio giornata, 24:00 = fine giornata (dopo le 23:59); in ✎ puoi configurare NOTTURNO e FESTIVO. L'opzione «Notti adiacenti · infrasettimanale» include nella fascia infrasettimanale al 100% le ore notturne prima e dopo il festivo; puoi cambiarne la percentuale nella relativa fascia o disattivare l'opzione.
+        </div>
+        <div style={{fontSize:10,color:T.sub,background:T.s2,borderRadius:8,padding:"7px 9px"}}>
+          Le fasce non si sommano: ogni minuto viene assegnato una sola volta, alla prima fascia valida dall'alto. Con le condizioni standard, lun–ven 22:00–24:00 è notturno; sab 22:00–24:00, dom 00:00–06:00 e lun 00:00–06:00 sono notturno e festivo; dom 06:00–22:00 è festivo.
         </div>
       </div>
       {fasce.map(f=>{
@@ -2381,6 +2420,8 @@ export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, tit
   // → sezione con spunte per associare modelli al colore scelto (onPick riceve gli id come 3° argomento).
   const [selIds,setSelIds]=useState(()=>new Set());
   const [mostraAssegna,setMostraAssegna]=useState(true);
+  const [mostraUsati,setMostraUsati]=useState(false);
+  const [mostraModelliColore,setMostraModelliColore]=useState(false);
   const [qAssegna,setQAssegna]=useState("");
   const [calEsclusi,setCalEsclusi]=useState(()=>new Set()); // calendari nascosti dal filtro
   const stessoHex=(a,b)=>String(a||"").toLowerCase()===String(b||"").toLowerCase();
@@ -2552,10 +2593,14 @@ export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, tit
 
         <div style={{flex:1,minHeight:0,overflowY:"auto",paddingRight:2}}>
         {coloriUsati&&coloriUsati.length>0&&(
-          <>
-            <div style={{fontSize:12,color:T.sub,fontWeight:700,marginBottom:onRiordinaUsati?2:8}}>USATI</div>
-            {onRiordinaUsati&&<div style={{fontSize:10,color:T.sub,marginBottom:8}}>Tieni premuto un colore per spostarlo</div>}
-            <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:16}}>
+          <div style={{marginBottom:8}}>
+            <div onClick={()=>setMostraUsati(v=>!v)}
+              style={{display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",fontSize:12,color:T.sub,fontWeight:700,marginBottom:mostraUsati?6:0}}>
+              <span>USATI · {coloriUsati.length}</span><span>{mostraUsati?"▼":"▶"}</span>
+            </div>
+            {mostraUsati&&<>
+            {onRiordinaUsati&&<div style={{fontSize:10,color:T.sub,marginBottom:6}}>Tieni premuto un colore per spostarlo</div>}
+            <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:8}}>
               {(ordineUsati||coloriUsati).map(p=>(
                 <div key={p} ref={el=>{ if(el) usatiRefs.current[p]=el; }}
                   onPointerDown={e=>inizioPressione(e,p)}
@@ -2583,7 +2628,8 @@ export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, tit
                   border:`1.5px dashed ${T.sub}`,display:"flex",alignItems:"center",justifyContent:"center",
                   fontSize:18,fontWeight:800,color:T.sub,lineHeight:1,flexShrink:0}}>+</div>
             </div>
-          </>
+            </>}
+          </div>
         )}
 
         {MOSTRA_PRECISO&&(
@@ -2713,15 +2759,19 @@ export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, tit
           if(usano.length===0) return null;
           return (
             <div style={{marginTop:8,paddingTop:6,borderTop:`1px solid ${T.border}`,flexShrink:0}}>
-              <div style={{fontSize:10,fontWeight:800,color:T.sub,marginBottom:3}}>MODELLI CON QUESTO COLORE ({usano.length})</div>
-              <div style={{maxHeight:84,overflowY:"auto",display:"flex",flexWrap:"wrap",gap:4}}>
-                {usano.map(x=>(
-                  <span key={x.id} style={{fontSize:11,fontWeight:700,color:T.text,background:T.s2,
-                    border:`1px solid ${T.border}`,borderRadius:8,padding:"2px 7px"}}>
-                    {x.label}{x.cal?<span style={{color:T.sub,fontWeight:600}}> · {x.cal}</span>:null}
-                  </span>
-                ))}
+              <div onClick={()=>setMostraModelliColore(v=>!v)}
+                style={{display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",fontSize:10,fontWeight:800,color:T.sub,marginBottom:mostraModelliColore?4:0}}>
+                <span>MODELLI CON QUESTO COLORE ({usano.length})</span><span>{mostraModelliColore?"▼":"▶"}</span>
               </div>
+              {mostraModelliColore&&<div style={{maxHeight:100,overflowY:"auto",display:"flex",flexDirection:"column",gap:3}}>
+                {usano.map(x=>(
+                  <div key={x.id} style={{display:"flex",alignItems:"center",gap:6,fontSize:10,fontWeight:700,color:T.text,background:T.s2,
+                    border:`1px solid ${T.border}`,borderRadius:6,padding:"3px 6px",minWidth:0}}>
+                    <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.label}</span>
+                    {(x.orario||x.cal)&&<span style={{color:T.sub,fontWeight:600,whiteSpace:"nowrap"}}>{[x.orario,x.cal].filter(Boolean).join(" · ")}</span>}
+                  </div>
+                ))}
+              </div>}
             </div>
           );
         })()}
@@ -3066,6 +3116,78 @@ function unisciScopeColl(perCollSm){
 function etichettaMenuLibero(sm){
   const nomi = (sm.gruppi||[]).map(g=>g.label).filter(Boolean);
   return nomi.length ? nomi.join(" / ") : (sm.nome||"menu sopra");
+}
+function SezionePerModello({T, conteggio, children}){
+  const [aperta,setAperta] = useState(false);
+  return (
+    <div style={{background:T.surface,borderRadius:10,overflow:"hidden"}}>
+      <div onClick={()=>setAperta(v=>!v)}
+        style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 12px",cursor:"pointer"}}>
+        <span style={{fontSize:11,fontWeight:800,color:T.sub}}>PER MODELLO · {conteggio}</span>
+        <span style={{fontSize:12,color:T.sub}}>{aperta?"▼":"▶"}</span>
+      </div>
+      {aperta&&<div style={{display:"flex",flexDirection:"column",gap:8,padding:"0 8px 8px"}}>{children}</div>}
+    </div>
+  );
+}
+function SottomenuPerModelloReport({T, accent, sm, ordineRoot, perModello, modelli, fasceAutomatiche, formatta, onPatch, onRemove, onMove, primo, ultimo}){
+  const [aperto,setAperto] = useState(false);
+  const [dateAperte,setDateAperte] = useState(null);
+  const [confermaElimina,setConfermaElimina] = useState(false);
+  const entries = ordinaEntriesPerModello(Object.entries(perModello||{}), modelli, sm.ordine||ordineRoot);
+  return (
+    <div style={{background:T.surface,borderRadius:10,overflow:"hidden"}}>
+      {confermaElimina&&<ConfermaEliminazione T={T} testo={`Vuoi eliminare "${sm.nome||"Per modello"}"?`}
+        onConferma={()=>{setConfermaElimina(false);onRemove();}} onAnnulla={()=>setConfermaElimina(false)}/>}
+      <div onClick={()=>setAperto(v=>!v)} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",cursor:"pointer"}}>
+        <span style={{flex:1,minWidth:0,fontSize:12,fontWeight:700,color:T.text}}>
+          Per modello{sm.nome&&sm.nome!=="Per modello"?` · ${sm.nome}`:""}
+        </span>
+        <span style={{fontSize:13,fontWeight:800,color:T.text}}>
+          {formatta(Object.values(perModello||{}).reduce((tot,info)=>tot+(info.count||info.minuti||0),0))}
+        </span>
+        <OrdineSelect T={T} accent={accent} valore={sm.ordine} ereditato={ordineRoot} onChange={v=>onPatch({ordine:v})}/>
+        <span onClick={e=>{e.stopPropagation();onMove(-1);}} style={{cursor:primo?"default":"pointer",fontSize:14,color:T.sub,opacity:primo?0.25:1}}>↑</span>
+        <span onClick={e=>{e.stopPropagation();onMove(1);}} style={{cursor:ultimo?"default":"pointer",fontSize:14,color:T.sub,opacity:ultimo?0.25:1}}>↓</span>
+        <button onClick={e=>{e.stopPropagation();setConfermaElimina(true);}}
+          style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:13,padding:"2px 4px"}}>🗑️</button>
+        <span style={{fontSize:12,color:T.sub}}>{aperto?"▼":"▶"}</span>
+      </div>
+      {aperto&&(
+        <div style={{display:"flex",flexDirection:"column",gap:4,padding:"0 8px 8px"}}>
+          {entries.length===0
+            ? <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:8}}>Nessun turno nel periodo</div>
+            : entries.map(([mid,info])=>{
+                const modello=modelli.find(m=>m.id===mid);
+                if(!modello) return null;
+                const colore=modello.coloreCustom||getColorByTime(modello.inizio,fasceAutomatiche);
+                const dateAperta=dateAperte===mid;
+                return (
+                  <div key={mid}>
+                    <div onClick={()=>setDateAperte(dateAperta?null:mid)}
+                      style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",background:T.s2,borderRadius:dateAperta?"6px 6px 0 0":6,cursor:"pointer"}}>
+                      <div style={{width:9,height:9,borderRadius:"50%",background:colore,flexShrink:0}}/>
+                      <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>
+                        {modello.label||modello.titolo}
+                        {modello.tempo==="h24"?" · H24":modello.inizio?` · ${modello.inizio}→${fineModelloRicerca(modello)}`:""}
+                      </span>
+                      <span style={{fontSize:13,fontWeight:800,color:T.text}}>{formatta(info.count||info.minuti||0)}</span>
+                      <span style={{fontSize:11,color:T.sub}}>{dateAperta?"▲":"▼"}</span>
+                    </div>
+                    {dateAperta&&(
+                      <div style={{display:"flex",flexWrap:"wrap",gap:6,padding:"8px 10px",background:T.surface,border:`1px solid ${T.border}`,borderTop:"none",borderRadius:"0 0 6px 6px"}}>
+                        {[...(info.dates||[])].sort().map(data=>(
+                          <span key={data} style={{fontSize:11,fontWeight:600,color:T.text,background:colore+"18",border:`1px solid ${colore}44`,borderRadius:6,padding:"3px 7px"}}>{_fmtDataDK(data)}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+        </div>
+      )}
+    </div>
+  );
 }
 // ---- Menu annidati dentro un menu (gruppo) di un sottomenu libero ----
 function _aggregaScope(perMod, scopeIds, valore){
