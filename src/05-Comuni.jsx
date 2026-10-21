@@ -572,6 +572,13 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
             <div style={{width:`${pct}%`,height:"100%",background:accent,borderRadius:3,transition:"width 0.3s"}}/>
           </div>
         )}
+        {data.perModello&&Object.keys(data.perModello).length>0&&(
+          <div style={{marginTop:10}}>
+            <FiglioMenu T={T} accent={accent} nodo={{id:"tot_pm",tipo:"modello",nome:"Per modello"}} scope={Object.keys(data.perModello)}
+              perMod={data.perModello} perColl={{}} modelli={modelliOrdinati||modelli} valore={v=>v.count||0} formatta={n=>String(n)}
+              fasceAutomatiche={fasceAutomatiche} primo={true} ultimo={true} fisso={true} onChange={()=>{}} onRemove={()=>{}} onMove={()=>{}}/>
+          </div>
+        )}
       </div>
 
       {/* Sottomenu: 0, 1 o N, tutti a scelta dell'utente. Nessuno preimpostato.
@@ -3035,7 +3042,7 @@ function ListaFigli({T, accent, figli, onChange, scope, perMod, perColl, modelli
     </div>
   );
 }
-function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, formatta, fasceAutomatiche, primo, ultimo, onChange, onRemove, onMove}){
+function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, formatta, fasceAutomatiche, primo, ultimo, onChange, onRemove, onMove, fisso}){
   const [aperto,setAperto] = useState(!!nodo.nuovo);
   const [conf,setConf] = useState(false);
   const [picker,setPicker] = useState(false);
@@ -3054,7 +3061,7 @@ function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, f
     const f = tipo==="menu" ? {id,tipo,nome:"",modelli:[...scopeNodo],figli:[],nuovo:true}
       : {id,tipo,nome:tipo==="collega"?"Per collega":"Per modello"};
     onChange({...nodo, nuovo:undefined, figli:[...figli,f]});
-    setPicker(false); setAperto(true);
+    setPicker(false);
   }
   const chip = (dk,c)=>(<span key={dk} style={{fontSize:11,fontWeight:600,color:T.text,background:c+"18",border:`1px solid ${c}44`,borderRadius:6,padding:"3px 7px"}}>{_fmtDataDK(dk)}</span>);
   const riga = (chiave,etichetta,valoreRiga,date,colore)=>(
@@ -3103,12 +3110,6 @@ function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, f
                 </div>
               );
             })}
-          {figli.length>0&&(
-            <div style={{marginTop:8}}>
-              <ListaFigli T={T} accent={accent} figli={figli} onChange={nf=>onChange({...nodo,figli:nf})} scope={scopeNodo}
-                perMod={perMod} perColl={perColl} modelli={modelli} valore={valore} formatta={formatta} fasceAutomatiche={fasceAutomatiche}/>
-            </div>
-          )}
         </div>
       );
     }
@@ -3123,14 +3124,20 @@ function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, f
             style={{flex:1,minWidth:0,background:"transparent",border:"none",outline:"none",fontSize:12,fontWeight:800,color:T.text}}/>
         ) : (<span style={{flex:1,fontSize:12,fontWeight:800,color:T.text}}>{nodo.nome}</span>)}
         <span style={{fontSize:13,fontWeight:900,color:T.text}}>{formatta(val)}</span>
-        {freccia(-1,!primo)}{freccia(1,!ultimo)}
-        <span onClick={()=>setConf(true)} style={{cursor:"pointer",fontSize:12,color:"#ef4444",padding:"2px 2px"}}>🗑️</span>
+        {!fisso&&freccia(-1,!primo)}{!fisso&&freccia(1,!ultimo)}
+        {!fisso&&(<span onClick={()=>setConf(true)} style={{cursor:"pointer",fontSize:12,color:"#ef4444",padding:"2px 2px"}}>🗑️</span>)}
         {isMenu&&(<span onClick={()=>setPicker(x=>!x)} style={{cursor:"pointer",fontSize:18,fontWeight:900,lineHeight:1,color:accent,padding:"0 6px"}}>+</span>)}
         <span onClick={()=>setAperto(a=>!a)} style={{cursor:"pointer",fontSize:12,color:T.text,padding:"4px 2px"}}>{aperto?"▲":"▼"}</span>
       </div>
       {conf&&(<ConfermaEliminazione T={T} testo={`Vuoi eliminare "${nodo.nome||"menu senza nome"}"?`} onConferma={()=>{setConf(false);onRemove();}} onAnnulla={()=>setConf(false)}/>)}
       {picker&&<ScegliTipoFiglio T={T} onScegli={aggiungiFiglio}/>}
       {aperto&&(<div style={{background:T.s2,border:`1px solid ${accent}44`,borderTop:"none",borderRadius:"0 0 8px 8px",padding:"8px 10px"}}>{corpo}</div>)}
+      {isMenu&&figli.length>0&&(
+        <div style={{marginTop:6,marginLeft:10,paddingLeft:8,borderLeft:`2px solid ${accent}44`}}>
+          <ListaFigli T={T} accent={accent} figli={figli} onChange={nf=>onChange({...nodo,figli:nf})} scope={scopeNodo}
+            perMod={perMod} perColl={perColl} modelli={modelli} valore={valore} formatta={formatta} fasceAutomatiche={fasceAutomatiche}/>
+        </div>
+      )}
     </div>
   );
 }
@@ -3153,7 +3160,7 @@ function SottomenuLibero({T, accent, sm, perGruppoSm, perCollGruppoSm={}, valore
     const f = tipo==="menu" ? {id,tipo,nome:"",modelli:[...scopeIds],figli:[],nuovo:true}
       : {id,tipo,nome:tipo==="collega"?"Per collega":"Per modello"};
     onPatch({gruppi:gruppi.map(x=>x.key===g.key?{...x,figli:[...(x.figli||[]),f]}:x)});
-    setPickerKey(null); setAperto(g.key);
+    setPickerKey(null);
   }
   const COLORI = ["#3b82f6","#10b981","#f59e0b","#8b5cf6","#ef4444","#06b6d4"];
   const totGruppo = (g)=>Object.values(perGruppoSm[g.key]||{}).reduce((a,v)=>a+valore(v),0);
@@ -3246,13 +3253,13 @@ function SottomenuLibero({T, accent, sm, perGruppoSm, perCollGruppoSm={}, valore
                     stileContenitore={{border:"none",borderRadius:6,marginBottom:0}}/>
                 )}
                 {modelli.length===0&&(<div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"6px 0"}}>Nessun modello</div>)}
-                {(g.figli||[]).length>0&&(
-                  <div style={{marginTop:8}}>
-                    <ListaFigli T={T} accent={accent} figli={g.figli} scope={Object.keys({...Object.fromEntries(Object.entries(asseg).filter(([,k])=>k===g.key)),...(perGruppoSm[g.key]||{})})}
-                      perMod={perGruppoSm[g.key]||{}} perColl={perCollGruppoSm[g.key]||{}} modelli={modelli} valore={valore} formatta={formatta} fasceAutomatiche={fasceAutomatiche}
-                      onChange={nf=>onPatch({gruppi:gruppi.map(x=>x.key===g.key?{...x,figli:nf}:x)})}/>
-                  </div>
-                )}
+              </div>
+            )}
+            {(g.figli||[]).length>0&&(
+              <div style={{marginTop:6,marginLeft:10,paddingLeft:8,borderLeft:`2px solid ${g.color}66`}}>
+                <ListaFigli T={T} accent={accent} figli={g.figli} scope={Object.keys({...Object.fromEntries(Object.entries(asseg).filter(([,k])=>k===g.key)),...(perGruppoSm[g.key]||{})})}
+                  perMod={perGruppoSm[g.key]||{}} perColl={perCollGruppoSm[g.key]||{}} modelli={modelli} valore={valore} formatta={formatta} fasceAutomatiche={fasceAutomatiche}
+                  onChange={nf=>onPatch({gruppi:gruppi.map(x=>x.key===g.key?{...x,figli:nf}:x)})}/>
               </div>
             )}
           </div>
