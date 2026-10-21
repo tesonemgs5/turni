@@ -5,14 +5,21 @@ import { ordineAttivo, minutiInizio } from "./21-ordine";
 
 // Ordina le voci di data.perModello:
 // in ordine A (alfabetico) per nome A-Z; in ordine B (orario) per orario d'inizio crescente.
-export function ordinaEntriesPerModello(entries, modelli){
-  const o = ordineAttivo();
-  return [...entries].sort(([a],[b])=>{
+export function ordinaEntriesPerModello(entries, modelli, ordOpt){
+  const o = ordOpt || ordineAttivo();
+  const qta = (e)=> e && e[1] ? ((e[1].count||0)+(e[1].minuti||0)) : 0;
+  return [...entries].sort((ea,eb)=>{
+    const a = ea[0], b = eb[0];
     const ma = (modelli||[]).find(x=>x.id===a);
     const mb = (modelli||[]).find(x=>x.id===b);
     if(!ma && !mb) return 0;
     if(!ma) return 1;
     if(!mb) return -1;
+    if(o === "Q"){
+      const d = qta(eb)-qta(ea);
+      if(d !== 0) return d;
+      return String(ma.label || ma.titolo || "").localeCompare(String(mb.label || mb.titolo || ""), "it", {sensitivity:"base", numeric:true});
+    }
     if(o === "A"){
       const na = String(ma.label || ma.titolo || "").toUpperCase();
       const nb = String(mb.label || mb.titolo || "").toUpperCase();
@@ -526,6 +533,7 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
     setShowAggiungiMenu(false);
     setOpenSottomenu(id);
   }
+  const ordineRoot = (cfg&&cfg.ordine) || ordineAttivo();
   function aggiornaSottomenu(id, patch){
     onUpdateCfg({...cfg, sottomenu: sottomenu.map(sm=>sm.id===id?{...sm,...patch}:sm)});
   }
@@ -565,7 +573,10 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
       <div style={{background:T.surface,borderRadius:10,padding:"10px 12px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
           <span style={{fontSize:12,color:"#0f172a",fontWeight:700}}>TOTALE TURNI</span>
-          <span style={{fontSize:20,fontWeight:900,color:T.text}}>{data.totale}</span>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <OrdineSelect T={T} accent={accent} radice={true} valore={cfg&&cfg.ordine} ereditato={ordineRoot} onChange={v=>onUpdateCfg({...(cfg||{}),ordine:v})}/>
+            <span style={{fontSize:20,fontWeight:900,color:T.text}}>{data.totale}</span>
+          </div>
         </div>
         {totaleTurni>0&&(
           <div style={{height:6,background:T.s2,borderRadius:3,overflow:"hidden"}}>
@@ -575,9 +586,9 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
       </div>
       {data.perModello&&Object.keys(data.perModello).length>0&&(
           <div>
-            <FiglioMenu T={T} accent={accent} nodo={{id:"tot_pm",tipo:"modello",nome:"Per modello"}} scope={Object.keys(data.perModello)}
+            <FiglioMenu T={T} accent={accent} nodo={{id:"tot_pm",tipo:"modello",nome:"Per modello",ordine:cfg&&cfg.ordineTot}} ordineEred={ordineRoot} scope={Object.keys(data.perModello)}
               perMod={data.perModello} perColl={{}} modelli={modelliOrdinati||modelli} valore={v=>v.count||0} formatta={n=>String(n)}
-              fasceAutomatiche={fasceAutomatiche} primo={true} ultimo={true} fisso={true} suffisso="TOTALE TURNI" onChange={()=>{}} onRemove={()=>{}} onMove={()=>{}}/>
+              fasceAutomatiche={fasceAutomatiche} primo={true} ultimo={true} fisso={true} suffisso="TOTALE TURNI" onChange={nn=>onUpdateCfg({...(cfg||{}),ordineTot:nn.ordine})} onRemove={()=>{}} onMove={()=>{}}/>
           </div>
         )}
 
@@ -590,7 +601,7 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
         {sottomenu.map((sm,idxSm)=>{
           const isOpen = openSottomenu===sm.id;
           if(sm.tipo==="libero") return (
-            <SottomenuLibero key={sm.id} T={T} accent={accent} sm={sm} perGruppoSm={data.perSottomenu?.[sm.id]||{}} perCollGruppoSm={data.perSottomenuColl?.[sm.id]||{}} onMoveBlock={dir=>muoviSottomenu(sm.id,dir)} blockUp={idxSm>0} blockDown={idxSm<sottomenu.length-1}
+            <SottomenuLibero key={sm.id} T={T} accent={accent} sm={sm} perGruppoSm={data.perSottomenu?.[sm.id]||{}} ordineRoot={ordineRoot} perCollGruppoSm={data.perSottomenuColl?.[sm.id]||{}} onMoveBlock={dir=>muoviSottomenu(sm.id,dir)} blockUp={idxSm>0} blockDown={idxSm<sottomenu.length-1}
               valore={v=>v.count||0} formatta={n=>String(n)} modelli={modelliOrdinati||modelli} fasceAutomatiche={fasceAutomatiche}
               onPatch={patch=>aggiornaSottomenu(sm.id,patch)} onRemove={()=>rimuoviSottomenu(sm.id)}/>
           );
@@ -606,6 +617,7 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
                   padding:"10px 12px",cursor:"pointer"}}>
                 <span style={{fontSize:12,fontWeight:700,color:sm.nome?T.text:T.sub}}>{sm.nome||"SENZA NOME"}{collegato&&(<span style={{fontWeight:500,color:T.sub}}> · {etichettaMenuLibero(prevSm)}</span>)}</span>
                 <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <OrdineSelect T={T} accent={accent} valore={sm.ordine} ereditato={ordineRoot} onChange={v=>aggiornaSottomenu(sm.id,{ordine:v})}/>
                   <span onClick={e=>{e.stopPropagation();muoviSottomenu(sm.id,-1);}} style={{cursor:"pointer",fontSize:15,fontWeight:900,color:T.sub,opacity:idxSm>0?1:0.25,padding:"0 3px"}}>↑</span>
                   <span onClick={e=>{e.stopPropagation();muoviSottomenu(sm.id,1);}} style={{cursor:"pointer",fontSize:15,fontWeight:900,color:T.sub,opacity:idxSm<sottomenu.length-1?1:0.25,padding:"0 3px"}}>↓</span>
                   <button onClick={e=>{e.stopPropagation();setConfermaEliminaSottomenu(sm.id);}}
@@ -632,7 +644,7 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
                   {sm.tipo==="collega" && (
                     Object.keys(pcSm||{}).length===0 ? (
                       <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"10px 0"}}>Nessun collega nel periodo</div>
-                    ) : Object.entries(pcSm).sort((a,b)=>b[1].count-a[1].count).map(([nome,info])=>{
+                    ) : ordinaNomiOrd(Object.entries(pcSm), sm.ordine||ordineRoot, i=>i.count||0).map(([nome,info])=>{
                       const gk = sm.id+":"+nome;
                       const isOpenG = openGruppoDentro===gk;
                       return (
@@ -647,7 +659,7 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
                           {isOpenG && (
                             <div style={{background:T.surface,border:`1px solid ${T.border}`,borderTop:"none",
                               borderRadius:"0 0 6px 6px",padding:"8px 10px",display:"flex",flexWrap:"wrap",gap:6}}>
-                              {info.dates.map(dk=>(
+                              {[...info.dates].sort().map(dk=>(
                                 <span key={dk} style={{fontSize:11,fontWeight:600,color:T.text,
                                   background:accent+"18",border:`1px solid ${accent}44`,borderRadius:6,padding:"3px 7px"}}>
                                   {fmtData(dk)}
@@ -664,7 +676,7 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
                   {sm.tipo==="modello" && (
                     !pmSm||Object.keys(pmSm).length===0 ? (
                       <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"10px 0"}}>Nessun turno nel periodo</div>
-                    ) : ordinaEntriesPerModello(Object.entries(pmSm), modelli).map(([mid,info])=>{
+                    ) : ordinaEntriesPerModello(Object.entries(pmSm), modelli, sm.ordine||ordineRoot).map(([mid,info])=>{
                       const m=modelli.find(x=>x.id===mid);
                       if(!m) return null;
                       const c=m?.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
@@ -688,7 +700,7 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
                           {isOpenG && (
                             <div style={{background:T.surface,border:`1px solid ${T.border}`,borderTop:"none",
                               borderRadius:"0 0 6px 6px",padding:"8px 10px",display:"flex",flexWrap:"wrap",gap:6}}>
-                              {info.dates.map(dk=>(
+                              {[...info.dates].sort().map(dk=>(
                                 <span key={dk} style={{fontSize:11,fontWeight:600,color:T.text,
                                   background:c+"18",border:`1px solid ${c}44`,borderRadius:6,padding:"3px 7px"}}>
                                   {fmtData(dk)}
@@ -864,6 +876,7 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
     setShowAggiungiMenu(false);
     setOpenSottomenu(id);
   }
+  const ordineRoot = (cfg&&cfg.ordine) || ordineAttivo();
   function aggiornaSottomenu(id, patch){
     onUpdateCfg({...cfg, sottomenu: sottomenu.map(sm=>sm.id===id?{...sm,...patch}:sm)});
   }
@@ -903,7 +916,10 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
       <div style={{background:T.surface,borderRadius:10,padding:"10px 12px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
           <span style={{fontSize:12,color:"#0f172a",fontWeight:700}}>TOTALE ORE</span>
-          <span style={{fontSize:20,fontWeight:900,color:data.totaleMin<0?"#dc2626":T.text}}>{fmtOreMin(data.totaleMin)}</span>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <OrdineSelect T={T} accent={accent} radice={true} valore={cfg&&cfg.ordine} ereditato={ordineRoot} onChange={v=>onUpdateCfg({...(cfg||{}),ordine:v})}/>
+            <span style={{fontSize:20,fontWeight:900,color:data.totaleMin<0?"#dc2626":T.text}}>{fmtOreMin(data.totaleMin)}</span>
+          </div>
         </div>
         {totaleMinPeriodo>0&&(
           <div style={{height:6,background:T.s2,borderRadius:3,overflow:"hidden"}}>
@@ -916,7 +932,7 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
         {sottomenu.map((sm,idxSm)=>{
           const isOpen = openSottomenu===sm.id;
           if(sm.tipo==="libero") return (
-            <SottomenuLibero key={sm.id} T={T} accent={accent} sm={sm} perGruppoSm={data.perSottomenu?.[sm.id]||{}} perCollGruppoSm={data.perSottomenuColl?.[sm.id]||{}} onMoveBlock={dir=>muoviSottomenu(sm.id,dir)} blockUp={idxSm>0} blockDown={idxSm<sottomenu.length-1}
+            <SottomenuLibero key={sm.id} T={T} accent={accent} sm={sm} perGruppoSm={data.perSottomenu?.[sm.id]||{}} ordineRoot={ordineRoot} perCollGruppoSm={data.perSottomenuColl?.[sm.id]||{}} onMoveBlock={dir=>muoviSottomenu(sm.id,dir)} blockUp={idxSm>0} blockDown={idxSm<sottomenu.length-1}
               valore={v=>v.minuti||0} formatta={fmtOreMin} modelli={modelliOrdinati||modelli} fasceAutomatiche={fasceAutomatiche}
               onPatch={patch=>aggiornaSottomenu(sm.id,patch)} onRemove={()=>rimuoviSottomenu(sm.id)}/>
           );
@@ -932,6 +948,7 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
                   padding:"10px 12px",cursor:"pointer"}}>
                 <span style={{fontSize:12,fontWeight:700,color:sm.nome?T.text:T.sub}}>{sm.nome||"SENZA NOME"}{collegato&&(<span style={{fontWeight:500,color:T.sub}}> · {etichettaMenuLibero(prevSm)}</span>)}</span>
                 <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <OrdineSelect T={T} accent={accent} valore={sm.ordine} ereditato={ordineRoot} onChange={v=>aggiornaSottomenu(sm.id,{ordine:v})}/>
                   <span onClick={e=>{e.stopPropagation();muoviSottomenu(sm.id,-1);}} style={{cursor:"pointer",fontSize:15,fontWeight:900,color:T.sub,opacity:idxSm>0?1:0.25,padding:"0 3px"}}>↑</span>
                   <span onClick={e=>{e.stopPropagation();muoviSottomenu(sm.id,1);}} style={{cursor:"pointer",fontSize:15,fontWeight:900,color:T.sub,opacity:idxSm<sottomenu.length-1?1:0.25,padding:"0 3px"}}>↓</span>
                   <button onClick={e=>{e.stopPropagation();setConfermaEliminaSottomenu(sm.id);}}
@@ -957,7 +974,7 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
                   {sm.tipo==="collega" && (
                     Object.keys(pcSm||{}).length===0 ? (
                       <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"10px 0"}}>Nessun collega nel periodo</div>
-                    ) : Object.entries(pcSm).sort((a,b)=>b[1].minuti-a[1].minuti).map(([nome,info])=>{
+                    ) : ordinaNomiOrd(Object.entries(pcSm), sm.ordine||ordineRoot, i=>i.minuti||0).map(([nome,info])=>{
                       const gk = sm.id+":"+nome;
                       const isOpenG = openGruppoDentro===gk;
                       return (
@@ -972,7 +989,7 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
                           {isOpenG && (
                             <div style={{background:T.surface,border:`1px solid ${T.border}`,borderTop:"none",
                               borderRadius:"0 0 6px 6px",padding:"8px 10px",display:"flex",flexWrap:"wrap",gap:6}}>
-                              {info.dates.map(dk=>(
+                              {[...info.dates].sort().map(dk=>(
                                 <span key={dk} style={{fontSize:11,fontWeight:600,color:T.text,
                                   background:accent+"18",border:`1px solid ${accent}44`,borderRadius:6,padding:"3px 7px"}}>
                                   {fmtData(dk)}
@@ -988,7 +1005,7 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
                   {sm.tipo==="modello" && (
                     !pmSm||Object.keys(pmSm).length===0 ? (
                       <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"10px 0"}}>Nessun turno nel periodo</div>
-                    ) : ordinaEntriesPerModello(Object.entries(pmSm), modelli).map(([mid,info])=>{
+                    ) : ordinaEntriesPerModello(Object.entries(pmSm), modelli, sm.ordine||ordineRoot).map(([mid,info])=>{
                       const m=modelli.find(x=>x.id===mid);
                       if(!m) return null;
                       const c=m?.coloreCustom||getColorByTime(m.inizio, fasceAutomatiche);
@@ -1012,7 +1029,7 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
                           {isOpenG && (
                             <div style={{background:T.surface,border:`1px solid ${T.border}`,borderTop:"none",
                               borderRadius:"0 0 6px 6px",padding:"8px 10px",display:"flex",flexWrap:"wrap",gap:6}}>
-                              {info.dates.map(dk=>(
+                              {[...info.dates].sort().map(dk=>(
                                 <span key={dk} style={{fontSize:11,fontWeight:600,color:T.text,
                                   background:c+"18",border:`1px solid ${c}44`,borderRadius:6,padding:"3px 7px"}}>
                                   {fmtData(dk)}
@@ -1332,7 +1349,7 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
                 {isOpen&&(
                   <div style={{background:T.surface,border:`1px solid ${T.border}`,borderTop:"none",
                     borderRadius:"0 0 6px 6px",padding:"8px 10px",display:"flex",flexWrap:"wrap",gap:6}}>
-                    {info.dates.map(dk=>(
+                    {[...info.dates].sort().map(dk=>(
                       <span key={dk} style={{fontSize:11,fontWeight:600,color:T.text,
                         background:c+"18",border:`1px solid ${c}44`,borderRadius:6,padding:"3px 7px"}}>
                         {fmtData(dk)}
@@ -1371,7 +1388,7 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
                 {isOpen&&(
                   <div style={{background:T.surface,border:`1px solid ${T.border}`,borderTop:"none",
                     borderRadius:"0 0 6px 6px",padding:"8px 10px",display:"flex",flexWrap:"wrap",gap:6}}>
-                    {info.dates.map(dk=>(
+                    {[...info.dates].sort().map(dk=>(
                       <span key={dk} style={{fontSize:11,fontWeight:600,color:T.text,
                         background:accent+"18",border:`1px solid ${accent}44`,borderRadius:6,padding:"3px 7px"}}>
                         {fmtData(dk)}
@@ -2986,6 +3003,45 @@ export function Sec({label,children,T}){
 // con nome, (percentuale se i gruppi sono 2 o più), totale e freccia. La freccia apre TUTTI i modelli del report:
 // prima quelli già nel gruppo, sotto tutti gli altri (a tendine, come la lista Modelli) da aggiungere con una spunta.
 // «+ Aggiungi gruppo» aggiunge un altro gruppo collegato (liberi, senza percentuali obbligatorie).
+// ---- Ordinamento dei menu: A = alfabetico, B = cronologico (orario di inizio / prima data), Q = quantità.
+// Ogni menu eredita quello del ramo sopra (la radice è il Totale del report) e può cambiarlo, fino all'ultimo sottogruppo.
+const _ORD_OPZ = [["A","A→Z","Alfabetico"],["B","🕐","Cronologico"],["Q","#","Quantità"]];
+function ordinaModelliOrd(lista, ord, valFn){
+  const nome = (m)=>String(m.label||m.titolo||"");
+  const alfa = (a,b)=>nome(a).localeCompare(nome(b),"it",{sensitivity:"base",numeric:true});
+  const arr = [...lista];
+  if(ord==="B") arr.sort((a,b)=>(minutiInizio(a)-minutiInizio(b))||alfa(a,b));
+  else if(ord==="Q") arr.sort((a,b)=>((valFn?valFn(b):0)-(valFn?valFn(a):0))||alfa(a,b));
+  else arr.sort(alfa);
+  return arr;
+}
+function ordinaNomiOrd(entries, ord, valFn){
+  const alfa = (a,b)=>String(a[0]).localeCompare(String(b[0]),"it",{sensitivity:"base",numeric:true});
+  const prima = (e)=>{ const d=(e[1]&&e[1].dates)||[]; return d.length ? [...d].sort()[0] : "9999"; };
+  const arr = [...entries];
+  if(ord==="B") arr.sort((a,b)=>prima(a).localeCompare(prima(b))||alfa(a,b));
+  else if(ord==="Q") arr.sort((a,b)=>(valFn(b[1])-valFn(a[1]))||alfa(a,b));
+  else arr.sort(alfa);
+  return arr;
+}
+function OrdineSelect({T, accent, valore, ereditato, onChange, radice}){
+  const eff = valore || ereditato || "A";
+  const opz = _ORD_OPZ.find(o=>o[0]===eff) || _ORD_OPZ[0];
+  const proprio = !!valore || !!radice;
+  const nomeEr = (_ORD_OPZ.find(o=>o[0]===(ereditato||"A"))||_ORD_OPZ[0])[2];
+  return (
+    <span onClick={e=>e.stopPropagation()} title={"Ordinamento: "+opz[2]+(valore||radice?"":" (come il ramo sopra)")}
+      style={{position:"relative",display:"inline-flex",alignItems:"center",justifyContent:"center",minWidth:30,height:24,padding:"0 6px",borderRadius:8,
+        fontSize:11,fontWeight:800,flexShrink:0,background:T.s2,color:proprio?accent:T.sub,border:`1px ${proprio?"solid":"dashed"} ${proprio?accent:T.border}`}}>
+      {opz[1]}
+      <select value={radice ? eff : (valore||"")} onChange={e=>onChange(e.target.value||undefined)}
+        style={{position:"absolute",inset:0,width:"100%",height:"100%",opacity:0,cursor:"pointer",fontSize:16}}>
+        {!radice&&(<option value="">{"Come il ramo sopra ("+nomeEr+")"}</option>)}
+        {_ORD_OPZ.map(o=>(<option key={o[0]} value={o[0]}>{o[2]}</option>))}
+      </select>
+    </span>
+  );
+}
 // Unisce i dati di tutti i gruppi di un menu libero (modelloId -> {count, minuti, dates}).
 function unisciScopeMenu(perSm){
   const out = {};
@@ -3028,12 +3084,12 @@ function ScegliTipoFiglio({T, onScegli}){
     </div>
   );
 }
-function ListaFigli({T, accent, figli, onChange, scope, perMod, perColl, modelli, valore, formatta, fasceAutomatiche, suffisso}){
+function ListaFigli({T, accent, figli, onChange, scope, perMod, perColl, modelli, valore, formatta, fasceAutomatiche, suffisso, ordineEred}){
   return (
     <div style={{display:"flex",flexDirection:"column",gap:8}}>
       {figli.map((n,i)=>(
         <FiglioMenu key={n.id} T={T} accent={accent} nodo={n} scope={scope} perMod={perMod} perColl={perColl}
-          modelli={modelli} valore={valore} formatta={formatta} fasceAutomatiche={fasceAutomatiche} suffisso={suffisso}
+          modelli={modelli} valore={valore} formatta={formatta} fasceAutomatiche={fasceAutomatiche} suffisso={suffisso} ordineEred={ordineEred}
           primo={i===0} ultimo={i===figli.length-1}
           onChange={nn=>onChange(figli.map(x=>x.id===n.id?nn:x))}
           onRemove={()=>onChange(figli.filter(x=>x.id!==n.id))}
@@ -3042,7 +3098,8 @@ function ListaFigli({T, accent, figli, onChange, scope, perMod, perColl, modelli
     </div>
   );
 }
-function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, formatta, fasceAutomatiche, primo, ultimo, onChange, onRemove, onMove, fisso, suffisso}){
+function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, formatta, fasceAutomatiche, primo, ultimo, onChange, onRemove, onMove, fisso, suffisso, ordineEred}){
+  const ord = nodo.ordine || ordineEred || "A";
   const [aperto,setAperto] = useState(!!nodo.nuovo);
   const [conf,setConf] = useState(false);
   const [picker,setPicker] = useState(false);
@@ -3050,7 +3107,7 @@ function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, f
   const isMenu = nodo.tipo==="menu";
   const scopeNodo = isMenu ? (nodo.modelli||[]).filter(id=>scope.includes(id)) : scope;
   const val = _aggregaScope(perMod, scopeNodo, valore);
-  const modelliScope = modelli.filter(m=>scope.includes(m.id));
+  const modelliScope = ordinaModelliOrd(modelli.filter(m=>scope.includes(m.id)), ord, m=>perMod[m.id]?valore(perMod[m.id]):0);
   const figli = nodo.figli||[];
   function toggleModello(mid){
     const cur = nodo.modelli||[];
@@ -3075,7 +3132,7 @@ function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, f
       </div>
       {dateAperte===chiave&&(
         <div style={{background:T.surface,border:`1px solid ${T.border}`,borderTop:"none",borderRadius:"0 0 6px 6px",padding:"8px 10px",display:"flex",flexWrap:"wrap",gap:6}}>
-          {(date||[]).map(dk=>chip(dk,colore||accent))}
+          {[...(date||[])].sort().map(dk=>chip(dk,colore||accent))}
         </div>
       )}
     </div>
@@ -3092,7 +3149,7 @@ function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, f
         if(!agg[nome]) agg[nome]={v:0,dates:[]};
         agg[nome].v += valore(info); agg[nome].dates.push(...(info.dates||[]));
       }); });
-      const nomi = Object.keys(agg).sort((a,b)=>agg[b].v-agg[a].v);
+      const nomi = ordinaNomiOrd(Object.entries(agg), ord, x=>x.v).map(e=>e[0]);
       corpo = nomi.length===0 ? (<div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"8px 0"}}>Nessun collega nel periodo</div>)
         : nomi.map(nome=>riga("c"+nome, nome, agg[nome].v, agg[nome].dates.sort(), null));
     } else {
@@ -3129,6 +3186,7 @@ function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, f
           )}
           <div style={{display:"flex",alignItems:"center",gap:10}}>
             <span style={{fontSize:13,fontWeight:800,color:T.text}}>{formatta(val)}</span>
+            <OrdineSelect T={T} accent={accent} valore={nodo.ordine} ereditato={ordineEred} onChange={v=>onChange({...nodo,nuovo:undefined,ordine:v})}/>
             {!fisso&&freccia(-1,!primo)}{!fisso&&freccia(1,!ultimo)}
             {!fisso&&(<button onClick={stop(()=>setConf(true))} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:13,padding:"2px 4px"}}>🗑️</button>)}
             {isMenu&&(<span onClick={stop(()=>setPicker(x=>!x))} style={{cursor:"pointer",fontSize:18,fontWeight:900,lineHeight:1,color:accent,padding:"0 4px"}}>+</span>)}
@@ -3142,13 +3200,13 @@ function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, f
       {isMenu&&figli.length>0&&(
         <ListaFigli T={T} accent={accent} figli={figli} onChange={nf=>onChange({...nodo,figli:nf})} scope={scopeNodo}
           perMod={perMod} perColl={perColl} modelli={modelli} valore={valore} formatta={formatta} fasceAutomatiche={fasceAutomatiche}
-          suffisso={nodo.nome||suffisso}/>
+          suffisso={nodo.nome||suffisso} ordineEred={ord}/>
       )}
     </>
   );
 }
 
-function SottomenuLibero({T, accent, sm, perGruppoSm, perCollGruppoSm={}, valore, formatta, modelli, fasceAutomatiche, onPatch, onRemove, onMoveBlock, blockUp, blockDown}){
+function SottomenuLibero({T, accent, sm, ordineRoot, perGruppoSm, perCollGruppoSm={}, valore, formatta, modelli, fasceAutomatiche, onPatch, onRemove, onMoveBlock, blockUp, blockDown}){
   const gruppi = sm.gruppi||[];
   const asseg = sm.assegnazioni||{};
   const [nuovoKey, setNuovoKey] = useState(()=> (gruppi.length===1 && !gruppi[0].label) ? gruppi[0].key : null);
@@ -3221,7 +3279,8 @@ function SottomenuLibero({T, accent, sm, perGruppoSm, perCollGruppoSm={}, valore
             </div>
           );
         };
-        const assegnati = modelli.filter(m=>asseg[m.id]===g.key);
+        const ordEff = g.ordine||ordineRoot||"A";
+        const assegnati = ordinaModelliOrd(modelli.filter(m=>asseg[m.id]===g.key), ordEff, m=>{ const inf=perGruppoSm[g.key]&&perGruppoSm[g.key][m.id]; return inf?valore(inf):0; });
         const altri = modelli.filter(m=>asseg[m.id]!==g.key);
         return (
           <div key={g.key}>
@@ -3232,6 +3291,7 @@ function SottomenuLibero({T, accent, sm, perGruppoSm, perCollGruppoSm={}, valore
                 style={{flex:1,minWidth:0,background:"transparent",border:"none",outline:"none",fontSize:13,fontWeight:800,color:"#0f172a"}}/>
               {pct!==null&&(<span style={{fontSize:11,fontWeight:800,color:"#0f172a",background:g.color+"33",borderRadius:8,padding:"1px 6px"}}>{pct}%</span>)}
               <span style={{fontSize:14,fontWeight:900,color:"#0f172a"}}>{formatta(val)}</span>
+              <OrdineSelect T={T} accent={accent} valore={g.ordine} ereditato={ordineRoot} onChange={v=>onPatch({gruppi:gruppi.map(x=>x.key===g.key?{...x,ordine:v}:x)})}/>
               {(()=>{ const idx=gruppi.findIndex(x=>x.key===g.key); const su=idx>0||!!blockUp; const giu=idx<gruppi.length-1||!!blockDown; return (<>
                 <span onClick={()=>su&&muoviGruppo(g.key,-1)} style={{cursor:su?"pointer":"default",fontSize:15,fontWeight:900,color:"#0f172a",opacity:su?1:0.25,padding:"0 3px",marginLeft:4}}>↑</span>
                 <span onClick={()=>giu&&muoviGruppo(g.key,1)} style={{cursor:giu?"pointer":"default",fontSize:15,fontWeight:900,color:"#0f172a",opacity:giu?1:0.25,padding:"0 3px"}}>↓</span>
@@ -3270,7 +3330,7 @@ function SottomenuLibero({T, accent, sm, perGruppoSm, perCollGruppoSm={}, valore
         <ListaFigli key={"f"+g.key} T={T} accent={accent} figli={g.figli}
           scope={Object.keys({...Object.fromEntries(Object.entries(asseg).filter(([,k])=>k===g.key)),...(perGruppoSm[g.key]||{})})}
           perMod={perGruppoSm[g.key]||{}} perColl={perCollGruppoSm[g.key]||{}} modelli={modelli} valore={valore} formatta={formatta} fasceAutomatiche={fasceAutomatiche}
-          suffisso={g.label||""}
+          suffisso={g.label||""} ordineEred={g.ordine||ordineRoot||"A"}
           onChange={nf=>onPatch({gruppi:gruppi.map(x=>x.key===g.key?{...x,figli:nf}:x)})}/>
       ))}
     </div>
