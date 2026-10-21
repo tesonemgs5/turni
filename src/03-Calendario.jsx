@@ -584,9 +584,12 @@ export default function VistaCalendario({ C }){
   function renderReportCard(r){
     const isOpen = openReportConfig===r.id;
     const cfg = getConteggioConfig(r.id, r.type);
-    // "ore_turno" somma minuti (computeMinutiForReport), tutti gli altri
-    // tipi contano eventi (computeConteggioForReport) come prima.
-    const data = r.type==="ore_turno" ? computeMinutiForReport(cfg, r.id) : computeConteggioForReport(cfg, r.id);
+    // Ogni report usa il proprio calcolo per rispettare filtri e intervallo.
+    const data = r.type==="ore_turno"
+      ? computeMinutiForReport(cfg, r.id)
+      : r.type==="turnazione"
+        ? computeTurnazioneForReport(cfg, r.id)
+        : computeConteggioForReport(cfg, r.id);
     const pct = totaleTurni>0 ? Math.round((data.totale/totaleTurni)*100) : 0;
 
     return (
@@ -610,6 +613,11 @@ export default function VistaCalendario({ C }){
               textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.label}</div>
             {r.type==="conteggio_turni"&&(
               <div style={{fontSize:17,color:T.sub}}>{data.totale} turni</div>
+            )}
+            {r.type==="turnazione"&&(
+              <div style={{fontSize:14,color:T.sub}}>
+                {data.totale} turni · {data.totale>0?Math.round(((data.primo||0)/data.totale)*100):0}% 1° - {data.totale>0?Math.round(((data.secondo||0)/data.totale)*100):0}% 2°
+              </div>
             )}
             {r.type==="ore_turno"&&(
               <div style={{fontSize:17,color:T.sub}}>{fmtOreMin(data.totaleMin)}</div>
