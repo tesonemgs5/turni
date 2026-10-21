@@ -419,6 +419,10 @@ export function useAppCore(session){
     try{
       const risSupabase = await provaSupabase(payload);
       if(risSupabase.error){
+        if(table==="colori" && tipo==="insert" && risSupabase.error.code==="23505"){
+          confermaSupabase(idsOp);
+          return { ok:true, giaEsistente:true, errore:null };
+        }
         // Se l'errore sembra di rete (connessione ballerina che ha lasciato
         // cadere questa singola richiesta, anche se navigator.onLine
         // risultava true) NON è un errore vero: si accoda silenziosamente,

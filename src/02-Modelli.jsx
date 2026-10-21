@@ -2189,7 +2189,7 @@ export default function VistaModelli({ C }){
                 <>
                   <div style={{fontSize:34,marginBottom:6}}>✅</div>
                   <div style={{fontSize:16,fontWeight:800,marginBottom:6}}>Supabase OK</div>
-                  <div style={{fontSize:13,color:T.sub,lineHeight:1.5}}>Tutte le tabelle e la funzione get_user_data sono presenti.</div>
+                  <div style={{fontSize:13,color:T.sub,lineHeight:1.5}}>Tutte le tabelle, le colonne verificate e la funzione get_user_data sono presenti.</div>
                 </>
               ) : (
                 <>
