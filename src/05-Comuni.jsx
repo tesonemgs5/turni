@@ -1444,6 +1444,15 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
   const pulsanti = pulsantiFasciaDi(cfg);
   const periodi = periodiDi(cfg);
   const importiFascia = (calc && calc.importi && calc.importi.perFascia) || {};
+  const oggiKey = new Date().toISOString().slice(0,10);
+  const periodoVigente = periodi.filter(p=>p.da<=oggiKey).pop();
+  const tariffaPeriodo = (f)=>{
+    if(!periodoVigente) return null;
+    const b = parseFloat(periodoVigente.base);
+    const o = periodoVigente.perc && periodoVigente.perc[f.key];
+    const pc = parseFloat(o!==undefined && o!=="" ? o : f.perc);
+    return (b>0 && !isNaN(pc)) ? b*pc/100 : null;
+  };
   const [percAperto, setPercAperto] = useState(null);
   const fasce = fasceCfg.map(f=>({...f, count:calc[f.key]||0}));
   const [modPulsanti, setModPulsanti] = useState(false);
@@ -1636,10 +1645,16 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
               style={{width:52,background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,padding:"6px 6px",color:T.text,fontSize:13,outline:"none",textAlign:"right"}}/>
             <span style={{fontSize:12,color:T.sub}}>%</span>
             <span style={{fontSize:13,color:T.sub}}>€</span>
+            {tariffaPeriodo(f)!==null ? (
+              <input type="text" readOnly value={tariffaPeriodo(f).toFixed(2)}
+                style={{width:70,background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
+                  padding:"6px 8px",color:T.sub,fontSize:13,outline:"none",textAlign:"right"}}/>
+            ) : (
             <input type="number" value={values[f.key]||""} onChange={e=>setValues(v=>({...v,[f.key]:e.target.value}))}
               onBlur={onSave} placeholder="€ fisso" step="0.01"
               style={{width:70,background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
                 padding:"6px 8px",color:T.text,fontSize:13,outline:"none",textAlign:"right"}}/>
+            )}
           </div>
         </div>
         );
