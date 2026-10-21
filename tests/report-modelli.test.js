@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { aggiungiAssegnatiAlReport, impostaInclusioneModelloReport, normalizzaInclusioniDaSottomenu, statoInclusioneModelloReport } from "../src/27-report-modelli.js";
+import { impostaInclusioneModelloReport, statoInclusioneModelloReport } from "../src/27-report-modelli.js";
 
 test("usa le inclusioni del report e rispetta il filtro esplicito senza modelli", () => {
   assert.equal(statoInclusioneModelloReport("conteggio_turni", {}, "m1", false), true);
@@ -18,22 +18,13 @@ test("aggiunge o esclude modelli dai report senza alterare la configurazione ori
   assert.deepEqual(impostaInclusioneModelloReport("conteggio_turni", {modelliInclusi:["m1"]}, "m1", false, false, ["m1"]), {modelliInclusi:["__nessuno__"]});
 });
 
-test("recupera in modo coerente i modelli già assegnati ai sottomenu", () => {
+test("un modello escluso dal filtro resta deselezionato anche se assegnato a un sottomenu", () => {
   const config = {
     modelliInclusi:["__nessuno__"],
-    sottomenu:[{id:"sm",assegnazioni:{m1:"gruppo-a"}}],
+    sottomenu:[{id:"sm",assegnazioni:{m1:"gruppo-a",m2:"gruppo-b"}}],
   };
-  assert.deepEqual(normalizzaInclusioniDaSottomenu(config).modelliInclusi, ["m1"]);
-  assert.equal(statoInclusioneModelloReport("conteggio_turni", config, "m1", false), true);
+  assert.equal(statoInclusioneModelloReport("conteggio_turni", config, "m1", false), false);
   assert.deepEqual(config.modelliInclusi, ["__nessuno__"]);
-});
-
-test("selezionare modelli nei gruppi del report li include usando gli ID dei modelli", () => {
-  const aggiornato = aggiungiAssegnatiAlReport(
-    {modelliInclusi:["__nessuno__"]},
-    {modelloA:"domenica", modelloB:"turno-1", modelloC:null},
-  );
-  assert.deepEqual(aggiornato.modelliInclusi, ["modelloA","modelloB"]);
 });
 
 test("mantiene la regola standard e le esclusioni della Turnazione", () => {

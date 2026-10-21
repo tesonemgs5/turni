@@ -1,27 +1,9 @@
-export function aggiungiAssegnatiAlReport(config, assegnazioni){
-  const assegnati = Object.entries(assegnazioni||{}).filter(([,gruppoKey])=>gruppoKey).map(([id])=>id);
-  if(assegnati.length===0) return config||{};
-  const inclusi = config?.modelliInclusi||[];
-  if(inclusi.length===0) return config||{};
-  const modelliInclusi = [...new Set([...inclusi.filter(id=>id!=="__nessuno__"), ...assegnati])];
-  if(modelliInclusi.length===inclusi.length && modelliInclusi.every(id=>inclusi.includes(id))) return config;
-  return {...config, modelliInclusi};
-}
-
-export function normalizzaInclusioniDaSottomenu(config){
-  return (config?.sottomenu||[]).reduce(
-    (normalizzato, sm)=>aggiungiAssegnatiAlReport(normalizzato, sm.assegnazioni),
-    config||{},
-  );
-}
-
 export function statoInclusioneModelloReport(tipoReport, config, modelloId, isModelloStandard){
   if(tipoReport==="turnazione"){
     const esclusi = config?.modelliEsclusi||[];
     const aggiunti = config?.modelliAggiunti||[];
     return (isModelloStandard && !esclusi.includes(modelloId)) || aggiunti.includes(modelloId);
   }
-  if((config?.sottomenu||[]).some(sm=>sm.assegnazioni?.[modelloId])) return true;
   const inclusi = config?.modelliInclusi||[];
   return inclusi.length===0 || inclusi.includes(modelloId);
 }

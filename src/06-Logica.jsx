@@ -4,7 +4,7 @@ import { scriviEsitoImport } from "./22-backup-stato";
 import { ordineAttivo, impostaOrdineAttivo, posDaRiga, colonnePosizione, payloadPosCambiate, scambiaOrdini, mapGruppoDb, colGruppo, BANDA_A, classeModelloA, ordinaClassiA, minutiInizio } from "./21-ordine";
 import { stessoHexColore, calcolaOrdineModelli, calcolaOrdineVisuale, classificaFasciaOrariaModello, calcolaOrdineRiordinoFasce } from "./26-ordine-modelli";
 import { calcolaAllineamentoColori } from "./13-allinea-colori";
-import { impostaInclusioneModelloReport, normalizzaInclusioniDaSottomenu } from "./27-report-modelli";
+import { impostaInclusioneModelloReport } from "./27-report-modelli";
 import { widgetDisponibile, inviaAlWidget, descriviStatoWidget } from "./17-widget";
 import { scaricaFileTesto } from "./18-scarica-file";
 import { fasceIndennitaDi, pulsantiFasciaDi, minutiPerFasceEvento, tariffaOraria } from "./24-fasce-indennita";
@@ -7969,7 +7969,7 @@ const importsRecenti = useMemo(()=>{
 
   function getConteggioConfig(reportId, reportType){
     const saved = conteggioConfigs[reportId];
-    if(saved) return normalizzaInclusioniDaSottomenu(saved);
+    if(saved) return saved;
     if(reportType==="turnazione"){
       return { fasceFiltro:[], modelliEsclusi:[], modelliAggiunti:[] };
     }
@@ -7977,7 +7977,7 @@ const importsRecenti = useMemo(()=>{
   }
 
   function updateConteggioConfig(reportId, cfg){
-    const newCfg = {...conteggioConfigs, [reportId]: normalizzaInclusioniDaSottomenu(cfg)};
+    const newCfg = {...conteggioConfigs, [reportId]: cfg};
     setConteggioConfigs(newCfg);
     saveSettings({conteggio_configs: newCfg});
   }
@@ -7994,7 +7994,7 @@ const importsRecenti = useMemo(()=>{
     Object.entries(scelte).forEach(([rid, sc])=>{
       const r = (store.reports||[]).find(x=>x.id===rid);
       if(!r || !sc) return;
-      const cfg = {...normalizzaInclusioniDaSottomenu(base[rid] || getConteggioConfig(rid, r.type))};
+      const cfg = {...(base[rid] || getConteggioConfig(rid, r.type))};
       if(sc.incluso!==undefined){
         const isDefault = isModelloTurnazioneDefault({id, tempo:modello.tempo, inizio:modello.inizio, fine:modello.fine});
         Object.assign(cfg, impostaInclusioneModelloReport(r.type, cfg, id, sc.incluso, isDefault, modelli.map(mm=>mm.id)));

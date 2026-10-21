@@ -2,7 +2,6 @@
 import { ElencoModelliTendine, PulsanteOrdineAB } from "./23-tendine-modelli";
 import { fasceIndennitaDi, pulsantiFasciaDi, periodiDi } from "./24-fasce-indennita";
 import { ordineAttivo, minutiInizio } from "./21-ordine";
-import { aggiungiAssegnatiAlReport } from "./27-report-modelli";
 
 // Ordina le voci di data.perModello:
 // in ordine A (alfabetico) per nome A-Z; in ordine B (orario) per orario d'inizio crescente.
@@ -536,8 +535,7 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
   }
   const ordineRoot = (cfg&&cfg.ordine) || ordineAttivo();
   function aggiornaSottomenu(id, patch){
-    const base = patch.assegnazioni ? aggiungiAssegnatiAlReport(cfg, patch.assegnazioni) : cfg;
-    onUpdateCfg({...base, sottomenu: sottomenu.map(sm=>sm.id===id?{...sm,...patch}:sm)});
+    onUpdateCfg({...cfg, sottomenu: sottomenu.map(sm=>sm.id===id?{...sm,...patch}:sm)});
   }
   function muoviSottomenu(id, dir){
     const i = sottomenu.findIndex(x=>x.id===id), j = i+dir;
@@ -880,8 +878,7 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
   }
   const ordineRoot = (cfg&&cfg.ordine) || ordineAttivo();
   function aggiornaSottomenu(id, patch){
-    const base = patch.assegnazioni ? aggiungiAssegnatiAlReport(cfg, patch.assegnazioni) : cfg;
-    onUpdateCfg({...base, sottomenu: sottomenu.map(sm=>sm.id===id?{...sm,...patch}:sm)});
+    onUpdateCfg({...cfg, sottomenu: sottomenu.map(sm=>sm.id===id?{...sm,...patch}:sm)});
   }
   function muoviSottomenu(id, dir){
     const i = sottomenu.findIndex(x=>x.id===id), j = i+dir;
