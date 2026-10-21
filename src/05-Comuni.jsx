@@ -572,14 +572,14 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
             <div style={{width:`${pct}%`,height:"100%",background:accent,borderRadius:3,transition:"width 0.3s"}}/>
           </div>
         )}
-        {data.perModello&&Object.keys(data.perModello).length>0&&(
-          <div style={{marginTop:10}}>
+      </div>
+      {data.perModello&&Object.keys(data.perModello).length>0&&(
+          <div>
             <FiglioMenu T={T} accent={accent} nodo={{id:"tot_pm",tipo:"modello",nome:"Per modello"}} scope={Object.keys(data.perModello)}
               perMod={data.perModello} perColl={{}} modelli={modelliOrdinati||modelli} valore={v=>v.count||0} formatta={n=>String(n)}
-              fasceAutomatiche={fasceAutomatiche} primo={true} ultimo={true} fisso={true} onChange={()=>{}} onRemove={()=>{}} onMove={()=>{}}/>
+              fasceAutomatiche={fasceAutomatiche} primo={true} ultimo={true} fisso={true} suffisso="TOTALE TURNI" onChange={()=>{}} onRemove={()=>{}} onMove={()=>{}}/>
           </div>
         )}
-      </div>
 
       {/* Sottomenu: 0, 1 o N, tutti a scelta dell'utente. Nessuno preimpostato.
           "Per collega" e "Per modello" sono scorciatoie predefinite (si
@@ -3028,12 +3028,12 @@ function ScegliTipoFiglio({T, onScegli}){
     </div>
   );
 }
-function ListaFigli({T, accent, figli, onChange, scope, perMod, perColl, modelli, valore, formatta, fasceAutomatiche}){
+function ListaFigli({T, accent, figli, onChange, scope, perMod, perColl, modelli, valore, formatta, fasceAutomatiche, suffisso}){
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+    <div style={{display:"flex",flexDirection:"column",gap:8}}>
       {figli.map((n,i)=>(
         <FiglioMenu key={n.id} T={T} accent={accent} nodo={n} scope={scope} perMod={perMod} perColl={perColl}
-          modelli={modelli} valore={valore} formatta={formatta} fasceAutomatiche={fasceAutomatiche}
+          modelli={modelli} valore={valore} formatta={formatta} fasceAutomatiche={fasceAutomatiche} suffisso={suffisso}
           primo={i===0} ultimo={i===figli.length-1}
           onChange={nn=>onChange(figli.map(x=>x.id===n.id?nn:x))}
           onRemove={()=>onChange(figli.filter(x=>x.id!==n.id))}
@@ -3042,7 +3042,7 @@ function ListaFigli({T, accent, figli, onChange, scope, perMod, perColl, modelli
     </div>
   );
 }
-function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, formatta, fasceAutomatiche, primo, ultimo, onChange, onRemove, onMove, fisso}){
+function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, formatta, fasceAutomatiche, primo, ultimo, onChange, onRemove, onMove, fisso, suffisso}){
   const [aperto,setAperto] = useState(!!nodo.nuovo);
   const [conf,setConf] = useState(false);
   const [picker,setPicker] = useState(false);
@@ -3067,7 +3067,7 @@ function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, f
   const riga = (chiave,etichetta,valoreRiga,date,colore)=>(
     <div key={chiave} style={{marginBottom:4}}>
       <div onClick={()=>setDateAperte(dateAperte===chiave?null:chiave)}
-        style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",background:T.surface,borderRadius:dateAperte===chiave?"6px 6px 0 0":6,cursor:"pointer"}}>
+        style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",background:T.s2,borderRadius:dateAperte===chiave?"6px 6px 0 0":6,cursor:"pointer"}}>
         {colore&&<div style={{width:8,height:8,borderRadius:"50%",background:colore,flexShrink:0}}/>}
         <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>{etichetta}</span>
         <span style={{fontSize:13,fontWeight:800,color:T.text}}>{formatta(valoreRiga)}</span>
@@ -3102,7 +3102,7 @@ function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, f
             : modelliScope.map(m=>{
               const c = m?.coloreCustom||getColorByTime(m.inizio,fasceAutomatiche);
               return (
-                <div key={m.id} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 6px",borderRadius:6,background:T.surface,marginBottom:3}}>
+                <div key={m.id} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 6px",borderRadius:6,background:T.s2,marginBottom:3}}>
                   <input type="checkbox" checked={(nodo.modelli||[]).includes(m.id)} onChange={()=>toggleModello(m.id)} style={{cursor:"pointer",flexShrink:0}}/>
                   <div style={{width:8,height:8,borderRadius:"50%",background:c,flexShrink:0}}/>
                   <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>{m.label||m.titolo}</span>
@@ -3114,31 +3114,37 @@ function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, f
       );
     }
   }
-  const freccia = (dir,attivo)=>(<span onClick={()=>attivo&&onMove(dir)} style={{cursor:attivo?"pointer":"default",fontSize:15,fontWeight:900,color:T.sub,opacity:attivo?1:0.25,padding:"0 3px"}}>{dir<0?"↑":"↓"}</span>);
+  const stop = (fn)=>(e)=>{ e.stopPropagation(); fn(); };
+  const freccia = (dir,attivo)=>(<span onClick={stop(()=>attivo&&onMove(dir))} style={{cursor:attivo?"pointer":"default",fontSize:15,fontWeight:900,color:T.sub,opacity:attivo?1:0.25,padding:"0 3px"}}>{dir<0?"↑":"↓"}</span>);
   return (
-    <div>
-      <div style={{display:"flex",alignItems:"center",gap:6,padding:"7px 10px",background:accent+"14",border:`1px solid ${accent}44`,borderRadius:aperto?"8px 8px 0 0":8}}>
-        {isMenu ? (
-          <input value={nodo.nome||""} placeholder="NOME MENU" autoFocus={!!nodo.nuovo}
-            onChange={e=>onChange({...nodo,nuovo:undefined,nome:e.target.value.toUpperCase()})}
-            style={{flex:1,minWidth:0,background:"transparent",border:"none",outline:"none",fontSize:12,fontWeight:800,color:T.text}}/>
-        ) : (<span style={{flex:1,fontSize:12,fontWeight:800,color:T.text}}>{nodo.nome}</span>)}
-        <span style={{fontSize:13,fontWeight:900,color:T.text}}>{formatta(val)}</span>
-        {!fisso&&freccia(-1,!primo)}{!fisso&&freccia(1,!ultimo)}
-        {!fisso&&(<span onClick={()=>setConf(true)} style={{cursor:"pointer",fontSize:12,color:"#ef4444",padding:"2px 2px"}}>🗑️</span>)}
-        {isMenu&&(<span onClick={()=>setPicker(x=>!x)} style={{cursor:"pointer",fontSize:18,fontWeight:900,lineHeight:1,color:accent,padding:"0 6px"}}>+</span>)}
-        <span onClick={()=>setAperto(a=>!a)} style={{cursor:"pointer",fontSize:12,color:T.text,padding:"4px 2px"}}>{aperto?"▲":"▼"}</span>
-      </div>
-      {conf&&(<ConfermaEliminazione T={T} testo={`Vuoi eliminare "${nodo.nome||"menu senza nome"}"?`} onConferma={()=>{setConf(false);onRemove();}} onAnnulla={()=>setConf(false)}/>)}
-      {picker&&<ScegliTipoFiglio T={T} onScegli={aggiungiFiglio}/>}
-      {aperto&&(<div style={{background:T.s2,border:`1px solid ${accent}44`,borderTop:"none",borderRadius:"0 0 8px 8px",padding:"8px 10px"}}>{corpo}</div>)}
-      {isMenu&&figli.length>0&&(
-        <div style={{marginTop:6,marginLeft:10,paddingLeft:8,borderLeft:`2px solid ${accent}44`}}>
-          <ListaFigli T={T} accent={accent} figli={figli} onChange={nf=>onChange({...nodo,figli:nf})} scope={scopeNodo}
-            perMod={perMod} perColl={perColl} modelli={modelli} valore={valore} formatta={formatta} fasceAutomatiche={fasceAutomatiche}/>
+    <>
+      <div style={{background:T.surface,borderRadius:10,overflow:"hidden"}}>
+        <div onClick={()=>setAperto(a=>!a)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 12px",cursor:"pointer",gap:8}}>
+          {isMenu ? (
+            <input value={nodo.nome||""} placeholder="NOME MENU" autoFocus={!!nodo.nuovo} onClick={e=>e.stopPropagation()}
+              onChange={e=>onChange({...nodo,nuovo:undefined,nome:e.target.value.toUpperCase()})}
+              style={{flex:1,minWidth:0,background:"transparent",border:"none",outline:"none",fontSize:12,fontWeight:700,color:T.text}}/>
+          ) : (
+            <span style={{flex:1,fontSize:12,fontWeight:700,color:T.text}}>{nodo.nome}{suffisso&&(<span style={{fontWeight:500,color:T.sub}}> · {suffisso}</span>)}</span>
+          )}
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:13,fontWeight:800,color:T.text}}>{formatta(val)}</span>
+            {!fisso&&freccia(-1,!primo)}{!fisso&&freccia(1,!ultimo)}
+            {!fisso&&(<button onClick={stop(()=>setConf(true))} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:13,padding:"2px 4px"}}>🗑️</button>)}
+            {isMenu&&(<span onClick={stop(()=>setPicker(x=>!x))} style={{cursor:"pointer",fontSize:18,fontWeight:900,lineHeight:1,color:accent,padding:"0 4px"}}>+</span>)}
+            <span style={{fontSize:12,color:T.sub}}>{aperto?"▲":"▼"}</span>
+          </div>
         </div>
+        {conf&&(<ConfermaEliminazione T={T} testo={`Vuoi eliminare "${nodo.nome||"menu senza nome"}"?`} onConferma={()=>{setConf(false);onRemove();}} onAnnulla={()=>setConf(false)}/>)}
+        {picker&&(<div style={{padding:"0 12px"}}><ScegliTipoFiglio T={T} onScegli={aggiungiFiglio}/></div>)}
+        {aperto&&(<div style={{padding:"0 12px 12px"}}>{corpo}</div>)}
+      </div>
+      {isMenu&&figli.length>0&&(
+        <ListaFigli T={T} accent={accent} figli={figli} onChange={nf=>onChange({...nodo,figli:nf})} scope={scopeNodo}
+          perMod={perMod} perColl={perColl} modelli={modelli} valore={valore} formatta={formatta} fasceAutomatiche={fasceAutomatiche}
+          suffisso={nodo.nome||suffisso}/>
       )}
-    </div>
+    </>
   );
 }
 
@@ -3191,7 +3197,8 @@ function SottomenuLibero({T, accent, sm, perGruppoSm, perCollGruppoSm={}, valore
   }
   const nomeGruppo = (key)=>{ const g = gruppi.find(x=>x.key===key); return g ? (g.label||"SENZA NOME") : ""; };
   return (
-    <div style={{background:T.surface,borderRadius:10,padding:8,display:"flex",flexDirection:"column",gap:6}}>
+    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+      <div style={{background:T.surface,borderRadius:10,padding:8,display:"flex",flexDirection:"column",gap:6}}>
       {gruppi.map(g=>{
         const isOpen = aperto===g.key;
         const val = totGruppo(g);
@@ -3255,16 +3262,17 @@ function SottomenuLibero({T, accent, sm, perGruppoSm, perCollGruppoSm={}, valore
                 {modelli.length===0&&(<div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"6px 0"}}>Nessun modello</div>)}
               </div>
             )}
-            {(g.figli||[]).length>0&&(
-              <div style={{marginTop:6,marginLeft:10,paddingLeft:8,borderLeft:`2px solid ${g.color}66`}}>
-                <ListaFigli T={T} accent={accent} figli={g.figli} scope={Object.keys({...Object.fromEntries(Object.entries(asseg).filter(([,k])=>k===g.key)),...(perGruppoSm[g.key]||{})})}
-                  perMod={perGruppoSm[g.key]||{}} perColl={perCollGruppoSm[g.key]||{}} modelli={modelli} valore={valore} formatta={formatta} fasceAutomatiche={fasceAutomatiche}
-                  onChange={nf=>onPatch({gruppi:gruppi.map(x=>x.key===g.key?{...x,figli:nf}:x)})}/>
-              </div>
-            )}
           </div>
         );
       })}
+      </div>
+      {gruppi.filter(g=>(g.figli||[]).length>0).map(g=>(
+        <ListaFigli key={"f"+g.key} T={T} accent={accent} figli={g.figli}
+          scope={Object.keys({...Object.fromEntries(Object.entries(asseg).filter(([,k])=>k===g.key)),...(perGruppoSm[g.key]||{})})}
+          perMod={perGruppoSm[g.key]||{}} perColl={perCollGruppoSm[g.key]||{}} modelli={modelli} valore={valore} formatta={formatta} fasceAutomatiche={fasceAutomatiche}
+          suffisso={g.label||""}
+          onChange={nf=>onPatch({gruppi:gruppi.map(x=>x.key===g.key?{...x,figli:nf}:x)})}/>
+      ))}
     </div>
   );
 }
