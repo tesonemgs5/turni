@@ -457,7 +457,7 @@ function AppInterno({ session }){
               onApplicaScelteReport={(scelte)=>applicaScelteReportModello(modelForm, scelte)}
               suggerimentiTitolo={autocompleteValori.titolo} suggerimentiNomeVis={autocompleteValori.nome_visualizzato}
               onRimuoviSuggerimento={rimuoviValoreAutocomplete}
-              calendari={store.calendars}
+              calendari={store.calendars} eventi={store.events}
               onCopia={async(calIdsDestinazione)=>{
                 // Crea una copia indipendente del modello in ciascun calendario scelto,
                 // riusando saveModello (che gestisce ordinamento, colori e sync).

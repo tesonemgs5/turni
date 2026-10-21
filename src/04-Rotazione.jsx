@@ -1956,8 +1956,10 @@ export function ModelForm({
   reports = [], getConteggioConfig, updateConteggioConfig, onApplicaScelteReport,
   suggerimentiTitolo = [], suggerimentiNomeVis = [], onRimuoviSuggerimento,
   onSave,
-  calendari = [], onCopia, onSposta, onColoreNome, coloriUsatiTutti = null,
+  calendari = [], onCopia, onSposta, onColoreNome, coloriUsatiTutti = null, eventi = null,
 }) {
+  const [coloreAperto, setColoreAperto] = useState(false);
+  const [giorniAperto, setGiorniAperto] = useState(false);
   const [mostraSuggTitolo, setMostraSuggTitolo] = useState(false);
   const [mostraCopia, setMostraCopia] = useState(false);
   const [calDestinazione, setCalDestinazione] = useState([]);
@@ -2116,7 +2118,15 @@ export function ModelForm({
         </div>
       )}
 
-      {campo("COLORE", (
+      {campo((
+        <div onClick={() => setColoreAperto(v => !v)}
+          style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none" }}>
+          <span>{coloreAperto ? "▼" : "▶"}</span>
+          <span>COLORE</span>
+          <span style={{ width: 16, height: 16, borderRadius: "50%", background: coloreAnteprima, border: `1px solid ${T.border}` }} />
+          <span style={{ fontWeight: 600 }}>{nomeColoreAnteprima || ""}</span>
+        </div>
+      ), (!coloreAperto ? null : (
         <div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
             {paletteDaMostrare.map(c => (
@@ -2162,7 +2172,31 @@ export function ModelForm({
               onClose={() => setShowColorPicker(false)} />
           )}
         </div>
-      ))}
+      )))}
+
+      {form.id && eventi && (() => {
+        const giorni = [];
+        Object.entries(eventi).forEach(([dk, calMap]) => {
+          Object.values(calMap || {}).forEach(lista => {
+            if ((lista || []).some(e => e.modelloId === form.id)) giorni.push(dk);
+          });
+        });
+        const elenco = Array.from(new Set(giorni)).sort();
+        return campo((
+          <div onClick={() => setGiorniAperto(v => !v)}
+            style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none" }}>
+            <span>{giorniAperto ? "▼" : "▶"}</span>
+            <span>GIORNI IN CUI È USATO</span>
+            <span style={{ fontWeight: 600 }}>{elenco.length}</span>
+          </div>
+        ), (!giorniAperto ? null : (
+          <div style={{ maxHeight: 240, overflowY: "auto", background: T.s2, border: `1px solid ${T.border}`, borderRadius: 8, padding: "6px 10px" }}>
+            {elenco.length === 0
+              ? <div style={{ fontSize: 13, color: T.sub }}>Nessun giorno</div>
+              : elenco.map(dk => <div key={dk} style={{ fontSize: 13, color: T.text, padding: "3px 0" }}>{fmtDataIT(dk)}</div>)}
+          </div>
+        )));
+      })()}
 
       {campo("CATEGORIA TURNO (per report Turnazione)", (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
