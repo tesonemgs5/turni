@@ -5,6 +5,7 @@ import { ordineAttivo, impostaOrdineAttivo, posDaRiga, colonnePosizione, payload
 import { stessoHexColore, calcolaOrdineModelli, calcolaOrdineVisuale, classificaFasciaOrariaModello, calcolaOrdineRiordinoFasce } from "./26-ordine-modelli";
 import { calcolaAllineamentoColori } from "./13-allinea-colori";
 import { impostaInclusioneModelloReport } from "./27-report-modelli";
+import { meseCorrenteReport, statoInizialeMeseReport } from "./28-periodo-report";
 import { widgetDisponibile, inviaAlWidget, descriviStatoWidget } from "./17-widget";
 import { scaricaFileTesto } from "./18-scarica-file";
 import { fasceIndennitaDi, pulsantiFasciaDi, minutiPerFasceEvento, tariffaOraria } from "./24-fasce-indennita";
@@ -753,23 +754,63 @@ export function useAppCore(session){
     setReportInterval(v);
     try{ localStorage.setItem('reportInterval', v); }catch(e){}
   }
-  // Mese selezionato per il report (persistente su localStorage, come
-  // syncMode sopra): prima "1 mese" usava sempre new Date(), quindi il
-  // report mostrava sempre il mese corrente e "dimenticava" la scelta ad
-  // ogni uscita dall'app. Ora resta fissato al mese scelto finché l'utente
-  // non lo cambia di nuovo, indipendentemente da quando riapre l'app.
-  const [reportMeseSel, setReportMeseSel] = useState(()=>{
+  // Il mese corrente avanza automaticamente; una scelta manuale resta fissa.
+  const [reportMeseStato, setReportMeseStato] = useState(()=>{
     try{
-      const salvato = localStorage.getItem('reportMeseSel');
-      if(salvato){ const [y,m]=salvato.split("-").map(Number); if(y&&m) return {anno:y,mese:m}; }
+      return statoInizialeMeseReport(
+        localStorage.getItem('reportMeseSel'),
+        localStorage.getItem('reportMeseSegueCorrente'),
+      );
     }catch(e){}
-    const now = new Date();
-    return { anno: now.getFullYear(), mese: now.getMonth()+1 }; // mese 1-12
+    return statoInizialeMeseReport(null, null);
   });
+  const reportMeseSel = reportMeseStato.mese;
+  const reportMeseSegueCorrente = reportMeseStato.segueCorrente;
+  function setReportMeseSel(valore){
+    const mese = typeof valore==="function" ? valore(reportMeseSel) : valore;
+    setReportMeseStato({mese, segueCorrente:false});
+    try{
+      localStorage.setItem('reportMeseSel', `${mese.anno}-${mese.mese}`);
+      localStorage.setItem('reportMeseSegueCorrente', "0");
+    }catch(e){}
+  }
   function selezionaReportMese(anno, mese){
     setReportMeseSel({anno, mese});
-    try{ localStorage.setItem('reportMeseSel', `${anno}-${mese}`); }catch(e){}
   }
+  useEffect(()=>{
+    try{
+      localStorage.setItem('reportMeseSegueCorrente', reportMeseSegueCorrente ? "1" : "0");
+      if(reportMeseSegueCorrente) localStorage.setItem('reportMeseSel', `${reportMeseSel.anno}-${reportMeseSel.mese}`);
+    }catch(e){}
+    if(!reportMeseSegueCorrente) return undefined;
+    let timer;
+    const aggiornaMese = ()=>{
+      const corrente = meseCorrenteReport();
+      setReportMeseStato(prev=>{
+        if(!prev.segueCorrente || (prev.mese.anno===corrente.anno && prev.mese.mese===corrente.mese)) return prev;
+        return {...prev, mese:corrente};
+      });
+    };
+    const pianificaAggiornamento = ()=>{
+      const now = new Date();
+      const mezzanotte = new Date(now.getFullYear(), now.getMonth(), now.getDate()+1, 0, 0, 1);
+      timer = window.setTimeout(()=>{
+        aggiornaMese();
+        pianificaAggiornamento();
+      }, mezzanotte.getTime()-now.getTime());
+    };
+    const aggiornaSeVisibile = ()=>{
+      if(document.visibilityState==="visible") aggiornaMese();
+    };
+    pianificaAggiornamento();
+    window.addEventListener("focus", aggiornaMese);
+    document.addEventListener("visibilitychange", aggiornaSeVisibile);
+    return ()=>{
+      window.clearTimeout(timer);
+      window.removeEventListener("focus", aggiornaMese);
+      document.removeEventListener("visibilitychange", aggiornaSeVisibile);
+    };
+  }, [reportMeseSegueCorrente, reportMeseSel.anno, reportMeseSel.mese]);
   const [showMeseReportPicker, setShowMeseReportPicker] = useState(false);
   const [reportDateFrom, setReportDateFrom] = useState(()=>{
     try{ return localStorage.getItem('reportDateFrom')||""; }catch(e){ return ""; }
