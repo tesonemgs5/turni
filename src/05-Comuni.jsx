@@ -3278,36 +3278,133 @@ function SottomenuLibero({T, accent, sm, perGruppoSm, perCollGruppoSm={}, valore
 }
 
 
-// Periodo PERSONALIZZATO di un singolo report (es. Piano incentivante): da / a. Senza periodo vale quello scelto in alto.
+// Periodo PERSONALIZZATO di un singolo report: mese, anno oppure dal/al (con «Al = sempre oggi») + periodi preferiti.
+// Senza periodo vale quello scelto in alto.
+const _MESI_IT = ["Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno","Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"];
+const _p2 = (n)=>String(n).padStart(2,"0");
+const _oggiKey = ()=>{ const t=new Date(); return `${t.getFullYear()}-${_p2(t.getMonth()+1)}-${_p2(t.getDate())}`; };
+const _fmtD = (d)=>d ? d.split("-").reverse().join("/") : "";
+function _leggiPreferiti(){ try{ const l=JSON.parse(localStorage.getItem("periodiPreferiti")||"[]"); return Array.isArray(l)?l:[]; }catch(e){ return []; } }
+function _salvaPreferiti(l){ try{ localStorage.setItem("periodiPreferiti", JSON.stringify(l)); }catch(e){} }
+function _etichettaPeriodo(iv){
+  if(!iv) return "";
+  if(iv.tipo==="mese") return _MESI_IT[iv.mese-1]+" "+iv.anno;
+  if(iv.tipo==="anno") return String(iv.anno);
+  return _fmtD(iv.from)+" – "+(iv.toOggi?"oggi":_fmtD(iv.to));
+}
 export function PeriodoReportButton({T, accent, intervallo, labelGlobale, onChange}){
+  const adesso = new Date();
   const [aperto, setAperto] = useState(false);
+  const [tipo, setTipo] = useState("date");
+  const [mese, setMese] = useState(adesso.getMonth()+1);
+  const [anno, setAnno] = useState(adesso.getFullYear());
   const [da, setDa] = useState("");
   const [a, setA] = useState("");
-  const fmt = (d)=>d ? d.split("-").reverse().join("/") : "";
+  const [toOggi, setToOggi] = useState(false);
+  const [preferiti, setPreferiti] = useState(_leggiPreferiti);
+  const [nomePref, setNomePref] = useState(null);
   const attivo = !!(intervallo && intervallo.from && intervallo.to);
-  const valido = !!da && !!a && da<=a;
+  const oggi = _oggiKey();
+  const ivCorrente = ()=>{
+    if(tipo==="mese") return {tipo, mese, anno, from:`${anno}-${_p2(mese)}-01`, to:`${anno}-${_p2(mese)}-${_p2(new Date(anno,mese,0).getDate())}`};
+    if(tipo==="anno") return {tipo, anno, from:`${anno}-01-01`, to:`${anno}-12-31`};
+    return toOggi ? {tipo:"date", from:da, to:oggi, toOggi:true} : {tipo:"date", from:da, to:a};
+  };
+  const valido = tipo==="date" ? (!!da && (toOggi ? da<=oggi : (!!a && da<=a))) : (anno>=2000 && anno<=2100);
+  function apri(){
+    const iv = intervallo||{};
+    setTipo(iv.tipo||"date");
+    setMese(iv.mese||adesso.getMonth()+1); setAnno(iv.anno||adesso.getFullYear());
+    setDa(iv.tipo==="mese"||iv.tipo==="anno" ? "" : (iv.from||"")); setA(iv.tipo==="mese"||iv.tipo==="anno" ? "" : (iv.to||""));
+    setToOggi(!!iv.toOggi); setNomePref(null); setPreferiti(_leggiPreferiti()); setAperto(true);
+  }
+  function applicaPreferito(p){
+    const iv = p.iv.toOggi ? {...p.iv, to:oggi} : p.iv;
+    onChange(iv); setAperto(false);
+  }
+  function salvaPreferito(){
+    const iv = ivCorrente();
+    const nome = (nomePref||"").trim() || _etichettaPeriodo(iv);
+    const nuovi = [...preferiti, {id:"pp"+Date.now().toString(36), nome, iv}];
+    setPreferiti(nuovi); _salvaPreferiti(nuovi); setNomePref(null);
+  }
+  function eliminaPreferito(id){ const nuovi = preferiti.filter(p=>p.id!==id); setPreferiti(nuovi); _salvaPreferiti(nuovi); }
+  const campo = {background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 10px",color:T.text,fontSize:14,outline:"none"};
+  const tab = (k,lab)=>(
+    <button key={k} onClick={()=>setTipo(k)}
+      style={{flex:1,padding:"8px 0",borderRadius:10,border:`1px solid ${tipo===k?accent:T.border}`,background:tipo===k?accent:T.s2,
+        color:tipo===k?getContrastTextColor(accent):T.text,fontWeight:800,fontSize:12,cursor:"pointer"}}>{lab}</button>
+  );
   return (
     <>
-      <button onClick={()=>{setDa(intervallo?.from||"");setA(intervallo?.to||"");setAperto(true);}}
+      <button onClick={apri}
         style={{display:"flex",alignItems:"center",gap:6,background:"#ffffff",border:`1px solid ${attivo?accent:T.border}`,
           borderRadius:20,padding:"6px 12px",fontSize:14,fontWeight:700,color:"#0f172a",cursor:"pointer"}}>
-        📅 {attivo ? `${fmt(intervallo.from)} – ${fmt(intervallo.to)}` : "Periodo"}
+        📅 {attivo ? _etichettaPeriodo(intervallo) : "Periodo"}
       </button>
       {aperto&&(
         <div onClick={()=>setAperto(false)} style={{position:"fixed",inset:0,zIndex:1000,background:"rgba(0,0,0,0.45)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-          <div onClick={e=>e.stopPropagation()} style={{background:T.surface,borderRadius:16,padding:18,width:"100%",maxWidth:380,display:"flex",flexDirection:"column",gap:12}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:T.surface,borderRadius:16,padding:18,width:"100%",maxWidth:380,maxHeight:"90vh",overflowY:"auto",display:"flex",flexDirection:"column",gap:12}}>
             <div style={{fontSize:16,fontWeight:900,color:T.text}}>Periodo di questo report</div>
             <div style={{fontSize:12,color:T.sub}}>Vale solo per questo report. Senza periodo vale quello scelto in alto{labelGlobale?` (${labelGlobale})`:""}.</div>
-            <label style={{display:"flex",flexDirection:"column",gap:4,fontSize:12,fontWeight:700,color:T.text}}>Dal
-              <input type="date" value={da} onChange={e=>setDa(e.target.value)} style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 10px",color:T.text,fontSize:14,outline:"none"}}/>
-            </label>
-            <label style={{display:"flex",flexDirection:"column",gap:4,fontSize:12,fontWeight:700,color:T.text}}>Al
-              <input type="date" value={a} onChange={e=>setA(e.target.value)} style={{background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 10px",color:T.text,fontSize:14,outline:"none"}}/>
-            </label>
-            {da&&a&&da>a&&(<div style={{fontSize:12,color:"#dc2626"}}>La data iniziale è dopo quella finale.</div>)}
+
+            {preferiti.length>0&&(
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <div style={{fontSize:11,fontWeight:800,color:T.sub}}>★ PREFERITI</div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                  {preferiti.map(p=>(
+                    <span key={p.id} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"6px 10px",borderRadius:16,background:T.s2,border:`1px solid ${T.border}`,fontSize:12,fontWeight:700,color:T.text}}>
+                      <span onClick={()=>applicaPreferito(p)} style={{cursor:"pointer"}}>{p.nome}{p.iv.toOggi?" · oggi":""}</span>
+                      <span onClick={()=>eliminaPreferito(p.id)} style={{cursor:"pointer",color:T.sub,fontSize:13,lineHeight:1}}>✕</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div style={{display:"flex",gap:6}}>{tab("mese","Mese")}{tab("anno","Anno")}{tab("date","Dal – Al")}</div>
+
+            {tipo==="mese"&&(
+              <div style={{display:"flex",gap:8}}>
+                <select value={mese} onChange={e=>setMese(+e.target.value)} style={{...campo,flex:1}}>
+                  {_MESI_IT.map((m,i)=>(<option key={m} value={i+1}>{m}</option>))}
+                </select>
+                <input type="number" value={anno} onChange={e=>setAnno(+e.target.value)} style={{...campo,width:90}}/>
+              </div>
+            )}
+            {tipo==="anno"&&(
+              <input type="number" value={anno} onChange={e=>setAnno(+e.target.value)} style={campo}/>
+            )}
+            {tipo==="date"&&(
+              <>
+                <label style={{display:"flex",flexDirection:"column",gap:4,fontSize:12,fontWeight:700,color:T.text}}>Dal
+                  <input type="date" value={da} onChange={e=>setDa(e.target.value)} style={campo}/>
+                </label>
+                <label style={{display:"flex",flexDirection:"column",gap:4,fontSize:12,fontWeight:700,color:T.text}}>Al
+                  <input type="date" value={toOggi?oggi:a} disabled={toOggi} onChange={e=>setA(e.target.value)} style={{...campo,opacity:toOggi?0.55:1}}/>
+                </label>
+                <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:700,color:T.text,cursor:"pointer"}}>
+                  <input type="checkbox" checked={toOggi} onChange={e=>setToOggi(e.target.checked)} style={{width:18,height:18}}/>
+                  Al = sempre la data di oggi (si aggiorna da solo)
+                </label>
+                {da&&!toOggi&&a&&da>a&&(<div style={{fontSize:12,color:"#dc2626"}}>La data iniziale è dopo quella finale.</div>)}
+                {da&&toOggi&&da>oggi&&(<div style={{fontSize:12,color:"#dc2626"}}>La data iniziale è nel futuro.</div>)}
+              </>
+            )}
+
+            {nomePref===null ? (
+              <button disabled={!valido} onClick={()=>setNomePref("")}
+                style={{padding:"9px 0",borderRadius:10,border:`1px dashed ${T.border}`,background:"transparent",color:valido?accent:T.sub,fontWeight:700,fontSize:12,cursor:valido?"pointer":"default"}}>☆ Salva questo periodo nei preferiti</button>
+            ) : (
+              <div style={{display:"flex",gap:8}}>
+                <input value={nomePref} autoFocus placeholder={_etichettaPeriodo(ivCorrente())||"Nome preferito"} onChange={e=>setNomePref(e.target.value)} style={{...campo,flex:1,minWidth:0}}/>
+                <button onClick={salvaPreferito} style={{padding:"0 14px",borderRadius:10,border:"none",background:accent,color:getContrastTextColor(accent),fontWeight:800,fontSize:12,cursor:"pointer"}}>Aggiungi</button>
+              </div>
+            )}
+
             <div style={{display:"flex",gap:8}}>
               <button onClick={()=>{onChange(null);setAperto(false);}} style={{flex:1,padding:"10px 0",borderRadius:10,border:`1px solid ${T.border}`,background:T.s2,color:T.text,fontWeight:700,fontSize:12,cursor:"pointer"}}>Usa il periodo generale</button>
-              <button disabled={!valido} onClick={()=>{onChange({from:da,to:a});setAperto(false);}}
+              <button disabled={!valido} onClick={()=>{onChange(ivCorrente());setAperto(false);}}
                 style={{flex:1,padding:"10px 0",borderRadius:10,border:"none",background:valido?accent:T.s2,color:valido?getContrastTextColor(accent):T.sub,fontWeight:800,fontSize:13,cursor:valido?"pointer":"default"}}>Salva</button>
             </div>
           </div>

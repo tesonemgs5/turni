@@ -7240,7 +7240,12 @@ const importsRecenti = useMemo(()=>{
   function getReportRange(cfg){
     // Periodo PERSONALIZZATO di questo report (se impostato): vale al posto di quello scelto in alto.
     const iv = cfg && cfg.intervallo;
-    if(iv && iv.from && iv.to && iv.from<=iv.to) return {from:iv.from, to:iv.to, label:iv.from+" - "+iv.to, personalizzato:true};
+    if(iv && iv.from && (iv.to || iv.toOggi)){
+      // "Al = sempre oggi": la data finale segue il giorno corrente
+      const t = new Date();
+      const ivTo = iv.toOggi ? `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,"0")}-${String(t.getDate()).padStart(2,"0")}` : iv.to;
+      if(iv.from<=ivTo) return {from:iv.from, to:ivTo, label:iv.from+" - "+(iv.toOggi?"oggi":ivTo), personalizzato:true};
+    }
     if(reportInterval==="mese"){
       const y=reportMeseSel.anno, mIdx=reportMeseSel.mese-1; // mIdx 0-based per daysInMonth/MONTHS
       const from=`${y}-${String(mIdx+1).padStart(2,"0")}-01`;
