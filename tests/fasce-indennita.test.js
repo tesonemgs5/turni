@@ -44,3 +44,14 @@ test("la notte tra sabato e domenica resta notturno-festiva", () => {
   assert.equal(risultato.notturno_festivo, 480);
   assert.equal(risultato.infrasettimanale, 0);
 });
+
+test("le notti adiacenti si possono togliere solo dalla fascia infrasettimanale, senza toccare le altre", () => {
+  const fasce = FASCE_INDENNITA_DEFAULT.map(f => f.key === "infrasettimanale" ? { ...f, infPrima: false } : f);
+  const r = minutiPerFasceEvento({
+    dateKey: "2026-10-20", m1: 22 * 60, m2raw: 6 * 60, fasce, pulsanti: PULSANTI_DEFAULT,
+    eFest: () => false, eFesta: data => data === festaInfrasettimanale,
+  });
+  // sera prima (22→24) esce dall'infrasettimanale; la mattina dopo (00→06) resta al 100%
+  assert.equal(r.infrasettimanale, 360);
+  assert.equal(r.notturno_festivo, 120);
+});

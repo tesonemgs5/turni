@@ -96,7 +96,11 @@ export function minutiPerFasceEvento({ dateKey, m1, m2raw, fasce, pulsanti, eFes
   const iv = fasce.map(f=>{
     let s = orarioInMinuti(f.da), e = orarioInMinuti(f.a);
     if(s===0 && e===0) e = 24*60;      // vecchio «00:00 → 00:00» = tutta la giornata (ora si scrive 00:00 → 24:00)
-    return { key:f.key, s, e, giorni:f.giorni||[], modo:f.modo||"e" };
+    // vigilia / dopo / infNotte per-fascia (se non impostati valgono quelli del pulsante FESTIVO)
+    return { key:f.key, s, e, giorni:f.giorni||[], modo:f.modo||"e",
+      vig: f.vigilia===undefined ? oVig : !!f.vigilia, dopo: f.dopo===undefined ? oDopo : !!f.dopo,
+      infP: f.infPrima===undefined ? (f.infNotte===undefined ? oInfNotte : !!f.infNotte) : !!f.infPrima,
+      infD: f.infDopo===undefined ? (f.infNotte===undefined ? oInfNotte : !!f.infNotte) : !!f.infDopo };
   }).filter(x=>x.s!==null && x.e!==null);
   // Orario del NOTTURNO (modificabile nel pulsante NOTTURNO; di partenza 22:00 → 06:00)
   const pNot = (pulsanti||[]).find(x=>x && x.cod==="not");
@@ -108,25 +112,26 @@ export function minutiPerFasceEvento({ dateKey, m1, m2raw, fasce, pulsanti, eFes
     const md = t % (24*60);
     const notte = nottePassaMezzanotte ? (md>=nS || md<nE) : (md>=nS && md<nE);
     const sera = nottePassaMezzanotte ? (md>=nS ? di : di-1) : di;   // giorno in cui è iniziata la notte
-    let fes = fest[di];
-    if(notte && nottePassaMezzanotte){
-      if(md>=nS) fes = fest[di] || (oVig && fest[di+1]);          // sera: festivo se lo è il giorno, o la sera prima del festivo
-      else       fes = fest[di] || (oDopo && fest[di-1]);         // mattina: festivo se lo è il giorno, o la mattina dopo il festivo
-    }
-    const att = {
-      dow: DOW[dow[di]],
-      not: notte,
-      fes,
-      fer: !fes,
-      inf: (festaArr[di] && dow[di]!==0) || (oInfNotte && notte && nottePassaMezzanotte && (
-        (md>=nS && festaArr[di+1] && dow[di+1]!==0) ||
-        (md<nE && festaArr[di-1] && dow[di-1]!==0)
-      )),
-      custom: customDi[di],
-    };
     for(const x of iv){
       const dentro = x.s<x.e ? (md>=x.s && md<x.e) : x.s>x.e ? (md>=x.s || md<x.e) : false; // inizio = fine: nessun minuto
-      if(dentro && combacia(x.giorni, att, x.modo)){ out[x.key]++; break; }
+      if(!dentro) continue;
+      let fes = fest[di];
+      if(notte && nottePassaMezzanotte){
+        if(md>=nS) fes = fest[di] || (x.vig && fest[di+1]);          // sera: festivo se lo è il giorno, o la sera prima del festivo
+        else       fes = fest[di] || (x.dopo && fest[di-1]);         // mattina: festivo se lo è il giorno, o la mattina dopo il festivo
+      }
+      const att = {
+        dow: DOW[dow[di]],
+        not: notte,
+        fes,
+        fer: !fes,
+        inf: (festaArr[di] && dow[di]!==0) || (notte && nottePassaMezzanotte && (
+          (x.infP && md>=nS && festaArr[di+1] && dow[di+1]!==0) ||
+          (x.infD && md<nE && festaArr[di-1] && dow[di-1]!==0)
+        )),
+        custom: customDi[di],
+      };
+      if(combacia(x.giorni, att, x.modo)){ out[x.key]++; break; }
     }
   }
   return out;

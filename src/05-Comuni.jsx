@@ -1613,6 +1613,44 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
               );
             })}
           </div>
+          {(()=>{
+            const g=f.giorni||[], haFes=g.includes("fes"), haInf=g.includes("inf"), haNot=g.includes("not");
+            if(!haFes && !haInf) return null;
+            const pF=pulsanti.find(p=>p.cod==="fes")||{}, pN=pulsanti.find(p=>p.cod==="not")||{};
+            const nDa=pN.da||"22:00", nA=pN.a||"06:00";
+            const gl = pF.infNotte!==false;
+            const vig = f.vigilia===undefined ? pF.vigilia!==false : !!f.vigilia;
+            const dopo = f.dopo===undefined ? pF.dopo!==false : !!f.dopo;
+            const infP = f.infPrima===undefined ? (f.infNotte===undefined ? gl : !!f.infNotte) : !!f.infPrima;
+            const infD = f.infDopo===undefined ? (f.infNotte===undefined ? gl : !!f.infNotte) : !!f.infDopo;
+            const oNot = haNot && f.modo==="o";
+            const parti=[]; let pastiglie=[];
+            if(haInf){
+              if(infP) parti.push(`Notte prima ${nDa}→24:00`);
+              parti.push("Infrasettimanale 00:00→24:00");
+              if(infD) parti.push(`Notte dopo 00:00→${nA}`);
+              pastiglie=[["infPrima",`Notte prima ${nDa}→24:00`,infP],["infDopo",`Notte dopo 00:00→${nA}`,infD]];
+            } else if(oNot){
+              parti.push(`Ogni notte ${nDa}→${nA}`,"Festivo 00:00→24:00");
+            } else {
+              if(vig) parti.push(`Sera prima ${nDa}→24:00`);
+              parti.push(haNot ? `Festivo 00:00→${nA} e ${nDa}→24:00` : "Festivo 00:00→24:00");
+              if(dopo) parti.push(`Mattina dopo 00:00→${nA}`);
+              pastiglie=[["vigilia",`Sera prima ${nDa}→24:00`,vig],["dopo",`Mattina dopo 00:00→${nA}`,dopo]];
+            }
+            const filtro = (f.da!=="00:00"||f.a!=="24:00") ? ` · solo ${f.da}→${f.a}` : "";
+            return (
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <div style={{fontSize:11,color:T.sub}}><b style={{color:T.text}}>Vale:</b> {parti.join(" · ")}{filtro}</div>
+                {pastiglie.length>0&&(<div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                  {pastiglie.map(([k,lab,on])=>(
+                    <span key={k} onClick={()=>patchFascia(f.key,{[k]:!on})}
+                      style={{cursor:"pointer",fontSize:11,fontWeight:700,padding:"4px 9px",borderRadius:12,background:on?accent:"transparent",color:on?getContrastTextColor(accent):T.sub,border:`1px solid ${on?accent:T.border}`}}>{on?"✓ ":""}{lab}</span>
+                  ))}
+                </div>)}
+              </div>
+            );
+          })()}
           <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
             <span style={{flex:1}}/>
             <input type="number" value={f.perc??""} placeholder="%" onChange={e=>patchFascia(f.key,{perc:e.target.value})}
