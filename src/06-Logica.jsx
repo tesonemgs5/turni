@@ -994,7 +994,11 @@ export function useAppCore(session){
         const settings = all?.user_settings || null;
         const modelliDb = all?.modelli || [];
         const coloriDb = all?.colori || [];
-        const gruppiDb = all?.gruppi || [];
+        let gruppiDb = all?.gruppi || [];
+        const { data: gruppiCompleti, error: erroreGruppi } = await dbSelectTutto("gruppi_modelli", {
+          matchObj:{ user_id:userId }, orderBy:"sort_order", contesto:"Caricamento gruppi modelli",
+        });
+        if(!erroreGruppi) gruppiDb = gruppiCompleti;
         const rotazioniDb = all?.rotazioni || [];
 
         // Ordino i calendari secondo sort_order (posizione scelta in Impostazioni con <-‘<-“),
@@ -3869,7 +3873,11 @@ export function useAppCore(session){
       {
         const gAttuali = gruppi||[];
         const elimGru = new Set(elimDi("gruppi_modelli"));
-        const grCambiati = (ch.gruppi||[]).filter(r=>!ugualiSync(gAttuali.find(x=>x.id===r.id), mapGruppoDb(r)));
+        const { data:gruppiServer, error:erroreGruppi } = await dbSelectTutto("gruppi_modelli", {
+          matchObj:{ user_id:userId }, orderBy:"sort_order", contesto:"Sincronizzazione gruppi modelli",
+        });
+        if(erroreGruppi) throw erroreGruppi;
+        const grCambiati = (gruppiServer||[]).filter(r=>!ugualiSync(gAttuali.find(x=>x.id===r.id), mapGruppoDb(r)));
         const grEliminati = gAttuali.filter(g=>elimGru.has(String(g.id)));
         if(grCambiati.length>0 || grEliminati.length>0){
           let lista = gAttuali.filter(g=>!elimGru.has(String(g.id)));
@@ -4157,7 +4165,7 @@ export function useAppCore(session){
       })));
       if((gruppi||[]).length>0){
         await scrivi("gruppi_modelli", gruppi.map(g=>({
-          id:g.id, user_id:userId, calendar_id:nn(g.calendarId), ordine:g.ordine, nome:g.nome||"", sort_order:g.sortOrder||0,
+          id:g.id, user_id:userId, calendar_id:nn(g.calendarId), ordine:g.ordine, nome:g.nome||"", sort_order:g.sortOrder||0, ordine_modelli:g.ordineModelli||"manuale",
         })));
       }
       await scrivi("events", evLocali.map(({e,dateKey,cId})=>({
@@ -4891,11 +4899,11 @@ const importsRecenti = useMemo(()=>{
       return aggiungiGruppo(nome, calIdX);
     }
     const ultimo = esistenti.reduce((mx,g)=>Math.max(mx, g.sortOrder||0), ordine==="A" ? BANDA_A : 0);
-    const nuovo = { id:generaIdLocale(), calendarId:cal, ordine, nome:n, sortOrder:ultimo+1000 };
+    const nuovo = { id:generaIdLocale(), calendarId:cal, ordine, nome:n, sortOrder:ultimo+1000, ordineModelli:"manuale" };
     setGruppi(prev=>[...prev, nuovo]);
     await scriviBatchConBackup({
       ops:[{ tipo:"insert", table:"gruppi_modelli",
-        payload:{ id:nuovo.id, user_id:userId, calendar_id:cal, ordine, nome:n, sort_order:nuovo.sortOrder },
+        payload:{ id:nuovo.id, user_id:userId, calendar_id:cal, ordine, nome:n, sort_order:nuovo.sortOrder, ordine_modelli:nuovo.ordineModelli },
         matchObj:null, contesto:"Nuovo gruppo" }],
       contesto:"Nuovo gruppo", ts:new Date().toISOString(), opzioni:{ soloLog:true },
     });
@@ -4914,7 +4922,7 @@ const importsRecenti = useMemo(()=>{
       const miei = prev.filter(m=>m && (m.calendarId||mainCalId)===calIdX);
       if(miei.length===0) return { ok:false };
       const chiavi = ordinaClassiA([...new Set(miei.map(classeModelloA))]);
-      const nuoviGruppi = chiavi.map((k,i)=>({ id:generaIdLocale(), calendarId:calIdX, ordine:"A", nome:k, sortOrder:BANDA_A+(i+1)*1000 }));
+      const nuoviGruppi = chiavi.map((k,i)=>({ id:generaIdLocale(), calendarId:calIdX, ordine:"A", nome:k, sortOrder:BANDA_A+(i+1)*1000, ordineModelli:"manuale" }));
       const idPerClasse = new Map(chiavi.map((k,i)=>[k, nuoviGruppi[i].id]));
       const nuovi = prev.map(m=> (m && (m.calendarId||mainCalId)===calIdX) ? { ...m, gruppoA:idPerClasse.get(classeModelloA(m)) } : m);
       setGruppi(p=>[...p, ...nuoviGruppi]);
@@ -4923,7 +4931,7 @@ const importsRecenti = useMemo(()=>{
       saveToLocalStorage(undefined, undefined, nuovi);
       const ops = [
         ...nuoviGruppi.map(g=>({ tipo:"insert", table:"gruppi_modelli",
-          payload:{ id:g.id, user_id:userId, calendar_id:calIdX, ordine:"A", nome:g.nome, sort_order:g.sortOrder },
+          payload:{ id:g.id, user_id:userId, calendar_id:calIdX, ordine:"A", nome:g.nome, sort_order:g.sortOrder, ordine_modelli:g.ordineModelli },
           matchObj:null, contesto:"Gruppi ordine A" })),
         ...miei.filter(m=>(m.gruppoA||null)!==idPerClasse.get(classeModelloA(m))).map(m=>({ tipo:"update", table:"modelli",
           payload:{ gruppo_a:idPerClasse.get(classeModelloA(m)) }, matchObj:{ id:m.id, user_id:userId }, contesto:"Gruppi ordine A" })),
@@ -4944,6 +4952,18 @@ const importsRecenti = useMemo(()=>{
     await scriviBatchConBackup({
       ops:[{ tipo:"update", table:"gruppi_modelli", payload:{ nome:n }, matchObj:{ id, user_id:userId }, contesto:"Rinomina gruppo" }],
       contesto:"Rinomina gruppo", ts:new Date().toISOString(), opzioni:{ soloLog:true },
+    });
+    return { ok:true };
+  }
+  async function aggiornaOrdineGruppo(id, criterio){
+    if(!["manuale","orario","alfabetico"].includes(criterio)) return { ok:false };
+    const g = (gruppi||[]).find(x=>x.id===id);
+    if(!userId || !g) return { ok:false };
+    if((g.ordineModelli||"manuale")===criterio) return { ok:true };
+    setGruppi(prev=>prev.map(x=>x.id===id ? {...x, ordineModelli:criterio} : x));
+    await scriviBatchConBackup({
+      ops:[{ tipo:"update", table:"gruppi_modelli", payload:{ ordine_modelli:criterio }, matchObj:{ id, user_id:userId }, contesto:"Ordine modelli del gruppo" }],
+      contesto:"Ordine modelli del gruppo", ts:new Date().toISOString(), opzioni:{ soloLog:true },
     });
     return { ok:true };
   }
@@ -6012,7 +6032,7 @@ const importsRecenti = useMemo(()=>{
       salvato_il:adesso
     }));
     // Menu (gruppi a tendina): nome, ordine A/B, calendario e POSIZIONE di ogni menu.
-    const gruppiSnap = (gruppi||[]).map(g=>({ id:g.id, calendar_id:g.calendarId||null, ordine:g.ordine, nome:g.nome||"", sort_order:g.sortOrder||0 }));
+    const gruppiSnap = (gruppi||[]).map(g=>({ id:g.id, calendar_id:g.calendarId||null, ordine:g.ordine, nome:g.nome||"", sort_order:g.sortOrder||0, ordine_modelli:g.ordineModelli||"manuale" }));
     // Fasce automatiche, colori extra, sundayColor e holidayColor
     const fasce = (store.fasceAutomatiche||FASCE_AUTOMATICHE_DEFAULT).map(f=>({...f}));
     const coloriExtraSnap = (coloriExtra||[]).map(c=>({...c}));
@@ -6161,11 +6181,11 @@ const importsRecenti = useMemo(()=>{
       const salvati = new Map(gruppiBackup.map(g=>[g.id,g]));
       gruppiBackup.forEach(g=>{
         const cur = attuali.get(g.id);
-        if(!cur) opsG.push({ tipo:"insert", table:"gruppi_modelli", payload:{ id:g.id, user_id:userId, calendar_id:g.calendar_id||null, ordine:g.ordine, nome:g.nome, sort_order:g.sort_order||0 }, matchObj:null, contesto:"Ripristino menu" });
-        else if(cur.nome!==g.nome || (cur.sortOrder||0)!==(g.sort_order||0)) opsG.push({ tipo:"update", table:"gruppi_modelli", payload:{ nome:g.nome, sort_order:g.sort_order||0 }, matchObj:{ id:g.id, user_id:userId }, contesto:"Ripristino menu" });
+        if(!cur) opsG.push({ tipo:"insert", table:"gruppi_modelli", payload:{ id:g.id, user_id:userId, calendar_id:g.calendar_id||null, ordine:g.ordine, nome:g.nome, sort_order:g.sort_order||0, ordine_modelli:g.ordine_modelli||"manuale" }, matchObj:null, contesto:"Ripristino menu" });
+        else if(cur.nome!==g.nome || (cur.sortOrder||0)!==(g.sort_order||0) || (cur.ordineModelli||"manuale")!==(g.ordine_modelli||"manuale")) opsG.push({ tipo:"update", table:"gruppi_modelli", payload:{ nome:g.nome, sort_order:g.sort_order||0, ordine_modelli:g.ordine_modelli||"manuale" }, matchObj:{ id:g.id, user_id:userId }, contesto:"Ripristino menu" });
       });
       (gruppi||[]).forEach(g=>{ if(!salvati.has(g.id)) opsG.push({ tipo:"delete", table:"gruppi_modelli", payload:null, matchObj:{ id:g.id, user_id:userId }, contesto:"Ripristino menu" }); });
-      setGruppi(gruppiBackup.map(g=>({ id:g.id, calendarId:g.calendar_id||null, ordine:g.ordine==="A"?"A":"B", nome:g.nome||"", sortOrder:g.sort_order||0 })));
+      setGruppi(gruppiBackup.map(g=>mapGruppoDb(g)));
       if(opsG.length>0) await scriviBatchConBackup({ ops:opsG, contesto:"Ripristino menu", ts:new Date().toISOString(), opzioni:{ soloLog:true } });
       gruppiRipristinati = true;
     }
@@ -8352,7 +8372,7 @@ const importsRecenti = useMemo(()=>{
     showAddColorPicker,
     setShowAddColorPicker,
     coloriExtra,
-    gruppi, setGruppi, gruppiDelCalendario, materializzaGruppiA, aggiungiGruppo, rinominaGruppo, eliminaGruppo, spostaModelloInGruppo, spostaModelliInGruppo, spostaGruppo,
+    gruppi, setGruppi, gruppiDelCalendario, materializzaGruppiA, aggiungiGruppo, rinominaGruppo, aggiornaOrdineGruppo, eliminaGruppo, spostaModelloInGruppo, spostaModelliInGruppo, spostaGruppo,
     setColoriExtra,
     autocompleteValori,
     setAutocompleteValori,

@@ -9,7 +9,10 @@ export const colAltra  = ()=> ordineAttivo()==="A" ? "sort_order" : "sort_order_
 // Riga del database -> campi di posizione in memoria.
 export function posDaRiga(r){ return { sortOrder:(r && r[colAttiva()])||0, sortOrderAltro:(r && r[colAltra()])||0, gruppoA:(r && r.gruppo_a)||null, gruppoB:(r && r.gruppo_b)||null }; }
 // Gruppi a tendina (tabella gruppi_modelli): riga del database -> oggetto in memoria, e colonna di appartenenza per ordine.
-export function mapGruppoDb(r){ return { id:r.id, calendarId:r.calendar_id||null, ordine:r.ordine==="A"?"A":"B", nome:r.nome||"", sortOrder:r.sort_order||0 }; }
+export function mapGruppoDb(r){
+  const ordineModelli = ["orario","alfabetico"].includes(r.ordine_modelli) ? r.ordine_modelli : "manuale";
+  return { id:r.id, calendarId:r.calendar_id||null, ordine:r.ordine==="A"?"A":"B", nome:r.nome||"", sortOrder:r.sort_order||0, ordineModelli };
+}
 export const colGruppo = (ordine)=> ordine==="A" ? "gruppo_a" : "gruppo_b";
 // Modello in memoria -> ENTRAMBE le colonne del database.
 export function colonnePosizione(m){

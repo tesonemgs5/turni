@@ -22,6 +22,7 @@ import { ImpostazioniAggiornamenti, inApk } from "./12-avviso-aggiornamento";
 import { QuartineSection } from "./16-QuartineSection";
 import { scaricaFileTesto } from "./18-scarica-file";
 import { classeModelloA, ordinaClassiA, ordinaPerInizio } from "./21-ordine";
+import { ordinaModelliInGruppo } from "./26-ordine-modelli";
 import { BackupPerModelloPulsante, StatoSync } from "./20-backup-modelli";
 import { BackupModelliConfigEStato } from "./22-backup-stato";
 
@@ -94,6 +95,7 @@ export default function VistaModelli({ C }){
   const [mostraRegoleOrdine, setMostraRegoleOrdine] = useState(false); // pannello ℹ️ con le regole di ordine e gruppi
   // Gruppi a scomparsa dell'elenco modelli (solo visualizzazione, per dispositivo)
   const [gruppiChiusi, setGruppiChiusi] = useState(()=>{ try{ return new Set(JSON.parse(localStorage.getItem("turnipm_gruppi_chiusi")||"[]")); }catch(e){ return new Set(); } });
+  const [gruppoOrdineAperto, setGruppoOrdineAperto] = useState(null);
   function toggleGruppoModelli(k){
     setGruppiChiusi(prev=>{ const n=new Set(prev); if(n.has(k)) n.delete(k); else n.add(k);
       try{ localStorage.setItem("turnipm_gruppi_chiusi", JSON.stringify([...n])); }catch(e){} return n; });
@@ -206,7 +208,7 @@ export default function VistaModelli({ C }){
     applicaReportOverrideATuttiGliEventi, totaleTurni,
     setPrevGrid, REPORT_TEMPLATES, calcolaOrdineModelli, updateFascia, session, salvaQuartine, coloriUsatiTutti, riordinaColoriUsati,
   } = C;
-  const { gruppi, gruppiDelCalendario, materializzaGruppiA, aggiungiGruppo, rinominaGruppo, eliminaGruppo, spostaModelloInGruppo, spostaModelliInGruppo, spostaGruppo } = C;
+  const { gruppi, gruppiDelCalendario, materializzaGruppiA, aggiungiGruppo, rinominaGruppo, aggiornaOrdineGruppo, eliminaGruppo, spostaModelloInGruppo, spostaModelliInGruppo, spostaGruppo } = C;
   // Selezione multipla in modalità spostamento (tappa 3): modelli selezionati con il tocco lungo (500 ms).
   // Si azzera uscendo dalla modalità spostamento, cambiando calendario/ordine o scrivendo nella ricerca.
   const [selSpost, setSelSpost] = useState([]);
@@ -482,6 +484,7 @@ export default function VistaModelli({ C }){
           <div><b>Ordine A:</b> il modello nuovo va in coda alla tendina che ha <b>più modelli con lo stesso orario d'inizio</b>; se due tendine pareggiano (o nessuna ha quell'orario) va in fondo all'elenco, in coda all'ultima tendina. Dentro le tendine i modelli stanno dove li metti tu (frecce o trascinamento) e la posizione resta salvata su tutti i dispositivi. Con le tendine automatiche (prima di «↕») vale la regola per nome. <b>Ordine B:</b> il modello va da solo nella tendina della sua fascia, dopo quelli con lo stesso orario.</div>
           <div style={{fontWeight:800,marginTop:8}}>Ordine B (per orario)</div>
           <div>Gruppi veri (MATTINA, POMERIGGIO, TERZO TURNO, NOTTE, H24…): un modello nuovo entra nel gruppo della sua fascia oraria, in fondo ai modelli simili. Puoi creare, rinominare, eliminare e spostare i gruppi; per spostare i modelli: modalità ↑↓, tieni premuto 500 ms per selezionarli, poi «Sposta nel gruppo».</div>
+          <div>Con ↕ accanto alla matita scegli, per ogni gruppo, l'ordine manuale, per orario o alfabetico. La scelta si sincronizza con gli altri dispositivi.</div>
           <div style={{fontWeight:800,marginTop:8}}>Supabase</div>
           <div>Il database salva titolo, tipo, orari, posizione nei due ordini e il gruppo di ogni ordine (A e B), uguali su tutti i dispositivi.</div>
         </div>
@@ -574,9 +577,13 @@ export default function VistaModelli({ C }){
                   // "Blocchi" = i gruppi veri nell'ordine + in fondo il blocco dei modelli senza gruppo.
                   blocchi = [...sezioni, {key:"__SENZA__", gruppo:null, senza:true, modelli:senzaGruppo}];
                 }
-                const ordinati = blocchi.flatMap(b=>b.modelli);
+                const modelliPerBlocco = new Map(blocchi.map(b=>[
+                  b.key,
+                  ordinaModelliInGruppo(b.modelli, b.gruppo ? b.gruppo.ordineModelli||"manuale" : "manuale"),
+                ]));
+                const ordinati = blocchi.flatMap(b=>modelliPerBlocco.get(b.key)||[]);
                 const infoMod = new Map();
-                blocchi.forEach((b,sIdx)=>b.modelli.forEach((m,k)=>infoMod.set(m.id,{lst:b.modelli,k,s:sIdx})));
+                blocchi.forEach((b,sIdx)=>(modelliPerBlocco.get(b.key)||[]).forEach((m,k)=>infoMod.set(m.id,{lst:modelliPerBlocco.get(b.key),k,s:sIdx})));
                 const gestibile = calId!==null && !q && !autoA;
                 // Trascinamento: sullo stesso gruppo = riordino; su un altro gruppo (o sulla sua intestazione) = cambia gruppo;
                 // nella zona "in fondo" = senza gruppo, in fondo. Con la ricerca attiva resta il vecchio riordino semplice.
@@ -606,7 +613,11 @@ export default function VistaModelli({ C }){
                     return;
                   }
                   const b = infoMod.get(dst); if(!b) return;
-                  if(a.lst===b.lst){ await reorderModelli(src, dst, calId); return; }
+                  if(a.lst===b.lst){
+                    const criterio = blocchi[a.s]?.gruppo?.ordineModelli||"manuale";
+                    if(criterio==="manuale") await reorderModelli(src, dst, calId);
+                    return;
+                  }
                   const bl = blocchi[b.s];
                   await spostaModelloInGruppo(src, bl.gruppo ? bl.gruppo.id : null, dst, calId);
                 };
@@ -631,6 +642,7 @@ export default function VistaModelli({ C }){
                   const idxS = sezioni.indexOf(sz);
                   const bersaglio = !!draggingId && dragOverId==="__G:"+sz.key;
                   return (
+                    <>
                     <div data-gruppo-key={gestibile && sz.gruppo ? sz.key : undefined}
                       // PC (mouse): l'intestazione del gruppo accetta il rilascio (evidenziata come sul telefono):
                       // il modello trascinato, o tutti i selezionati, entrano in fondo a quel gruppo (anche se chiuso).
@@ -670,12 +682,31 @@ export default function VistaModelli({ C }){
                             {idxS>0 && <button title="Sposta il gruppo su" onClick={e=>{ e.stopPropagation(); spostaGruppo(gg.id,"up"); }} style={btnPiccolo}>▲</button>}
                             {idxS<sezioni.length-1 && <button title="Sposta il gruppo giù" onClick={e=>{ e.stopPropagation(); spostaGruppo(gg.id,"down"); }} style={btnPiccolo}>▼</button>}
                           </>)}
+                          <button title="Gestisci l'ordine dei modelli in questo gruppo" aria-label={`Gestisci l'ordine di ${sz.label}`}
+                            onClick={e=>{ e.stopPropagation(); setGruppoOrdineAperto(prev=>prev===gg.id?null:gg.id); }} style={btnPiccolo}>↕️</button>
                           <button title="Rinomina gruppo" onClick={e=>{ e.stopPropagation(); setGruppoInRinomina({id:gg.id, testo:gg.nome}); }} style={btnPiccolo}>✏️</button>
                           <button title="Elimina gruppo" onClick={e=>{ e.stopPropagation(); setGruppoDaEliminare(gg.id); }} style={btnPiccolo}>🗑️</button>
                         </>) : null}
                         <span>{sz.modelli.length}</span>
                       </span>
                     </div>
+                    {gg && gruppoOrdineAperto===gg.id && (
+                      <div onClick={e=>e.stopPropagation()}
+                        style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:T.surface,borderBottom:`1px solid ${T.border}`}}>
+                        <label htmlFor={`ordine-gruppo-${gg.id}`} style={{fontSize:12,fontWeight:700,color:T.sub,whiteSpace:"nowrap"}}>Ordine del gruppo</label>
+                        <select id={`ordine-gruppo-${gg.id}`} value={gg.ordineModelli||"manuale"}
+                          onChange={e=>aggiornaOrdineGruppo(gg.id,e.target.value)}
+                          style={{flex:1,minWidth:0,background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,padding:"6px 8px",color:T.text,fontSize:12}}>
+                          <option value="manuale">Manuale (ordine salvato)</option>
+                          <option value="orario">Per orario</option>
+                          <option value="alfabetico">Alfabetico</option>
+                        </select>
+                        <button title="Chiudi" aria-label="Chiudi gestione ordine"
+                          onClick={()=>setGruppoOrdineAperto(null)}
+                          style={{background:"transparent",border:"none",color:T.sub,cursor:"pointer",fontSize:16,padding:"2px 4px"}}>✕</button>
+                      </div>
+                    )}
+                    </>
                   );
                 };
                 const renderModello = (m,i,arr)=>{
@@ -718,8 +749,8 @@ export default function VistaModelli({ C }){
                     // non corrisponde più alla posizione reale tra i modelli del
                     // calendario, quindi uno spostamento sposterebbe il modello
                     // nel posto sbagliato.
-                    onMoveUp={modalitaSpostamento&&!q&&(m.calendarId||mainCalId)===calId&&(inf.k>0||(gestibile&&inf.s>0))?(inf.k>0?()=>moveH24(m.id,"up",calId,inf.lst[inf.k-1].id):()=>spostaModelloInGruppo(m.id, blocchi[inf.s-1].gruppo?blocchi[inf.s-1].gruppo.id:null, null, calId)):null}
-                    onMoveDown={modalitaSpostamento&&!q&&(m.calendarId||mainCalId)===calId&&(inf.k<inf.lst.length-1||(gestibile&&inf.s<blocchi.length-1))?(inf.k<inf.lst.length-1?()=>moveH24(m.id,"down",calId,inf.lst[inf.k+1].id):()=>spostaModelloInGruppo(m.id, blocchi[inf.s+1].gruppo?blocchi[inf.s+1].gruppo.id:null, blocchi[inf.s+1].modelli[0]?blocchi[inf.s+1].modelli[0].id:null, calId)):null}
+                    onMoveUp={modalitaSpostamento&&!q&&(m.calendarId||mainCalId)===calId&&(inf.k>0?(blocchi[inf.s]?.gruppo?.ordineModelli||"manuale")==="manuale":gestibile&&inf.s>0)?(inf.k>0?()=>moveH24(m.id,"up",calId,inf.lst[inf.k-1].id):()=>spostaModelloInGruppo(m.id, blocchi[inf.s-1].gruppo?blocchi[inf.s-1].gruppo.id:null, null, calId)):null}
+                    onMoveDown={modalitaSpostamento&&!q&&(m.calendarId||mainCalId)===calId&&(inf.k<inf.lst.length-1?(blocchi[inf.s]?.gruppo?.ordineModelli||"manuale")==="manuale":gestibile&&inf.s<blocchi.length-1)?(inf.k<inf.lst.length-1?()=>moveH24(m.id,"down",calId,inf.lst[inf.k+1].id):()=>spostaModelloInGruppo(m.id, blocchi[inf.s+1].gruppo?blocchi[inf.s+1].gruppo.id:null, blocchi[inf.s+1].modelli[0]?blocchi[inf.s+1].modelli[0].id:null, calId)):null}
                     // Drag & drop: disponibile solo in modalitaSpostamento, per
                     // spostamenti più ampi rispetto alle frecce ▲▼.
                     isDragging={draggingId===m.id || (!!draggingId && selSpost.includes(draggingId) && selSpost.includes(m.id))}
@@ -821,7 +852,7 @@ export default function VistaModelli({ C }){
                   {sequenza.map(it=> it.tipo==="gruppo" ? (
                     <Fragment key={it.sz.key}>
                       {intestazione(it.sz)}
-                      {!gruppiChiusi.has(it.sz.key) && it.sz.modelli.map(m=>renderModello(m, ordinati.indexOf(m), ordinati))}
+                      {!gruppiChiusi.has(it.sz.key) && (modelliPerBlocco.get(it.sz.key)||[]).map(m=>renderModello(m, ordinati.indexOf(m), ordinati))}
                     </Fragment>
                   ) : renderModello(it.m, ordinati.indexOf(it.m), ordinati))}
                   {calId!==null&&!q&&(

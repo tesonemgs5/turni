@@ -1504,7 +1504,7 @@ export function diffDisposizione(prec, righe, fasce, coloriExtra, sundayCol, hol
   // Menu (gruppi a tendina): nomi e posizione. Se la copia precedente non li conosceva, vale come cambiato.
   let gruppiCambiati = false;
   if (prec && Array.isArray(gruppi)) {
-    const chiave = l => JSON.stringify([...(l || [])].map(g => [g.id, g.calendar_id || null, g.ordine, g.nome, g.sort_order || 0]).sort((x, y) => String(x[0]).localeCompare(String(y[0]))));
+    const chiave = l => JSON.stringify([...(l || [])].map(g => [g.id, g.calendar_id || null, g.ordine, g.nome, g.sort_order || 0, g.ordine_modelli||"manuale"]).sort((x, y) => String(x[0]).localeCompare(String(y[0]))));
     if (!Array.isArray(prec.gruppi) ? gruppi.length > 0 : chiave(prec.gruppi) !== chiave(gruppi)) {
       gruppiCambiati = true; dettagli.push("~ menu (gruppi): nomi o posizione cambiati");
     }
