@@ -6,6 +6,7 @@ import { stessoHexColore, calcolaOrdineModelli, calcolaOrdineVisuale, classifica
 import { calcolaAllineamentoColori } from "./13-allinea-colori";
 import { impostaInclusioneModelloReport } from "./27-report-modelli";
 import { meseCorrenteReport, statoInizialeMeseReport } from "./28-periodo-report";
+import { dataNelPeriodoReport, intervalloPersonalizzatoReport } from "./29-periodo-sottomenu";
 import { widgetDisponibile, inviaAlWidget, descriviStatoWidget } from "./17-widget";
 import { scaricaFileTesto } from "./18-scarica-file";
 import { fasceIndennitaDi, pulsantiFasciaDi, minutiPerFasceEvento, tariffaOraria } from "./24-fasce-indennita";
@@ -7356,6 +7357,18 @@ const importsRecenti = useMemo(()=>{
     // perSottomenuColl[sottomenuId][gruppoKey][modelloId][collega] = {count, dates}
     const perSottomenuColl = {};
     sottomenu.forEach(sm=>{ perSottomenuColl[sm.id] = {}; });
+    const periodiGruppi = new Map();
+    sottomenu.filter(sm=>sm.tipo==="libero").forEach(sm=>{
+      (sm.gruppi||[]).forEach(g=>{
+        const periodo = intervalloPersonalizzatoReport(g.intervallo);
+        if(periodo) periodiGruppi.set(`${sm.id}:${g.key}`, periodo);
+      });
+    });
+    const nelPeriodoGruppo = (dateKey, sottomenuId, gruppoKey)=>{
+      const periodo = periodiGruppi.get(`${sottomenuId}:${gruppoKey}`);
+      return periodo ? dataNelPeriodoReport(dateKey, periodo) : dateKey>=from && dateKey<=to;
+    };
+    const inUnPeriodoGruppo = dateKey=>[...periodiGruppi.values()].some(periodo=>dataNelPeriodoReport(dateKey, periodo));
 
     const passaEv = (e)=>{
       const ov = (reportId ? (e.reportOverrides||{})[reportId] : null)?.stato || null;
@@ -7371,7 +7384,7 @@ const importsRecenti = useMemo(()=>{
         if(sm.tipo!=="libero") return;
         const gruppoKeyEvento = (overrideReportRaw?.sottomenu||{})[sm.id];
         const gruppoKey = gruppoKeyEvento || (e.modelloId ? (sm.assegnazioni||{})[e.modelloId] : null);
-        if(!gruppoKey) return;
+        if(!gruppoKey || !nelPeriodoGruppo(dateKey, sm.id, gruppoKey)) return;
         if(!perSottomenu[sm.id][gruppoKey]) perSottomenu[sm.id][gruppoKey] = {};
         if(!perSottomenu[sm.id][gruppoKey][e.modelloId]) perSottomenu[sm.id][gruppoKey][e.modelloId] = { count:0, dates:[] };
         perSottomenu[sm.id][gruppoKey][e.modelloId].count++;
@@ -7387,7 +7400,8 @@ const importsRecenti = useMemo(()=>{
       });
     };
     for(const [dateKey, calMap] of Object.entries(store.events)){
-      if(dateKey < from || dateKey > to) continue;
+      const nelPeriodoReport = dateKey>=from && dateKey<=to;
+      if(!nelPeriodoReport && !inUnPeriodoGruppo(dateKey)) continue;
       const fuSalta = fuDaSaltare(calMap, passaEv);
       for(const [cid, evts] of Object.entries(calMap)){
         if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
@@ -7401,6 +7415,7 @@ const importsRecenti = useMemo(()=>{
           const fuoriFiltro = overrideReportEvento!=="incluso" && modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId);
           const collegList = splitColleghi(e.collega);
           if(filtraCollega && !collegList.some(c=>c.toUpperCase().includes(filtraCollega))) continue;
+          if(!nelPeriodoReport){ contaSottomenu(e, dateKey, overrideReportRaw); continue; }
           if(fuoriFiltro){ contaSottomenu(e, dateKey, overrideReportRaw); continue; }
 
           result.totale++;
@@ -7459,6 +7474,18 @@ const importsRecenti = useMemo(()=>{
     sottomenu.forEach(sm=>{ perSottomenu[sm.id] = {}; });
     const perSottomenuColl = {};
     sottomenu.forEach(sm=>{ perSottomenuColl[sm.id] = {}; });
+    const periodiGruppi = new Map();
+    sottomenu.filter(sm=>sm.tipo==="libero").forEach(sm=>{
+      (sm.gruppi||[]).forEach(g=>{
+        const periodo = intervalloPersonalizzatoReport(g.intervallo);
+        if(periodo) periodiGruppi.set(`${sm.id}:${g.key}`, periodo);
+      });
+    });
+    const nelPeriodoGruppo = (dateKey, sottomenuId, gruppoKey)=>{
+      const periodo = periodiGruppi.get(`${sottomenuId}:${gruppoKey}`);
+      return periodo ? dataNelPeriodoReport(dateKey, periodo) : dateKey>=from && dateKey<=to;
+    };
+    const inUnPeriodoGruppo = dateKey=>[...periodiGruppi.values()].some(periodo=>dataNelPeriodoReport(dateKey, periodo));
 
     function minutiEvento(e){
       if(e.allDay) return 24*60; // H24: durata fissa, non ha senso/tIn/tOut
@@ -7477,7 +7504,7 @@ const importsRecenti = useMemo(()=>{
         if(sm.tipo!=="libero" || !e.modelloId) return;
         const gruppoKeyEvento = (overrideReportRaw?.sottomenu||{})[sm.id];
         const gruppoKey = gruppoKeyEvento || (sm.assegnazioni||{})[e.modelloId];
-        if(!gruppoKey) return;
+        if(!gruppoKey || !nelPeriodoGruppo(dateKey, sm.id, gruppoKey)) return;
         if(!perSottomenu[sm.id][gruppoKey]) perSottomenu[sm.id][gruppoKey] = {};
         if(!perSottomenu[sm.id][gruppoKey][e.modelloId]) perSottomenu[sm.id][gruppoKey][e.modelloId] = { minuti:0, dates:[] };
         perSottomenu[sm.id][gruppoKey][e.modelloId].minuti += mins;
@@ -7493,7 +7520,8 @@ const importsRecenti = useMemo(()=>{
       });
     };
     for(const [dateKey, calMap] of Object.entries(store.events)){
-      if(dateKey < from || dateKey > to) continue;
+      const nelPeriodoReport = dateKey>=from && dateKey<=to;
+      if(!nelPeriodoReport && !inUnPeriodoGruppo(dateKey)) continue;
       const fuSalta = fuDaSaltare(calMap, passaEv);
       for(const [cid, evts] of Object.entries(calMap)){
         if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
@@ -7514,6 +7542,7 @@ const importsRecenti = useMemo(()=>{
           // "-PROTRAZIONE A RECUPERO" è un CONSUMO di credito, non un altro
           // turno lavorato: nel totale ore va sottratto, non sommato.
           if(rcGiornata || tipoModelloProtrazione(e.modelloId)==="meno_recupero") mins = -mins;
+          if(!nelPeriodoReport){ contaSottomenu(e, dateKey, overrideReportRaw, mins); continue; }
           if(fuoriFiltro){ contaSottomenu(e, dateKey, overrideReportRaw, mins); continue; }
 
           result.totaleMin += mins;

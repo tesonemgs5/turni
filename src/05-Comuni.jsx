@@ -2,6 +2,7 @@
 import { ElencoModelliTendine, PulsanteOrdineAB } from "./23-tendine-modelli";
 import { fasceIndennitaDi, pulsantiFasciaDi, periodiDi } from "./24-fasce-indennita";
 import { ordineAttivo, minutiInizio } from "./21-ordine";
+import { impostaSelezioneModelliGruppo } from "./29-periodo-sottomenu";
 
 // Ordina le voci di data.perModello:
 // in ordine A (alfabetico) per nome A-Z; in ordine B (orario) per orario d'inizio crescente.
@@ -496,7 +497,7 @@ export function FasceExpand({data, pct1, pct2, T, modelli, accent, cfg}){
   );
 }
 
-export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, modelliOrdinati, accent, fasceAutomatiche, onRename, onUpdateCfg, onGoToModelli}){
+export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, labelGlobale, modelli, modelliOrdinati, accent, fasceAutomatiche, onRename, onUpdateCfg, onGoToModelli}){
   const [editingName, setEditingName] = useState(false);
   const [tmpName, setTmpName] = useState(r.label);
   const pct = totaleTurni>0 ? Math.round((data.totale/totaleTurni)*100) : 0;
@@ -601,7 +602,7 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
         {sottomenu.map((sm,idxSm)=>{
           const isOpen = openSottomenu===sm.id;
           if(sm.tipo==="libero") return (
-            <SottomenuLibero key={sm.id} T={T} accent={accent} sm={sm} perGruppoSm={data.perSottomenu?.[sm.id]||{}} ordineRoot={ordineRoot} perCollGruppoSm={data.perSottomenuColl?.[sm.id]||{}} onMoveBlock={dir=>muoviSottomenu(sm.id,dir)} blockUp={idxSm>0} blockDown={idxSm<sottomenu.length-1}
+            <SottomenuLibero key={sm.id} T={T} accent={accent} sm={sm} labelGlobale={labelGlobale} perGruppoSm={data.perSottomenu?.[sm.id]||{}} ordineRoot={ordineRoot} perCollGruppoSm={data.perSottomenuColl?.[sm.id]||{}} onMoveBlock={dir=>muoviSottomenu(sm.id,dir)} blockUp={idxSm>0} blockDown={idxSm<sottomenu.length-1}
               valore={v=>v.count||0} formatta={n=>String(n)} modelli={modelliOrdinati||modelli} fasceAutomatiche={fasceAutomatiche}
               onPatch={patch=>aggiornaSottomenu(sm.id,patch)} onRemove={()=>rimuoviSottomenu(sm.id)}/>
           );
@@ -841,7 +842,7 @@ export function fmtOreMin(mins){
 // vecchia "Ore per turno" (OrePerTurnoView), che era fissa su 1Â°/2Â° Turno a
 // 6h15 ciascuno, non rinominabile, senza sottomenu e senza modo di togliere
 // le due righe 1Â°/2Â° Turno che non servono per tutti i report.
-export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, modelliOrdinati, accent, fasceAutomatiche, onRename, onUpdateCfg}){
+export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, labelGlobale, modelli, modelliOrdinati, accent, fasceAutomatiche, onRename, onUpdateCfg}){
   const [editingName, setEditingName] = useState(false);
   const [tmpName, setTmpName] = useState(r.label);
   const pct = totaleMinPeriodo>0 ? Math.max(0, Math.min(100, Math.round((data.totaleMin/totaleMinPeriodo)*100))) : 0;
@@ -932,7 +933,7 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
         {sottomenu.map((sm,idxSm)=>{
           const isOpen = openSottomenu===sm.id;
           if(sm.tipo==="libero") return (
-            <SottomenuLibero key={sm.id} T={T} accent={accent} sm={sm} perGruppoSm={data.perSottomenu?.[sm.id]||{}} ordineRoot={ordineRoot} perCollGruppoSm={data.perSottomenuColl?.[sm.id]||{}} onMoveBlock={dir=>muoviSottomenu(sm.id,dir)} blockUp={idxSm>0} blockDown={idxSm<sottomenu.length-1}
+            <SottomenuLibero key={sm.id} T={T} accent={accent} sm={sm} labelGlobale={labelGlobale} perGruppoSm={data.perSottomenu?.[sm.id]||{}} ordineRoot={ordineRoot} perCollGruppoSm={data.perSottomenuColl?.[sm.id]||{}} onMoveBlock={dir=>muoviSottomenu(sm.id,dir)} blockUp={idxSm>0} blockDown={idxSm<sottomenu.length-1}
               valore={v=>v.minuti||0} formatta={fmtOreMin} modelli={modelliOrdinati||modelli} fasceAutomatiche={fasceAutomatiche}
               onPatch={patch=>aggiornaSottomenu(sm.id,patch)} onRemove={()=>rimuoviSottomenu(sm.id)}/>
           );
@@ -3209,7 +3210,7 @@ function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, f
   );
 }
 
-function SottomenuLibero({T, accent, sm, ordineRoot, perGruppoSm, perCollGruppoSm={}, valore, formatta, modelli, fasceAutomatiche, onPatch, onRemove, onMoveBlock, blockUp, blockDown}){
+function SottomenuLibero({T, accent, sm, labelGlobale, ordineRoot, perGruppoSm, perCollGruppoSm={}, valore, formatta, modelli, fasceAutomatiche, onPatch, onRemove, onMoveBlock, blockUp, blockDown}){
   const gruppi = sm.gruppi||[];
   const asseg = sm.assegnazioni||{};
   const [nuovoKey, setNuovoKey] = useState(()=> (gruppi.length===1 && !gruppi[0].label) ? gruppi[0].key : null);
@@ -3242,6 +3243,9 @@ function SottomenuLibero({T, accent, sm, ordineRoot, perGruppoSm, perCollGruppoS
     const next = {...asseg};
     ids.forEach(mid=>{ next[mid]=key; });
     onPatch({assegnazioni:next});
+  }
+  function selezionaTuttiNelGruppo(ids, key, selezionato){
+    onPatch({assegnazioni:impostaSelezioneModelliGruppo(asseg,ids,key,selezionato)});
   }
   function aggiungiGruppo(){
     const key = "g"+Date.now().toString(36);
@@ -3311,12 +3315,21 @@ function SottomenuLibero({T, accent, sm, ordineRoot, perGruppoSm, perCollGruppoS
             {pickerKey===g.key&&(<ScegliTipoFiglio T={T} onScegli={tipo=>aggiungiFiglioGruppo(g,tipo,Object.keys({...Object.fromEntries(Object.entries(asseg).filter(([,k])=>k===g.key)),...(perGruppoSm[g.key]||{})}))}/>)}
             {isOpen&&(
               <div style={{background:T.s2,borderRadius:"0 0 8px 8px",border:`1px solid ${g.color}44`,borderTop:"none",padding:"8px 10px"}}>
-                {assegnati.length>0&&(
-                  <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden",marginBottom:8}}>
-                    <div style={{padding:"6px 8px",background:T.surface,fontSize:10,fontWeight:900,color:T.text,letterSpacing:0.5}}>✓ NEL GRUPPO · {assegnati.length}</div>
-                    {assegnati.map(riga)}
+                <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden",marginBottom:8}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"6px 8px",background:T.surface}}>
+                    <label style={{display:"flex",alignItems:"center",gap:6,fontSize:10,fontWeight:900,color:T.text,letterSpacing:0.5,cursor:"pointer"}}>
+                      <input type="checkbox"
+                        checked={modelli.length===0 ? assegnati.length>0 : assegnati.length===modelli.length}
+                        ref={el=>{if(el) el.indeterminate=assegnati.length>0&&assegnati.length<modelli.length;}}
+                        onChange={e=>selezionaTuttiNelGruppo(modelli.map(m=>m.id),g.key,e.target.checked)}
+                        style={{cursor:"pointer",margin:0}}/>
+                      NEL GRUPPO · {assegnati.length}
+                    </label>
+                    <PeriodoReportButton T={T} accent={accent} intervallo={g.intervallo} labelGlobale={labelGlobale}
+                      onChange={intervallo=>onPatch({gruppi:gruppi.map(x=>x.key===g.key?{...x,intervallo:intervallo||undefined}:x)})}/>
                   </div>
-                )}
+                  {assegnati.map(riga)}
+                </div>
                 {altri.length>0&&(
                   <ElencoModelliTendine chiave={"libero_"+sm.id+"_"+g.key} modelli={altri} renderRiga={riga}
                     onSelezionaGruppo={(ms)=>assegnaMolti(ms.map(x=>x.id), g.key)}

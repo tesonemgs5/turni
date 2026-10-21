@@ -660,7 +660,7 @@ export default function VistaCalendario({ C }){
               </button>
             </div>
             {r.type==="conteggio_turni" && (
-              <ConteggioConfigCard T={T} r={r} cfg={cfg} data={data} totaleTurni={totaleTurni}
+              <ConteggioConfigCard T={T} r={r} cfg={cfg} data={data} totaleTurni={totaleTurni} labelGlobale={range.label}
                 modelli={modelli} modelliOrdinati={modelliOrdinati} accent={accent} fasceAutomatiche={fasceAutomatiche}
                 onRename={label=>renameReport(r.id, label)}
                 onUpdateCfg={newCfg=>updateConteggioConfig(r.id, newCfg)}
@@ -691,7 +691,7 @@ export default function VistaCalendario({ C }){
                 onSaveValoreTicket={()=>saveSettings({valore_ticket:valoreTicket})}/>
             )}
             {r.type==="ore_turno" && (
-              <OreTurnoConfigCard T={T} r={r} cfg={cfg} data={data} totaleMinPeriodo={totaleMinTurni}
+              <OreTurnoConfigCard T={T} r={r} cfg={cfg} data={data} totaleMinPeriodo={totaleMinTurni} labelGlobale={range.label}
                 modelli={modelli} modelliOrdinati={modelliOrdinati} accent={accent} fasceAutomatiche={fasceAutomatiche}
                 onRename={label=>renameReport(r.id, label)}
                 onUpdateCfg={newCfg=>updateConteggioConfig(r.id, newCfg)}/>
