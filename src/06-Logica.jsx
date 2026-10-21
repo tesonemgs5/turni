@@ -935,7 +935,8 @@ export function useAppCore(session){
         } catch(e){ segnalaErroreSoloLog(e, "Controllo versione app all'avvio"); }
 
         const cached = loadFromLocalStorage();
-        if(cached && cached.calendars.length > 0){
+        const calendariCache = Array.isArray(cached?.calendars) ? cached.calendars : [];
+        if(calendariCache.length > 0){
           // Le impostazioni (tema, colori, fasce, festività attive...) NON
           // sono salvate sotto una chiave "impostazioni": saveToLocalStorage
           // le scrive direttamente nella radice del payload (vedi "extra" in
@@ -943,7 +944,7 @@ export function useAppCore(session){
           // mai) le faceva ignorare qui, quindi al primo render si vedevano
           // sempre i default (es. festività di default) finché Supabase non
           // rispondeva e sovrascriveva tutto — il flash che volevamo evitare.
-          setStore(s=>({...s, calendars:cached.calendars, events:cached.events,
+          setStore(s=>({...s, calendars:calendariCache, events:cached.events||{},
             theme: cached.theme ?? s.theme,
             extraHols: cached.extraHols ?? s.extraHols,
             reports: cached.reports ?? s.reports,
@@ -971,13 +972,13 @@ export function useAppCore(session){
           if(cached.indennita !== undefined) setIndennita(cached.indennita||{diurno:"",notturno:"",festivo:"",notturno_festivo:""});
           if(cached.valoreTicket !== undefined) setValoreTicket(cached.valoreTicket||"");
           if(cached.conteggioConfigs !== undefined) setConteggioConfigs(cached.conteggioConfigs||{});
-          const calIdValido = cached.calId && cached.calendars.some(c=>c.id===cached.calId);
-          setCalId(calIdValido ? cached.calId : (cached.calendars[0]?.id||null));
+          const calIdValido = cached.calId && calendariCache.some(c=>c.id===cached.calId);
+          setCalId(calIdValido ? cached.calId : (calendariCache[0]?.id||null));
           setLoading(false);
         }
-        const calIdDaCache = (cached?.calId && cached.calendars.some(c=>c.id===cached.calId))
+        const calIdDaCache = (cached?.calId && calendariCache.some(c=>c.id===cached.calId))
           ? cached.calId
-          : (cached?.calendars?.[0]?.id || null);
+          : (calendariCache[0]?.id || null);
 
         // Una sola chiamata al database: la funzione get_user_data (creata su
         // Supabase) legge le 6 tabelle internamente e restituisce tutto insieme.
