@@ -4,6 +4,7 @@ import { scriviEsitoImport } from "./22-backup-stato";
 import { ordineAttivo, impostaOrdineAttivo, posDaRiga, colonnePosizione, payloadPosCambiate, scambiaOrdini, mapGruppoDb, colGruppo, BANDA_A, classeModelloA, ordinaClassiA, minutiInizio } from "./21-ordine";
 import { stessoHexColore, calcolaOrdineModelli, calcolaOrdineVisuale, classificaFasciaOrariaModello, calcolaOrdineRiordinoFasce } from "./26-ordine-modelli";
 import { calcolaAllineamentoColori } from "./13-allinea-colori";
+import { impostaInclusioneModelloReport, normalizzaInclusioniDaSottomenu } from "./27-report-modelli";
 import { widgetDisponibile, inviaAlWidget, descriviStatoWidget } from "./17-widget";
 import { scaricaFileTesto } from "./18-scarica-file";
 import { fasceIndennitaDi, pulsantiFasciaDi, minutiPerFasceEvento, tariffaOraria } from "./24-fasce-indennita";
@@ -7968,7 +7969,7 @@ const importsRecenti = useMemo(()=>{
 
   function getConteggioConfig(reportId, reportType){
     const saved = conteggioConfigs[reportId];
-    if(saved) return saved;
+    if(saved) return normalizzaInclusioniDaSottomenu(saved);
     if(reportType==="turnazione"){
       return { fasceFiltro:[], modelliEsclusi:[], modelliAggiunti:[] };
     }
@@ -7976,7 +7977,7 @@ const importsRecenti = useMemo(()=>{
   }
 
   function updateConteggioConfig(reportId, cfg){
-    const newCfg = {...conteggioConfigs, [reportId]: cfg};
+    const newCfg = {...conteggioConfigs, [reportId]: normalizzaInclusioniDaSottomenu(cfg)};
     setConteggioConfigs(newCfg);
     saveSettings({conteggio_configs: newCfg});
   }
@@ -7993,28 +7994,17 @@ const importsRecenti = useMemo(()=>{
     Object.entries(scelte).forEach(([rid, sc])=>{
       const r = (store.reports||[]).find(x=>x.id===rid);
       if(!r || !sc) return;
-      const cfg = {...(base[rid] || getConteggioConfig(rid, r.type))};
+      const cfg = {...normalizzaInclusioniDaSottomenu(base[rid] || getConteggioConfig(rid, r.type))};
       if(sc.incluso!==undefined){
-        if(r.type==="turnazione"){
-          const esclusi = cfg.modelliEsclusi||[], aggiunti = cfg.modelliAggiunti||[];
-          const isDefault = isModelloTurnazioneDefault({id, tempo:modello.tempo, inizio:modello.inizio, fine:modello.fine});
-          if(sc.incluso){
-            if(isDefault) cfg.modelliEsclusi = esclusi.filter(x=>x!==id);
-            else cfg.modelliAggiunti = [...new Set([...aggiunti, id])];
-          } else {
-            if(isDefault) cfg.modelliEsclusi = [...new Set([...esclusi, id])];
-            else cfg.modelliAggiunti = aggiunti.filter(x=>x!==id);
-          }
-        } else {
-          const whitelist = (cfg.modelliInclusi||[]).filter(x=>x!=="__nessuno__");
-          const eraNessuno = (cfg.modelliInclusi||[]).includes("__nessuno__");
-          const tuttiIncl = whitelist.length===0 && !eraNessuno; // elenco vuoto = tutti i modelli inclusi
-          if(sc.incluso){
-            if(!tuttiIncl) cfg.modelliInclusi = [...new Set([...whitelist, id])];
-          } else {
-            const nuova = tuttiIncl ? modelli.filter(mm=>mm.id!==id).map(mm=>mm.id) : whitelist.filter(x=>x!==id);
-            cfg.modelliInclusi = nuova.length===0 ? ["__nessuno__"] : nuova;
-          }
+        const isDefault = isModelloTurnazioneDefault({id, tempo:modello.tempo, inizio:modello.inizio, fine:modello.fine});
+        Object.assign(cfg, impostaInclusioneModelloReport(r.type, cfg, id, sc.incluso, isDefault, modelli.map(mm=>mm.id)));
+        if(!sc.incluso){
+          cfg.sottomenu = (cfg.sottomenu||[]).map(sm=>{
+            if(!sm.assegnazioni || !(id in sm.assegnazioni)) return sm;
+            const assegnazioni = {...sm.assegnazioni};
+            delete assegnazioni[id];
+            return {...sm, assegnazioni};
+          });
         }
         toccato = true;
       }

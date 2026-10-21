@@ -2,6 +2,7 @@
 import { ElencoModelliTendine, PulsanteOrdineAB } from "./23-tendine-modelli";
 import { fasceIndennitaDi, pulsantiFasciaDi, periodiDi } from "./24-fasce-indennita";
 import { ordineAttivo, minutiInizio } from "./21-ordine";
+import { aggiungiAssegnatiAlReport } from "./27-report-modelli";
 
 // Ordina le voci di data.perModello:
 // in ordine A (alfabetico) per nome A-Z; in ordine B (orario) per orario d'inizio crescente.
@@ -535,7 +536,8 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, modelli, mode
   }
   const ordineRoot = (cfg&&cfg.ordine) || ordineAttivo();
   function aggiornaSottomenu(id, patch){
-    onUpdateCfg({...cfg, sottomenu: sottomenu.map(sm=>sm.id===id?{...sm,...patch}:sm)});
+    const base = patch.assegnazioni ? aggiungiAssegnatiAlReport(cfg, patch.assegnazioni) : cfg;
+    onUpdateCfg({...base, sottomenu: sottomenu.map(sm=>sm.id===id?{...sm,...patch}:sm)});
   }
   function muoviSottomenu(id, dir){
     const i = sottomenu.findIndex(x=>x.id===id), j = i+dir;
@@ -878,7 +880,8 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, modelli, 
   }
   const ordineRoot = (cfg&&cfg.ordine) || ordineAttivo();
   function aggiornaSottomenu(id, patch){
-    onUpdateCfg({...cfg, sottomenu: sottomenu.map(sm=>sm.id===id?{...sm,...patch}:sm)});
+    const base = patch.assegnazioni ? aggiungiAssegnatiAlReport(cfg, patch.assegnazioni) : cfg;
+    onUpdateCfg({...base, sottomenu: sottomenu.map(sm=>sm.id===id?{...sm,...patch}:sm)});
   }
   function muoviSottomenu(id, dir){
     const i = sottomenu.findIndex(x=>x.id===id), j = i+dir;
@@ -3142,7 +3145,7 @@ function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, f
     if(nodo.tipo==="modello"){
       const righe = modelliScope.filter(m=>perMod[m.id]);
       corpo = righe.length===0 ? (<div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"8px 0"}}>Nessun turno nel periodo</div>)
-        : righe.map(m=>riga("m"+m.id, (m.label||m.titolo), valore(perMod[m.id]), perMod[m.id].dates, m?.coloreCustom||getColorByTime(m.inizio,fasceAutomatiche)));
+        : righe.map(m=>riga("m"+m.id, `${m.label||m.titolo}${m.tempo!=="h24"&&m.inizio?` · ${m.inizio}→${fineModelloRicerca(m)}`:""}`, valore(perMod[m.id]), perMod[m.id].dates, m?.coloreCustom||getColorByTime(m.inizio,fasceAutomatiche)));
     } else if(nodo.tipo==="collega"){
       const agg = {};
       scope.forEach(mid=>{ Object.entries((perColl||{})[mid]||{}).forEach(([nome,info])=>{
@@ -3162,7 +3165,10 @@ function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, f
                 <div key={m.id} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 6px",borderRadius:6,background:T.s2,marginBottom:3}}>
                   <input type="checkbox" checked={(nodo.modelli||[]).includes(m.id)} onChange={()=>toggleModello(m.id)} style={{cursor:"pointer",flexShrink:0}}/>
                   <div style={{width:8,height:8,borderRadius:"50%",background:c,flexShrink:0}}/>
-                  <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>{m.label||m.titolo}</span>
+                  <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>
+                    {m.label||m.titolo}
+                    {m.tempo!=="h24"&&m.inizio&&(<span style={{opacity:0.7,fontWeight:500,marginLeft:5}}>{m.inizio}→{fineModelloRicerca(m)}</span>)}
+                  </span>
                   <span style={{fontSize:13,fontWeight:800,color:T.text}}>{formatta(perMod[m.id]?valore(perMod[m.id]):0)}</span>
                 </div>
               );

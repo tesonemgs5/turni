@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "test": "node --test",
-    "lint": "eslint api/sheets.js src/15-quartine.js src/24-fasce-indennita.js src/25-calcoli-rotazione.js src/26-ordine-modelli.js tests",
+    "lint": "eslint api/sheets.js src/15-quartine.js src/24-fasce-indennita.js src/25-calcoli-rotazione.js src/26-ordine-modelli.js src/27-report-modelli.js tests",
     "preview": "vite preview",
     "electron:start": "electron .",
     "electron:build": "vite build && electron-builder",

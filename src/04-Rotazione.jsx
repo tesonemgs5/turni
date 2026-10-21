@@ -2,6 +2,7 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { ElencoModelliTendine, PulsanteOrdineAB } from "./23-tendine-modelli";
 import { ColorPickerModal, nomeDelColore as nomeDelColoreShared, ConfermaEliminazione, preparaFixCursore, SmartTimeInput } from "./05-Comuni";
 import { oraInMinuti, calcolaAnteprimaReperibilita, costruisciMatriceGriglia } from "./25-calcoli-rotazione";
+import { impostaInclusioneModelloReport, statoInclusioneModelloReport } from "./27-report-modelli";
 
 export { oraInMinuti, calcolaAnteprimaReperibilita, costruisciMatriceGriglia } from "./25-calcoli-rotazione";
 
@@ -2264,31 +2265,29 @@ export function ModelForm({
         function statoInclusione(r){
           if(!form.id && pend(r).incluso !== undefined) return pend(r).incluso;
           const cfg = getConteggioConfig(r.id, r.type);
-          if(r.type === "turnazione"){
-            const esclusi = cfg.modelliEsclusi || [];
-            const aggiunti = cfg.modelliAggiunti || [];
-            const isDefault = isModelloTurnazioneDefault(modelloFittizio);
-            if(!form.id) return isDefault; // modello nuovo, non ancora salvato: nessun id da cercare nelle liste
-            return (isDefault && !esclusi.includes(form.id)) || aggiunti.includes(form.id);
-          }
-          const whitelist = cfg.modelliInclusi || [];
-          if(!form.id) return whitelist.length === 0;
-          return whitelist.length === 0 || whitelist.includes(form.id);
+          const id = form.id || "__nuovo_modello__";
+          return statoInclusioneModelloReport(r.type, cfg, id, isModelloTurnazioneDefault(modelloFittizio));
         }
 
         // Incluso / Escluso: stessa funzione per modello nuovo (si applica al salvataggio) e salvato (subito).
         function setInclusione(r, incluso){ patch(r, { incluso }); }
 
         function setSottomenuGruppo(r, sm, gruppoKey){
-          if(!form.id){ patch(r, { sottomenu: { [sm.id]: gruppoKey || null } }); return; }
+          if(!form.id){ patch(r, { incluso:!!gruppoKey, sottomenu: { [sm.id]: gruppoKey || null } }); return; }
           const cfg = getConteggioConfig(r.id, r.type);
-          const nuoviSottomenu = (cfg.sottomenu || []).map(s => {
+          let aggiornato = {...cfg, sottomenu:(cfg.sottomenu || []).map(s => {
             if(s.id !== sm.id) return s;
             const assegnazioni = {...(s.assegnazioni || {})};
             if(gruppoKey) assegnazioni[form.id] = gruppoKey; else delete assegnazioni[form.id];
             return {...s, assegnazioni};
-          });
-          updateConteggioConfig(r.id, {...cfg, sottomenu: nuoviSottomenu});
+          })};
+          if(gruppoKey){
+            aggiornato = impostaInclusioneModelloReport(
+              r.type, aggiornato, form.id, true, isModelloTurnazioneDefault(modelloFittizio),
+              (modelli||[]).map(m=>m.id),
+            );
+          }
+          updateConteggioConfig(r.id, aggiornato);
         }
 
         return (
@@ -2310,7 +2309,7 @@ export function ModelForm({
                   const incluso = statoInclusione(r);
                   const espanso = reportEspanso === r.id;
                   const cfgReport = getConteggioConfig(r.id, r.type);
-                  const sottomenuLiberi = (cfgReport.sottomenu || []).filter(sm => sm.tipo === "libero" && (sm.gruppi || []).length > 0);
+                  const sottomenuReport = cfgReport.sottomenu || [];
                   const smEspanso = sottomenuEspanso[r.id] || null;
                   return (
                     <div key={r.id} style={{ background: incluso ? accent + "1f" : T.s2, borderRadius: 10, overflow: "hidden" }}>
@@ -2363,24 +2362,28 @@ export function ModelForm({
                               </>
                             );
                           })()}
-                          {sottomenuLiberi.map(sm => {
+                          {sottomenuReport.map(sm => {
                             const smAperto = smEspanso === sm.id;
                             const gruppoScelto = form.id ? (sm.assegnazioni || {})[form.id] || "" : ((pend(r).sottomenu || {})[sm.id] || "");
+                            const gestisceGruppi = sm.tipo === "libero" && (sm.gruppi || []).length > 0;
                             return (
                               <div key={sm.id} style={{ background: T.surface, borderRadius: 8, overflow: "hidden" }}>
                                 <button type="button" onClick={() => setSottomenuEspanso(prev => ({ ...prev, [r.id]: smAperto ? null : sm.id }))}
                                   style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
                                     width: "100%", padding: "7px 10px", border: "none", cursor: "pointer",
                                     background: "transparent", textAlign: "left" }}>
-                                  <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{sm.nome || "Sottomenu"}</span>
+                                  <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>
+                                    {sm.nome || "Sottomenu"}
+                                    {sm.tipo !== "libero" && <span style={{fontWeight:500,color:T.sub}}> · {sm.tipo==="modello"?"Per modello":sm.tipo==="collega"?"Per collega":sm.tipo}</span>}
+                                  </span>
                                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                                     <span style={{ fontSize: 10, fontWeight: 800, color: gruppoScelto ? accent : T.sub }}>
-                                      {(sm.gruppi || []).find(g => g.key === gruppoScelto)?.label || "—"}
+                                      {gestisceGruppi ? ((sm.gruppi || []).find(g => g.key === gruppoScelto)?.label || "Escluso") : "Automatico"}
                                     </span>
                                     <span style={{ fontSize: 10, color: T.sub }}>{smAperto ? "▲" : "▼"}</span>
                                   </div>
                                 </button>
-                                {smAperto && (
+                                {smAperto && gestisceGruppi && (
                                   <div style={{ padding: "0 10px 10px", display: "flex", gap: 6, flexWrap: "wrap" }}>
                                     {(sm.gruppi || []).map(g => (
                                       <button key={g.key} type="button"
@@ -2392,6 +2395,11 @@ export function ModelForm({
                                         {g.label}
                                       </button>
                                     ))}
+                                  </div>
+                                )}
+                                {smAperto && !gestisceGruppi && (
+                                  <div style={{padding:"0 10px 10px",fontSize:10,color:T.sub}}>
+                                    Questo sottomenu segue l’inclusione del report e si aggiorna automaticamente.
                                   </div>
                                 )}
                               </div>
