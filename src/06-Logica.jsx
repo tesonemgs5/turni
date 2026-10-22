@@ -595,12 +595,7 @@ export function useAppCore(session){
   function setModelli(valoreONuovoValore){
     setModelliRaw(prev=>{
       const nuovo = typeof valoreONuovoValore==="function" ? valoreONuovoValore(prev) : valoreONuovoValore;
-      // Se un modello a durata fissa (es. 6h30) ha l'inizio ma non la fine, la fine si ricava dalla durata.
-      const puliti = (nuovo||[]).filter(Boolean).map(m=>{
-        if(m.fine || m.tempo==="h24" || !m.inizio) return m;
-        const f = calcFineModello(m);
-        return f ? {...m, fine:f} : m;
-      });
+      const puliti = (nuovo||[]).filter(Boolean);
       if(puliti.length !== (nuovo||[]).length){
         segnalaErrore(
           { message: `setModelli ha ricevuto ${(nuovo||[]).length - puliti.length} elementi null/undefined: rimossi automaticamente.` },
