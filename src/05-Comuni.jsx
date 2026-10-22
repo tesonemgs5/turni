@@ -3221,12 +3221,21 @@ function ScegliTipoFiglio({T, onScegli}){
     </div>
   );
 }
-function ListaFigli({T, accent, figli, onChange, scope, perMod, perColl, modelli, valore, formatta, fasceAutomatiche, suffisso, ordineEred}){
+function vociMenuRapido(figli, percorso=[], antenati=[]){
+  return figli.flatMap(n=>{
+    const nome=n.nome||(n.tipo==="modello"?"Per modello":n.tipo==="collega"?"Per collega":"Menu");
+    const path=[...antenati,n.id];
+    const voce={id:n.id,path,label:[...percorso,nome].join(" · ")};
+    return [voce,...(n.tipo==="menu"?vociMenuRapido(n.figli||[],[...percorso,nome],path):[])];
+  });
+}
+function ListaFigli({T, accent, figli, onChange, scope, perMod, perColl, modelli, valore, formatta, fasceAutomatiche, suffisso, ordineEred, percorsoRapido=[]}){
   return (
     <div style={{display:"flex",flexDirection:"column",gap:8}}>
       {figli.map((n,i)=>(
         <FiglioMenu key={n.id} T={T} accent={accent} nodo={n} scope={scope} perMod={perMod} perColl={perColl}
           modelli={modelli} valore={valore} formatta={formatta} fasceAutomatiche={fasceAutomatiche} suffisso={suffisso} ordineEred={ordineEred}
+          percorsoRapido={percorsoRapido}
           primo={i===0} ultimo={i===figli.length-1}
           onChange={nn=>onChange(figli.map(x=>x.id===n.id?nn:x))}
           onRemove={()=>onChange(figli.filter(x=>x.id!==n.id))}
@@ -3235,7 +3244,7 @@ function ListaFigli({T, accent, figli, onChange, scope, perMod, perColl, modelli
     </div>
   );
 }
-function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, formatta, fasceAutomatiche, primo, ultimo, onChange, onRemove, onMove, fisso, suffisso, ordineEred}){
+function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, formatta, fasceAutomatiche, primo, ultimo, onChange, onRemove, onMove, fisso, suffisso, ordineEred, percorsoRapido=[]}){
   const ord = nodo.ordine || ordineEred || "A";
   const [aperto,setAperto] = useState(!!nodo.nuovo);
   const [conf,setConf] = useState(false);
@@ -3246,6 +3255,15 @@ function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, f
   const val = _aggregaScope(perMod, scopeNodo, valore);
   const modelliScope = ordinaModelliOrd(modelli.filter(m=>scope.includes(m.id)), ord, m=>perMod[m.id]?valore(perMod[m.id]):0);
   const figli = nodo.figli||[];
+  const percorsoIndice=percorsoRapido.indexOf(nodo.id);
+  const destinazioneRapida=percorsoRapido[percorsoRapido.length-1];
+  useEffect(()=>{
+    if(percorsoIndice<0) return;
+    setAperto(true);
+    if(percorsoIndice===percorsoRapido.length-1){
+      requestAnimationFrame(()=>document.getElementById(`report-figlio-${nodo.id}`)?.scrollIntoView({behavior:"smooth",block:"center"}));
+    }
+  },[nodo.id,percorsoIndice,percorsoRapido.length,destinazioneRapida]);
   function toggleModello(mid){
     const cur = nodo.modelli||[];
     onChange({...nodo, nuovo:undefined, modelli: cur.includes(mid) ? cur.filter(x=>x!==mid) : [...cur,mid]});
@@ -3316,7 +3334,7 @@ function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, f
   const freccia = (dir,attivo)=>(<span onClick={stop(()=>attivo&&onMove(dir))} style={{cursor:attivo?"pointer":"default",fontSize:15,fontWeight:900,color:T.sub,opacity:attivo?1:0.25,padding:"0 3px"}}>{dir<0?"↑":"↓"}</span>);
   return (
     <>
-      <div style={{background:T.surface,borderRadius:10,overflow:"hidden"}}>
+      <div id={`report-figlio-${nodo.id}`} style={{background:T.surface,borderRadius:10,overflow:"hidden"}}>
         <div onClick={()=>setAperto(a=>!a)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 12px",cursor:"pointer",gap:8}}>
           {isMenu ? (
             <input value={nodo.nome||""} placeholder="NOME MENU" autoFocus={!!nodo.nuovo} onClick={e=>e.stopPropagation()}
@@ -3342,7 +3360,7 @@ function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, f
             {isMenu&&figli.length>0&&(
               <ListaFigli T={T} accent={accent} figli={figli} onChange={nf=>onChange({...nodo,figli:nf})} scope={scopeNodo}
                 perMod={perMod} perColl={perColl} modelli={modelli} valore={valore} formatta={formatta} fasceAutomatiche={fasceAutomatiche}
-                suffisso={nodo.nome||suffisso} ordineEred={ord}/>
+                suffisso={nodo.nome||suffisso} ordineEred={ord} percorsoRapido={percorsoRapido}/>
             )}
           </div>
         )}
@@ -3359,6 +3377,7 @@ function SottomenuLibero({T, accent, sm, labelGlobale, ordineRoot, perGruppoSm, 
   const [confElimina, setConfElimina] = useState(null);
   const [pickerKey, setPickerKey] = useState(null);
   const [modelliAperti, setModelliAperti] = useState({}); // per gruppo: tendina dei modelli (selezionati e da selezionare), chiusa di partenza
+  const [percorsoRapido, setPercorsoRapido] = useState([]);
   function muoviGruppo(key, dir){
     const i = gruppi.findIndex(x=>x.key===key), j = i+dir;
     if(j<0 || j>=gruppi.length){ if(onMoveBlock) onMoveBlock(dir); return; }
@@ -3432,6 +3451,7 @@ function SottomenuLibero({T, accent, sm, labelGlobale, ordineRoot, perGruppoSm, 
         const ordEff = g.ordine||ordineRoot||"A";
         const assegnati = ordinaModelliOrd(modelli.filter(m=>asseg[m.id]===g.key), ordEff, m=>{ const inf=perGruppoSm[g.key]&&perGruppoSm[g.key][m.id]; return inf?valore(inf):0; });
         const altri = modelli.filter(m=>asseg[m.id]!==g.key);
+        const vociRapide = vociMenuRapido(g.figli||[]);
         return (
           <div key={g.key}>
             <div style={{display:"flex",alignItems:"center",gap:6,padding:"8px 10px",background:g.color+"22",
@@ -3468,7 +3488,21 @@ function SottomenuLibero({T, accent, sm, labelGlobale, ordineRoot, perGruppoSm, 
                         style={{cursor:"pointer",margin:0}}/>
                       NEL GRUPPO · {assegnati.length}
                     </label>
-                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                      {vociRapide.length>0&&(
+                        <select aria-label="Vai al sottomenu" title="Apri subito un sottomenu" value={percorsoRapido[percorsoRapido.length-1]||""}
+                          onChange={e=>{
+                            const voce=vociRapide.find(x=>x.id===e.target.value);
+                            if(!voce) return;
+                            setAperto(g.key);
+                            setPercorsoRapido(voce.path);
+                          }}
+                          style={{maxWidth:150,minWidth:90,padding:"5px 6px",border:`1px solid ${T.border}`,borderRadius:8,
+                            background:T.s2,color:T.text,fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                          <option value="">Sottomenu…</option>
+                          {vociRapide.map(voce=><option key={voce.id} value={voce.id}>{voce.label}</option>)}
+                        </select>
+                      )}
                       <PeriodoReportButton T={T} accent={accent} intervallo={g.intervallo} labelGlobale={labelGlobale}
                         onChange={intervallo=>onPatch({gruppi:gruppi.map(x=>x.key===g.key?{...x,intervallo:intervallo||undefined}:x)})}/>
                       <span onClick={()=>setModelliAperti(o=>({...o,[g.key]:!o[g.key]}))} style={{cursor:"pointer",fontSize:12,color:T.sub,padding:"4px 4px"}}>{modelliAperti[g.key]?"▼":"▶"}</span>
@@ -3487,7 +3521,7 @@ function SottomenuLibero({T, accent, sm, labelGlobale, ordineRoot, perGruppoSm, 
                     onChange={nf=>onPatch({gruppi:gruppi.map(x=>x.key===g.key?{...x,figli:nf}:x)})}
                     scope={Object.keys({...Object.fromEntries(Object.entries(asseg).filter(([,k])=>k===g.key)),...(perGruppoSm[g.key]||{})})}
                     perMod={perGruppoSm[g.key]||{}} perColl={perCollGruppoSm[g.key]||{}} modelli={modelli} valore={valore} formatta={formatta} fasceAutomatiche={fasceAutomatiche}
-                    suffisso={g.label||""} ordineEred={g.ordine||ordineRoot||"A"}/>
+                    suffisso={g.label||""} ordineEred={g.ordine||ordineRoot||"A"} percorsoRapido={percorsoRapido}/>
                 )}
               </div>
             )}
