@@ -57,9 +57,34 @@ test("le fasce notturne e festive hanno confini distinti senza doppio conteggio"
   const sabatoSera = calcolaIntervallo("2026-10-24",22*60,0);
   const domenicaNotte = calcolaIntervallo("2026-10-25",0,6*60);
   const domenicaGiorno = calcolaIntervallo("2026-10-25",6*60,22*60);
+  const domenicaSera = calcolaIntervallo("2026-10-25",22*60,0);
   const lunediMattina = calcolaIntervallo("2026-10-26",0,6*60);
 
   assert.deepEqual([lunediVenerdi.notturno_o_festivo,lunediVenerdi.notturno_festivo],[120,0]);
+  assert.deepEqual([sabatoSera.notturno_o_festivo,sabatoSera.notturno_festivo],[0,120]);
+  assert.deepEqual([domenicaNotte.notturno_o_festivo,domenicaNotte.notturno_festivo],[0,360]);
+  assert.deepEqual([domenicaGiorno.notturno_o_festivo,domenicaGiorno.notturno_festivo],[960,0]);
+  assert.deepEqual([domenicaSera.notturno_o_festivo,domenicaSera.notturno_festivo],[0,120]);
+  assert.deepEqual([lunediMattina.notturno_o_festivo,lunediMattina.notturno_festivo],[0,360]);
+});
+
+test("notturno o festivo non sottrae minuti alla fascia notturno e festivo, anche se viene prima", () => {
+  const notturnoOFestivo = FASCE_INDENNITA_DEFAULT.find(f=>f.key==="notturno_o_festivo");
+  const notturnoEFestivo = FASCE_INDENNITA_DEFAULT.find(f=>f.key==="notturno_festivo");
+  const fasce = [
+    FASCE_INDENNITA_DEFAULT.find(f=>f.key==="diurno"),
+    notturnoOFestivo,
+    notturnoEFestivo,
+    FASCE_INDENNITA_DEFAULT.find(f=>f.key==="infrasettimanale"),
+  ];
+  const calcola = (dateKey,m1,m2raw)=>minutiPerFasceEvento({
+    dateKey,m1,m2raw,fasce,pulsanti:PULSANTI_DEFAULT,eFest:()=>false,eFesta:()=>false,
+  });
+  const sabatoSera=calcola("2026-10-24",22*60,0);
+  const domenicaNotte=calcola("2026-10-25",0,6*60);
+  const domenicaGiorno=calcola("2026-10-25",6*60,22*60);
+  const lunediMattina=calcola("2026-10-26",0,6*60);
+
   assert.deepEqual([sabatoSera.notturno_o_festivo,sabatoSera.notturno_festivo],[0,120]);
   assert.deepEqual([domenicaNotte.notturno_o_festivo,domenicaNotte.notturno_festivo],[0,360]);
   assert.deepEqual([domenicaGiorno.notturno_o_festivo,domenicaGiorno.notturno_festivo],[960,0]);

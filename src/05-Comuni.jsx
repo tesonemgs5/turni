@@ -6,6 +6,9 @@ import { impostaSelezioneModelliGruppo } from "./29-periodo-sottomenu";
 
 // Ordina le voci di data.perModello:
 // in ordine A (alfabetico) per nome A-Z; in ordine B (orario) per orario d'inizio crescente.
+// Stile unico del numero nei menu del Report (come TOTALE TURNI / 1° TURNO): grande, grassetto, allineato a destra.
+export const NUM_REPORT = {fontSize:16,fontWeight:900,minWidth:34,textAlign:"right",lineHeight:1,flexShrink:0};
+
 export function ordinaEntriesPerModello(entries, modelli, ordOpt){
   const o = ordOpt || ordineAttivo();
   const qta = (e)=> e && e[1] ? ((e[1].count||0)+(e[1].minuti||0)) : 0;
@@ -463,7 +466,7 @@ export function FasceExpand({data, pct1, pct2, T, modelli, accent, cfg}){
             <div style={{display:"flex",alignItems:"center",gap:8}}>
               <span style={{fontSize:12,fontWeight:700,color:"#0f172a",background:f.color+"33",
                 borderRadius:6,padding:"2px 7px"}}>{f.pct}%</span>
-              <span style={{fontSize:16,fontWeight:900,color:"#0f172a"}}>{f.count}</span>
+              <span style={{...NUM_REPORT,color:"#0f172a"}}>{f.count}</span>
             </div>
           </div>
           {openFascia===f.key&&(
@@ -1283,7 +1286,7 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
               <div style={{display:"flex",alignItems:"center",gap:8}}>
                 <span style={{fontSize:12,fontWeight:700,color:"#0f172a",background:f.color+"33",
                   borderRadius:6,padding:"2px 7px"}}>{f.pct}%</span>
-                <span style={{fontSize:16,fontWeight:900,color:"#0f172a"}}>{f.count}</span>
+                <span style={{...NUM_REPORT,color:"#0f172a"}}>{f.count}</span>
               </div>
             </div>
             {isOpen&&(
@@ -1357,10 +1360,11 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
         <div style={{background:T.surface,borderRadius:10,padding:12}}>
           <div onClick={()=>alternaAperto("turnipm_turnazione_permodello_aperto", perModelloAperto, setPerModelloAperto)}
             style={{display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",fontSize:10,color:T.sub,fontWeight:700,marginBottom:perModelloAperto?8:0}}>
-            <span>PER MODELLO · {Object.values(data.perModello).reduce((a,v)=>a+(v.count||0),0)}</span>
+            <span>PER MODELLO</span>
             <div style={{display:"flex",alignItems:"center",gap:6}}>
               <PulsanteOrdineAB/>
               <span style={{fontSize:12}}>{perModelloAperto?"▼":"▶"}</span>
+              <span style={{...NUM_REPORT,color:T.text}}>{Object.values(data.perModello).reduce((a,v)=>a+(v.count||0),0)}</span>
             </div>
           </div>
           {perModelloAperto&&ordinaEntriesPerModello(Object.entries(data.perModello), modelli).map(([mid,info])=>{
@@ -1380,8 +1384,8 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
                       <span style={{opacity:0.7,fontWeight:500,marginLeft:5}}>{m.inizio}→{fineModelloRicerca(m)}</span>
                     )}
                   </span>
-                  <span style={{fontSize:14,fontWeight:800,color:T.text}}>{info.count}</span>
                   <span style={{fontSize:11,color:T.sub}}>{isOpen?"▲":"▼"}</span>
+                  <span style={{...NUM_REPORT,color:T.text}}>{info.count}</span>
                 </div>
                 {isOpen&&(
                   <div style={{background:T.surface,border:`1px solid ${T.border}`,borderTop:"none",
@@ -1408,8 +1412,11 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
         <div style={{background:T.surface,borderRadius:10,padding:12}}>
           <div onClick={()=>alternaAperto("turnipm_turnazione_percollega_aperto", perCollegaAperto, setPerCollegaAperto)}
             style={{display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",fontSize:10,color:T.sub,fontWeight:700,marginBottom:perCollegaAperto?8:0}}>
-            <span>PER COLLEGA · {Object.values(data.perCollega).reduce((a,v)=>a+(v.count||0),0)}</span>
-            <span style={{fontSize:12}}>{perCollegaAperto?"▼":"▶"}</span>
+            <span>PER COLLEGA</span>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <span style={{fontSize:12}}>{perCollegaAperto?"▼":"▶"}</span>
+              <span style={{...NUM_REPORT,color:T.text}}>{Object.values(data.perCollega).reduce((a,v)=>a+(v.count||0),0)}</span>
+            </div>
           </div>
           {perCollegaAperto&&Object.entries(data.perCollega).sort((a,b)=>b[1].count-a[1].count).map(([nome,info])=>{
             const isOpen = openCollega===nome;
@@ -1419,8 +1426,8 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
                   style={{display:"flex",alignItems:"center",gap:8,
                     padding:"6px 8px",background:T.s2,borderRadius:isOpen?"6px 6px 0 0":6,cursor:"pointer"}}>
                   <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>{nome}</span>
-                  <span style={{fontSize:14,fontWeight:800,color:T.text}}>{info.count}</span>
                   <span style={{fontSize:11,color:T.sub}}>{isOpen?"▲":"▼"}</span>
+                  <span style={{...NUM_REPORT,color:T.text}}>{info.count}</span>
                 </div>
                 {isOpen&&(
                   <div style={{background:T.surface,border:`1px solid ${T.border}`,borderTop:"none",
@@ -1642,10 +1649,11 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
         )}
         <div style={{fontSize:10,color:T.sub}}>
           Le categorie sono: FERIALE, NOTTURNO O FESTIVO, NOTTURNO E FESTIVO e FESTIVO INFRASETTIMANALE. Vale la prima fascia dall'alto che combacia (frecce ▲▼).
+          NOTTURNO O FESTIVO esclude i minuti in cui sono vere entrambe le condizioni: quelli vanno in NOTTURNO E FESTIVO.
           Orari: 00:00 = inizio giornata, 24:00 = fine giornata (dopo le 23:59); in ✎ puoi configurare NOTTURNO e FESTIVO. L'opzione «Notti adiacenti · infrasettimanale» include nella fascia infrasettimanale al 100% le ore notturne prima e dopo il festivo; puoi cambiarne la percentuale nella relativa fascia o disattivare l'opzione.
         </div>
         <div style={{fontSize:10,color:T.sub,background:T.s2,borderRadius:8,padding:"7px 9px"}}>
-          Le fasce non si sommano: ogni minuto viene assegnato una sola volta, alla prima fascia valida dall'alto. Con le condizioni standard, lun–ven 22:00–24:00 è notturno; sab 22:00–24:00, dom 00:00–06:00 e lun 00:00–06:00 sono notturno e festivo; dom 06:00–22:00 è festivo.
+          Le fasce non si sommano: ogni minuto viene assegnato una sola volta. Con le condizioni standard, lun–ven 22:00–24:00 è notturno; sab 22:00–24:00, dom 00:00–06:00 e 22:00–24:00, e lun 00:00–06:00 sono notturno e festivo; dom 06:00–22:00 è festivo.
         </div>
       </div>
       {fasce.map(f=>{
@@ -1780,6 +1788,7 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
                     <button onClick={e=>{e.stopPropagation();setConfermaEliminaSottomenu(sm.id);}}
                       style={{background:"none",border:"none",color:"#dc2626",cursor:"pointer",fontSize:14}}>🗑</button>
                     <span style={{color:T.sub,fontSize:12}}>{isOpen?"▲":"▼"}</span>
+                    {(sm.tipo==="viabilita"||sm.tipo==="ticket")&&(()=>{ const c=sm.tipo==="viabilita"?viabilitaCalc:ticketCalc; return (<span style={{...NUM_REPORT,color:T.text}}>{c&&typeof c.totale==="number"?c.totale.toFixed(2):"0.00"}</span>); })()}
                   </div>
                 </div>
               {confermaEliminaSottomenu===sm.id&&(
@@ -2767,8 +2776,10 @@ export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, tit
                 {usano.map(x=>(
                   <div key={x.id} style={{display:"flex",alignItems:"center",gap:6,fontSize:10,fontWeight:700,color:T.text,background:T.s2,
                     border:`1px solid ${T.border}`,borderRadius:6,padding:"3px 6px",minWidth:0}}>
-                    <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.label}</span>
-                    {(x.orario||x.cal)&&<span style={{color:T.sub,fontWeight:600,whiteSpace:"nowrap"}}>{[x.orario,x.cal].filter(Boolean).join(" · ")}</span>}
+                    <span style={{display:"flex",flexDirection:"column",flex:1,minWidth:0}}>
+                      <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.label}</span>
+                      {(x.orario||x.cal)&&<span style={{color:T.sub,fontWeight:600,whiteSpace:"normal"}}>{[x.orario,x.cal].filter(Boolean).join(" · ")}</span>}
+                    </span>
                   </div>
                 ))}
               </div>}
@@ -3123,8 +3134,11 @@ function SezionePerModello({T, conteggio, children}){
     <div style={{background:T.surface,borderRadius:10,overflow:"hidden"}}>
       <div onClick={()=>setAperta(v=>!v)}
         style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 12px",cursor:"pointer"}}>
-        <span style={{fontSize:11,fontWeight:800,color:T.sub}}>PER MODELLO · {conteggio}</span>
-        <span style={{fontSize:12,color:T.sub}}>{aperta?"▼":"▶"}</span>
+        <span style={{fontSize:11,fontWeight:800,color:T.sub}}>PER MODELLO</span>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <span style={{fontSize:12,color:T.sub}}>{aperta?"▼":"▶"}</span>
+          <span style={{...NUM_REPORT,color:T.text}}>{conteggio}</span>
+        </div>
       </div>
       {aperta&&<div style={{display:"flex",flexDirection:"column",gap:8,padding:"0 8px 8px"}}>{children}</div>}
     </div>
@@ -3242,6 +3256,7 @@ function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, f
       : {id,tipo,nome:tipo==="collega"?"Per collega":"Per modello"};
     onChange({...nodo, nuovo:undefined, figli:[...figli,f]});
     setPicker(false);
+    setAperto(true);
   }
   const chip = (dk,c)=>(<span key={dk} style={{fontSize:11,fontWeight:600,color:T.text,background:c+"18",border:`1px solid ${c}44`,borderRadius:6,padding:"3px 7px"}}>{_fmtDataDK(dk)}</span>);
   const riga = (chiave,etichetta,valoreRiga,date,colore)=>(
@@ -3311,23 +3326,27 @@ function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, f
             <span style={{flex:1,fontSize:12,fontWeight:700,color:T.text}}>{nodo.nome}{suffisso&&(<span style={{fontWeight:500,color:T.sub}}> · {suffisso}</span>)}</span>
           )}
           <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <span style={{fontSize:13,fontWeight:800,color:T.text}}>{formatta(val)}</span>
             <OrdineSelect T={T} accent={accent} valore={nodo.ordine} ereditato={ordineEred} onChange={v=>onChange({...nodo,nuovo:undefined,ordine:v})}/>
             {!fisso&&freccia(-1,!primo)}{!fisso&&freccia(1,!ultimo)}
             {!fisso&&(<button onClick={stop(()=>setConf(true))} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:13,padding:"2px 4px"}}>🗑️</button>)}
             {isMenu&&(<span onClick={stop(()=>setPicker(x=>!x))} style={{cursor:"pointer",fontSize:18,fontWeight:900,lineHeight:1,color:accent,padding:"0 4px"}}>+</span>)}
             <span style={{fontSize:12,color:T.sub}}>{aperto?"▲":"▼"}</span>
+            <span style={{...NUM_REPORT,color:T.text}}>{formatta(val)}</span>
           </div>
         </div>
         {conf&&(<ConfermaEliminazione T={T} testo={`Vuoi eliminare "${nodo.nome||"menu senza nome"}"?`} onConferma={()=>{setConf(false);onRemove();}} onAnnulla={()=>setConf(false)}/>)}
         {picker&&(<div style={{padding:"0 12px"}}><ScegliTipoFiglio T={T} onScegli={aggiungiFiglio}/></div>)}
-        {aperto&&(<div style={{padding:"0 12px 12px"}}>{corpo}</div>)}
+        {aperto&&(
+          <div style={{padding:"0 12px 12px"}}>
+            {corpo}
+            {isMenu&&figli.length>0&&(
+              <ListaFigli T={T} accent={accent} figli={figli} onChange={nf=>onChange({...nodo,figli:nf})} scope={scopeNodo}
+                perMod={perMod} perColl={perColl} modelli={modelli} valore={valore} formatta={formatta} fasceAutomatiche={fasceAutomatiche}
+                suffisso={nodo.nome||suffisso} ordineEred={ord}/>
+            )}
+          </div>
+        )}
       </div>
-      {isMenu&&figli.length>0&&(
-        <ListaFigli T={T} accent={accent} figli={figli} onChange={nf=>onChange({...nodo,figli:nf})} scope={scopeNodo}
-          perMod={perMod} perColl={perColl} modelli={modelli} valore={valore} formatta={formatta} fasceAutomatiche={fasceAutomatiche}
-          suffisso={nodo.nome||suffisso} ordineEred={ord}/>
-      )}
     </>
   );
 }
@@ -3339,6 +3358,7 @@ function SottomenuLibero({T, accent, sm, labelGlobale, ordineRoot, perGruppoSm, 
   const [aperto, setAperto] = useState(()=> (gruppi.length===1 && !gruppi[0].label) ? gruppi[0].key : null);
   const [confElimina, setConfElimina] = useState(null);
   const [pickerKey, setPickerKey] = useState(null);
+  const [modelliAperti, setModelliAperti] = useState({}); // per gruppo: tendina dei modelli (selezionati e da selezionare), chiusa di partenza
   function muoviGruppo(key, dir){
     const i = gruppi.findIndex(x=>x.key===key), j = i+dir;
     if(j<0 || j>=gruppi.length){ if(onMoveBlock) onMoveBlock(dir); return; }
@@ -3351,6 +3371,7 @@ function SottomenuLibero({T, accent, sm, labelGlobale, ordineRoot, perGruppoSm, 
       : {id,tipo,nome:tipo==="collega"?"Per collega":"Per modello"};
     onPatch({gruppi:gruppi.map(x=>x.key===g.key?{...x,figli:[...(x.figli||[]),f]}:x)});
     setPickerKey(null);
+    setAperto(g.key);
   }
   const COLORI = ["#3b82f6","#10b981","#f59e0b","#8b5cf6","#ef4444","#06b6d4"];
   const totGruppo = (g)=>Object.values(perGruppoSm[g.key]||{}).reduce((a,v)=>a+valore(v),0);
@@ -3419,7 +3440,6 @@ function SottomenuLibero({T, accent, sm, labelGlobale, ordineRoot, perGruppoSm, 
                 onChange={e=>{const fix=preparaFixCursore(e);rinomina(g.key,e.target.value.toUpperCase());fix();}}
                 style={{flex:1,minWidth:0,background:"transparent",border:"none",outline:"none",fontSize:13,fontWeight:800,color:"#0f172a"}}/>
               {pct!==null&&(<span style={{fontSize:11,fontWeight:800,color:"#0f172a",background:g.color+"33",borderRadius:8,padding:"1px 6px"}}>{pct}%</span>)}
-              <span style={{fontSize:14,fontWeight:900,color:"#0f172a"}}>{formatta(val)}</span>
               <OrdineSelect T={T} accent={accent} valore={g.ordine} ereditato={ordineRoot} onChange={v=>onPatch({gruppi:gruppi.map(x=>x.key===g.key?{...x,ordine:v}:x)})}/>
               {(()=>{ const idx=gruppi.findIndex(x=>x.key===g.key); const su=idx>0||!!blockUp; const giu=idx<gruppi.length-1||!!blockDown; return (<>
                 <span onClick={()=>su&&muoviGruppo(g.key,-1)} style={{cursor:su?"pointer":"default",fontSize:15,fontWeight:900,color:"#0f172a",opacity:su?1:0.25,padding:"0 3px",marginLeft:4}}>↑</span>
@@ -3429,6 +3449,7 @@ function SottomenuLibero({T, accent, sm, labelGlobale, ordineRoot, perGruppoSm, 
               <span onClick={()=>setPickerKey(pickerKey===g.key?null:g.key)} title="Crea sotto menu"
                 style={{cursor:"pointer",fontSize:20,fontWeight:900,lineHeight:1,color:accent,margin:"0 8px",padding:"0 4px"}}>+</span>
               <span onClick={()=>setAperto(isOpen?null:g.key)} style={{cursor:"pointer",fontSize:12,color:"#0f172a",padding:"4px 2px"}}>{isOpen?"▲":"▼"}</span>
+              <span style={{...NUM_REPORT,color:"#0f172a"}}>{formatta(val)}</span>
             </div>
             {confElimina===g.key&&(
               <ConfermaEliminazione T={T} testo={gruppi.length<=1?`Vuoi eliminare "${g.label||"sottomenu senza nome"}"?`:`Vuoi eliminare il gruppo "${g.label||"senza nome"}"?`}
@@ -3447,30 +3468,33 @@ function SottomenuLibero({T, accent, sm, labelGlobale, ordineRoot, perGruppoSm, 
                         style={{cursor:"pointer",margin:0}}/>
                       NEL GRUPPO · {assegnati.length}
                     </label>
-                    <PeriodoReportButton T={T} accent={accent} intervallo={g.intervallo} labelGlobale={labelGlobale}
-                      onChange={intervallo=>onPatch({gruppi:gruppi.map(x=>x.key===g.key?{...x,intervallo:intervallo||undefined}:x)})}/>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <PeriodoReportButton T={T} accent={accent} intervallo={g.intervallo} labelGlobale={labelGlobale}
+                        onChange={intervallo=>onPatch({gruppi:gruppi.map(x=>x.key===g.key?{...x,intervallo:intervallo||undefined}:x)})}/>
+                      <span onClick={()=>setModelliAperti(o=>({...o,[g.key]:!o[g.key]}))} style={{cursor:"pointer",fontSize:12,color:T.sub,padding:"4px 4px"}}>{modelliAperti[g.key]?"▼":"▶"}</span>
+                    </div>
                   </div>
-                  {assegnati.map(riga)}
+                  {modelliAperti[g.key]&&assegnati.map(riga)}
                 </div>
-                {altri.length>0&&(
+                {modelliAperti[g.key]&&altri.length>0&&(
                   <ElencoModelliTendine chiave={"libero_"+sm.id+"_"+g.key} modelli={altri} renderRiga={riga}
                     onSelezionaGruppo={(ms)=>assegnaMolti(ms.map(x=>x.id), g.key)}
                     stileContenitore={{border:"none",borderRadius:6,marginBottom:0}}/>
                 )}
                 {modelli.length===0&&(<div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"6px 0"}}>Nessun modello</div>)}
+                {(g.figli||[]).length>0&&(
+                  <ListaFigli T={T} accent={accent} figli={g.figli}
+                    onChange={nf=>onPatch({gruppi:gruppi.map(x=>x.key===g.key?{...x,figli:nf}:x)})}
+                    scope={Object.keys({...Object.fromEntries(Object.entries(asseg).filter(([,k])=>k===g.key)),...(perGruppoSm[g.key]||{})})}
+                    perMod={perGruppoSm[g.key]||{}} perColl={perCollGruppoSm[g.key]||{}} modelli={modelli} valore={valore} formatta={formatta} fasceAutomatiche={fasceAutomatiche}
+                    suffisso={g.label||""} ordineEred={g.ordine||ordineRoot||"A"}/>
+                )}
               </div>
             )}
           </div>
         );
       })}
       </div>
-      {gruppi.filter(g=>(g.figli||[]).length>0).map(g=>(
-        <ListaFigli key={"f"+g.key} T={T} accent={accent} figli={g.figli}
-          scope={Object.keys({...Object.fromEntries(Object.entries(asseg).filter(([,k])=>k===g.key)),...(perGruppoSm[g.key]||{})})}
-          perMod={perGruppoSm[g.key]||{}} perColl={perCollGruppoSm[g.key]||{}} modelli={modelli} valore={valore} formatta={formatta} fasceAutomatiche={fasceAutomatiche}
-          suffisso={g.label||""} ordineEred={g.ordine||ordineRoot||"A"}
-          onChange={nf=>onPatch({gruppi:gruppi.map(x=>x.key===g.key?{...x,figli:nf}:x)})}/>
-      ))}
     </div>
   );
 }
