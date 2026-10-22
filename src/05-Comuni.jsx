@@ -3358,6 +3358,7 @@ function SottomenuLibero({T, accent, sm, labelGlobale, ordineRoot, perGruppoSm, 
   const [aperto, setAperto] = useState(()=> (gruppi.length===1 && !gruppi[0].label) ? gruppi[0].key : null);
   const [confElimina, setConfElimina] = useState(null);
   const [pickerKey, setPickerKey] = useState(null);
+  const [modelliAperti, setModelliAperti] = useState({}); // per gruppo: tendina dei modelli (selezionati e da selezionare), chiusa di partenza
   function muoviGruppo(key, dir){
     const i = gruppi.findIndex(x=>x.key===key), j = i+dir;
     if(j<0 || j>=gruppi.length){ if(onMoveBlock) onMoveBlock(dir); return; }
@@ -3467,12 +3468,15 @@ function SottomenuLibero({T, accent, sm, labelGlobale, ordineRoot, perGruppoSm, 
                         style={{cursor:"pointer",margin:0}}/>
                       NEL GRUPPO · {assegnati.length}
                     </label>
-                    <PeriodoReportButton T={T} accent={accent} intervallo={g.intervallo} labelGlobale={labelGlobale}
-                      onChange={intervallo=>onPatch({gruppi:gruppi.map(x=>x.key===g.key?{...x,intervallo:intervallo||undefined}:x)})}/>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <PeriodoReportButton T={T} accent={accent} intervallo={g.intervallo} labelGlobale={labelGlobale}
+                        onChange={intervallo=>onPatch({gruppi:gruppi.map(x=>x.key===g.key?{...x,intervallo:intervallo||undefined}:x)})}/>
+                      <span onClick={()=>setModelliAperti(o=>({...o,[g.key]:!o[g.key]}))} style={{cursor:"pointer",fontSize:12,color:T.sub,padding:"4px 4px"}}>{modelliAperti[g.key]?"▼":"▶"}</span>
+                    </div>
                   </div>
-                  {assegnati.map(riga)}
+                  {modelliAperti[g.key]&&assegnati.map(riga)}
                 </div>
-                {altri.length>0&&(
+                {modelliAperti[g.key]&&altri.length>0&&(
                   <ElencoModelliTendine chiave={"libero_"+sm.id+"_"+g.key} modelli={altri} renderRiga={riga}
                     onSelezionaGruppo={(ms)=>assegnaMolti(ms.map(x=>x.id), g.key)}
                     stileContenitore={{border:"none",borderRadius:6,marginBottom:0}}/>
