@@ -26,21 +26,26 @@ alter table public.colori enable row level security;
 drop policy if exists "colori_select_own" on public.colori;
 create policy "colori_select_own"
   on public.colori for select
+  to authenticated
   using (auth.uid() = user_id);
 
 drop policy if exists "colori_insert_own" on public.colori;
 create policy "colori_insert_own"
   on public.colori for insert
+  to authenticated
   with check (auth.uid() = user_id);
 
 drop policy if exists "colori_update_own" on public.colori;
 create policy "colori_update_own"
   on public.colori for update
-  using (auth.uid() = user_id);
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
 
 drop policy if exists "colori_delete_own" on public.colori;
 create policy "colori_delete_own"
   on public.colori for delete
+  to authenticated
   using (auth.uid() = user_id);
 
 -- Nota: la colonna "colore_custom" già esistente sulla tabella "modelli"

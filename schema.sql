@@ -57,7 +57,18 @@ ON public.modelli
 FOR ALL 
 TO authenticated 
 USING (auth.uid() = user_id) 
-WITH CHECK (auth.uid() = user_id);
+WITH CHECK (
+    auth.uid() = modelli.user_id
+    AND (
+        modelli.calendar_id IS NULL
+        OR EXISTS (
+            SELECT 1
+            FROM public.calendars AS c
+            WHERE c.id = modelli.calendar_id
+              AND c.user_id = auth.uid()
+        )
+    )
+);
 
 
 -- 3. Tabella Rotazioni
@@ -85,7 +96,36 @@ ON public.rotazioni
 FOR ALL 
 TO authenticated 
 USING (auth.uid() = user_id) 
-WITH CHECK (auth.uid() = user_id);
+WITH CHECK (
+    auth.uid() = rotazioni.user_id
+    AND (
+        rotazioni.modello_lavoro_id IS NULL
+        OR EXISTS (
+            SELECT 1
+            FROM public.modelli AS m
+            WHERE m.id = rotazioni.modello_lavoro_id
+              AND m.user_id = auth.uid()
+        )
+    )
+    AND (
+        rotazioni.modello_nl_id IS NULL
+        OR EXISTS (
+            SELECT 1
+            FROM public.modelli AS m
+            WHERE m.id = rotazioni.modello_nl_id
+              AND m.user_id = auth.uid()
+        )
+    )
+    AND (
+        rotazioni.modello_rs_id IS NULL
+        OR EXISTS (
+            SELECT 1
+            FROM public.modelli AS m
+            WHERE m.id = rotazioni.modello_rs_id
+              AND m.user_id = auth.uid()
+        )
+    )
+);
 
 
 -- 4. Tabella Eventi
@@ -121,7 +161,33 @@ ON public.events
 FOR ALL 
 TO authenticated 
 USING (auth.uid() = user_id) 
-WITH CHECK (auth.uid() = user_id);
+WITH CHECK (
+    auth.uid() = events.user_id
+    AND EXISTS (
+        SELECT 1
+        FROM public.calendars AS c
+        WHERE c.id = events.calendar_id
+          AND c.user_id = auth.uid()
+    )
+    AND (
+        events.modello_id IS NULL
+        OR EXISTS (
+            SELECT 1
+            FROM public.modelli AS m
+            WHERE m.id = events.modello_id
+              AND m.user_id = auth.uid()
+        )
+    )
+    AND (
+        events.rotazione_id IS NULL
+        OR EXISTS (
+            SELECT 1
+            FROM public.rotazioni AS r
+            WHERE r.id = events.rotazione_id
+              AND r.user_id = auth.uid()
+        )
+    )
+);
 
 
 -- 5. Tabella Impostazioni Utente
@@ -147,7 +213,7 @@ USING (auth.uid() = user_id)
 WITH CHECK (auth.uid() = user_id);
 
 
--- 6. Tabella Statistiche di Utilizzo (Anonima e conforme al GDPR)
+-- 6. Statistiche di utilizzo collegate all'account (non anonime)
 CREATE TABLE IF NOT EXISTS public.usage_stats (
     user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     last_active TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
@@ -218,7 +284,7 @@ CREATE INDEX IF NOT EXISTS idx_backups_user_id ON public.backups(user_id);
 -- FUNZIONI SICURE E AMMINISTRAZIONE
 -- =====================================================================
 
--- Funzione Sicura per Statistiche Amministratore (GDPR Compliant)
+-- Funzione per statistiche aggregate riservata all'amministratore configurato
 CREATE OR REPLACE FUNCTION public.get_app_stats()
 RETURNS TABLE (
     total_users BIGINT,
