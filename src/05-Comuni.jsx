@@ -1649,10 +1649,11 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
         )}
         <div style={{fontSize:10,color:T.sub}}>
           Le categorie sono: FERIALE, NOTTURNO O FESTIVO, NOTTURNO E FESTIVO e FESTIVO INFRASETTIMANALE. Vale la prima fascia dall'alto che combacia (frecce ▲▼).
+          NOTTURNO O FESTIVO esclude i minuti in cui sono vere entrambe le condizioni: quelli vanno in NOTTURNO E FESTIVO.
           Orari: 00:00 = inizio giornata, 24:00 = fine giornata (dopo le 23:59); in ✎ puoi configurare NOTTURNO e FESTIVO. L'opzione «Notti adiacenti · infrasettimanale» include nella fascia infrasettimanale al 100% le ore notturne prima e dopo il festivo; puoi cambiarne la percentuale nella relativa fascia o disattivare l'opzione.
         </div>
         <div style={{fontSize:10,color:T.sub,background:T.s2,borderRadius:8,padding:"7px 9px"}}>
-          Le fasce non si sommano: ogni minuto viene assegnato una sola volta, alla prima fascia valida dall'alto. Con le condizioni standard, lun–ven 22:00–24:00 è notturno; sab 22:00–24:00, dom 00:00–06:00 e lun 00:00–06:00 sono notturno e festivo; dom 06:00–22:00 è festivo.
+          Le fasce non si sommano: ogni minuto viene assegnato una sola volta. Con le condizioni standard, lun–ven 22:00–24:00 è notturno; sab 22:00–24:00, dom 00:00–06:00 e 22:00–24:00, e lun 00:00–06:00 sono notturno e festivo; dom 06:00–22:00 è festivo.
         </div>
       </div>
       {fasce.map(f=>{
@@ -2775,8 +2776,10 @@ export function ColorPickerModal({T, cur, onPick, onClose, coloriUsati=null, tit
                 {usano.map(x=>(
                   <div key={x.id} style={{display:"flex",alignItems:"center",gap:6,fontSize:10,fontWeight:700,color:T.text,background:T.s2,
                     border:`1px solid ${T.border}`,borderRadius:6,padding:"3px 6px",minWidth:0}}>
-                    <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.label}</span>
-                    {(x.orario||x.cal)&&<span style={{color:T.sub,fontWeight:600,whiteSpace:"nowrap"}}>{[x.orario,x.cal].filter(Boolean).join(" · ")}</span>}
+                    <span style={{display:"flex",flexDirection:"column",flex:1,minWidth:0}}>
+                      <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.label}</span>
+                      {(x.orario||x.cal)&&<span style={{color:T.sub,fontWeight:600,whiteSpace:"normal"}}>{[x.orario,x.cal].filter(Boolean).join(" · ")}</span>}
+                    </span>
                   </div>
                 ))}
               </div>}
@@ -3253,6 +3256,7 @@ function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, f
       : {id,tipo,nome:tipo==="collega"?"Per collega":"Per modello"};
     onChange({...nodo, nuovo:undefined, figli:[...figli,f]});
     setPicker(false);
+    setAperto(true);
   }
   const chip = (dk,c)=>(<span key={dk} style={{fontSize:11,fontWeight:600,color:T.text,background:c+"18",border:`1px solid ${c}44`,borderRadius:6,padding:"3px 7px"}}>{_fmtDataDK(dk)}</span>);
   const riga = (chiave,etichetta,valoreRiga,date,colore)=>(
@@ -3332,13 +3336,17 @@ function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, f
         </div>
         {conf&&(<ConfermaEliminazione T={T} testo={`Vuoi eliminare "${nodo.nome||"menu senza nome"}"?`} onConferma={()=>{setConf(false);onRemove();}} onAnnulla={()=>setConf(false)}/>)}
         {picker&&(<div style={{padding:"0 12px"}}><ScegliTipoFiglio T={T} onScegli={aggiungiFiglio}/></div>)}
-        {aperto&&(<div style={{padding:"0 12px 12px"}}>{corpo}</div>)}
+        {aperto&&(
+          <div style={{padding:"0 12px 12px"}}>
+            {corpo}
+            {isMenu&&figli.length>0&&(
+              <ListaFigli T={T} accent={accent} figli={figli} onChange={nf=>onChange({...nodo,figli:nf})} scope={scopeNodo}
+                perMod={perMod} perColl={perColl} modelli={modelli} valore={valore} formatta={formatta} fasceAutomatiche={fasceAutomatiche}
+                suffisso={nodo.nome||suffisso} ordineEred={ord}/>
+            )}
+          </div>
+        )}
       </div>
-      {isMenu&&figli.length>0&&(
-        <ListaFigli T={T} accent={accent} figli={figli} onChange={nf=>onChange({...nodo,figli:nf})} scope={scopeNodo}
-          perMod={perMod} perColl={perColl} modelli={modelli} valore={valore} formatta={formatta} fasceAutomatiche={fasceAutomatiche}
-          suffisso={nodo.nome||suffisso} ordineEred={ord}/>
-      )}
     </>
   );
 }
@@ -3362,6 +3370,7 @@ function SottomenuLibero({T, accent, sm, labelGlobale, ordineRoot, perGruppoSm, 
       : {id,tipo,nome:tipo==="collega"?"Per collega":"Per modello"};
     onPatch({gruppi:gruppi.map(x=>x.key===g.key?{...x,figli:[...(x.figli||[]),f]}:x)});
     setPickerKey(null);
+    setAperto(g.key);
   }
   const COLORI = ["#3b82f6","#10b981","#f59e0b","#8b5cf6","#ef4444","#06b6d4"];
   const totGruppo = (g)=>Object.values(perGruppoSm[g.key]||{}).reduce((a,v)=>a+valore(v),0);
@@ -3469,19 +3478,19 @@ function SottomenuLibero({T, accent, sm, labelGlobale, ordineRoot, perGruppoSm, 
                     stileContenitore={{border:"none",borderRadius:6,marginBottom:0}}/>
                 )}
                 {modelli.length===0&&(<div style={{fontSize:12,color:T.sub,textAlign:"center",padding:"6px 0"}}>Nessun modello</div>)}
+                {(g.figli||[]).length>0&&(
+                  <ListaFigli T={T} accent={accent} figli={g.figli}
+                    onChange={nf=>onPatch({gruppi:gruppi.map(x=>x.key===g.key?{...x,figli:nf}:x)})}
+                    scope={Object.keys({...Object.fromEntries(Object.entries(asseg).filter(([,k])=>k===g.key)),...(perGruppoSm[g.key]||{})})}
+                    perMod={perGruppoSm[g.key]||{}} perColl={perCollGruppoSm[g.key]||{}} modelli={modelli} valore={valore} formatta={formatta} fasceAutomatiche={fasceAutomatiche}
+                    suffisso={g.label||""} ordineEred={g.ordine||ordineRoot||"A"}/>
+                )}
               </div>
             )}
           </div>
         );
       })}
       </div>
-      {gruppi.filter(g=>(g.figli||[]).length>0).map(g=>(
-        <ListaFigli key={"f"+g.key} T={T} accent={accent} figli={g.figli}
-          scope={Object.keys({...Object.fromEntries(Object.entries(asseg).filter(([,k])=>k===g.key)),...(perGruppoSm[g.key]||{})})}
-          perMod={perGruppoSm[g.key]||{}} perColl={perCollGruppoSm[g.key]||{}} modelli={modelli} valore={valore} formatta={formatta} fasceAutomatiche={fasceAutomatiche}
-          suffisso={g.label||""} ordineEred={g.ordine||ordineRoot||"A"}
-          onChange={nf=>onPatch({gruppi:gruppi.map(x=>x.key===g.key?{...x,figli:nf}:x)})}/>
-      ))}
     </div>
   );
 }

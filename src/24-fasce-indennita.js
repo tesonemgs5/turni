@@ -73,6 +73,10 @@ function combacia(giorni, att, modo){
   if(giorniSel.length>0 && !giorniSel.includes(att.dow)) return false;
   const cond = g.filter(c=>!DOWSET.has(c));
   if(cond.length===0) return true;
+  // La fascia "o" non deve assorbire i minuti che appartengono anche alla fascia "e".
+  if(modo==="o" && cond.length===2 && cond.includes("not") && cond.includes("fes")){
+    return cond.some(c=>condVera(c,att)) && !cond.every(c=>condVera(c,att));
+  }
   return modo==="o" ? cond.some(c=>condVera(c,att)) : cond.every(c=>condVera(c,att));
 }
 // Minuti del turno per ogni fascia. dateKey = giorno d'inizio; m1/m2raw = minuti dalla mezzanotte
