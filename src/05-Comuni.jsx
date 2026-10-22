@@ -7,7 +7,7 @@ import { impostaSelezioneModelliGruppo } from "./29-periodo-sottomenu";
 // Ordina le voci di data.perModello:
 // in ordine A (alfabetico) per nome A-Z; in ordine B (orario) per orario d'inizio crescente.
 // Stile unico del numero nei menu del Report (come TOTALE TURNI / 1° TURNO): grande, grassetto, allineato a destra.
-export const NUM_REPORT = {fontSize:20,fontWeight:900,minWidth:34,textAlign:"right",lineHeight:1,flexShrink:0};
+export const NUM_REPORT = {fontSize:16,fontWeight:900,minWidth:34,textAlign:"right",lineHeight:1,flexShrink:0};
 
 export function ordinaEntriesPerModello(entries, modelli, ordOpt){
   const o = ordOpt || ordineAttivo();
