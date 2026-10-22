@@ -2,6 +2,8 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import { execSync } from 'node:child_process';
+import { existsSync, watch } from 'node:fs';
+import { basename, dirname, resolve } from 'node:path';
 
 // Calcola la "versione" dell'app come ggmmaa.hhmm riferita al momento in cui
 // Vercel esegue questa build (npm run build), non al momento in cui il
@@ -112,6 +114,72 @@ function calcolaNumeroBuild() {
   return '';
 }
 
+function riavviaSuNuovoCommit() {
+  const sh = (cmd) => execSync(cmd, { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+  let riferimenti;
+  try {
+    riferimenti = [sh('git rev-parse --git-path HEAD'), sh('git rev-parse --git-path packed-refs')];
+    const ramo = sh('git symbolic-ref -q HEAD');
+    if (ramo) riferimenti.push(sh(`git rev-parse --git-path ${ramo}`));
+  } catch {
+    return { name: 'riavvia-su-nuovo-commit', apply: 'serve' };
+  }
+
+  const fileRiferimenti = [...new Set(riferimenti.map(file => resolve(file)))];
+  return {
+    name: 'riavvia-su-nuovo-commit',
+    apply: 'serve',
+    configureServer(server) {
+      let ultimoCommit;
+      try {
+        ultimoCommit = sh('git rev-parse HEAD');
+      } catch (error) {
+        server.config.logger.warn(`Non riesco a controllare il commit Git per il riavvio automatico: ${error.message}`);
+        return;
+      }
+
+      let timer;
+      const watcherGit = [];
+      const controllaCommit = () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          let commitCorrente;
+          try {
+            commitCorrente = sh('git rev-parse HEAD');
+          } catch (error) {
+            server.config.logger.warn(`Non riesco a rileggere il commit Git: ${error.message}`);
+            return;
+          }
+          if (commitCorrente !== ultimoCommit) {
+            ultimoCommit = commitCorrente;
+            server.restart().catch(error => {
+              server.config.logger.error(`Riavvio di Vite dopo un nuovo commit non riuscito: ${error.message}`);
+            });
+          }
+        }, 250);
+      };
+
+      for (const file of fileRiferimenti) {
+        const cartella = dirname(file);
+        if (!existsSync(cartella)) continue;
+        try {
+          const watcher = watch(cartella, { persistent: false }, (_evento, nome) => {
+            if (!nome || String(nome).toLowerCase() === basename(file).toLowerCase()) controllaCommit();
+          });
+          watcherGit.push(watcher);
+        } catch (error) {
+          server.config.logger.warn(`Sorveglianza del riferimento Git non disponibile (${cartella}): ${error.message}`);
+        }
+      }
+
+      server.httpServer?.once('close', () => {
+        clearTimeout(timer);
+        watcherGit.forEach(watcher => watcher.close());
+      });
+    },
+  };
+}
+
 export default defineConfig({
   // Path relativi negli asset generati (dist/index.html usa "./assets/..."
   // invece di "/assets/..."), indispensabile perché l'app Electron carica
@@ -191,6 +259,7 @@ export default defineConfig({
           }
         ]
       }
-    })
+    }),
+    riavviaSuNuovoCommit(),
   ]
 })
