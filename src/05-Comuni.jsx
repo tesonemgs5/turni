@@ -6,6 +6,9 @@ import { impostaSelezioneModelliGruppo } from "./29-periodo-sottomenu";
 
 // Ordina le voci di data.perModello:
 // in ordine A (alfabetico) per nome A-Z; in ordine B (orario) per orario d'inizio crescente.
+// Stile unico del numero nei menu del Report (come TOTALE TURNI / 1° TURNO): grande, grassetto, allineato a destra.
+export const NUM_REPORT = {fontSize:20,fontWeight:900,minWidth:34,textAlign:"right",lineHeight:1,flexShrink:0};
+
 export function ordinaEntriesPerModello(entries, modelli, ordOpt){
   const o = ordOpt || ordineAttivo();
   const qta = (e)=> e && e[1] ? ((e[1].count||0)+(e[1].minuti||0)) : 0;
@@ -463,7 +466,7 @@ export function FasceExpand({data, pct1, pct2, T, modelli, accent, cfg}){
             <div style={{display:"flex",alignItems:"center",gap:8}}>
               <span style={{fontSize:12,fontWeight:700,color:"#0f172a",background:f.color+"33",
                 borderRadius:6,padding:"2px 7px"}}>{f.pct}%</span>
-              <span style={{fontSize:16,fontWeight:900,color:"#0f172a"}}>{f.count}</span>
+              <span style={{...NUM_REPORT,color:"#0f172a"}}>{f.count}</span>
             </div>
           </div>
           {openFascia===f.key&&(
@@ -1283,7 +1286,7 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
               <div style={{display:"flex",alignItems:"center",gap:8}}>
                 <span style={{fontSize:12,fontWeight:700,color:"#0f172a",background:f.color+"33",
                   borderRadius:6,padding:"2px 7px"}}>{f.pct}%</span>
-                <span style={{fontSize:16,fontWeight:900,color:"#0f172a"}}>{f.count}</span>
+                <span style={{...NUM_REPORT,color:"#0f172a"}}>{f.count}</span>
               </div>
             </div>
             {isOpen&&(
@@ -1357,10 +1360,11 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
         <div style={{background:T.surface,borderRadius:10,padding:12}}>
           <div onClick={()=>alternaAperto("turnipm_turnazione_permodello_aperto", perModelloAperto, setPerModelloAperto)}
             style={{display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",fontSize:10,color:T.sub,fontWeight:700,marginBottom:perModelloAperto?8:0}}>
-            <span>PER MODELLO · {Object.values(data.perModello).reduce((a,v)=>a+(v.count||0),0)}</span>
+            <span>PER MODELLO</span>
             <div style={{display:"flex",alignItems:"center",gap:6}}>
               <PulsanteOrdineAB/>
               <span style={{fontSize:12}}>{perModelloAperto?"▼":"▶"}</span>
+              <span style={{...NUM_REPORT,color:T.text}}>{Object.values(data.perModello).reduce((a,v)=>a+(v.count||0),0)}</span>
             </div>
           </div>
           {perModelloAperto&&ordinaEntriesPerModello(Object.entries(data.perModello), modelli).map(([mid,info])=>{
@@ -1380,8 +1384,8 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
                       <span style={{opacity:0.7,fontWeight:500,marginLeft:5}}>{m.inizio}→{fineModelloRicerca(m)}</span>
                     )}
                   </span>
-                  <span style={{fontSize:14,fontWeight:800,color:T.text}}>{info.count}</span>
                   <span style={{fontSize:11,color:T.sub}}>{isOpen?"▲":"▼"}</span>
+                  <span style={{...NUM_REPORT,color:T.text}}>{info.count}</span>
                 </div>
                 {isOpen&&(
                   <div style={{background:T.surface,border:`1px solid ${T.border}`,borderTop:"none",
@@ -1408,8 +1412,11 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
         <div style={{background:T.surface,borderRadius:10,padding:12}}>
           <div onClick={()=>alternaAperto("turnipm_turnazione_percollega_aperto", perCollegaAperto, setPerCollegaAperto)}
             style={{display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",fontSize:10,color:T.sub,fontWeight:700,marginBottom:perCollegaAperto?8:0}}>
-            <span>PER COLLEGA · {Object.values(data.perCollega).reduce((a,v)=>a+(v.count||0),0)}</span>
-            <span style={{fontSize:12}}>{perCollegaAperto?"▼":"▶"}</span>
+            <span>PER COLLEGA</span>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <span style={{fontSize:12}}>{perCollegaAperto?"▼":"▶"}</span>
+              <span style={{...NUM_REPORT,color:T.text}}>{Object.values(data.perCollega).reduce((a,v)=>a+(v.count||0),0)}</span>
+            </div>
           </div>
           {perCollegaAperto&&Object.entries(data.perCollega).sort((a,b)=>b[1].count-a[1].count).map(([nome,info])=>{
             const isOpen = openCollega===nome;
@@ -1419,8 +1426,8 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
                   style={{display:"flex",alignItems:"center",gap:8,
                     padding:"6px 8px",background:T.s2,borderRadius:isOpen?"6px 6px 0 0":6,cursor:"pointer"}}>
                   <span style={{flex:1,fontSize:12,color:T.text,fontWeight:600}}>{nome}</span>
-                  <span style={{fontSize:14,fontWeight:800,color:T.text}}>{info.count}</span>
                   <span style={{fontSize:11,color:T.sub}}>{isOpen?"▲":"▼"}</span>
+                  <span style={{...NUM_REPORT,color:T.text}}>{info.count}</span>
                 </div>
                 {isOpen&&(
                   <div style={{background:T.surface,border:`1px solid ${T.border}`,borderTop:"none",
@@ -1780,6 +1787,7 @@ export function IndennitaConfig({T, r, values, setValues, calc, onSave, onRename
                     <button onClick={e=>{e.stopPropagation();setConfermaEliminaSottomenu(sm.id);}}
                       style={{background:"none",border:"none",color:"#dc2626",cursor:"pointer",fontSize:14}}>🗑</button>
                     <span style={{color:T.sub,fontSize:12}}>{isOpen?"▲":"▼"}</span>
+                    {(sm.tipo==="viabilita"||sm.tipo==="ticket")&&(()=>{ const c=sm.tipo==="viabilita"?viabilitaCalc:ticketCalc; return (<span style={{...NUM_REPORT,color:T.text}}>{c&&typeof c.totale==="number"?c.totale.toFixed(2):"0.00"}</span>); })()}
                   </div>
                 </div>
               {confermaEliminaSottomenu===sm.id&&(
@@ -3123,8 +3131,11 @@ function SezionePerModello({T, conteggio, children}){
     <div style={{background:T.surface,borderRadius:10,overflow:"hidden"}}>
       <div onClick={()=>setAperta(v=>!v)}
         style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 12px",cursor:"pointer"}}>
-        <span style={{fontSize:11,fontWeight:800,color:T.sub}}>PER MODELLO · {conteggio}</span>
-        <span style={{fontSize:12,color:T.sub}}>{aperta?"▼":"▶"}</span>
+        <span style={{fontSize:11,fontWeight:800,color:T.sub}}>PER MODELLO</span>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <span style={{fontSize:12,color:T.sub}}>{aperta?"▼":"▶"}</span>
+          <span style={{...NUM_REPORT,color:T.text}}>{conteggio}</span>
+        </div>
       </div>
       {aperta&&<div style={{display:"flex",flexDirection:"column",gap:8,padding:"0 8px 8px"}}>{children}</div>}
     </div>
@@ -3311,12 +3322,12 @@ function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, f
             <span style={{flex:1,fontSize:12,fontWeight:700,color:T.text}}>{nodo.nome}{suffisso&&(<span style={{fontWeight:500,color:T.sub}}> · {suffisso}</span>)}</span>
           )}
           <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <span style={{fontSize:13,fontWeight:800,color:T.text}}>{formatta(val)}</span>
             <OrdineSelect T={T} accent={accent} valore={nodo.ordine} ereditato={ordineEred} onChange={v=>onChange({...nodo,nuovo:undefined,ordine:v})}/>
             {!fisso&&freccia(-1,!primo)}{!fisso&&freccia(1,!ultimo)}
             {!fisso&&(<button onClick={stop(()=>setConf(true))} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:13,padding:"2px 4px"}}>🗑️</button>)}
             {isMenu&&(<span onClick={stop(()=>setPicker(x=>!x))} style={{cursor:"pointer",fontSize:18,fontWeight:900,lineHeight:1,color:accent,padding:"0 4px"}}>+</span>)}
             <span style={{fontSize:12,color:T.sub}}>{aperto?"▲":"▼"}</span>
+            <span style={{...NUM_REPORT,color:T.text}}>{formatta(val)}</span>
           </div>
         </div>
         {conf&&(<ConfermaEliminazione T={T} testo={`Vuoi eliminare "${nodo.nome||"menu senza nome"}"?`} onConferma={()=>{setConf(false);onRemove();}} onAnnulla={()=>setConf(false)}/>)}
@@ -3419,7 +3430,6 @@ function SottomenuLibero({T, accent, sm, labelGlobale, ordineRoot, perGruppoSm, 
                 onChange={e=>{const fix=preparaFixCursore(e);rinomina(g.key,e.target.value.toUpperCase());fix();}}
                 style={{flex:1,minWidth:0,background:"transparent",border:"none",outline:"none",fontSize:13,fontWeight:800,color:"#0f172a"}}/>
               {pct!==null&&(<span style={{fontSize:11,fontWeight:800,color:"#0f172a",background:g.color+"33",borderRadius:8,padding:"1px 6px"}}>{pct}%</span>)}
-              <span style={{fontSize:14,fontWeight:900,color:"#0f172a"}}>{formatta(val)}</span>
               <OrdineSelect T={T} accent={accent} valore={g.ordine} ereditato={ordineRoot} onChange={v=>onPatch({gruppi:gruppi.map(x=>x.key===g.key?{...x,ordine:v}:x)})}/>
               {(()=>{ const idx=gruppi.findIndex(x=>x.key===g.key); const su=idx>0||!!blockUp; const giu=idx<gruppi.length-1||!!blockDown; return (<>
                 <span onClick={()=>su&&muoviGruppo(g.key,-1)} style={{cursor:su?"pointer":"default",fontSize:15,fontWeight:900,color:"#0f172a",opacity:su?1:0.25,padding:"0 3px",marginLeft:4}}>↑</span>
@@ -3429,6 +3439,7 @@ function SottomenuLibero({T, accent, sm, labelGlobale, ordineRoot, perGruppoSm, 
               <span onClick={()=>setPickerKey(pickerKey===g.key?null:g.key)} title="Crea sotto menu"
                 style={{cursor:"pointer",fontSize:20,fontWeight:900,lineHeight:1,color:accent,margin:"0 8px",padding:"0 4px"}}>+</span>
               <span onClick={()=>setAperto(isOpen?null:g.key)} style={{cursor:"pointer",fontSize:12,color:"#0f172a",padding:"4px 2px"}}>{isOpen?"▲":"▼"}</span>
+              <span style={{...NUM_REPORT,color:"#0f172a"}}>{formatta(val)}</span>
             </div>
             {confElimina===g.key&&(
               <ConfermaEliminazione T={T} testo={gruppi.length<=1?`Vuoi eliminare "${g.label||"sottomenu senza nome"}"?`:`Vuoi eliminare il gruppo "${g.label||"senza nome"}"?`}

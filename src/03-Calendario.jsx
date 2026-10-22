@@ -12,7 +12,7 @@ import {
 import { CalBadge, SmartTimeInput, AutocompleteInput, ColorPickerModal,
   ModaleErroriMultipli, FasceExpand, ConteggioConfigCard, TurnazioneConfigCard, OreTurnoConfigCard, fmtOreMin,
   IndennitaConfig, PeriodoReportButton, OrePerTurnoView, StraordinariView, GuadagniView,
-  ViabilitaView, TicketConfig, NAV_HEIGHT_CSS, ConfermaEliminazione, CercaModelli, NessunModello } from "./05-Comuni";
+  ViabilitaView, TicketConfig, NAV_HEIGHT_CSS, ConfermaEliminazione, CercaModelli, NessunModello, NUM_REPORT } from "./05-Comuni";
 import { ElencoModelliTendine, PulsanteOrdineAB } from "./23-tendine-modelli";
 import { ModelloCard, ModelForm, RotazioneCard, RotazioneForm, ModelloSelector,
   GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView } from "./04-Rotazione";
@@ -612,17 +612,20 @@ export default function VistaCalendario({ C }){
             <div style={{fontSize:22,fontWeight:700,color:T.text,overflow:"hidden",
               textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.label}</div>
             {r.type==="conteggio_turni"&&(
-              <div style={{fontSize:17,color:T.sub}}>{data.totale} turni</div>
+              <div style={{fontSize:17,color:T.sub}}>turni</div>
             )}
             {r.type==="turnazione"&&(
               <div style={{fontSize:14,color:T.sub}}>
-                {data.totale} turni · {data.totale>0?Math.round(((data.primo||0)/data.totale)*100):0}% 1° - {data.totale>0?Math.round(((data.secondo||0)/data.totale)*100):0}% 2°
+                turni · {data.totale>0?Math.round(((data.primo||0)/data.totale)*100):0}% 1° - {data.totale>0?Math.round(((data.secondo||0)/data.totale)*100):0}% 2°
               </div>
             )}
             {r.type==="ore_turno"&&(
-              <div style={{fontSize:17,color:T.sub}}>{fmtOreMin(data.totaleMin)}</div>
+              <div style={{fontSize:17,color:T.sub}}>ore</div>
             )}
           </div>
+          {(r.type==="conteggio_turni"||r.type==="turnazione"||r.type==="ore_turno")&&(
+            <span style={{...NUM_REPORT,color:T.text,marginRight:10}}>{r.type==="ore_turno"?fmtOreMin(data.totaleMin):data.totale}</span>
+          )}
           <div style={{display:"flex",flexDirection:"row",gap:10,marginRight:10,alignItems:"center"}} onClick={e=>e.stopPropagation()}>
             <button onClick={e=>{e.stopPropagation();moveReport(r.id,"up");}}
               style={{background:"none",border:"none",color:T.sub,cursor:"pointer",fontSize:18,padding:"0 4px",lineHeight:1}}>▲</button>
