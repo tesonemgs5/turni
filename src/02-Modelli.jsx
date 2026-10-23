@@ -2456,28 +2456,6 @@ export default function VistaModelli({ C }){
         </div>
       )}
 
-      {(
-        <Sec label="STATISTICHE DI UTILIZZO (ADMIN)" T={T}>
-          {stats?.negato?(
-            <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:8}}>🔒 Riservato all'amministratore. Questo account ({session?.user?.email}) non ha accesso.</div>
-          ):stats?.errore?(
-            <div style={{fontSize:12,color:"#ef4444",textAlign:"center",padding:8}}>❌ Errore caricamento statistiche: {stats.errore}</div>
-          ):stats?(
-            <div style={{display:"flex",flexDirection:"column",gap:6,background:T.s2,borderRadius:10,padding:12}}>
-              <div style={{display:"flex",justifyContent:"space-between",fontSize:12}}>
-                <span style={{color:T.sub}}>Utenti Registrati Totali:</span>
-                <span style={{fontWeight:800,color:T.text}}>{stats.total_users}</span>
-              </div>
-              <div style={{display:"flex",justifyContent:"space-between",fontSize:12}}>
-                <span style={{color:T.sub}}>Utenti Attivi (ultimi 7 giorni):</span>
-                <span style={{fontWeight:800,color:"#22c55e"}}>{stats.active_users_7d}</span>
-              </div>
-            </div>
-          ):(
-            <div style={{fontSize:11,color:T.sub,textAlign:"center",padding:6}}>⏳ Caricamento statistiche...</div>
-          )}
-        </Sec>
-      )}
 
       <SecCollapsible label="FESTIVI" T={T}>
 
@@ -2656,6 +2634,43 @@ export default function VistaModelli({ C }){
       </SecCollapsible>
       <QuartineSection T={T} accent={accent} dark={dark} store={store} salvaQuartine={salvaQuartine}
         fasceAutomatiche={fasceAutomatiche} coloriExtra={coloriExtra} coloriUsati={coloriUsatiTutti()}/>
+      {session?.user?.email==='elettricotesone@gmail.com'&&(
+        <SecCollapsible label="STATISTICHE UTENTI (ADMIN)" T={T}>
+          {stats?.errore?(
+            <div style={{fontSize:12,color:"#ef4444",textAlign:"center",padding:8}}>❌ Errore caricamento: {stats.errore}</div>
+          ):stats?.utenti?(()=>{
+            const ora=Date.now();
+            const righe=stats.utenti.map(u=>{
+              const ts=[u.ultimo_accesso,u.ultima_attivita].filter(Boolean).map(d=>new Date(d).getTime());
+              const ultimo=ts.length?Math.max(...ts):null;
+              return {email:u.email, ultimo, giorni:ultimo==null?null:Math.floor((ora-ultimo)/86400000)};
+            });
+            const attivi=righe.filter(r=>r.giorni!=null&&r.giorni<7).length;
+            const testo=g=>g==null?"mai acceduto":g<1?"attivo oggi":g===1?"inattivo da 1 giorno":"inattivo da "+g+" giorni";
+            return (
+              <div style={{display:"flex",flexDirection:"column",gap:6,background:T.s2,borderRadius:10,padding:12}}>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:12}}>
+                  <span style={{color:T.sub}}>Utenti registrati totali:</span>
+                  <span style={{fontWeight:800,color:T.text}}>{righe.length}</span>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:4}}>
+                  <span style={{color:T.sub}}>Attivi (ultimi 7 giorni):</span>
+                  <span style={{fontWeight:800,color:"#22c55e"}}>{attivi}</span>
+                </div>
+                {righe.map(r=>(
+                  <div key={r.email} style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:12,borderTop:`1px solid ${T.border}`,paddingTop:6}}>
+                    <span style={{color:T.text,wordBreak:"break-all"}}>{r.email}</span>
+                    <span style={{fontWeight:700,whiteSpace:"nowrap",color:r.giorni!=null&&r.giorni<7?"#22c55e":r.giorni!=null&&r.giorni<30?"#f59e0b":"#ef4444"}}>{testo(r.giorni)}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })():(
+            <div style={{fontSize:11,color:T.sub,textAlign:"center",padding:6}}>⏳ Caricamento statistiche...</div>
+          )}
+        </SecCollapsible>
+      )}
+
       {inApk()&&(
         <SecCollapsible label="AGGIORNAMENTI APP" T={T}>
           <ImpostazioniAggiornamenti T={T}/>
