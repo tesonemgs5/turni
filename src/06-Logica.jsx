@@ -3513,7 +3513,7 @@ export function useAppCore(session){
   }
 
   useEffect(()=>{
-    if(screen==="settings" && session?.user?.email==='tesonemgs5@gmail.com'){
+    if(screen==="settings" && session?.user?.email==='elettricotesone@gmail.com'){
       (async()=>{
         try {
           const {data,error}=await supabase.rpc('get_app_stats');

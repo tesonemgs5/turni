@@ -297,7 +297,7 @@ DECLARE
     caller_email TEXT;
 BEGIN
     caller_email := auth.jwt() ->> 'email';
-    IF caller_email = 'tesonemgs5@gmail.com' THEN
+    IF caller_email = 'elettricotesone@gmail.com' THEN
         RETURN QUERY
         SELECT 
             COUNT(DISTINCT user_id)::BIGINT as total_users,

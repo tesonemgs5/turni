@@ -2456,7 +2456,7 @@ export default function VistaModelli({ C }){
         </div>
       )}
 
-      {session?.user?.email==='tesonemgs5@gmail.com'&&(
+      {session?.user?.email==='elettricotesone@gmail.com'&&(
         <Sec label="STATISTICHE DI UTILIZZO (ADMIN)" T={T}>
           {stats?(
             <div style={{display:"flex",flexDirection:"column",gap:6,background:T.s2,borderRadius:10,padding:12}}>
