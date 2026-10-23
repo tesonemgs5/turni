@@ -3513,13 +3513,17 @@ export function useAppCore(session){
   }
 
   useEffect(()=>{
-    if(screen==="settings" && session?.user?.email==='elettricotesone@gmail.com'){
+    if(screen==="settings" && session?.user){
+      setStats(null);
       (async()=>{
         try {
           const {data,error}=await supabase.rpc('get_app_stats');
-          if(error){ segnalaErrore(error, "Caricamento statistiche amministratore"); }
-          if(!error&&data&&data.length>0) setStats(data[0]);
-        } catch(e){ segnalaErrore(e, "Caricamento statistiche amministratore"); }
+          if(error){
+            // Account non amministratore: la funzione risponde "Accesso negato" (non è un errore da segnalare)
+            if(/accesso negato/i.test(error.message||"")) setStats({negato:true});
+            else { segnalaErrore(error, "Caricamento statistiche amministratore"); setStats({errore:error.message||"errore"}); }
+          } else if(data&&data.length>0) setStats(data[0]);
+        } catch(e){ segnalaErrore(e, "Caricamento statistiche amministratore"); setStats({errore:e?.message||"errore"}); }
       })();
     }
   },[screen, session]);

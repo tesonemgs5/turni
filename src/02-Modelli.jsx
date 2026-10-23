@@ -2456,9 +2456,13 @@ export default function VistaModelli({ C }){
         </div>
       )}
 
-      {session?.user?.email==='elettricotesone@gmail.com'&&(
+      {(
         <Sec label="STATISTICHE DI UTILIZZO (ADMIN)" T={T}>
-          {stats?(
+          {stats?.negato?(
+            <div style={{fontSize:12,color:T.sub,textAlign:"center",padding:8}}>🔒 Riservato all'amministratore. Questo account ({session?.user?.email}) non ha accesso.</div>
+          ):stats?.errore?(
+            <div style={{fontSize:12,color:"#ef4444",textAlign:"center",padding:8}}>❌ Errore caricamento statistiche: {stats.errore}</div>
+          ):stats?(
             <div style={{display:"flex",flexDirection:"column",gap:6,background:T.s2,borderRadius:10,padding:12}}>
               <div style={{display:"flex",justifyContent:"space-between",fontSize:12}}>
                 <span style={{color:T.sub}}>Utenti Registrati Totali:</span>
