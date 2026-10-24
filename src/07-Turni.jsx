@@ -6,6 +6,7 @@ import {
 } from "./04-Rotazione";
 import { ConfermaEliminazione } from "./05-Comuni";
 import { leggiPdfCalendarioTurni } from "./14-pdf-turni";
+import { leggiPdfCotStella } from "./30-pdf-cot";
 
 // ═══════════════════════════════════════════════════════════════
 // importTurni.jsx — Dialog di importazione turni: da JSON e da
@@ -800,6 +801,26 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
       }
     }
 
+    // PDF del prospetto COT (Stella): lettura diretta del testo con le
+    // coordinate (incrocio riga=giorno / colonna=fascia), senza AI e senza API.
+    if(file.type==="application/pdf" && tipoTabella==="stella"){
+      try{
+        const r = await leggiPdfCotStella(file);
+        if(r.ok){
+          const fatto = await elaboraJsonParsed({ turni_stella: r.turni_stella });
+          if(!fatto) setStep("upload");
+          return;
+        }
+        setErrore(r.motivo || "Non sono riuscito a leggere questo PDF.");
+      }catch(errCot){
+        segnalaErroreSoloLog(errCot, "Lettura PDF COT locale (pdf.js)");
+        setErrore("Non sono riuscito a leggere questo PDF.");
+      }
+      setImportando(false);
+      setStep("upload");
+      return;
+    }
+
     try{
       const base64 = await new Promise((res, rej)=>{
         const r = new FileReader();
@@ -998,6 +1019,13 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
       return;
     }
 
+    await elaboraJsonParsed(parsed);
+  }
+
+  // Elabora un JSON già interpretato (incollato a mano oppure ricavato
+  // dalla lettura locale del PDF COT). Restituisce true se ha importato.
+  async function elaboraJsonParsed(parsed){
+    setImportando(true);
     const righeElaborate = [];
     // Stesso schema di ImportaTurniJsonDialog (righe scartate tracciate con
     // motivo, non solo ignorate con continue), così anche questo flusso
@@ -1070,13 +1098,13 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
     }else{
       setErrore("Formato JSON non riconosciuto.");
       setImportando(false);
-      return;
+      return false;
     }
 
     if(righeElaborate.length===0 && mancanti.length===0 && sospetti.length===0){
       setErrore("Nessun turno riconosciuto in questo JSON (controlla formato date, nomi turno, o orari delle fasce).");
       setImportando(false);
-      return;
+      return false;
     }
     const n = righeElaborate.length>0 ? await onConfirm(righeElaborate) : 0;
     registraProblemiImport(mancanti, sospetti);
@@ -1084,6 +1112,7 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
     setRisultatoImportOcr({ mancanti, sospetti });
     setImportando(false);
     setStep("riepilogo");
+    return true;
   }
 
   // URL del backend di doppio controllo OCR (Tesseract + confronto),
