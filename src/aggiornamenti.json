@@ -1,5 +1,15 @@
 [
   {
+    "n": 5,
+    "data": "2026-10-24",
+    "titolo": "Errori spiegati in italiano semplice",
+    "righe": [
+      "Quando compare un pop-up di errore, ora trovi scritto cosa è successo, cosa significa per i tuoi dati e cosa fare, senza dover aprire il Log.",
+      "Il testo tecnico resta sotto, in piccolo, da mandare a Claude se serve.",
+      "Anche nel Log ogni errore ha «Cosa significa» con la stessa spiegazione."
+    ]
+  },
+  {
     "n": 4,
     "data": "2026-10-24",
     "titolo": "Corretto l'errore «storeRef is not defined» nella modifica evento",

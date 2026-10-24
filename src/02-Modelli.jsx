@@ -10,7 +10,7 @@ import {
   cancellaLogErrori, segnalaErrore, CATEGORIE_BACKUP_LOCALE,
 } from "./04-Rotazione";
 import { CalBadge, SmartTimeInput, AutocompleteInput, ColorPickerModal,
-  ModaleErroriMultipli, FasceExpand, ConteggioConfigCard, TurnazioneConfigCard,
+  ModaleErroriMultipli, SpiegazioneErrore, FasceExpand, ConteggioConfigCard, TurnazioneConfigCard,
   IndennitaConfig, OrePerTurnoView, StraordinariView, GuadagniView, Sec, SecCollapsible,
   NAV_HEIGHT_CSS, nomeDelColore, ConfermaEliminazione, preparaFixCursore,
   modelloVisibileInCalendario, CercaModelli, NessunModello } from "./05-Comuni";
@@ -1682,6 +1682,15 @@ export default function VistaModelli({ C }){
                     <div style={{fontSize:12,color:T.text,wordBreak:"break-word"}}>
                       {voce.message || voce.messaggio}{voce.conteggio>1 && !voce.conteggi ? ` (×${voce.conteggio})` : ""}
                     </div>
+                    {!op && (
+                      <details style={{marginTop:4}}>
+                        <summary style={{fontSize:11,color:"#6366f1",cursor:"pointer",fontWeight:700}}>Cosa significa</summary>
+                        <div style={{marginTop:6}}>
+                          <SpiegazioneErrore messaggio={voce.message || voce.messaggio} contesto={voce.contesto}
+                            colTesto={T.text} colSub={T.sub} sfondo={T.surface}/>
+                        </div>
+                      </details>
+                    )}
                     {op && st && (
                       <div style={{fontSize:11,fontWeight:700,color:colSt,marginTop:2}}>
                         {voce.origine!=="remoto" ? "💾 locale ✓   " : ""}{st.icona} {st.testo}

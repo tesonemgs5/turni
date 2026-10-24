@@ -5,7 +5,7 @@ import VistaCalendario from "./03-Calendario";
 import VistaModelli from "./02-Modelli";
 import { DialogoScarica } from "./19-dialogo-scarica";
 import { ElencoModelliTendine, PulsanteOrdineAB, ContestoTendine } from "./23-tendine-modelli";
-import { ModaleErroriMultipli, NAV_HEIGHT, NAV_HEIGHT_CSS, ConfermaEliminazione, CercaModelli, NessunModello } from "./05-Comuni";
+import { ModaleErroriMultipli, SpiegazioneErrore, NAV_HEIGHT, NAV_HEIGHT_CSS, ConfermaEliminazione, CercaModelli, NessunModello } from "./05-Comuni";
 import {
   getContrastTextColor, NOMI_MESI_IT, calcFine6h15, calcFine6h30, calcDurata, formattaDurataHM, calcFineModello,
   fmtDataIT, impostaSilenziamentoErrore, segnalaErrore,
@@ -214,7 +214,9 @@ function AppInterno({ session }){
               <div style={{background:"#fff",borderRadius:14,padding:20,maxWidth:380,width:"100%",
                 boxShadow:"0 10px 40px rgba(0,0,0,0.3)"}}>
                 <div style={{fontSize:15,fontWeight:900,color:"#000",marginBottom:8}}>⚠️ {err.contesto}</div>
-                <div style={{fontSize:13,color:"#000",marginBottom:14,lineHeight:1.4}}>{err.messaggio}</div>
+                <div style={{maxHeight:"55vh",overflowY:"auto",marginBottom:14}}>
+                  <SpiegazioneErrore messaggio={err.messaggio} contesto={err.contesto}/>
+                </div>
                 <div style={{fontSize:11,color:"#666",marginBottom:14}}>
                   Questo errore resta comunque salvato nel Log (Impostazioni → Log), riattivabile da lì in qualsiasi momento.
                 </div>

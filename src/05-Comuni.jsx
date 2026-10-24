@@ -3,6 +3,7 @@ import { ElencoModelliTendine, PulsanteOrdineAB } from "./23-tendine-modelli";
 import { fasceIndennitaDi, pulsantiFasciaDi, periodiDi } from "./24-fasce-indennita";
 import { ordineAttivo, minutiInizio } from "./21-ordine";
 import { impostaSelezioneModelliGruppo } from "./29-periodo-sottomenu";
+import { spiegaErrore } from "./31-spiega-errore";
 
 // Ordina le voci di data.perModello:
 // in ordine A (alfabetico) per nome A-Z; in ordine B (orario) per orario d'inizio crescente.
@@ -2956,6 +2957,27 @@ export function ColorRow({T, hex, label, sub, count, onClick, onRemove}){
 // messaggio tecnico) e ha una checkbox propria per silenziare quello
 // specifico contesto. Un solo bottone OK chiude tutto e applica i
 // silenziamenti scelti.
+// Spiegazione in italiano semplice di un errore: cosa è successo, cosa significa
+// per i dati, cosa fare. Il testo tecnico resta sotto, in piccolo.
+export function SpiegazioneErrore({messaggio, contesto, colTesto="#000", colSub="#666", sfondo="#f5f5f7"}){
+  const sp = spiegaErrore(messaggio, contesto);
+  const blocchi = [["Cosa è successo", sp.cosaSuccede], ["Cosa significa per i tuoi dati", sp.perIDati], ["Cosa fare", sp.cosaFare]];
+  return (
+    <div>
+      {blocchi.map(([titolo, testo])=>(
+        <div key={titolo} style={{marginBottom:10}}>
+          <div style={{fontSize:11,fontWeight:800,color:colTesto,marginBottom:2}}>{titolo}</div>
+          <div style={{fontSize:12,color:colTesto,lineHeight:1.45}}>{testo}</div>
+        </div>
+      ))}
+      <div style={{background:sfondo,borderRadius:8,padding:"6px 8px",marginBottom:4}}>
+        <div style={{fontSize:10,fontWeight:800,color:colSub,marginBottom:2}}>Dettaglio tecnico</div>
+        <div style={{fontSize:11,color:colSub,wordBreak:"break-word"}}>{sp.tecnico}</div>
+      </div>
+    </div>
+  );
+}
+
 export function ModaleErroriMultipli({errori, accent, onChiudi}){
   const [espansi, setEspansi] = useState(()=>new Set());
   const [daSilenziare, setDaSilenziare] = useState(()=>new Set());
@@ -3004,7 +3026,7 @@ export function ModaleErroriMultipli({errori, accent, onChiudi}){
                 </div>
                 {aperto && (
                   <div style={{padding:"0 12px 12px"}}>
-                    <div style={{fontSize:12,color:"#000",marginBottom:10,lineHeight:1.4}}>{g.messaggio}</div>
+                    <div style={{marginBottom:10}}><SpiegazioneErrore messaggio={g.messaggio} contesto={g.contesto}/></div>
                     <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:12,color:"#000"}}>
                       <input type="checkbox" checked={silenziato}
                         onChange={e=>setDaSilenziare(prev=>{
