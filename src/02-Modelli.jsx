@@ -205,7 +205,7 @@ export default function VistaModelli({ C }){
     delTuttiEventiImport, importaEventiSingoli, applyRotazione, getReportRange, splitColleghi, computeConteggioForReport,
     computeTurnazioneForReport, computeConteggio, computeIndennita, activeReports, inactiveTypes, addReport,
     removeReport, renameReport, moveReport, getConteggioConfig, updateConteggioConfig,
-    applicaReportOverrideATuttiGliEventi, totaleTurni,
+    applicaReportOverrideATuttiGliEventi, copiaAppartenenzaReportModello, totaleTurni,
     setPrevGrid, REPORT_TEMPLATES, calcolaOrdineModelli, updateFascia, session, salvaQuartine, coloriUsatiTutti, riordinaColoriUsati,
   } = C;
   const { gruppi, gruppiDelCalendario, materializzaGruppiA, aggiungiGruppo, rinominaGruppo, aggiornaOrdineGruppo, eliminaGruppo, spostaModelloInGruppo, spostaModelliInGruppo, spostaGruppo } = C;
@@ -4194,6 +4194,7 @@ export default function VistaModelli({ C }){
                       calendarId: editCalId || calId || mainCalId,
                     });
                     const nuovoId = esitoNuovo?.modello?.id;
+                    if(nuovoId && mod) copiaAppartenenzaReportModello(mod, esitoNuovo.modello);
 
                     const ns = JSON.parse(JSON.stringify(store));
                     const idsDaAgg = [];
@@ -4255,7 +4256,7 @@ export default function VistaModelli({ C }){
                     const nOut = (mod?.tempo==="h24") ? "" : (form.offOut!==undefined ? form.offOut : ((mod ? calcFineModello(mod) : "") || mod?.fine || ""));
                     const nCol = form.colorOvr || mod?.coloreCustom || mod?.colore || (form.dur === "allday" ? COLORE_H24 : colByTime(nIn));
                     const nTempo = mod?.tempo || "custom";
-                    await saveModello({
+                    const esitoNuovo4 = await saveModello({
                       ...(mod || {}),
                       id: null,
                       titolo: nTitoloMod,
@@ -4267,12 +4268,41 @@ export default function VistaModelli({ C }){
                       colore: nCol,
                       calendarId: editCalId || calId || mainCalId,
                     });
+                    const nuovoId4 = esitoNuovo4?.modello?.id;
+                    if(nuovoId4){
+                      // Il nuovo modello e' una copia: stessi report, stesse categorie.
+                      if(mod) copiaAppartenenzaReportModello(mod, esitoNuovo4.modello);
+                      // L'evento di QUESTO giorno passa al nuovo modello (override report e
+                      // categorie dell'evento restano); gli altri giorni restano sul vecchio.
+                      const ns4 = JSON.parse(JSON.stringify(store));
+                      let idEv4 = null;
+                      const lista4 = ns4.events?.[dayKey]?.[editCalId];
+                      if(Array.isArray(lista4)){
+                        ns4.events[dayKey][editCalId] = lista4.map(e=>{
+                          if(e.id !== form.editId) return e;
+                          idEv4 = e.id;
+                          return { ...e, modelloId: nuovoId4, label: nLabel, color: nCol, tIn: nIn, tOut: nOut };
+                        });
+                      }
+                      if(idEv4){
+                        saveToLocalStorage(ns4.events, ns4.calendars, modelli);
+                        setStore(ns4);
+                        storeRef.current = ns4;
+                        await scriviConBackup({
+                          tipo:"update", table:"events",
+                          payload:{ modello_id: nuovoId4, label: nLabel, color: nCol, time_in: nIn, time_out: nOut },
+                          matchObj:{ id: idEv4, user_id: userId },
+                          contesto:"Crea nuovo modello da evento", ts: new Date().toISOString(),
+                          opzioni:{ soloLog: true }
+                        });
+                      }
+                    }
                     setForm(null); setDayKey(null);
                   }} style={{display:"block",width:"100%",background:T.s2,border:`1px solid ${T.border}`,
                     borderRadius:10,color:T.text,padding:"10px 12px",marginBottom:10,cursor:"pointer",
                     fontWeight:800,fontSize:13,textAlign:"left",boxSizing:"border-box"}}>
                     4. Crea nuovo evento
-                    <div style={{fontSize:10,fontWeight:600,color:T.sub,marginTop:2}}>Si crea un nuovo modello così come è salvato l'evento. Gli eventi esistenti non cambiano</div>
+                    <div style={{fontSize:10,fontWeight:600,color:T.sub,marginTop:2}}>Si crea un nuovo modello identico, con le stesse regole dei report, e questo evento passa al nuovo modello. Gli altri eventi non cambiano</div>
                     <div style={{fontSize:11,fontWeight:800,color:accent,marginTop:3}}>Crea 1 nuovo modello</div>
                   </div>
 

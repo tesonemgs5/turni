@@ -4,7 +4,7 @@ import { scriviEsitoImport } from "./22-backup-stato";
 import { ordineAttivo, impostaOrdineAttivo, posDaRiga, colonnePosizione, payloadPosCambiate, scambiaOrdini, mapGruppoDb, colGruppo, BANDA_A, classeModelloA, ordinaClassiA, minutiInizio } from "./21-ordine";
 import { stessoHexColore, calcolaOrdineModelli, calcolaOrdineVisuale, classificaFasciaOrariaModello, calcolaOrdineRiordinoFasce } from "./26-ordine-modelli";
 import { calcolaAllineamentoColori } from "./13-allinea-colori";
-import { impostaInclusioneModelloReport } from "./27-report-modelli";
+import { impostaInclusioneModelloReport, statoInclusioneModelloReport } from "./27-report-modelli";
 import { meseCorrenteReport, statoInizialeMeseReport } from "./28-periodo-report";
 import { dataNelPeriodoReport, intervalloPersonalizzatoReport } from "./29-periodo-sottomenu";
 import { widgetDisponibile, inviaAlWidget, descriviStatoWidget } from "./17-widget";
@@ -8111,6 +8111,52 @@ const importsRecenti = useMemo(()=>{
     saveSettings({conteggio_configs: base});
   }
 
+
+  // Copia l'appartenenza ai report di un modello su un altro modello (creato
+  // da un evento modificato): ogni report che includeva/escludeva/aggiungeva
+  // il vecchio fa lo stesso col nuovo, con le stesse categorie turno e
+  // APP/AUTO e le stesse assegnazioni ai sottomenu. Tocca solo la config dei report.
+  function copiaAppartenenzaReportModello(modelloVecchio, modelloNuovo){
+    if(!modelloVecchio?.id || !modelloNuovo?.id || modelloVecchio.id===modelloNuovo.id) return;
+    const idV = modelloVecchio.id, idN = modelloNuovo.id;
+    const base = {...(conteggioConfigsRef.current||{})};
+    const tuttiId = [...modelli.map(m=>m.id), idN];
+    let toccato = false;
+    const copiaChiavi = (o)=>{
+      // oggetti con chiavi = id modello (e id_appauto): copio la voce del vecchio sul nuovo
+      if(Array.isArray(o)) return o.map(copiaChiavi);
+      if(!o || typeof o!=="object") return o;
+      const out = {};
+      for(const [k,v] of Object.entries(o)) out[k] = copiaChiavi(v);
+      for(const [k,v] of Object.entries(o)){
+        if(k===idV || k.startsWith(idV+"_")){
+          const kn = idN + k.slice(idV.length);
+          if(!(kn in out)) out[kn] = copiaChiavi(v);
+        }
+      }
+      return out;
+    };
+    (store.reports||[]).forEach(r=>{
+      const cfgOrig = base[r.id] || getConteggioConfig(r.id, r.type);
+      const defV = isModelloTurnazioneDefault({id:idV, tempo:modelloVecchio.tempo, inizio:modelloVecchio.inizio, fine:modelloVecchio.fine});
+      const defN = isModelloTurnazioneDefault({id:idN, tempo:modelloNuovo.tempo, inizio:modelloNuovo.inizio, fine:modelloNuovo.fine});
+      const incV = statoInclusioneModelloReport(r.type, cfgOrig, idV, defV);
+      // 1) categorie turno/APP-AUTO e assegnazioni ai sottomenu (voci con l'id del vecchio modello)
+      const { modelliEsclusi, modelliAggiunti, modelliInclusi, ...altro } = cfgOrig;
+      let cfg = { ...copiaChiavi(altro) };
+      if(modelliEsclusi!==undefined) cfg.modelliEsclusi = modelliEsclusi;
+      if(modelliAggiunti!==undefined) cfg.modelliAggiunti = modelliAggiunti;
+      if(modelliInclusi!==undefined) cfg.modelliInclusi = modelliInclusi;
+      // 2) incluso / escluso / aggiunto: stesso stato del vecchio
+      cfg = impostaInclusioneModelloReport(r.type, cfg, idN, incV, defN, tuttiId);
+      if(JSON.stringify(cfg)!==JSON.stringify(cfgOrig)){ base[r.id] = cfg; toccato = true; }
+    });
+    if(!toccato) return;
+    conteggioConfigsRef.current = base;
+    setConteggioConfigs(base);
+    saveSettings({conteggio_configs: base});
+  }
+
   const totaleTurni = computeConteggio().totale;
   const totaleMinTurni = computeMinutiForReport({fasceFiltro:[]}).totaleMin;
 // #endregion
@@ -8644,6 +8690,7 @@ const importsRecenti = useMemo(()=>{
     getConteggioConfig,
     updateConteggioConfig,
     applicaScelteReportModello,
+    copiaAppartenenzaReportModello,
     applicaReportOverrideATuttiGliEventi,
     totaleTurni,
     totaleMinTurni,
