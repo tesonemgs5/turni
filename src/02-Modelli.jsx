@@ -19,6 +19,7 @@ import { ModelloCard, ModelForm, RotazioneCard, RotazioneForm, ModelloSelector,
   GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView, ReperibilitaView } from "./04-Rotazione";
 import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
 import { ImpostazioniAggiornamenti, inApk } from "./12-avviso-aggiornamento";
+import AGGIORNAMENTI_APP from "./aggiornamenti.json";
 import { QuartineSection } from "./16-QuartineSection";
 import { scaricaFileTesto } from "./18-scarica-file";
 import { classeModelloA, ordinaClassiA, ordinaPerInizio } from "./21-ordine";
@@ -1640,6 +1641,25 @@ export default function VistaModelli({ C }){
             style={{padding:"7px 10px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:11,
               background:T.s2,color:T.sub,border:`1px solid ${T.border}`}}>↻</button>
         </div>
+        <div style={{marginBottom:16}}>
+          <div style={{fontSize:11,fontWeight:800,color:T.sub,marginBottom:8}}>
+            AGGIORNAMENTI ({AGGIORNAMENTI_APP.length})
+          </div>
+          <div style={{maxHeight:260,overflowY:"auto",background:T.s2,borderRadius:10,padding:10}}>
+            {AGGIORNAMENTI_APP.map(a=>(
+              <div key={a.n} style={{padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
+                <div style={{fontSize:10,color:T.sub,marginBottom:2}}>
+                  🔔 {new Date(a.data).toLocaleDateString("it-IT")}
+                </div>
+                <div style={{fontSize:12,fontWeight:800,color:T.text,marginBottom:3}}>{a.titolo}</div>
+                {(a.righe||[]).map((r,i)=>(
+                  <div key={i} style={{fontSize:11,color:T.text,lineHeight:1.4,paddingLeft:8}}>– {r}</div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+
         <div style={{fontSize:11,fontWeight:800,color:T.sub,marginBottom:8}}>
           CRONOLOGIA {logErroriVisibile?.length>0 ? `(${logErroriVisibile.length})` : ""}
         </div>

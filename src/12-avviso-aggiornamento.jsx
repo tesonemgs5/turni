@@ -47,6 +47,17 @@ function piuNuova(a, b) { // true se a > b
   return false
 }
 
+// Le note della release contengono l'elenco delle novità (scritto dal workflow
+// da src/aggiornamenti.json), la riga «Build automatica...» e un marcatore interno.
+function noteDaRelease(body) {
+  return String(body || "")
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .split("\n")
+    .filter(r => !/^Build automatica/i.test(r.trim()))
+    .join("\n")
+    .trim()
+}
+
 // Stato condiviso tra il pop-up e la pagina Impostazioni
 let mostraPopup = null   // la registra il componente AvvisoAggiornamento
 let inVolo = null        // controllo in corso (evita richieste doppie)
@@ -81,7 +92,7 @@ export function controllaAggiornamenti({ forza = false } = {}) {
       const numBuild = (String(dati.name || "").match(/#(\d+)/) || [])[1]
       const versioneMostrata = numBuild ? `${versione}#${numBuild}` : versione
       if (versione && piuNuova(versione, corrente)) {
-        if (mostraPopup) mostraPopup(versioneMostrata)
+        if (mostraPopup) mostraPopup({ versione: versioneMostrata, note: noteDaRelease(dati.body) })
         return { esito: "nuova", versione: versioneMostrata }
       }
       return { esito: "aggiornato", versione: versioneCompleta() || corrente }
@@ -131,9 +142,18 @@ export default function AvvisoAggiornamento() {
         <div style={{fontSize:34,marginBottom:6}}>🔔</div>
         <div style={{fontSize:17,fontWeight:800,marginBottom:8}}>Nuova versione disponibile</div>
         <div style={{fontSize:13,color:"#cbd5e1",lineHeight:1.5,marginBottom:18}}>
-          Versione <b>{nuova}</b>{corrente ? <> (installata: {corrente})</> : null}.<br/>
+          Versione <b>{nuova.versione}</b>{corrente ? <> (installata: {corrente})</> : null}.<br/>
           Vuoi scaricarla ora?
         </div>
+        {nuova.note ? (
+          <div style={{textAlign:"left",marginBottom:18}}>
+            <div style={{fontSize:12,fontWeight:800,marginBottom:4}}>Cosa cambia</div>
+            <div style={{fontSize:12,color:"#cbd5e1",lineHeight:1.45,whiteSpace:"pre-wrap",
+              maxHeight:200,overflowY:"auto",background:"#0f172a",borderRadius:10,padding:"8px 10px"}}>
+              {nuova.note}
+            </div>
+          </div>
+        ) : null}
         <div style={{display:"flex",gap:10}}>
           <button onClick={() => setNuova(null)}
             style={{flex:1,background:"#334155",border:"none",borderRadius:10,color:"#e2e8f0",

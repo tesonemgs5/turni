@@ -102,11 +102,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="v$VERSION"
+          # Novità mostrate nel pop-up dell'app: voci di src/aggiornamenti.json più
+          # nuove di quelle già presenti nell'ultima release (marcatore agg:N).
+          PREV_BODY=$(gh release view --json body --jq .body 2>/dev/null || true)
+          PREV_N=$(printf '%s' "$PREV_BODY" | sed -n 's/.*<!-- agg:\([0-9][0-9]*\) -->.*/\1/p' | head -1)
+          PREV_N=${PREV_N:-0}
+          MAX_N=$(jq 'map(.n) | max // 0' src/aggiornamenti.json)
+          NOTE=$(jq -r --argjson p "$PREV_N" '
+            (if $p == 0 then .[:3] else [ .[] | select(.n > $p) ] end)
+            | (if length == 0 then .[:0] else . end)
+            | .[] | "• \(.titolo)\n" + ((.righe // []) | map("   – " + .) | join("\n")) + "\n"
+          ' src/aggiornamenti.json)
+          BODY=$(printf '%s\n\nBuild automatica dal commit %s\n<!-- agg:%s -->' "$NOTE" "${GITHUB_SHA::7}" "$MAX_N")
           gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
           gh release create "$TAG" release-artifacts/turni.apk \
             --target "$GITHUB_SHA" \
             --title "Turni $VERSION#$APK_BUILD_NUM" \
-            --notes "Build automatica dal commit ${GITHUB_SHA::7}" \
+            --notes "$BODY" \
             --latest
           gh release list --limit 100 --json tagName,createdAt \
             --jq 'sort_by(.createdAt) | reverse | .[2:] | .[].tagName' \

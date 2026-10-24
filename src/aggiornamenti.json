@@ -1,0 +1,32 @@
+[
+  {
+    "n": 3,
+    "data": "2026-10-24",
+    "titolo": "Novità degli aggiornamenti nel pop-up e nel Log",
+    "righe": [
+      "Il pop-up «Nuova versione disponibile» ora mostra cosa è cambiato in quella versione.",
+      "Nelle Impostazioni, dentro «Log attività ed errori», c'è la nuova sezione «Aggiornamenti» con lo storico delle novità."
+    ]
+  },
+  {
+    "n": 2,
+    "data": "2026-10-24",
+    "titolo": "Modifica evento: «Crea nuovo evento» ora copia tutto",
+    "righe": [
+      "Il nuovo modello è una copia identica: cambia solo ciò che hai modificato (orario, nome, colore).",
+      "Ogni report che includeva, escludeva o aggiungeva il vecchio modello fa lo stesso col nuovo, con le stesse categorie turno e APP/AUTO.",
+      "L'evento di quel giorno passa al nuovo modello, con gli stessi override dei report. Gli altri giorni restano sul vecchio modello.",
+      "Anche «Da questo evento in poi» copia ora le regole dei report sul nuovo modello."
+    ]
+  },
+  {
+    "n": 1,
+    "data": "2026-10-24",
+    "titolo": "Import PDF COT (Stella) senza AI e senza API",
+    "righe": [
+      "Il PDF del prospetto COT viene letto direttamente dall'app: nessuna chiave API necessaria.",
+      "Ogni «Stella» viene assegnata a giorno (riga) e fascia (colonna), anche se le colonne per fascia cambiano da mese a mese.",
+      "Doppio e triplo controllo con 3 metodi diversi: se non coincidono l'app non importa e mostra le differenze, con «Importa comunque» o «Annulla»."
+    ]
+  }
+]
