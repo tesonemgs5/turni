@@ -31,3 +31,13 @@ test("confronto: coincidono / differiscono", () => {
   const d = confrontaRisultatiCot(a, { "00.00_06.30": ["2 novembre 2026"] });
   assert.equal(d.length, 2);
 });
+
+test("terzo metodo riga per riga e incrocio dei 3 risultati", async () => {
+  const { parseRighePdfCot, confrontaMetodiCot } = await import("../src/30-pdf-cot.js");
+  const r3 = parseRighePdfCot([pagina]);
+  assert.equal(r3.ok, true);
+  const r1 = parseItemsPdfCot([pagina]);
+  assert.deepEqual(confrontaMetodiCot([r1.turni_stella, r3.turni_stella, r1.turni_stella]), []);
+  const d = confrontaMetodiCot([r1.turni_stella, { "00.00_06.30": ["1 novembre 2026"] }, r1.turni_stella]);
+  assert.ok(d.length > 0 && d[0].mancaIn.includes(2));
+});

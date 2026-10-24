@@ -269,6 +269,122 @@ export function confrontaRisultatiCot(a, b) {
   return diff;
 }
 
+// ───────────────────────────────────────────────────────────────
+// TERZO METODO (controllo incrociato): RIGA PER RIGA.
+// Si scorre il testo nell'ordine del PDF, un giorno alla volta: si leggono
+// le celle della riga in sequenza; quando si trova "Stella" si guarda in che
+// POSIZIONE (n-esima cella) della riga si trova e si "sale" alla colonna
+// con quel numero d'ordine fino all'intestazione della fascia. In una riga
+// possono esserci 2-3 Stella: si continua fino a fine riga. Non usa la Y e
+// non usa le linee. Se una riga ha un numero di celle diverso dalle altre
+// la lettura non è affidabile e il metodo lo segnala.
+// ───────────────────────────────────────────────────────────────
+export function parseRighePdfCot(pagine) {
+  const turni = {};
+  let stelleTrovate = 0;
+
+  for (const items of pagine) {
+    const centro = (it) => it.x + it.w / 2;
+    const righe = [];
+    for (const it of items) {
+      const t = (it.str || "").trim();
+      const m = RIGA_DATA_RE.exec(t);
+      if (m) {
+        righe.push({ testo: `${parseInt(m[1], 10)} ${m[2].toLowerCase()} ${m[3]}`, celle: [] });
+      } else if (t && righe.length) {
+        righe[righe.length - 1].celle.push(it);
+      }
+    }
+    if (righe.length === 0) continue;
+
+    // Le celle di una riga sono quelle tra la sua data e la successiva. Sull'ultima
+    // riga di pagina, dopo le celle, il PDF contiene intestazioni e numero di
+    // pagina: si tagliano solo se sono riconoscibili come tali.
+    const CODA_RE = /ORARIO|festiv|feriali|infrasett|AREA|U\.O|PROGRAMM|UNITA|\d{1,2}[.:]\d{2}|^\d{1,2}$/i;
+    const conteggi = {};
+    for (const r of righe.slice(0, -1)) conteggi[r.celle.length] = (conteggi[r.celle.length] || 0) + 1;
+    if (Object.keys(conteggi).length === 0) conteggi[righe[0].celle.length] = 1;
+    const N = Number(Object.entries(conteggi).sort((a, b) => b[1] - a[1])[0][0]);
+    const ultima = righe[righe.length - 1];
+    const extra = ultima.celle.slice(N);
+    if (extra.length && extra.every((c) => CODA_RE.test((c.str || "").trim()))) {
+      ultima.celle = ultima.celle.slice(0, N);
+    }
+    const irregolari = righe.filter((r) => r.celle.length !== N);
+    if (irregolari.length > 0) {
+      return {
+        ok: false,
+        motivo: `righe con un numero di celle diverso (${irregolari.map((r) => r.testo).join(", ")})`,
+        turni_stella: {},
+      };
+    }
+
+    // Centro medio di ogni colonna (per numero d'ordine) e intestazioni.
+    const centriColonne = [];
+    for (let i = 0; i < N; i++) {
+      centriColonne.push(righe.reduce((a, r) => a + centro(r.celle[i]), 0) / righe.length);
+    }
+    const festivi = items.filter((it) => /\(festivi\)/i.test(it.str) && ORARIO_RE.test(it.str));
+    const intestazioni = items
+      .filter((it) => ORARIO_RE.test(it.str) && !/\(festivi\)/i.test(it.str))
+      .map((it) => {
+        const m = ORARIO_RE.exec(it.str);
+        const c = centro(it);
+        let vicino = null;
+        for (const f of festivi) {
+          const d = Math.abs(centro(f) - c);
+          if (d < 40 && (!vicino || d < vicino.d)) vicino = { f, d };
+        }
+        const mm = vicino ? ORARIO_RE.exec(vicino.f.str) : m;
+        return { centro: c, chiave: `${due(mm[1])}.${mm[2]}_${due(mm[3])}.${mm[4]}` };
+      })
+      .sort((a, b) => a.centro - b.centro);
+    const estremi = partizionaColonne(centriColonne, intestazioni.map((h) => h.centro));
+    if (!estremi) return { ok: false, motivo: "fasce non associabili alle colonne", turni_stella: {} };
+
+    for (const r of righe) {
+      r.celle.forEach((cella, i) => {
+        if ((cella.str || "").trim().toLowerCase() !== "stella") return;
+        const g = intestazioni.findIndex((_, idx) => i >= estremi[idx] && i < estremi[idx + 1]);
+        if (g < 0) return;
+        (turni[intestazioni[g].chiave] = turni[intestazioni[g].chiave] || []).push(r.testo);
+        stelleTrovate += 1;
+      });
+    }
+  }
+
+  for (const k of Object.keys(turni)) turni[k] = [...new Set(turni[k])];
+  return {
+    ok: stelleTrovate > 0,
+    motivo: stelleTrovate > 0 ? "" : "nessuna occorrenza trovata dal terzo metodo",
+    stelleTrovate,
+    turni_stella: turni,
+  };
+}
+
+// Incrocia 2 o più risultati. Restituisce le celle (data + fascia) non
+// trovate da TUTTI i metodi: [{ data, fascia, trovatoDa:[1,2], mancaIn:[3] }].
+// Lista vuota = tutti i metodi coincidono.
+export function confrontaMetodiCot(risultati) {
+  const per = risultati.map((r) => {
+    const set = new Set();
+    for (const [fascia, date] of Object.entries(r || {})) for (const d of date) set.add(`${fascia}|${d}`);
+    return set;
+  });
+  const tutte = new Set(per.flatMap((s) => [...s]));
+  const diff = [];
+  for (const x of tutte) {
+    const trovatoDa = [];
+    const mancaIn = [];
+    per.forEach((s, i) => (s.has(x) ? trovatoDa : mancaIn).push(i + 1));
+    if (mancaIn.length) {
+      const [fascia, data] = x.split("|");
+      diff.push({ data, fascia, trovatoDa, mancaIn });
+    }
+  }
+  return diff;
+}
+
 // Estrae le linee verticali sottili (bordi della tabella) dalle istruzioni di
 // disegno della pagina, nelle stesse coordinate del testo.
 async function leggiLineeVerticali(pdfjs, page) {
@@ -322,6 +438,20 @@ export async function leggiPdfCotStella(file) {
   const r1 = parseItemsPdfCot(pagine);
   let r2;
   try { r2 = parseLineePdfCot(pagineConLinee); } catch { r2 = { ok: false, motivo: "errore nel secondo metodo", turni_stella: {} }; }
-  const differenze = r1.ok && r2.ok ? confrontaRisultatiCot(r1.turni_stella, r2.turni_stella) : null;
-  return { ...r1, secondo: r2, differenze, verificato: !!(differenze && differenze.length === 0) };
+  let r3;
+  try { r3 = parseRighePdfCot(pagine); } catch { r3 = { ok: false, motivo: "errore nel terzo metodo", turni_stella: {} }; }
+  const tuttiOk = r1.ok && r2.ok && r3.ok;
+  const differenze = tuttiOk ? confrontaMetodiCot([r1.turni_stella, r2.turni_stella, r3.turni_stella]) : null;
+  const motivi = [
+    !r2.ok && `metodo 2: ${r2.motivo}`,
+    !r3.ok && `metodo 3: ${r3.motivo}`,
+  ].filter(Boolean).join(" · ");
+  return {
+    ...r1,
+    secondo: r2,
+    terzo: r3,
+    differenze,
+    motivoNonVerificato: motivi,
+    verificato: !!(differenze && differenze.length === 0),
+  };
 }

@@ -821,7 +821,7 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
           setVerificaCot({
             stato: r.differenze ? "diverso" : "nonverificato",
             differenze: r.differenze || [],
-            motivo: (r.secondo && r.secondo.motivo) || "",
+            motivo: r.motivoNonVerificato || "",
             turni: r.turni_stella,
           });
           setImportando(false);
@@ -1539,7 +1539,7 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
                 </div>
                 {verificaCot && verificaCot.stato==="ok"&&(
                   <div style={{fontSize:12,color:"#1a1a1a",fontWeight:700,marginBottom:8}}>
-                    ✓ Verificato con 2 metodi
+                    ✓ Verificato con 3 metodi
                   </div>
                 )}
                 {nRigheAggiunte===0&&(!risultatoImportOcr || (risultatoImportOcr.mancanti.length===0 && risultatoImportOcr.sospetti.length===0))&&(
@@ -1649,8 +1649,8 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
             <div style={{textAlign:"left",padding:"20px 8px"}}>
               <div style={{fontSize:14,color:"#1a1a1a",fontWeight:800,marginBottom:8}}>
                 {verificaCot.stato==="diverso"
-                  ? "⚠️ I due metodi di lettura non coincidono"
-                  : "⚠️ Non sono riuscito a verificare con il secondo metodo"}
+                  ? "⚠️ I 3 metodi di lettura non coincidono"
+                  : "⚠️ Non sono riuscito a verificare con tutti e 3 i metodi"}
               </div>
               {verificaCot.stato==="nonverificato"&&verificaCot.motivo&&(
                 <div style={{fontSize:12,color:"#1a1a1a",marginBottom:8}}>{verificaCot.motivo}</div>
@@ -1658,7 +1658,7 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
               {verificaCot.stato==="diverso"&&(
                 <div style={{fontSize:12,color:"#1a1a1a",marginBottom:12,maxHeight:180,overflowY:"auto"}}>
                   {verificaCot.differenze.map((d,i)=>(
-                    <div key={i}>{d.data} · {d.fascia.replace("_","–")} · solo {d.solo==="metodo1"?"metodo 1":"metodo 2"}</div>
+                    <div key={i}>{d.data} · {d.fascia.replace("_","–")} · trovato da {d.trovatoDa.join(",")}, non da {d.mancaIn.join(",")}</div>
                   ))}
                 </div>
               )}
