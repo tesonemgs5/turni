@@ -163,7 +163,143 @@ export function parseItemsPdfCot(pagine) {
   };
 }
 
-// Legge il file PDF nel browser e restituisce il risultato del parsing.
+// ───────────────────────────────────────────────────────────────
+// SECONDO METODO (controllo incrociato), indipendente dal primo:
+//  - fascia: dalle LINEE VERTICALI della griglia (non dalle coordinate del
+//    testo). Le linee che salgono fino all'intestazione separano le fasce,
+//    quelle più corte separano le colonne dentro la fascia. Funziona con
+//    qualsiasi numero di colonne per fascia (4, 5, 6...).
+//  - giorno: dall'ORDINE del testo nel PDF (ogni riga inizia con la sua
+//    data), non dalla coordinata Y.
+// pagine: [ { items:[{str,x,w,y}], linee:[{x,yMin,yMax}] }, ... ]
+// ───────────────────────────────────────────────────────────────
+export function parseLineePdfCot(pagine) {
+  const turni = {};
+  let stelleTrovate = 0;
+
+  for (const { items, linee } of pagine) {
+    const centro = (it) => it.x + it.w / 2;
+    const dateItems = items.filter((it) => RIGA_DATA_RE.test((it.str || "").trim()));
+    if (dateItems.length === 0) continue;
+    const destraDate = Math.max(...dateItems.map((it) => it.x + it.w));
+
+    const verticali = (linee || []).filter((l) => l.yMax - l.yMin > 20);
+    if (verticali.length < 3) return { ok: false, motivo: "linee della griglia non trovate", turni_stella: {} };
+
+    // Le linee interne iniziano tutte alla stessa altezza (sotto l'intestazione).
+    const yMinOrdinati = verticali.map((l) => l.yMin).sort((a, b) => a - b);
+    const topCorpo = yMinOrdinati[Math.floor(yMinOrdinati.length / 2)];
+    const interne = verticali.filter((l) => Math.abs(l.yMin - topCorpo) < 3);
+    const separatori = verticali
+      .filter((l) => l.yMin < topCorpo - 10 && l.x > destraDate)
+      .map((l) => l.x)
+      .sort((a, b) => a - b);
+    if (separatori.length < 2) return { ok: false, motivo: "separatori delle fasce non trovati", turni_stella: {} };
+
+    // Gruppi di fasce = intervalli tra separatori consecutivi.
+    const gruppi = [];
+    for (let i = 0; i < separatori.length - 1; i++) gruppi.push({ da: separatori[i], a: separatori[i + 1] });
+
+    // Intestazioni lette da sinistra a destra, una per gruppo.
+    const festivi = items.filter((it) => /\(festivi\)/i.test(it.str) && ORARIO_RE.test(it.str));
+    const intestazioni = items
+      .filter((it) => ORARIO_RE.test(it.str) && !/\(festivi\)/i.test(it.str))
+      .sort((a, b) => centro(a) - centro(b));
+    if (intestazioni.length !== gruppi.length) {
+      return { ok: false, motivo: "intestazioni e gruppi di colonne non corrispondono", turni_stella: {} };
+    }
+    const chiaviGruppo = gruppi.map((g, idx) => {
+      const h = intestazioni[idx];
+      const c = centro(h);
+      if (c < g.da || c > g.a) return null;
+      let inizio = ORARIO_RE.exec(h.str);
+      let vicino = null;
+      for (const f of festivi) {
+        const d = Math.abs(centro(f) - c);
+        if (d < 40 && (!vicino || d < vicino.d)) vicino = { f, d };
+      }
+      const m = vicino ? ORARIO_RE.exec(vicino.f.str) : inizio;
+      return `${due(m[1])}.${m[2]}_${due(m[3])}.${m[4]}`;
+    });
+    if (chiaviGruppo.some((k) => !k)) {
+      return { ok: false, motivo: "intestazione fuori dal suo gruppo di colonne", turni_stella: {} };
+    }
+    void interne;
+
+    // Scorro il testo nell'ordine del PDF: l'ultima data letta è il giorno della riga.
+    let giornoCorrente = null;
+    for (const it of items) {
+      const t = (it.str || "").trim();
+      const m = RIGA_DATA_RE.exec(t);
+      if (m) {
+        giornoCorrente = `${parseInt(m[1], 10)} ${m[2].toLowerCase()} ${m[3]}`;
+        continue;
+      }
+      if (!giornoCorrente || t.toLowerCase() !== "stella") continue;
+      const c = centro(it);
+      const idx = gruppi.findIndex((g) => c >= g.da && c < g.a);
+      if (idx < 0) continue;
+      (turni[chiaviGruppo[idx]] = turni[chiaviGruppo[idx]] || []).push(giornoCorrente);
+      stelleTrovate += 1;
+    }
+  }
+
+  for (const k of Object.keys(turni)) turni[k] = [...new Set(turni[k])];
+  return {
+    ok: stelleTrovate > 0,
+    motivo: stelleTrovate > 0 ? "" : "nessuna occorrenza trovata dal secondo metodo",
+    stelleTrovate,
+    turni_stella: turni,
+  };
+}
+
+// Confronta i due risultati. Restituisce le differenze come
+// [{ data, fascia, solo: "metodo1" | "metodo2" }]; lista vuota = coincidono.
+export function confrontaRisultatiCot(a, b) {
+  const insieme = (r) => {
+    const set = new Set();
+    for (const [fascia, date] of Object.entries(r || {})) for (const d of date) set.add(`${fascia}|${d}`);
+    return set;
+  };
+  const A = insieme(a);
+  const B = insieme(b);
+  const diff = [];
+  for (const x of A) if (!B.has(x)) { const [fascia, data] = x.split("|"); diff.push({ data, fascia, solo: "metodo1" }); }
+  for (const x of B) if (!A.has(x)) { const [fascia, data] = x.split("|"); diff.push({ data, fascia, solo: "metodo2" }); }
+  return diff;
+}
+
+// Estrae le linee verticali sottili (bordi della tabella) dalle istruzioni di
+// disegno della pagina, nelle stesse coordinate del testo.
+async function leggiLineeVerticali(pdfjs, page) {
+  const { OPS } = pdfjs;
+  const ol = await page.getOperatorList();
+  let m = null;
+  const linee = [];
+  for (let i = 0; i < ol.fnArray.length; i++) {
+    const fn = ol.fnArray[i];
+    const args = ol.argsArray[i];
+    if (fn === OPS.transform && !m) { m = args; continue; }
+    if (fn !== OPS.constructPath) continue;
+    const painting = args[0];
+    if (painting !== OPS.fill && painting !== OPS.eoFill) continue;
+    const dati = args[1] && args[1][0] && typeof args[1][0].length === "number" ? Array.from(args[1][0]) : args[1];
+    if (!Array.isArray(dati)) continue;
+    for (let k = 0; k + 12 < dati.length; k += 13) {
+      const xs = [dati[k + 1], dati[k + 4], dati[k + 7], dati[k + 10]];
+      const ys = [dati[k + 2], dati[k + 5], dati[k + 8], dati[k + 11]];
+      const w = Math.max(...xs) - Math.min(...xs);
+      const h = Math.max(...ys) - Math.min(...ys);
+      if (w < 2 && h > 20) linee.push({ x: Math.min(...xs), yMin: Math.min(...ys), yMax: Math.max(...ys) });
+    }
+  }
+  const a = m ? m[0] : 0.75;
+  const e = m ? m[4] : 0;
+  return linee.map((l) => ({ x: l.x * a + e, yMin: l.yMin, yMax: l.yMax }));
+}
+
+// Legge il file PDF nel browser e restituisce i risultati dei DUE metodi
+// e il loro confronto.
 export async function leggiPdfCotStella(file) {
   const pdfjs = await import("pdfjs-dist");
   const worker = (await import("pdfjs-dist/build/pdf.worker.min.mjs?url")).default;
@@ -171,14 +307,21 @@ export async function leggiPdfCotStella(file) {
 
   const pdf = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
   const pagine = [];
+  const pagineConLinee = [];
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p);
     const tc = await page.getTextContent();
-    pagine.push(
-      tc.items
-        .filter((it) => typeof it.str === "string")
-        .map((it) => ({ str: it.str, x: it.transform[4], w: it.width, y: it.transform[5] }))
-    );
+    const items = tc.items
+      .filter((it) => typeof it.str === "string")
+      .map((it) => ({ str: it.str, x: it.transform[4], w: it.width, y: it.transform[5] }));
+    pagine.push(items);
+    let linee = [];
+    try { linee = await leggiLineeVerticali(pdfjs, page); } catch { linee = []; }
+    pagineConLinee.push({ items, linee });
   }
-  return parseItemsPdfCot(pagine);
+  const r1 = parseItemsPdfCot(pagine);
+  let r2;
+  try { r2 = parseLineePdfCot(pagineConLinee); } catch { r2 = { ok: false, motivo: "errore nel secondo metodo", turni_stella: {} }; }
+  const differenze = r1.ok && r2.ok ? confrontaRisultatiCot(r1.turni_stella, r2.turni_stella) : null;
+  return { ...r1, secondo: r2, differenze, verificato: !!(differenze && differenze.length === 0) };
 }

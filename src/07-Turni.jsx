@@ -507,6 +507,8 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
   const [testoJsonIncollato, setTestoJsonIncollato] = useState("");
   const [promptCopiato, setPromptCopiato] = useState(false);
   const [nRigheAggiunte, setNRigheAggiunte] = useState(0);
+  // Doppio controllo del PDF COT: null | { stato:"ok" } | { stato:"diverso"|"nonverificato", differenze, motivo, turni }
+  const [verificaCot, setVerificaCot] = useState(null);
   // Dettaglio {mancanti, sospetti} dell'ultima importazione (OCR o JSON
   // incollato), mostrato nello step "riepilogo" con lo stesso stile già
   // usato in ImportaTurniJsonDialog. Sempre registrato anche nel registro
@@ -805,10 +807,25 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
     // coordinate (incrocio riga=giorno / colonna=fascia), senza AI e senza API.
     if(file.type==="application/pdf" && tipoTabella==="stella"){
       try{
+        setVerificaCot(null);
         const r = await leggiPdfCotStella(file);
         if(r.ok){
-          const fatto = await elaboraJsonParsed({ turni_stella: r.turni_stella });
-          if(!fatto) setStep("upload");
+          if(r.verificato){
+            setVerificaCot({ stato:"ok" });
+            const fatto = await elaboraJsonParsed({ turni_stella: r.turni_stella });
+            if(!fatto) setStep("upload");
+            return;
+          }
+          // I due metodi non coincidono (o il secondo non ha potuto leggere):
+          // non importo, chiedo conferma mostrando le differenze.
+          setVerificaCot({
+            stato: r.differenze ? "diverso" : "nonverificato",
+            differenze: r.differenze || [],
+            motivo: (r.secondo && r.secondo.motivo) || "",
+            turni: r.turni_stella,
+          });
+          setImportando(false);
+          setStep("conferma-cot");
           return;
         }
         setErrore(r.motivo || "Non sono riuscito a leggere questo PDF.");
@@ -1520,6 +1537,11 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
                     ? `${nRigheAggiunte} turno${nRigheAggiunte===1?"":"i"} aggiunto${nRigheAggiunte===1?"":"i"} al calendario`
                     : "Nessun turno nuovo aggiunto"}
                 </div>
+                {verificaCot && verificaCot.stato==="ok"&&(
+                  <div style={{fontSize:12,color:"#1a1a1a",fontWeight:700,marginBottom:8}}>
+                    ✓ Verificato con 2 metodi
+                  </div>
+                )}
                 {nRigheAggiunte===0&&(!risultatoImportOcr || (risultatoImportOcr.mancanti.length===0 && risultatoImportOcr.sospetti.length===0))&&(
                   <div style={{fontSize:12,color:"#1a1a1a",marginBottom:8}}>
                     I turni trovati erano probabilmente già presenti nel calendario.
@@ -1620,6 +1642,41 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
                   borderRadius:10,color:"#444444",padding:"9px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
                 📋 Oppure incolla un JSON già pronto
               </button>
+            </div>
+          )}
+
+          {step==="conferma-cot"&&verificaCot&&(
+            <div style={{textAlign:"left",padding:"20px 8px"}}>
+              <div style={{fontSize:14,color:"#1a1a1a",fontWeight:800,marginBottom:8}}>
+                {verificaCot.stato==="diverso"
+                  ? "⚠️ I due metodi di lettura non coincidono"
+                  : "⚠️ Non sono riuscito a verificare con il secondo metodo"}
+              </div>
+              {verificaCot.stato==="nonverificato"&&verificaCot.motivo&&(
+                <div style={{fontSize:12,color:"#1a1a1a",marginBottom:8}}>{verificaCot.motivo}</div>
+              )}
+              {verificaCot.stato==="diverso"&&(
+                <div style={{fontSize:12,color:"#1a1a1a",marginBottom:12,maxHeight:180,overflowY:"auto"}}>
+                  {verificaCot.differenze.map((d,i)=>(
+                    <div key={i}>{d.data} · {d.fascia.replace("_","–")} · solo {d.solo==="metodo1"?"metodo 1":"metodo 2"}</div>
+                  ))}
+                </div>
+              )}
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={()=>{ setVerificaCot(null); setStep("upload"); }}
+                  style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
+                    color:"#444444",padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
+                  Annulla
+                </button>
+                <button onClick={async()=>{
+                    const fatto = await elaboraJsonParsed({ turni_stella: verificaCot.turni });
+                    if(!fatto) setStep("upload");
+                  }}
+                  style={{flex:1,background:accent,border:"none",borderRadius:10,
+                    color:getContrastTextColor(accent),padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
+                  Importa comunque
+                </button>
+              </div>
             </div>
           )}
 
