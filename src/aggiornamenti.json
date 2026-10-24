@@ -1,5 +1,13 @@
 [
   {
+    "n": 4,
+    "data": "2026-10-24",
+    "titolo": "Corretto l'errore «storeRef is not defined» nella modifica evento",
+    "righe": [
+      "Salvando un nuovo modello da un evento («Crea nuovo evento» e «Da questo evento in poi») usciva «Errore imprevisto» e l'evento non veniva salvato sul database: ora funziona."
+    ]
+  },
+  {
     "n": 3,
     "data": "2026-10-24",
     "titolo": "Novità degli aggiornamenti nel pop-up e nel Log",

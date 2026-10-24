@@ -8691,6 +8691,7 @@ const importsRecenti = useMemo(()=>{
     updateConteggioConfig,
     applicaScelteReportModello,
     copiaAppartenenzaReportModello,
+    storeRef,
     applicaReportOverrideATuttiGliEventi,
     totaleTurni,
     totaleMinTurni,

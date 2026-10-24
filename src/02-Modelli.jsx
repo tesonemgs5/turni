@@ -206,7 +206,7 @@ export default function VistaModelli({ C }){
     delTuttiEventiImport, importaEventiSingoli, applyRotazione, getReportRange, splitColleghi, computeConteggioForReport,
     computeTurnazioneForReport, computeConteggio, computeIndennita, activeReports, inactiveTypes, addReport,
     removeReport, renameReport, moveReport, getConteggioConfig, updateConteggioConfig,
-    applicaReportOverrideATuttiGliEventi, copiaAppartenenzaReportModello, totaleTurni,
+    applicaReportOverrideATuttiGliEventi, copiaAppartenenzaReportModello, storeRef, totaleTurni,
     setPrevGrid, REPORT_TEMPLATES, calcolaOrdineModelli, updateFascia, session, salvaQuartine, coloriUsatiTutti, riordinaColoriUsati,
   } = C;
   const { gruppi, gruppiDelCalendario, materializzaGruppiA, aggiungiGruppo, rinominaGruppo, aggiornaOrdineGruppo, eliminaGruppo, spostaModelloInGruppo, spostaModelliInGruppo, spostaGruppo } = C;
