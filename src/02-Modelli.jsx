@@ -1641,10 +1641,10 @@ export default function VistaModelli({ C }){
             style={{padding:"7px 10px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:11,
               background:T.s2,color:T.sub,border:`1px solid ${T.border}`}}>↻</button>
         </div>
-        <div style={{marginBottom:16}}>
-          <div style={{fontSize:11,fontWeight:800,color:T.sub,marginBottom:8}}>
+        <details style={{marginBottom:16}}>
+          <summary style={{fontSize:11,fontWeight:800,color:T.sub,cursor:"pointer",padding:"4px 0",marginBottom:8}}>
             AGGIORNAMENTI ({AGGIORNAMENTI_APP.length})
-          </div>
+          </summary>
           <div style={{maxHeight:260,overflowY:"auto",background:T.s2,borderRadius:10,padding:10}}>
             {AGGIORNAMENTI_APP.map(a=>(
               <div key={a.n} style={{padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
@@ -1658,7 +1658,7 @@ export default function VistaModelli({ C }){
               </div>
             ))}
           </div>
-        </div>
+        </details>
 
         <div style={{fontSize:11,fontWeight:800,color:T.sub,marginBottom:8}}>
           CRONOLOGIA {logErroriVisibile?.length>0 ? `(${logErroriVisibile.length})` : ""}

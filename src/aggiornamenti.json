@@ -1,5 +1,13 @@
 [
   {
+    "n": 6,
+    "data": "2026-10-24",
+    "titolo": "Sezione Aggiornamenti a scomparsa",
+    "righe": [
+      "Nel Log, la sezione «Aggiornamenti» ora si apre e si chiude con un tocco, così non occupa spazio sopra la cronologia."
+    ]
+  },
+  {
     "n": 5,
     "data": "2026-10-24",
     "titolo": "Errori spiegati in italiano semplice",
