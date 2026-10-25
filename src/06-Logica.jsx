@@ -2461,6 +2461,12 @@ export function useAppCore(session){
           // vale per l'evento, il modello non cambia.
           if(form.offIn) tInFinal = form.offIn;
           if(form.offOut) tOutFinal = form.offOut;
+          // Durata 6h15 / 6h30 scelta per QUESTO evento e diversa da quella del modello: vale la durata scelta (il modello non cambia).
+          if(mod.inizio && mod.fine && tInFinal && (form.dur==="fixed"||form.dur==="fixed30")){
+            const durMod = calcMinuti(mod.inizio, mod.fine);
+            if(form.dur==="fixed" && durMod!==375) tOutFinal = calcFine6h15(tInFinal);
+            if(form.dur==="fixed30" && durMod!==390) tOutFinal = calcFine6h30(tInFinal);
+          }
         }
       }
     } else if(form.shiftId){

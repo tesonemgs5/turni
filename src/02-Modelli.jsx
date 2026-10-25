@@ -3306,7 +3306,7 @@ export default function VistaModelli({ C }){
             <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:6}}>DURATA</div>
             <div style={{display:"flex",gap:4,marginBottom:10}}>
               {[["allday","H24"],["fixed","6h 15m"],["fixed30","6h 30m"],["custom","PERSONALIZZATO"]].map(([v,l])=>(
-                <button key={v} onClick={()=>setForm(f=>({...f,dur:v}))}
+                <button key={v} onClick={()=>setForm(f=>({...f,dur:v,offOut:(v==="fixed"&&(f.offIn!==undefined?f.offIn:f.tIn))?calcFine6h15(f.offIn!==undefined?f.offIn:f.tIn):(v==="fixed30"&&(f.offIn!==undefined?f.offIn:f.tIn))?calcFine6h30(f.offIn!==undefined?f.offIn:f.tIn):f.offOut,tOut:(v==="fixed"&&f.tIn)?calcFine6h15(f.tIn):(v==="fixed30"&&f.tIn)?calcFine6h30(f.tIn):f.tOut}))}
                   style={{flex:1,padding:"7px 1px",borderRadius:8,cursor:"pointer",fontSize:11,fontWeight:700,
                     background:form.dur===v?accent:T.surface,
                     color:form.dur===v?"#fff":T.sub,
