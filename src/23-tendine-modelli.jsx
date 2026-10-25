@@ -6,6 +6,7 @@
 // Serve a tutte le liste che richiamano i modelli (selettori, colori, rotazioni, report...), cosi' hanno lo stesso sistema.
 import { useState, Fragment, createContext, useContext } from "react";
 import { classeModelloA, ordinaClassiA, minutiInizio } from "./21-ordine";
+import { ordinaModelliInGruppo } from "./26-ordine-modelli";
 
 // Valori condivisi (ordine A/B, gruppi...) forniti una volta sola dalla schermata principale: cosi' ogni lista li trova da se'.
 export const ContestoTendine = createContext(null);
@@ -15,7 +16,8 @@ export function costruisciSezioni({ modelli, ordine, calId, mainCalId, gruppiDel
   const lista = (modelli || []).filter(Boolean);
   if (cercando) return { blocchi: [], senza: lista };
   const gruppoDi = (x) => { const m = mod(x); return ordine === "A" ? m.gruppoA : m.gruppoB; };
-  const perInizio = (arr) => arr; // dentro la tendina vale la posizione salvata (si sposta a mano)
+  const perInizio = (arr) => arr;
+  const ordinaGruppo = (arr, crit) => ordinaModelliInGruppo(arr, crit || "manuale", estrai); // dentro la tendina vale la posizione salvata (si sposta a mano)
   const veriA = !!calId && ordine === "A" && (gruppiDelCalendario ? gruppiDelCalendario(calId, "A") : []).length > 0;
   if (ordine === "A" && !veriA) {
     const perClasse = new Map();
@@ -24,14 +26,14 @@ export function costruisciSezioni({ modelli, ordine, calId, mainCalId, gruppiDel
   }
   if (calId) {
     const gl = gruppiDelCalendario ? gruppiDelCalendario(calId, ordine) : [];
-    const perId = new Map(gl.map((g) => [g.id, { key: "G:" + g.id, label: g.nome, modelli: [] }]));
+    const perId = new Map(gl.map((g) => [g.id, { key: "G:" + g.id, label: g.nome, crit: g.ordineModelli || "manuale", modelli: [] }]));
     const senza = [];
     lista.forEach((m) => {
       const gid = gruppoDi(m);
       const sez = (mod(m).calendarId || mainCalId) === calId && gid ? perId.get(gid) : null;
       if (sez) sez.modelli.push(m); else senza.push(m);
     });
-    return { blocchi: gl.map((g) => perId.get(g.id)).filter((b) => b.modelli.length > 0).map((b) => ({ ...b, modelli: perInizio(b.modelli) })), senza: perInizio(senza) };
+    return { blocchi: gl.map((g) => perId.get(g.id)).filter((b) => b.modelli.length > 0).map((b) => ({ ...b, modelli: ordinaGruppo(b.modelli, b.crit) })), senza: perInizio(senza) };
   }
   const perNome = new Map(); const senza = [];
   lista.forEach((m) => {
@@ -40,10 +42,10 @@ export function costruisciSezioni({ modelli, ordine, calId, mainCalId, gruppiDel
     if (!g) { senza.push(m); return; }
     const nk = String(g.nome || "").toUpperCase();
     let sez = perNome.get(nk);
-    if (!sez) { sez = { key: "N:" + nk, label: g.nome, ord: g.sortOrder || 0, modelli: [] }; perNome.set(nk, sez); }
+    if (!sez) { sez = { key: "N:" + nk, label: g.nome, ord: g.sortOrder || 0, crit: g.ordineModelli || "manuale", modelli: [] }; perNome.set(nk, sez); }
     sez.modelli.push(m);
   });
-  return { blocchi: [...perNome.values()].sort((a, b) => (a.ord - b.ord) || String(a.label).localeCompare(String(b.label))).map((b) => ({ ...b, modelli: perInizio(b.modelli) })), senza: perInizio(senza) };
+  return { blocchi: [...perNome.values()].sort((a, b) => (a.ord - b.ord) || String(a.label).localeCompare(String(b.label))).map((b) => ({ ...b, modelli: ordinaGruppo(b.modelli, b.crit) })), senza: perInizio(senza) };
 }
 
 // Pulsante A/B, identico a quello della lista Modelli.

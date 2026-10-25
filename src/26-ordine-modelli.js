@@ -47,18 +47,19 @@ export function calcolaOrdineModelli(sottoinsieme){
   });
 }
 
-export function ordinaModelliInGruppo(lista, criterio="manuale"){
+export function ordinaModelliInGruppo(lista, criterio="manuale", estrai){
   const modelli = [...(lista||[])].filter(Boolean);
+  const mod = x => (estrai ? estrai(x) : x);
   if(criterio==="manuale") return modelli;
   return modelli.map((m,i)=>({m,i})).sort((a,b)=>{
     if(criterio==="alfabetico"){
-      const titoloA = String(a.m.label||a.m.titolo||"");
-      const titoloB = String(b.m.label||b.m.titolo||"");
+      const titoloA = String(mod(a.m).label||mod(a.m).titolo||"");
+      const titoloB = String(mod(b.m).label||mod(b.m).titolo||"");
       const diff = titoloA.localeCompare(titoloB,"it",{sensitivity:"base",numeric:true});
       if(diff) return diff;
     }
-    const oraA = a.m.tempo==="h24" ? 99999 : (oraInMinuti(a.m.inizio||"") ?? 99999);
-    const oraB = b.m.tempo==="h24" ? 99999 : (oraInMinuti(b.m.inizio||"") ?? 99999);
+    const oraA = mod(a.m).tempo==="h24" ? 99999 : (oraInMinuti(mod(a.m).inizio||"") ?? 99999);
+    const oraB = mod(b.m).tempo==="h24" ? 99999 : (oraInMinuti(mod(b.m).inizio||"") ?? 99999);
     return (oraA-oraB) || (a.i-b.i);
   }).map(x=>x.m);
 }
