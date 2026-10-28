@@ -109,6 +109,7 @@ export default function VistaCalendario({ C }){
   } = C;
 
   const calBarRef = useRef(null);
+  const calTapRef = useRef({id:null,timer:null});
   // Altezza realmente disponibile per la griglia: dalla sua posizione in alto
   // fino alla barra di navigazione fissa in basso. Senza questo limite l'ultima
   // settimana finiva sotto la barra e gli ultimi eventi risultavano tagliati.
@@ -352,18 +353,18 @@ export default function VistaCalendario({ C }){
         <button onClick={()=>{
             setEditMode(em=>{
               const next=!em;
-              if(next){ // entro in modalità modifica: seleziona SOLO il calendario attivo corrente (singolo)
-                const attivoValido = calId && selectedCalIds.includes(calId);
-                const scelto = attivoValido ? calId : (selectedCalIds[0]||calId||store.calendars[0]?.id||null);
+              if(next){ // entro in modalità modifica: la selezione resta (lettura multipla); il calendario attivo e' l'unico di scrittura, sempre visibile
+                const attivoValido = calId && store.calendars.some(c=>c.id===calId);
+                const scelto = attivoValido ? calId : (selectedCalIds[0]||store.calendars[0]?.id||null);
                 if(scelto){
                   setCalId(scelto);
-                  setSelectedCalIds([scelto]);
+                  setSelectedCalIds(prev=> prev.includes(scelto) ? prev : [...prev, scelto]);
                 }
               }
               return next;
             });
           }}
-          title={editMode?"Modifica attiva — tocca per tornare alla consultazione multipla":"Modifica singola — tocca per attivare la modifica su un singolo calendario"}
+          title={editMode?"Modifica attiva — tocca per tornare alla consultazione multipla":"Modifica — un calendario in scrittura, più calendari in lettura (doppio tocco)"}
           style={{background:editMode?(dark?"#e2e8f0":"#0f172a"):(dark?T.s2:"#f1f5f9"),
             border:`1.5px solid ${editMode?(dark?"#e2e8f0":"#0f172a"):(dark?T.border:"#e2e8f0")}`,
             borderRadius:20,padding:"2px 10px",cursor:"pointer",flexShrink:0}}>
@@ -418,13 +419,25 @@ export default function VistaCalendario({ C }){
               return (
               <button key={c.id} onClick={()=>{
                   if(editMode){
-                    setCalId(c.id);
-                    setSelectedCalIds([c.id]); // in modalità modifica, seleziona esclusivamente il calendario toccato
+                    // M: tocco singolo = calendario di scrittura (ritardato per distinguere il doppio tocco); doppio tocco = mostra/nascondi in lettura
+                    if(calTapRef.current.id===c.id && calTapRef.current.timer){
+                      clearTimeout(calTapRef.current.timer);
+                      calTapRef.current={id:null,timer:null};
+                      if(c.id!==calId) setSelectedCalIds(prev=> prev.includes(c.id) ? prev.filter(id=>id!==c.id) : [...prev, c.id]);
+                      return;
+                    }
+                    if(calTapRef.current.timer) clearTimeout(calTapRef.current.timer);
+                    const cid=c.id;
+                    calTapRef.current={id:cid,timer:setTimeout(()=>{
+                      calTapRef.current={id:null,timer:null};
+                      setCalId(cid);
+                      setSelectedCalIds(prev=> prev.includes(cid) ? prev : [...prev, cid]);
+                    },260)};
                     return;
                   }
                   setSelectedCalIds(prev=> prev.includes(c.id) ? prev.filter(id=>id!==c.id) : [...prev, c.id]);
                 }}
-                title={editMode?`Tocca per selezionare esclusivamente "${c.name}" per la modifica`:undefined}
+                title={editMode?`Tocco: "${c.name}" in scrittura — doppio tocco: mostra/nascondi in lettura`:undefined}
                 style={{display:"flex",alignItems:"center",gap:4,flexShrink:0,cursor:"pointer",
                   background:visibile ? (dark?"#e2e8f0":"#0f172a") : (dark?T.surface:"#ffffff"),
                   color:visibile ? (dark?"#0f172a":"#ffffff") : (dark?"#94a3b8":"#64748b"),
