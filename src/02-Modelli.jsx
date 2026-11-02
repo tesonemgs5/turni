@@ -3607,152 +3607,6 @@ export default function VistaModelli({ C }){
 )}
 
 {(()=>{
-  // Selettore gruppo report per il SINGOLO EVENTO: escluso per i tre
-  // modelli PROTRAZIONE (pagamento/recupero/-recupero), per tutti gli
-  // altri modelli replica esattamente la UI del form Modello (Rotazione.jsx):
-  // due sezioni indipendenti, CATEGORIA TURNO (Automatica/1°/2°/Nessuna) e
-  // CATEGORIA APP/AUTO (Automatica/APP/AUTO/Nessuna), ciascuna con il proprio
-  // pulsante "Nessuna categoria per questo asse", con scelta inline (niente
-  // popup/modale) se applicare solo a questo evento o a tutti gli eventi di
-  // quel modello.
-  const modelloIdCorrente = form.modelloId || form.evtModelloId || null;
-  if(!modelloIdCorrente) return null;
-  if(tipoModelloProtrazione(modelloIdCorrente)) return null;
-  const modelloCorrente = modelli.find(m=>m.id===modelloIdCorrente);
-  if(!modelloCorrente) return null;
-
-  const isH24 = form.dur==="allday";
-
-  // Stessi criteri di calcolo dell'automatismo usati in Rotazione.jsx
-  // (categoriaTurnoAutomatica / categoriaAppAutoAutomatica), applicati ai
-  // campi del form evento (tIn/dur/label) invece che ai campi del modello.
-  const catAutoTurno = (()=>{
-    if(isH24 || !form.tIn) return null;
-    const mins = oraInMinuti(form.tIn);
-    if(mins==null) return null;
-    const isPrimo = mins>=360 && mins<705; // 06:00–11:45
-    return isPrimo ? "primo" : "secondo";
-  })();
-  const catAutoAppAuto = (()=>{
-    if(isH24) return null;
-    const titoloEvt = (form.label||"").toUpperCase();
-    return titoloEvt.includes("APP") ? "app" : "auto";
-  })();
-
-  const categoriaTurnoAttuale = form.categoriaTurno||"";
-  const categoriaAppAutoAttuale = form.categoriaAppAuto||"";
-  const turnoVuotoAttivo = !!form.turnoVuoto;
-  const appAutoVuotoAttivo = !!form.appAutoVuoto;
-
-  const renderBtn=(campo, catAuto, flagCampo)=>([v,l])=>{
-    const valoreAttuale = form[campo]||"";
-    const flagAttivo = !!form[flagCampo];
-    const selezionato = valoreAttuale===v && !flagAttivo;
-    // Il bordo "suggerito da automatismo" ha senso mostrarlo SOLO quando
-    // non c'è ancora nessuna scelta esplicita attiva (valoreAttuale vuoto
-    // e flag disattivo): altrimenti, con una scelta esplicita già fatta
-    // (es. "2° Turno" selezionato), il pulsante "Automatica" mostrava
-    // comunque sfondo pieno (perché v==="" e valoreAttuale==="" combaciano
-    // solo quando NON c'è scelta) — qui invece preveniamo il caso opposto,
-    // cioè che un secondo pulsante venga evidenziato dal bordo mentre un
-    // altro ha già lo sfondo pieno, generando l'effetto "due selezionati"
-    // visto in UI.
-    const nessunaSceltaEsplicita = !valoreAttuale && !flagAttivo;
-    const suggeritoDaAuto = nessunaSceltaEsplicita && v!=="" && v===catAuto;
-    // Nessun bordo e nessun "Automatica" evidenziato: il pulsante scelto (anche dall'automatismo) è semplicemente PIENO.
-    const pieno = selezionato || suggeritoDaAuto;
-    // Pulsante pieno (scelto o deciso dall'automatismo) ritoccato -> "Nessuna categoria"; altro pulsante -> lo seleziona.
-    return (
-      <button key={v||l} onClick={()=>setForm(f=> pieno ? ({...f,[campo]:"",[flagCampo]:true}) : ({...f,[campo]:v,[flagCampo]:false}))}
-        style={{flex:"1 1 40%",padding:"9px 4px",borderRadius:10,cursor:"pointer",
-          fontWeight:700,fontSize:11,
-          border:"2px solid transparent",
-          background:pieno?accent:T.s2,
-          color:pieno?"#fff":T.sub}}>{l}</button>
-    );
-  };
-  const renderDeselBtn=(flagCampo, campo)=>{
-    const attivo = !!form[flagCampo];
-    return (
-      <button onClick={()=>setForm(f=>({...f,[flagCampo]:!attivo,[campo]: !attivo ? "" : f[campo]}))}
-        style={{marginTop:6,marginBottom:10,width:"100%",padding:"7px 4px",borderRadius:10,
-          border:attivo?"2px solid #ef4444":"1.5px dashed #ef444488",cursor:"pointer",
-          fontWeight:700,fontSize:11,
-          background:attivo?"#ef444422":"transparent",
-          color:"#ef4444"}}>
-        {attivo?"✓ Nessuna categoria (riattiva per tornare all'automatismo)":"Nessuna categoria per questo asse"}
-      </button>
-    );
-  };
-
-  function applicaATuttiGliEventi(){
-    // "Tutti gli eventi di questo modello", come richiesto: il match per
-    // trovare quali eventi coinvolgere è nome (label) + orario (tIn/tOut)
-    // identici a questo evento — non solo "stesso modello collegato".
-    // Applichiamo quindi la scelta attuale (categoriaTurno/categoriaAppAuto/
-    // turnoVuoto/appAutoVuoto) sia al modello (comportamento di default per
-    // i futuri eventi creati da esso) sia, retroattivamente, a tutti gli
-    // eventi già esistenti che matchano nome+orario.
-    const patchLocale = {
-      categoriaTurno: form.categoriaTurno||"", categoriaAppAuto: form.categoriaAppAuto||"",
-      turnoVuoto: !!form.turnoVuoto, appAutoVuoto: !!form.appAutoVuoto,
-    };
-    const patchDb = {
-      categoria_turno: form.categoriaTurno||null, categoria_app_auto: form.categoriaAppAuto||null,
-      // turnoVuoto/appAutoVuoto: colonne dedicate sul DB (nomi esatti: prima erano
-      // "turno_vuoto"/"app_auto_vuoto", inesistenti, e il valore non veniva mai salvato).
-      categoria_turno_vuoto: !!form.turnoVuoto, categoria_app_auto_vuoto: !!form.appAutoVuoto,
-    };
-    applicaReportOverrideATuttiGliEventi(form.label||"", form.tIn||"", form.tOut||"", patchLocale, patchDb);
-    // Sul modello resta la config di default per i nuovi eventi futuri
-    // (stesso salvataggio, con propagazione e persistenza, usato dal form
-    // Modello in Rotazione.jsx).
-    saveModello({...modelloCorrente,
-      categoria: form.categoriaTurno||"", categoriaAppAuto: form.categoriaAppAuto||"",
-      turnoVuoto: !!form.turnoVuoto, appAutoVuoto: !!form.appAutoVuoto});
-    setScreen("modelli");
-  }
-
-  const haOverrideAttivo = !!(categoriaTurnoAttuale || categoriaAppAutoAttuale || turnoVuotoAttivo || appAutoVuotoAttivo);
-
-  return (
-    <div style={{marginBottom:16}}>
-      <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8}}>CATEGORIA TURNO (per report Turnazione)</div>
-      <div style={{display:"flex",gap:6,marginBottom:10}}>
-        {[["primo","1° Turno"],["secondo","2° Turno"]].map(renderBtn("categoriaTurno", catAutoTurno, "turnoVuoto"))}
-      </div>
-      {renderDeselBtn("turnoVuoto","categoriaTurno")}
-      {!isH24 && (
-        <>
-          <div style={{fontSize:11,color:T.sub,fontWeight:700,marginBottom:8}}>CATEGORIA APP/AUTO (per report Turnazione)</div>
-          <div style={{display:"flex",gap:6}}>
-            {[["app","APP"],["auto","AUTO"]].map(renderBtn("categoriaAppAuto", catAutoAppAuto, "appAutoVuoto"))}
-          </div>
-          {renderDeselBtn("appAutoVuoto","categoriaAppAuto")}
-        </>
-      )}
-      <div style={{fontSize:11,color:T.sub,marginTop:-4,marginBottom:10}}>
-        Il pulsante pieno è quello deciso in automatico da titolo/orario. Toccalo di nuovo per metterlo su «Nessuna», oppure toccane un altro per cambiare solo questo evento. Scegliendo una categoria qui, questo evento resterà sempre in quel gruppo nel report Turnazione.
-      </div>
-      {haOverrideAttivo && (
-        <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-          <span style={{fontSize:11,color:T.sub}}>Applica a:</span>
-          <span style={{fontSize:11,fontWeight:800,color:accent,
-            background:accent+"22",borderRadius:8,padding:"4px 8px"}}>
-            Solo questo evento (attivo)
-          </span>
-          <button onClick={applicaATuttiGliEventi}
-            style={{fontSize:11,fontWeight:700,color:T.sub,background:"none",
-              border:`1px solid ${T.border}`,borderRadius:8,padding:"4px 8px",cursor:"pointer"}}>
-            Tutti gli eventi di "{modelloCorrente.titolo}" →
-          </button>
-        </div>
-      )}
-    </div>
-  );
-})()}
-
-{(()=>{
   // CATEGORIA REPORT per il SINGOLO EVENTO: tendina ANNIDATA a 3 livelli.
   //  Livello 1: freccia accanto al titolo "CATEGORIA REPORT (per questo
   //             evento)" mostra/nasconde l'intera lista dei report.
@@ -3767,16 +3621,15 @@ export default function VistaModelli({ C }){
   // eventi) E, retroattivamente, a tutti gli eventi esistenti con stesso
   // nome+orario di questo (match richiesto esplicitamente).
   const modelloIdCorrente = form.modelloId || form.evtModelloId || null;
-  if(!modelloIdCorrente) return null;
-  if(tipoModelloProtrazione(modelloIdCorrente)) return null;
-  const modelloCorrente = modelli.find(m=>m.id===modelloIdCorrente);
-  if(!modelloCorrente) return null;
+  if(modelloIdCorrente && tipoModelloProtrazione(modelloIdCorrente)) return null;
+  const modelloCorrente = modelloIdCorrente ? (modelli.find(m=>m.id===modelloIdCorrente)||null) : null;
   if(!activeReports || activeReports.length===0) return null;
 
   const reportOverrides = form.reportOverrides || {};
 
   function statoInclusioneModello(r){
     const cfg = getConteggioConfig(r.id, r.type);
+    if(!modelloCorrente) return r.type!=="turnazione" && (cfg.modelliInclusi||[]).length===0;
     if(r.type==="turnazione"){
       const esclusi = cfg.modelliEsclusi||[];
       const aggiunti = cfg.modelliAggiunti||[];
@@ -3816,9 +3669,9 @@ export default function VistaModelli({ C }){
     });
   }
 
-  function applicaATuttiGliEventi(reportId, override){
-    // Match richiesto: nome (label) + orario (tIn/tOut) identici a questo
-    // evento, su TUTTI gli eventi esistenti — non solo "stesso modello".
+  function applicaConfigModello(reportId, override){
+    // Aggiorna la configurazione del MODELLO (vale per i futuri eventi). Senza modello non c'è nulla da aggiornare.
+    if(!modelloCorrente) return;
     const r = activeReports.find(rr=>rr.id===reportId);
     if(!r) return;
     const cfg = getConteggioConfig(r.id, r.type);
@@ -3859,30 +3712,42 @@ export default function VistaModelli({ C }){
       });
       updateConteggioConfig(r.id, {...cfg, sottomenu:nuoviSottomenu});
     }
-    // Retroattivo: stessa scelta su tutti gli eventi esistenti con stesso
-    // nome+orario (il modello resta come default per i nuovi eventi futuri,
-    // già coperto sopra da updateConteggioConfig sul report). Rimuoviamo
-    // SOLO l'override di QUESTO report da ciascun evento trovato — un
-    // evento potrebbe avere override attivi anche su altri report, che
-    // devono restare intatti.
-    applicaReportOverrideATuttiGliEventi(form.label||"", form.tIn||"", form.tOut||"",
-      (eventoEsistente)=>{
-        const next = {...(eventoEsistente.reportOverrides||{})};
-        delete next[reportId];
-        return { reportOverrides: next };
-      },
-      (eventoNuovo)=>({ report_overrides: Object.keys(eventoNuovo.reportOverrides||{}).length>0 ? eventoNuovo.reportOverrides : null }));
-    setOverrideStato(reportId, null);
-    setOverrideSottomenu(reportId, null, null);
   }
 
   applicaScelteSalvataggioRef.current = ()=>{
+    // Al Salva: per i report con "Tutti gli eventi" scelto, applica in UN solo passaggio (modello + eventi con stesso nome+orario).
     const sc = form.applicaReport || {};
-    activeReports.forEach(rr=>{
-      const ov = (form.reportOverrides||{})[rr.id];
-      if(sc[rr.id]==="tutti" && ov) applicaATuttiGliEventi(rr.id, ov);
+    const ovAll = form.reportOverrides || {};
+    const turnoAttivo = !!(form.categoriaTurno||form.categoriaAppAuto||form.turnoVuoto||form.appAutoVuoto);
+    const tutti = activeReports.filter(rr=>sc[rr.id]==="tutti" && (ovAll[rr.id] || (rr.type==="turnazione" && turnoAttivo)));
+    if(tutti.length===0){ setForm(f=>({...f, applicaReport:{}})); return; }
+    tutti.forEach(rr=>{ if(ovAll[rr.id]) applicaConfigModello(rr.id, ovAll[rr.id]); });
+    const turnoTutti = tutti.some(rr=>rr.type==="turnazione") && turnoAttivo;
+    const patchTurnoLocale = {
+      categoriaTurno: form.categoriaTurno||"", categoriaAppAuto: form.categoriaAppAuto||"",
+      turnoVuoto: !!form.turnoVuoto, appAutoVuoto: !!form.appAutoVuoto,
+    };
+    const patchTurnoDb = {
+      categoria_turno: form.categoriaTurno||null, categoria_app_auto: form.categoriaAppAuto||null,
+      categoria_turno_vuoto: !!form.turnoVuoto, categoria_app_auto_vuoto: !!form.appAutoVuoto,
+    };
+    applicaReportOverrideATuttiGliEventi(form.label||"", form.tIn||"", form.tOut||"",
+      (ev)=>{
+        const next = {...(ev.reportOverrides||{})};
+        tutti.forEach(rr=>{ const ov = ovAll[rr.id]; if(!ov) return; if(modelloCorrente) delete next[rr.id]; else next[rr.id] = ov; });
+        return { reportOverrides: next, ...(turnoTutti ? patchTurnoLocale : {}) };
+      },
+      (nuovo)=>({ report_overrides: Object.keys(nuovo.reportOverrides||{}).length>0 ? nuovo.reportOverrides : null, ...(turnoTutti ? patchTurnoDb : {}) }));
+    if(turnoTutti && modelloCorrente){
+      saveModello({...modelloCorrente,
+        categoria: form.categoriaTurno||"", categoriaAppAuto: form.categoriaAppAuto||"",
+        turnoVuoto: !!form.turnoVuoto, appAutoVuoto: !!form.appAutoVuoto});
+    }
+    setForm(f=>{
+      const ro = {...(f.reportOverrides||{})};
+      if(modelloCorrente) tutti.forEach(rr=>{ delete ro[rr.id]; });
+      return {...f, reportOverrides:ro, applicaReport:{}};
     });
-    setForm(f=>({...f, applicaReport:{}}));
   };
 
   return (
@@ -3904,7 +3769,7 @@ export default function VistaModelli({ C }){
             const cfgReport = getConteggioConfig(r.id, r.type);
             const sottomenuTutti = cfgReport.sottomenu||[];
             const smEspanso = sottomenuEspansoEvento[r.id]||null;
-            const haOverride = !!overrideAttuale || Object.keys(overrideR.sottomenu||{}).length>0;
+            const haOverride = !!overrideAttuale || Object.keys(overrideR.sottomenu||{}).length>0 || (r.type==="turnazione" && !!(form.categoriaTurno||form.categoriaAppAuto||form.turnoVuoto||form.appAutoVuoto));
             return (
               <div key={r.id} style={{background:inclusoEffettivo?accent+"1f":T.s2,borderRadius:10,overflow:"hidden"}}>
                 <button onClick={()=>setReportEspansoEvento(espanso?null:r.id)}
@@ -3978,7 +3843,7 @@ export default function VistaModelli({ C }){
                       const smAperto = smEspanso===sm.id;
                       const gestisceGruppi = sm.tipo==="libero" && (sm.gruppi||[]).length>0;
                       const gruppoScelto = (overrideR.sottomenu||{})[sm.id]||"";
-                      const gruppoDalModello = (sm.assegnazioni||{})[modelloCorrente.id]||"";
+                      const gruppoDalModello = (sm.assegnazioni||{})[modelloCorrente?.id]||"";
                       const gruppoEff = gruppoScelto==="__nessuno__" ? "" : (gruppoScelto||gruppoDalModello);
                       const nomeSm = sm.nome || ((sm.gruppi||[]).map(g=>g.label).filter(Boolean).join(" · ")) || "Sottomenu";
                       const tipoTxt = sm.tipo==="modello" ? "Per modello" : sm.tipo==="collega" ? "Per collega" : sm.tipo==="viabilita" ? "Viabilità" : sm.tipo==="ticket" ? "Ticket" : "";
