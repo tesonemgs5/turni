@@ -2784,6 +2784,9 @@ export function useAppCore(session){
       const matchAuto = trovaModelloCorrispondente(calId, label, tInFinal, tOutFinal);
       if(matchAuto) formEffettivo = {...form, modelloId: matchAuto.id};
     }
+    if(!formEffettivo.modelloId && !decodificaProtrazioneFiglio(form.importId)){
+      alert("⚠️ Questo evento NON è collegato a nessun modello: non comparirà nei report. Usa «cambia modello» per sceglierne uno.");
+    }
 
     // L'id viene generato QUI, non più dal database: così l'evento locale
     // e quello su Supabase condividono lo stesso id fin dal primo istante,
@@ -2915,6 +2918,10 @@ export function useAppCore(session){
         const matchAuto = trovaModelloCorrispondente(editCalId, label, tInFinal, tOutFinal) || trovaModelloPerTitoloUnico(editCalId, label);
         if(matchAuto) formEffettivo = {...form, modelloId: matchAuto.id};
       }
+    }
+    const evtCorrenteAvviso = (store.events?.[dayKey]?.[editCalId]||[]).find(e=>e.id===form.editId);
+    if(!formEffettivo.modelloId && !decodificaProtrazioneFiglio(evtCorrenteAvviso?.importId)){
+      alert("⚠️ Questo evento NON è collegato a nessun modello: non comparirà nei report. Usa «cambia modello» per sceglierne uno.");
     }
 
     // Sincronizzazione inversa: se l'evento che sto modificando È esso
@@ -5699,6 +5706,19 @@ const importsRecenti = useMemo(()=>{
 
   async function deleteModello(id){
     try{
+      // Pop-up: se il modello è usato da eventi, eliminarlo li lascia senza modello (niente report).
+      const usati = [];
+      for(const dk of Object.keys(store.events||{})){
+        for(const evts of Object.values(store.events[dk]||{})){
+          (evts||[]).forEach(e=>{ if(e.modelloId===id) usati.push(dk); });
+        }
+      }
+      if(usati.length>0){
+        const nomeMod = (modelli.find(m=>m.id===id)||{}).titolo || "";
+        const date = [...new Set(usati)].sort().slice(-5).map(d=>d.split("-").reverse().join("/")).join(", ");
+        const ok = window.confirm(`⚠️ Il modello "${nomeMod}" è usato da ${usati.length} event${usati.length===1?"o":"i"} (ultimi: ${date}).\n\nSe lo elimini, ${usati.length===1?"quell'evento resta":"quegli eventi restano"} senza modello e non compar${usati.length===1?"e":"iranno"} nei report.\n\nEliminare comunque?`);
+        if(!ok) return { ok:false, annullato:true };
+      }
       const esito = await deleteModelloInterno(id);
       segnalaModificaOrdineModelli();
       return esito;
