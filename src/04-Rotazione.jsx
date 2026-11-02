@@ -2410,7 +2410,7 @@ export function ModelForm({
                                   </span>
                                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                                     <span style={{ fontSize: 10, fontWeight: 800, color: gruppoScelto ? accent : T.sub }}>
-                                      {gestisceGruppi ? ((sm.gruppi || []).find(g => g.key === gruppoScelto)?.label || "Escluso") : "Automatico"}
+                                      {gestisceGruppi ? ((sm.gruppi || []).length === 1 ? (gruppoScelto ? "✓ Incluso" : "Escluso") : ((sm.gruppi || []).find(g => g.key === gruppoScelto)?.label || "Escluso")) : "Automatico"}
                                     </span>
                                     <span style={{ fontSize: 10, color: T.sub }}>{smAperto ? "▲" : "▼"}</span>
                                   </div>
@@ -2419,7 +2419,7 @@ export function ModelForm({
                                   <div style={{ padding: "0 10px 8px" }}>
                                     {(sm.gruppi || []).map(g => (
                                       <div key={g.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, padding: "3px 0" }}>
-                                        <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{g.label || "(senza nome)"}</span>
+                                        {(sm.gruppi || []).length > 1 && <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{g.label || "(senza nome)"}</span>}
                                         <div style={{ display: "flex", gap: 4 }}>
                                           {[["inc", "Incluso"], ["esc", "Escluso"]].map(([k, l]) => {
                                             const attivo = k === "inc" ? gruppoScelto === g.key : gruppoScelto !== g.key;
