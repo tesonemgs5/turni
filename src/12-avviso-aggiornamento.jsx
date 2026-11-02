@@ -15,6 +15,13 @@ const APK_URL = `https://github.com/${REPO}/releases/latest/download/turni.apk`
 const PAUSA_MIN_MS = 60 * 1000   // evita controlli doppi ravvicinati
 const CHIAVE_MODO = "turnipm_aggiornamenti_modo"
 const MODI = ["ogni", "avvio", "manuale"]
+const CHIAVE_IGNORA = "turnipm_aggiornamenti_ignora"   // versione per cui non chiedere piu'
+function versioneIgnorata() {
+  try { return localStorage.getItem(CHIAVE_IGNORA) || "" } catch { return "" }
+}
+function ignoraVersione(v) {
+  try { localStorage.setItem(CHIAVE_IGNORA, v) } catch { /* non bloccante */ }
+}
 
 export function inApk() {
   try {
@@ -65,7 +72,7 @@ let ultimo = 0           // quando e' riuscito l'ultimo controllo
 let daRiprovare = false  // l'ultimo tentativo e' fallito (niente segnale / errore)
 
 // Esito: "nuova" | "aggiornato" | "errore" | "saltato"
-export function controllaAggiornamenti({ forza = false } = {}) {
+export function controllaAggiornamenti({ forza = false, mostraSempre = false } = {}) {
   if (inVolo) return inVolo
   const corrente = versioneInstallata()
   if (!corrente) return Promise.resolve({ esito: "errore" })
@@ -92,7 +99,7 @@ export function controllaAggiornamenti({ forza = false } = {}) {
       const numBuild = (String(dati.name || "").match(/#(\d+)/) || [])[1]
       const versioneMostrata = numBuild ? `${versione}#${numBuild}` : versione
       if (versione && piuNuova(versione, corrente)) {
-        if (mostraPopup) mostraPopup({ versione: versioneMostrata, note: noteDaRelease(dati.body) })
+        if (mostraPopup && (mostraSempre || versioneIgnorata() !== versioneMostrata)) mostraPopup({ versione: versioneMostrata, note: noteDaRelease(dati.body) })
         return { esito: "nuova", versione: versioneMostrata }
       }
       return { esito: "aggiornato", versione: versioneCompleta() || corrente }
@@ -162,6 +169,9 @@ export default function AvvisoAggiornamento() {
             style={{flex:1,background:"#3b82f6",border:"none",borderRadius:10,color:"#fff",
               padding:"12px 0",fontWeight:800,fontSize:14}}>Scarica ora</button>
         </div>
+        <button onClick={() => { ignoraVersione(nuova.versione); setNuova(null) }}
+          style={{width:"100%",marginTop:10,background:"none",border:"1px solid #475569",borderRadius:10,color:"#94a3b8",
+            padding:"10px 0",fontWeight:700,fontSize:12}}>Non chiedere più per questa versione</button>
       </div>
     </div>
   )
@@ -186,7 +196,7 @@ export function ImpostazioniAggiornamenti({ T }) {
   async function controllaOra() {
     setAttesa(true)
     setStato(null)
-    const r = await controllaAggiornamenti({ forza: true })
+    const r = await controllaAggiornamenti({ forza: true, mostraSempre: true })
     setAttesa(false)
     if (r.esito === "nuova") setStato({ ok: true, testo: `🔔 Nuova versione disponibile: ${r.versione}` })
     else if (r.esito === "aggiornato") setStato({ ok: true, testo: "✅ Sei aggiornato" })
