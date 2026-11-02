@@ -130,6 +130,7 @@ export default function VistaModelli({ C }){
   // Quale report è espanso nella tendina "CATEGORIA REPORT (per questo
   // evento)" del form Modifica Evento (null = tutte chiuse).
   const [reportEspansoEvento, setReportEspansoEvento] = useState(null);
+  const applicaScelteSalvataggioRef = useRef(null); // applica a "tutti gli eventi" le scelte fatte in CATEGORIA REPORT, al Salva
   // Se l'intera lista "CATEGORIA REPORT" è mostrata o nascosta (freccia
   // accanto al titolo della sezione, livello 1 della tendina annidata).
   const [categoriaReportListaAperta, setCategoriaReportListaAperta] = useState(false);
@@ -3875,6 +3876,15 @@ export default function VistaModelli({ C }){
     setOverrideSottomenu(reportId, null, null);
   }
 
+  applicaScelteSalvataggioRef.current = ()=>{
+    const sc = form.applicaReport || {};
+    activeReports.forEach(rr=>{
+      const ov = (form.reportOverrides||{})[rr.id];
+      if(sc[rr.id]==="tutti" && ov) applicaATuttiGliEventi(rr.id, ov);
+    });
+    setForm(f=>({...f, applicaReport:{}}));
+  };
+
   return (
     <div style={{marginBottom:16}}>
       <button onClick={()=>setCategoriaReportListaAperta(v=>!v)}
@@ -4019,17 +4029,19 @@ export default function VistaModelli({ C }){
                       );
                     })}
                     {haOverride && (
-                      <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-                        <span style={{fontSize:11,color:T.sub}}>Applica a:</span>
-                        <span style={{fontSize:11,fontWeight:800,color:accent,
-                          background:accent+"22",borderRadius:8,padding:"4px 8px"}}>
-                          Solo questo evento (attivo)
-                        </span>
-                        <button onClick={()=>applicaATuttiGliEventi(r.id, overrideR)}
-                          style={{fontSize:11,fontWeight:700,color:T.sub,background:"none",
-                            border:`1px solid ${T.border}`,borderRadius:8,padding:"4px 8px",cursor:"pointer"}}>
-                          Tutti gli eventi con questo nome+orario →
-                        </button>
+                      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                        <span style={{fontSize:11,fontWeight:800,color:T.sub}}>APPLICA A:</span>
+                        {[["evento","Solo questo evento"],["tutti","Tutti gli eventi con questo nome+orario"]].map(([v,l])=>{
+                          const sel = ((form.applicaReport||{})[r.id]||"evento")===v;
+                          return (
+                            <button key={v} onClick={()=>setForm(f=>({...f,applicaReport:{...(f.applicaReport||{}),[r.id]:v}}))}
+                              style={{textAlign:"left",padding:"10px 12px",borderRadius:10,cursor:"pointer",fontWeight:800,fontSize:12,
+                                border:`2px solid ${sel?accent:T.border}`,background:sel?accent:T.surface,color:sel?"#fff":T.text}}>
+                              {sel?"● ":"○ "}{l}
+                            </button>
+                          );
+                        })}
+                        <span style={{fontSize:10,color:T.sub}}>La scelta si applica quando premi 💾 Salva.</span>
                       </div>
                     )}
                   </div>
@@ -4166,6 +4178,7 @@ export default function VistaModelli({ C }){
                 Annulla
               </button>
               <button onClick={()=>{
+                  if(applicaScelteSalvataggioRef.current) applicaScelteSalvataggioRef.current();
                   if(!form.editId){ saveEvt(); return; }
                   const modId = form.modelloId || form.evtModelloId;
                   const modCollegato = modId ? modelli.find(m=>m.id===modId) : null;
