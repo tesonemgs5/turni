@@ -2745,6 +2745,16 @@ export function useAppCore(session){
     ) || null;
   }
 
+  // Modello collegato dal solo titolo, usato quando il modello originale dell'evento non esiste più:
+  // solo se nel calendario ce n'è UNO solo con quel titolo (altrimenti resta orfano e va scelto a mano).
+  function trovaModelloPerTitoloUnico(calId, label){
+    if(!label) return null;
+    const norm = s => (s||"").trim().toUpperCase();
+    const target = norm(label);
+    const trovati = modelli.filter(m=>m.calendarId===calId && (norm(m.titolo)===target || norm(m.label)===target));
+    return trovati.length===1 ? trovati[0] : null;
+  }
+
   async function saveEvt(){
     try{
       return await saveEvtInterno();
@@ -2896,8 +2906,15 @@ export function useAppCore(session){
     // riassegnato con `=`: usiamo una variabile locale derivata.
     let formEffettivo = form;
     if(!form.modelloId){
-      const matchAuto = trovaModelloCorrispondente(editCalId, label, tInFinal, tOutFinal);
-      if(matchAuto) formEffettivo = {...form, modelloId: matchAuto.id};
+      // Evento già collegato a un modello esistente: il collegamento NON si perde mai
+      // (prima, se titolo/orario non coincidevano col modello, veniva salvato modello_id nullo).
+      const modelloAttuale = form.evtModelloId ? modelli.find(m=>m.id===form.evtModelloId) : null;
+      if(modelloAttuale){
+        formEffettivo = {...form, modelloId: modelloAttuale.id};
+      } else {
+        const matchAuto = trovaModelloCorrispondente(editCalId, label, tInFinal, tOutFinal) || trovaModelloPerTitoloUnico(editCalId, label);
+        if(matchAuto) formEffettivo = {...form, modelloId: matchAuto.id};
+      }
     }
 
     // Sincronizzazione inversa: se l'evento che sto modificando È esso
