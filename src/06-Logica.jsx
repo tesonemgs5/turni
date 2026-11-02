@@ -7395,6 +7395,7 @@ const importsRecenti = useMemo(()=>{
       sottomenu.forEach(sm=>{
         if(sm.tipo!=="libero") return;
         const gruppoKeyEvento = (overrideReportRaw?.sottomenu||{})[sm.id];
+        if(gruppoKeyEvento==="__nessuno__") return;
         const gruppoKey = gruppoKeyEvento || (e.modelloId ? (sm.assegnazioni||{})[e.modelloId] : null);
         if(!gruppoKey || !nelPeriodoGruppo(dateKey, sm.id, gruppoKey)) return;
         if(!perSottomenu[sm.id][gruppoKey]) perSottomenu[sm.id][gruppoKey] = {};
@@ -7515,6 +7516,7 @@ const importsRecenti = useMemo(()=>{
       sottomenu.forEach(sm=>{
         if(sm.tipo!=="libero" || !e.modelloId) return;
         const gruppoKeyEvento = (overrideReportRaw?.sottomenu||{})[sm.id];
+        if(gruppoKeyEvento==="__nessuno__") return;
         const gruppoKey = gruppoKeyEvento || (sm.assegnazioni||{})[e.modelloId];
         if(!gruppoKey || !nelPeriodoGruppo(dateKey, sm.id, gruppoKey)) return;
         if(!perSottomenu[sm.id][gruppoKey]) perSottomenu[sm.id][gruppoKey] = {};

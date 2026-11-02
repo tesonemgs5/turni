@@ -3853,6 +3853,7 @@ export default function VistaModelli({ C }){
       const nuoviSottomenu = (cfg.sottomenu||[]).map(sm=>{
         const gruppoScelto = override.sottomenu[sm.id];
         if(!gruppoScelto) return sm;
+        if(gruppoScelto==="__nessuno__"){ const as={...(sm.assegnazioni||{})}; delete as[modelloCorrente.id]; return {...sm, assegnazioni:as}; }
         return {...sm, assegnazioni:{...(sm.assegnazioni||{}), [modelloCorrente.id]:gruppoScelto}};
       });
       updateConteggioConfig(r.id, {...cfg, sottomenu:nuoviSottomenu});
@@ -3891,7 +3892,7 @@ export default function VistaModelli({ C }){
             const inclusoEffettivo = overrideAttuale ? overrideAttuale==="incluso" : inclusoDalModello;
             const espanso = reportEspansoEvento===r.id;
             const cfgReport = getConteggioConfig(r.id, r.type);
-            const sottomenuLiberi = (cfgReport.sottomenu||[]).filter(sm=>sm.tipo==="libero" && (sm.gruppi||[]).length>0);
+            const sottomenuTutti = cfgReport.sottomenu||[];
             const smEspanso = sottomenuEspansoEvento[r.id]||null;
             const haOverride = !!overrideAttuale || Object.keys(overrideR.sottomenu||{}).length>0;
             return (
@@ -3924,33 +3925,94 @@ export default function VistaModelli({ C }){
                         Segue il modello: attualmente {inclusoDalModello?"incluso":"escluso"} in questo report.
                       </div>
                     )}
-                    {sottomenuLiberi.map(sm=>{
+                    {r.type==="turnazione" && (()=>{
+                      const tuttoGiorno = form.dur==="allday";
+                      const minsIn = tuttoGiorno||!form.tIn ? null : oraInMinuti(form.tIn);
+                      const autoTurno = minsIn==null ? null : ((minsIn>=360 && minsIn<705) ? "primo" : "secondo");
+                      const autoAA = tuttoGiorno ? null : ((form.label||"").toUpperCase().includes("APP") ? "app" : "auto");
+                      const effTurno = form.turnoVuoto ? null : (form.categoriaTurno || autoTurno);
+                      const effAA = form.appAutoVuoto ? null : (form.categoriaAppAuto || autoAA);
+                      const riga = (key,label,eff,campo,flag)=>(
+                        <div key={key} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:6,padding:"3px 0"}}>
+                          <span style={{fontSize:12,fontWeight:700,color:T.text}}>{label}</span>
+                          <div style={{display:"flex",gap:4}}>
+                            {[["inc","Incluso"],["esc","Escluso"]].map(([k,l])=>{
+                              const attivo = k==="inc" ? eff===key : eff!==key;
+                              return (
+                                <button key={k} onClick={()=>{
+                                  if(k==="inc") setForm(f=>({...f,[campo]:key,[flag]:false}));
+                                  else if(eff===key) setForm(f=>({...f,[campo]:"",[flag]:true}));
+                                }} style={{padding:"6px 10px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:11,border:"none",
+                                  background:attivo?accent:T.s2,color:attivo?"#fff":T.sub}}>{l}</button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                      return (
+                        <div style={{background:T.surface,borderRadius:8,padding:"7px 10px"}}>
+                          <div style={{fontSize:10,color:T.sub,fontWeight:700,marginBottom:2}}>TURNO</div>
+                          {riga("primo","1° TURNO",effTurno,"categoriaTurno","turnoVuoto")}
+                          {riga("secondo","2° TURNO",effTurno,"categoriaTurno","turnoVuoto")}
+                          {!tuttoGiorno && (
+                            <>
+                              <div style={{fontSize:10,color:T.sub,fontWeight:700,margin:"6px 0 2px"}}>APP / AUTO</div>
+                              {riga("app","APP",effAA,"categoriaAppAuto","appAutoVuoto")}
+                              {riga("auto","AUTO",effAA,"categoriaAppAuto","appAutoVuoto")}
+                            </>
+                          )}
+                        </div>
+                      );
+                    })()}
+                    {sottomenuTutti.map((sm,idxSm)=>{
                       const smAperto = smEspanso===sm.id;
+                      const gestisceGruppi = sm.tipo==="libero" && (sm.gruppi||[]).length>0;
                       const gruppoScelto = (overrideR.sottomenu||{})[sm.id]||"";
                       const gruppoDalModello = (sm.assegnazioni||{})[modelloCorrente.id]||"";
+                      const gruppoEff = gruppoScelto==="__nessuno__" ? "" : (gruppoScelto||gruppoDalModello);
+                      const nomeSm = sm.nome || ((sm.gruppi||[]).map(g=>g.label).filter(Boolean).join(" · ")) || "Sottomenu";
+                      const tipoTxt = sm.tipo==="modello" ? "Per modello" : sm.tipo==="collega" ? "Per collega" : sm.tipo==="viabilita" ? "Viabilità" : sm.tipo==="ticket" ? "Ticket" : "";
                       return (
                         <div key={sm.id} style={{background:T.surface,borderRadius:8,overflow:"hidden"}}>
                           <button onClick={()=>setSottomenuEspansoEvento(prev=>({...prev,[r.id]: smAperto?null:sm.id}))}
                             style={{display:"flex",alignItems:"center",justifyContent:"space-between",
                               width:"100%",padding:"7px 10px",border:"none",cursor:"pointer",
                               background:"transparent",textAlign:"left"}}>
-                            <span style={{fontSize:12,fontWeight:700,color:T.text}}>{sm.nome||"Sottomenu"}</span>
+                            <span style={{fontSize:12,fontWeight:700,color:T.text}}>
+                              {nomeSm}
+                              {tipoTxt && <span style={{fontWeight:500,color:T.sub}}> · {tipoTxt}</span>}
+                            </span>
                             <div style={{display:"flex",alignItems:"center",gap:6}}>
-                              <span style={{fontSize:10,fontWeight:800,color:gruppoScelto?accent:T.sub}}>
-                                {(sm.gruppi||[]).find(g=>g.key===(gruppoScelto||gruppoDalModello))?.label || "—"}
+                              <span style={{fontSize:10,fontWeight:800,color:gruppoEff?accent:T.sub}}>
+                                {gestisceGruppi ? ((sm.gruppi||[]).find(g=>g.key===gruppoEff)?.label || "Escluso") : "Automatico"}
                               </span>
                               <span style={{fontSize:10,color:T.sub}}>{smAperto?"▲":"▼"}</span>
                             </div>
                           </button>
-                          {smAperto && (
-                            <div style={{padding:"0 10px 10px",display:"flex",gap:6,flexWrap:"wrap"}}>
+                          {smAperto && gestisceGruppi && (
+                            <div style={{padding:"0 10px 8px"}}>
                               {(sm.gruppi||[]).map(g=>(
-                                <button key={g.key} onClick={()=>setOverrideSottomenu(r.id, sm.id, gruppoScelto===g.key ? null : g.key)}
-                                  style={{padding:"6px 10px",borderRadius:8,cursor:"pointer",
-                                    fontWeight:700,fontSize:11,border:"none",
-                                    background:gruppoScelto===g.key?accent:T.s2,
-                                    color:gruppoScelto===g.key?"#fff":T.sub}}>{g.label}</button>
+                                <div key={g.key} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:6,padding:"3px 0"}}>
+                                  <span style={{fontSize:12,fontWeight:700,color:T.text}}>{g.label||"(senza nome)"}</span>
+                                  <div style={{display:"flex",gap:4}}>
+                                    {[["inc","Incluso"],["esc","Escluso"]].map(([k,l])=>{
+                                      const attivo = k==="inc" ? gruppoEff===g.key : gruppoEff!==g.key;
+                                      return (
+                                        <button key={k} onClick={()=>{
+                                          if(k==="inc") setOverrideSottomenu(r.id, sm.id, g.key);
+                                          else if(gruppoEff===g.key) setOverrideSottomenu(r.id, sm.id, "__nessuno__");
+                                        }} style={{padding:"6px 10px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:11,border:"none",
+                                          background:attivo?accent:T.s2,color:attivo?"#fff":T.sub}}>{l}</button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
                               ))}
+                            </div>
+                          )}
+                          {smAperto && !gestisceGruppi && (
+                            <div style={{padding:"0 10px 10px",fontSize:10,color:T.sub}}>
+                              Segue l’inclusione del report e si aggiorna automaticamente.
                             </div>
                           )}
                         </div>

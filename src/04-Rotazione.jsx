@@ -2360,23 +2360,38 @@ export function ModelForm({
                             const gm = cfgReport.gruppiManuali || {};
                             const vTurno = form.id ? ((gm[form.id] === "primo" || gm[form.id] === "secondo" || gm[form.id] === "escluso") ? gm[form.id] : "") : (pend(r).turno || "");
                             const vAA = form.id ? (gm[form.id + "_appauto"] || ((gm[form.id] === "app" || gm[form.id] === "auto") ? gm[form.id] : "")) : (pend(r).appauto || "");
-                            const riga = (titolo, valore, opzioni, chiave) => (
-                              <div>
-                                <div style={{ fontSize: 10, color: T.sub, fontWeight: 700, marginBottom: 4 }}>{titolo}</div>
-                                <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                                  {opzioni.map(([v, l]) => (
-                                    <button key={v || "auto"} type="button" onClick={() => patch(r, { [chiave]: v })}
-                                      style={{ flex: "1 1 22%", padding: "7px 4px", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 11, border: "none",
-                                        background: valore === v ? accent : T.surface, color: valore === v ? "#fff" : T.sub }}>{l}</button>
-                                  ))}
+                            const effTurno = vTurno ? (vTurno === "escluso" ? null : vTurno) : (form.turnoVuoto ? null : (form.categoria || categoriaTurnoAutomatica(form)));
+                            const effAA = vAA ? (vAA === "escluso" ? null : vAA) : (form.appAutoVuoto ? null : (form.categoriaAppAuto || categoriaAppAutoAutomatica(form) || "auto"));
+                            const riga = (key, label, eff, chiave) => (
+                              <div key={key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, padding: "3px 0" }}>
+                                <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{label}</span>
+                                <div style={{ display: "flex", gap: 4 }}>
+                                  {[["inc", "Incluso"], ["esc", "Escluso"]].map(([k, l]) => {
+                                    const attivo = k === "inc" ? eff === key : eff !== key;
+                                    return (
+                                      <button key={k} type="button" onClick={() => {
+                                        if (k === "inc") patch(r, { [chiave]: key });
+                                        else if (eff === key) patch(r, { [chiave]: "escluso" });
+                                      }} style={{ padding: "6px 10px", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 11, border: "none",
+                                        background: attivo ? accent : T.surface, color: attivo ? "#fff" : T.sub }}>{l}</button>
+                                    );
+                                  })}
                                 </div>
                               </div>
                             );
                             return (
-                              <>
-                                {riga("TURNO IN QUESTO REPORT", vTurno, [["", "Come il modello"], ["primo", "1° TURNO"], ["secondo", "2° TURNO"], ["escluso", "Nessuno"]], "turno")}
-                                {form.tempo !== "h24" && riga("APP / AUTO IN QUESTO REPORT", vAA, [["", "Come il modello"], ["app", "APP"], ["auto", "AUTO"], ["escluso", "Nessuno"]], "appauto")}
-                              </>
+                              <div style={{ background: T.surface, borderRadius: 8, padding: "7px 10px" }}>
+                                <div style={{ fontSize: 10, color: T.sub, fontWeight: 700, marginBottom: 2 }}>TURNO</div>
+                                {riga("primo", "1° TURNO", effTurno, "turno")}
+                                {riga("secondo", "2° TURNO", effTurno, "turno")}
+                                {form.tempo !== "h24" && (
+                                  <>
+                                    <div style={{ fontSize: 10, color: T.sub, fontWeight: 700, margin: "6px 0 2px" }}>APP / AUTO</div>
+                                    {riga("app", "APP", effAA, "appauto")}
+                                    {riga("auto", "AUTO", effAA, "appauto")}
+                                  </>
+                                )}
+                              </div>
                             );
                           })()}
                           {sottomenuReport.map(sm => {
@@ -2390,7 +2405,7 @@ export function ModelForm({
                                     width: "100%", padding: "7px 10px", border: "none", cursor: "pointer",
                                     background: "transparent", textAlign: "left" }}>
                                   <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>
-                                    {sm.nome || "Sottomenu"}
+                                    {sm.nome || ((sm.gruppi || []).map(g => g.label).filter(Boolean).join(" · ")) || "Sottomenu"}
                                     {sm.tipo !== "libero" && <span style={{fontWeight:500,color:T.sub}}> · {sm.tipo==="modello"?"Per modello":sm.tipo==="collega"?"Per collega":sm.tipo}</span>}
                                   </span>
                                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -2401,16 +2416,23 @@ export function ModelForm({
                                   </div>
                                 </button>
                                 {smAperto && gestisceGruppi && (
-                                  <div style={{ padding: "0 10px 10px", display: "flex", gap: 6, flexWrap: "wrap" }}>
+                                  <div style={{ padding: "0 10px 8px" }}>
                                     {(sm.gruppi || []).map(g => (
-                                      <button key={g.key} type="button"
-                                        onClick={() => setSottomenuGruppo(r, sm, gruppoScelto === g.key ? null : g.key)}
-                                        style={{ padding: "6px 10px", borderRadius: 8, cursor: "pointer",
-                                          fontWeight: 700, fontSize: 11, border: "none",
-                                          background: gruppoScelto === g.key ? accent : T.s2,
-                                          color: gruppoScelto === g.key ? "#fff" : T.sub }}>
-                                        {g.label}
-                                      </button>
+                                      <div key={g.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, padding: "3px 0" }}>
+                                        <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{g.label || "(senza nome)"}</span>
+                                        <div style={{ display: "flex", gap: 4 }}>
+                                          {[["inc", "Incluso"], ["esc", "Escluso"]].map(([k, l]) => {
+                                            const attivo = k === "inc" ? gruppoScelto === g.key : gruppoScelto !== g.key;
+                                            return (
+                                              <button key={k} type="button" onClick={() => {
+                                                if (k === "inc") setSottomenuGruppo(r, sm, g.key);
+                                                else if (gruppoScelto === g.key) setSottomenuGruppo(r, sm, null);
+                                              }} style={{ padding: "6px 10px", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 11, border: "none",
+                                                background: attivo ? accent : T.s2, color: attivo ? "#fff" : T.sub }}>{l}</button>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
                                     ))}
                                   </div>
                                 )}
