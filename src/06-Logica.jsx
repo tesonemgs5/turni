@@ -9,6 +9,7 @@ import { meseCorrenteReport, statoInizialeMeseReport } from "./28-periodo-report
 import { dataNelPeriodoReport, intervalloPersonalizzatoReport } from "./29-periodo-sottomenu";
 import { widgetDisponibile, inviaAlWidget, descriviStatoWidget } from "./17-widget";
 import { scaricaFileTesto } from "./18-scarica-file";
+import { trovaModelloIdentita, tempoDaEvento } from "./31-identita-modello";
 import { fasceIndennitaDi, pulsantiFasciaDi, minutiPerFasceEvento, tariffaOraria } from "./24-fasce-indennita";
 import {
   FASCE_AUTOMATICHE_DEFAULT, FESTIVITA_DEFAULT_ATTIVE, MONTHS, NOMI_GIORNI_IT, PALETTE, COLORE_H24,
@@ -2733,26 +2734,13 @@ export function useAppCore(session){
   // Match volutamente RIGOROSO (stesso calendario, stesso testo, stessi
   // orari): meglio lasciare un evento orfano isolato che agganciarlo al
   // modello sbagliato.
-  function trovaModelloCorrispondente(calId, label, tIn, tOut){
-    if(!label) return null;
-    const norm = s => (s||"").trim().toUpperCase();
-    const target = norm(label);
-    return modelli.find(m=>
-      m.calendarId===calId &&
-      (norm(m.titolo)===target || norm(m.label)===target) &&
-      (m.inizio||"")===(tIn||"") &&
-      (m.fine||"")===(tOut||"")
-    ) || null;
-  }
-
-  // Modello collegato dal solo titolo, usato quando il modello originale dell'evento non esiste più:
-  // solo se nel calendario ce n'è UNO solo con quel titolo (altrimenti resta orfano e va scelto a mano).
-  function trovaModelloPerTitoloUnico(calId, label){
-    if(!label) return null;
-    const norm = s => (s||"").trim().toUpperCase();
-    const target = norm(label);
-    const trovati = modelli.filter(m=>m.calendarId===calId && (norm(m.titolo)===target || norm(m.label)===target));
-    return trovati.length===1 ? trovati[0] : null;
+  // Identità modello = NOME + TIPO DURATA + INIZIO + FINE (REGOLE-INVARIABILI.md, src/31-identita-modello.js).
+  // `extra`: { allDay, tempoEvento } per distinguere H24 / personalizzato / 6h15 / 6h30.
+  function trovaModelloCorrispondente(calId, label, tIn, tOut, extra={}){
+    return trovaModelloIdentita(modelli, {
+      calendarId: calId, nome: label, inizio: tIn, fine: tOut,
+      allDay: !!extra.allDay, tempoEvento: extra.tempoEvento,
+    });
   }
 
   async function saveEvt(){
@@ -2781,7 +2769,10 @@ export function useAppCore(session){
     // riassegnato con `=`: usiamo una variabile locale derivata.
     let formEffettivo = form;
     if(!form.modelloId){
-      const matchAuto = trovaModelloCorrispondente(calId, label, tInFinal, tOutFinal);
+      const matchAuto = trovaModelloCorrispondente(calId, label, tInFinal, tOutFinal, {
+        allDay: form.dur==="allday",
+        tempoEvento: form.dur==="allday" ? "h24" : form.dur==="fixed" ? "6h15" : form.dur==="fixed30" ? "6h30" : "personalizzato",
+      });
       if(matchAuto) formEffettivo = {...form, modelloId: matchAuto.id};
     }
     if(!formEffettivo.modelloId && !decodificaProtrazioneFiglio(form.importId)){
@@ -2915,7 +2906,13 @@ export function useAppCore(session){
       if(modelloAttuale){
         formEffettivo = {...form, modelloId: modelloAttuale.id};
       } else {
-        const matchAuto = trovaModelloCorrispondente(editCalId, label, tInFinal, tOutFinal) || trovaModelloPerTitoloUnico(editCalId, label);
+        // Modello originale non più esistente: identità = nome + tipo durata + orari UFFICIALI salvati nell'evento
+        // (mai quelli effettivi del form).
+        const evtSalvato = (store.events?.[dayKey]?.[editCalId]||[]).find(e=>e.id===form.editId);
+        const matchAuto = evtSalvato ? trovaModelloCorrispondente(editCalId, evtSalvato.label, evtSalvato.tIn||"", evtSalvato.tOut||"", {
+          allDay: !!evtSalvato.allDay,
+          tempoEvento: tempoDaEvento({allDay:!!evtSalvato.allDay, tIn:evtSalvato.tIn, tOut:evtSalvato.tOut, calcFine6h15, calcFine6h30}),
+        }) : null;
         if(matchAuto) formEffettivo = {...form, modelloId: matchAuto.id};
       }
     }
@@ -8228,7 +8225,10 @@ const importsRecenti = useMemo(()=>{
     // al posto di una richiesta per ogni evento.
     const daCollegare = [];
     for(const { dayKey, calId:cId, evt } of orfani){
-      const match = trovaModelloCorrispondente(cId, evt.label, evt.tIn, evt.tOut);
+      const match = trovaModelloCorrispondente(cId, evt.label, evt.tIn, evt.tOut, {
+        allDay: !!evt.allDay,
+        tempoEvento: tempoDaEvento({allDay:!!evt.allDay, tIn:evt.tIn, tOut:evt.tOut, calcFine6h15, calcFine6h30}),
+      });
       if(match) daCollegare.push({ dayKey, cId, evt, match });
       else nonRisolti.push({ dayKey, label: evt.label, motivo: "nessun modello corrispondente trovato" });
     }

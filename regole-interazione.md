@@ -58,3 +58,7 @@ non volio messaggi lunghi
 - messaggi cortissimi il minimo indispensabile
 - messaggi brevi e concisi 
 - non voglio perdere tempo a leggere spiegazioni inutili
+
+## 8. Regole invariabili del progetto
+
+Leggere sempre `REGOLE-INVARIABILI.md` (identità del modello = nome + tipo durata + inizio + fine). Non vanno mai modificate senza ordine esplicito dell'utente.
