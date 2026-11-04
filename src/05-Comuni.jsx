@@ -3357,7 +3357,8 @@ function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, f
   return (
     <>
       <div id={`report-figlio-${nodo.id}`} style={{background:T.surface,borderRadius:10,overflow:"hidden"}}>
-        <div onClick={()=>setAperto(a=>!a)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 12px",cursor:"pointer",gap:8}}>
+        <div onClick={()=>setAperto(a=>!a)} style={{display:"flex",flexDirection:"column",padding:"10px 12px",cursor:"pointer",gap:6}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           {isMenu ? (
             <input value={nodo.nome||""} placeholder="NOME MENU" autoFocus={!!nodo.nuovo} onClick={e=>e.stopPropagation()}
               onChange={e=>onChange({...nodo,nuovo:undefined,nome:e.target.value.toUpperCase()})}
@@ -3365,13 +3366,14 @@ function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, f
           ) : (
             <span style={{flex:1,fontSize:12,fontWeight:700,color:T.text}}>{nodo.nome}{suffisso&&(<span style={{fontWeight:500,color:T.sub}}> · {suffisso}</span>)}</span>
           )}
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <span style={{...NUM_REPORT,color:T.text}}>{formatta(val)}</span>
+          </div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:10}}>
             <OrdineSelect T={T} accent={accent} valore={nodo.ordine} ereditato={ordineEred} onChange={v=>onChange({...nodo,nuovo:undefined,ordine:v})}/>
             {!fisso&&freccia(-1,!primo)}{!fisso&&freccia(1,!ultimo)}
             {!fisso&&(<button onClick={stop(()=>setConf(true))} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:13,padding:"2px 4px"}}>🗑️</button>)}
             {isMenu&&(<span onClick={stop(()=>setPicker(x=>!x))} style={{cursor:"pointer",fontSize:18,fontWeight:900,lineHeight:1,color:accent,padding:"0 4px"}}>+</span>)}
             <span style={{fontSize:12,color:T.sub}}>{aperto?"▲":"▼"}</span>
-            <span style={{...NUM_REPORT,color:T.text}}>{formatta(val)}</span>
           </div>
         </div>
         {conf&&(<ConfermaEliminazione T={T} testo={`Vuoi eliminare "${nodo.nome||"menu senza nome"}"?`} onConferma={()=>{setConf(false);onRemove();}} onAnnulla={()=>setConf(false)}/>)}

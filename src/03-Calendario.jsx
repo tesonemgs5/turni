@@ -636,7 +636,7 @@ export default function VistaCalendario({ C }){
               <div style={{fontSize:17,color:T.sub}}>ore</div>
             )}
           </div>
-          {(r.type==="conteggio_turni"||r.type==="turnazione"||r.type==="ore_turno")&&(
+          {(r.type==="conteggio_turni"||r.type==="turnazione"||r.type==="ore_turno")&&(r.type==="ore_turno"?data.totaleMin>0:data.totale>0)&&(
             <span style={{...NUM_REPORT,color:T.text,marginRight:10}}>{r.type==="ore_turno"?fmtOreMin(data.totaleMin):data.totale}</span>
           )}
           <div style={{display:"flex",flexDirection:"row",gap:10,marginRight:10,alignItems:"center"}} onClick={e=>e.stopPropagation()}>
