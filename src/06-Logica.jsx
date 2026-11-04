@@ -3969,7 +3969,7 @@ export function useAppCore(session){
       let extraHolsNuovi = null; let impostazioniNuove = null; let nExtra = 0; let configReportNuove = null;
       try{
         const {data:rigaSett, error:errSett} = await supabase.from("user_settings")
-          .select("extra_hols,sunday_color,holiday_color,report_settings,fasce_automatiche,national_hols_enabled,conteggio_configs").eq("user_id",userId).maybeSingle();
+          .select("extra_hols,sunday_color,holiday_color,report_settings,fasce_automatiche,national_hols_enabled,conteggio_configs,reports").eq("user_id",userId).maybeSingle();
         if(errSett) throw errSett;
         if(rigaSett){
           const dalServer = applicaOpExtraHols(rigaSett.extra_hols||[], leggiOpExtraHols());
@@ -3998,6 +3998,14 @@ export function useAppCore(session){
           const cfgSrv = rigaSett.conteggio_configs;
           if(cfgSrv && typeof cfgSrv==="object" && Object.keys(cfgSrv).length>0 && jsonStabile(conteggioConfigsRef.current||{})!==jsonStabile(cfgSrv)){ // confronto indipendente dall'ordine delle chiavi (Supabase le riordina)
             configReportNuove = cfgSrv; nExtra += 1;
+          }
+          // Report presenti sul server ma mancanti su questo dispositivo: si riaggiungono (mai si cancella nulla in locale).
+          const repSrv = Array.isArray(rigaSett.reports) ? rigaSett.reports : [];
+          const idLocali = new Set((loc.reports||[]).map(r=>r.id));
+          const repMancanti = repSrv.filter(r=>r && r.id && !idLocali.has(r.id));
+          if(repMancanti.length>0){
+            impostazioniNuove = { ...(impostazioniNuove||{}), reports: [...(loc.reports||[]), ...repMancanti] };
+            nExtra += repMancanti.length;
           }
         }
       }catch(e){ segnalaErroreSoloLog(e?.message||String(e), "Sincronizzazione impostazioni e giorni importanti"); }
