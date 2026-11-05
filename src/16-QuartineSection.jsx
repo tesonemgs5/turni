@@ -138,6 +138,10 @@ export function QuartineSection({ T, accent, dark, store, salvaQuartine, fasceAu
           </div>
         )}
 
+        {modifica && !modifica.chiave && modifica.origine==="nuovo" && editorRiga()}
+        <button onClick={()=>setModifica({chiave:null,origine:"nuovo",data:`${new Date().getFullYear()}-01-01`,q:QUARTINE.find(q=>cfg.visibili[q])||"I"})}
+          style={{...bottone,width:"100%",marginBottom:6}}>+ Aggiungi giorno (qualsiasi anno)</button>
+
         {anni.map(anno=>{
           const tutti = Object.keys(cfg.date).filter(k=>k.startsWith(anno+"-")).sort();
           const visibili = tutti.filter(k=>cfg.visibili[cfg.date[k]]);
@@ -158,8 +162,8 @@ export function QuartineSection({ T, accent, dark, store, salvaQuartine, fasceAu
                   </div>
                 )
               ))}
-              {modifica && !modifica.chiave && modifica.data.startsWith(anno+"-") && editorRiga()}
-              <button onClick={()=>setModifica({chiave:null,data:`${anno}-01-01`,q:QUARTINE.find(q=>cfg.visibili[q])||"I"})}
+              {modifica && !modifica.chiave && modifica.origine===anno && editorRiga()}
+              <button onClick={()=>setModifica({chiave:null,origine:anno,data:`${anno}-01-01`,q:QUARTINE.find(q=>cfg.visibili[q])||"I"})}
                 style={{...bottone,width:"100%",marginTop:2}}>+ Aggiungi giorno</button>
             </SecCollapsible>
           );
