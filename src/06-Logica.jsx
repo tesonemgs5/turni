@@ -7404,6 +7404,11 @@ const importsRecenti = useMemo(()=>{
     const perCollega = {};
     const modelliInclusi = cfg?.modelliInclusi || [];
     const filtraCollega = (cfg?.filtraCollega||"").trim().toUpperCase();
+    // Report "TICKET": contano solo gli eventi di durata ufficiale di almeno 6h01m (361 minuti),
+    // salvo override "incluso" sul singolo evento. Gli eventi tutto-il-giorno (H24) contano.
+    const nomeReport = reportId ? ((store.reports||[]).find(r=>r.id===reportId)?.label||"") : "";
+    const durataMinima = nomeReport.trim().toUpperCase()==="TICKET" ? 361 : 0;
+    const durataOk = (e)=> durataMinima===0 || !!e.allDay || minutiPrevistiEvento(e)>=durataMinima;
     const sottomenu = cfg?.sottomenu || [];
     // perSottomenu[sottomenuId][gruppoKey][modelloId] = {count, dates}
     const perSottomenu = {};
@@ -7428,6 +7433,7 @@ const importsRecenti = useMemo(()=>{
       const ov = (reportId ? (e.reportOverrides||{})[reportId] : null)?.stato || null;
       if(ov==="escluso") return false;
       if(ov!=="incluso" && modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) return false;
+      if(ov!=="incluso" && !durataOk(e)) return false;
       if(filtraCollega && !splitColleghi(e.collega).some(c=>c.toUpperCase().includes(filtraCollega))) return false;
       return true;
     };
@@ -7467,6 +7473,7 @@ const importsRecenti = useMemo(()=>{
           const overrideReportRaw = reportId ? (e.reportOverrides||{})[reportId] : null;
           const overrideReportEvento = overrideReportRaw?.stato || null;
           if(overrideReportEvento==="escluso") continue;
+          if(overrideReportEvento!=="incluso" && !durataOk(e)) continue;
           const fuoriFiltro = overrideReportEvento!=="incluso" && modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId);
           const collegList = splitColleghi(e.collega);
           if(filtraCollega && !collegList.some(c=>c.toUpperCase().includes(filtraCollega))) continue;
