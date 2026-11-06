@@ -3254,6 +3254,29 @@ export function ReperibilitaView({ rot, T, accent, modelli }) {
 
 const NOMI_GIORNI_GRIGLIA = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
 
+// Scritta di una cella della griglia: occupa tutta la larghezza disponibile (da bordo a bordo)
+// e viene allungata in altezza di 1,5 volte rispetto alla proporzione normale.
+const FONT_CELLA_GRIGLIA = "800 100px Roboto, system-ui, sans-serif";
+let _canvasCella = null;
+function larghezzaTestoCella(testo) {
+  try {
+    _canvasCella = _canvasCella || document.createElement("canvas");
+    const ctx = _canvasCella.getContext("2d");
+    ctx.font = FONT_CELLA_GRIGLIA;
+    return Math.max(20, Math.round(ctx.measureText(testo).width));
+  } catch { return Math.max(20, testo.length * 62); }
+}
+function TestoCellaGriglia({ testo }) {
+  const w = larghezzaTestoCella(testo);
+  return (
+    <svg viewBox={`0 0 ${w} 84`} aria-hidden="true"
+      style={{ width: "100%", height: "auto", display: "block", transform: "scaleY(1.5)", overflow: "visible" }}>
+      <text x="0" y="74" textLength={w} lengthAdjust="spacingAndGlyphs" fill="currentColor"
+        style={{ font: FONT_CELLA_GRIGLIA }}>{testo}</text>
+    </svg>
+  );
+}
+
 export function GrigliaRotazione({ rot, T, accent, modelli, fasceAutomatiche, sundayColor, onUpdate }) {
   const [pallinoAttivo, setPallinoAttivo] = useState(null);
   const [modelloSelezionato, setModelloSelezionato] = useState(null);
@@ -3319,8 +3342,8 @@ export function GrigliaRotazione({ rot, T, accent, modelli, fasceAutomatiche, su
         <div style={{ display: "block", width: "100%" }}>
           <div style={{ display: "flex", alignItems: "center" }}>
             <div style={{
-              width: 30, flexShrink: 0, fontSize: 10, fontWeight: 700, color: "#0f172a",
-              textAlign: "right", paddingRight: 6, position: "sticky", left: 0, background: "#ffffff"
+              width: 16, flexShrink: 0, fontSize: 10, fontWeight: 700, color: "#0f172a",
+              textAlign: "right", paddingRight: 2, position: "sticky", left: 0, background: "#ffffff"
             }} />
             {NOMI_GIORNI_GRIGLIA.map(nomeGiorno => (
               <div key={nomeGiorno} style={{
@@ -3333,8 +3356,8 @@ export function GrigliaRotazione({ rot, T, accent, modelli, fasceAutomatiche, su
           {matrice.map((settimana, w) => (
             <div key={w} style={{ display: "flex", alignItems: "center" }}>
               <div style={{
-                width: 30, flexShrink: 0, fontSize: 9, fontWeight: 700, color: "#0f172a",
-                textAlign: "right", paddingRight: 6, position: "sticky", left: 0, background: "#ffffff"
+                width: 16, flexShrink: 0, fontSize: 9, fontWeight: 700, color: "#0f172a",
+                textAlign: "right", paddingRight: 2, position: "sticky", left: 0, background: "#ffffff"
               }}>
                 {w + 1}
               </div>
@@ -3345,15 +3368,14 @@ export function GrigliaRotazione({ rot, T, accent, modelli, fasceAutomatiche, su
                 return (
                   <div key={dateKey} title={dateKey} onClick={() => clickPallino(dateKey)}
                     style={{
-                      flex: 1, minWidth: 0, height: 34, margin: 2, borderRadius: 14, flexShrink: 0,
+                      flex: 1, minWidth: 0, height: 34, margin: 2, borderRadius: 12, flexShrink: 0,
                       background: colore || "#ffffff",
                       border: "1.5px solid #000000",
                       cursor: "pointer", boxSizing: "border-box",
                       display: "flex", alignItems: "center", justifyContent: "center",
-                      padding: "0 1px", overflow: "hidden", textAlign: "center",
-                      fontSize: 8, fontWeight: 800, lineHeight: 1, overflowWrap: "anywhere",
+                      padding: "0 2px", overflow: "hidden",
                       color: colore ? getContrastTextColor(colore) : "#0f172a"
-                    }}>{testoCella}</div>
+                    }}>{testoCella ? <TestoCellaGriglia testo={testoCella} /> : null}</div>
                 );
               })}
             </div>

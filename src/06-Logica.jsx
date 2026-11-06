@@ -7316,8 +7316,10 @@ const importsRecenti = useMemo(()=>{
     } else if(rot.tipo === "personalizzata") {
       const griglia = rot.griglia || {};
       const [y0, m0, d0] = startDayKey.split("-").map(Number);
-      const rotInizio = rot.dataInizio ? new Date(rot.dataInizio) : new Date(y0, m0-1, d0);
-      const diffDays = Math.floor((new Date(y0, m0-1, d0).getTime() - rotInizio.getTime()) / (1000 * 3600 * 24));
+      // La data di inizio va letta come data LOCALE (new Date("YYYY-MM-DD") e' UTC e sfalsa di un giorno).
+      const [ri0, ri1, ri2] = (rot.dataInizio || startDayKey).split("-").map(Number);
+      const rotInizio = new Date(ri0, ri1-1, ri2);
+      const diffDays = Math.round((new Date(y0, m0-1, d0).getTime() - rotInizio.getTime()) / (1000 * 3600 * 24));
       const nDays = (rot.nSettimane || 52) * 7;
 
       for(let rep=0; rep<numRipetizioni; rep++) {
