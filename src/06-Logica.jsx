@@ -7404,12 +7404,12 @@ const importsRecenti = useMemo(()=>{
     const perCollega = {};
     const modelliInclusi = cfg?.modelliInclusi || [];
     const filtraCollega = (cfg?.filtraCollega||"").trim().toUpperCase();
-    // Report "TICKET": contano solo gli eventi con almeno 6h01m (361 minuti) di presenza EFFETTIVA
-    // (ingresso/uscita effettivi, protrazioni e recuperi inclusi), salvo override "incluso" sul singolo evento.
-    // Gli eventi tutto-il-giorno (H24) contano.
+    // Report "TICKET": ogni GIORNO conta 1 se la somma dei minuti di presenza EFFETTIVA degli eventi dei
+    // modelli selezionati (ingresso/uscita effettivi, protrazioni e recuperi inclusi) arriva ad almeno 6h01m
+    // (361 minuti): anche più eventi insieme (es. 5h + 1h01m). Un evento tutto-il-giorno (H24) vale 24 ore.
+    // Il ticket è attribuito all'evento più lungo del giorno (modello e collega).
     const nomeReport = reportId ? ((store.reports||[]).find(r=>r.id===reportId)?.label||"") : "";
     const durataMinima = nomeReport.trim().toUpperCase()==="TICKET" ? 361 : 0;
-    const durataOk = (e)=> durataMinima===0 || !!e.allDay || minutiEffettiviEvento(e)>=durataMinima;
     const sottomenu = cfg?.sottomenu || [];
     // perSottomenu[sottomenuId][gruppoKey][modelloId] = {count, dates}
     const perSottomenu = {};
@@ -7434,7 +7434,6 @@ const importsRecenti = useMemo(()=>{
       const ov = (reportId ? (e.reportOverrides||{})[reportId] : null)?.stato || null;
       if(ov==="escluso") return false;
       if(ov!=="incluso" && modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId)) return false;
-      if(ov!=="incluso" && !durataOk(e)) return false;
       if(filtraCollega && !splitColleghi(e.collega).some(c=>c.toUpperCase().includes(filtraCollega))) return false;
       return true;
     };
@@ -7461,26 +7460,7 @@ const importsRecenti = useMemo(()=>{
         });
       });
     };
-    for(const [dateKey, calMap] of Object.entries(store.events)){
-      const nelPeriodoReport = dateKey>=from && dateKey<=to;
-      if(!nelPeriodoReport && !inUnPeriodoGruppo(dateKey)) continue;
-      const fuSalta = fuDaSaltare(calMap, passaEv);
-      for(const [cid, evts] of Object.entries(calMap)){
-        if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
-        if(cid===fuSalta) continue;
-        for(const e of evts){
-          // Override "solo questo evento" su CATEGORIA REPORT: priorità massima,
-          // sopra la whitelist modelliInclusi decisa a livello di modello.
-          const overrideReportRaw = reportId ? (e.reportOverrides||{})[reportId] : null;
-          const overrideReportEvento = overrideReportRaw?.stato || null;
-          if(overrideReportEvento==="escluso") continue;
-          if(overrideReportEvento!=="incluso" && !durataOk(e)) continue;
-          const fuoriFiltro = overrideReportEvento!=="incluso" && modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId);
-          const collegList = splitColleghi(e.collega);
-          if(filtraCollega && !collegList.some(c=>c.toUpperCase().includes(filtraCollega))) continue;
-          if(!nelPeriodoReport){ contaSottomenu(e, dateKey, overrideReportRaw); continue; }
-          if(fuoriFiltro){ contaSottomenu(e, dateKey, overrideReportRaw); continue; }
-
+    const conta = (e, dateKey, overrideReportRaw, collegList)=>{
           result.totale++;
           if(e.modelloId){
             if(!perModello[e.modelloId]) perModello[e.modelloId] = { count:0, dates:[] };
@@ -7503,6 +7483,36 @@ const importsRecenti = useMemo(()=>{
           // (comportamento identico a "escluso" nei report esistenti: niente
           // auto-classificazione).
           contaSottomenu(e, dateKey, overrideReportRaw);
+    };
+    for(const [dateKey, calMap] of Object.entries(store.events)){
+      const nelPeriodoReport = dateKey>=from && dateKey<=to;
+      if(!nelPeriodoReport && !inUnPeriodoGruppo(dateKey)) continue;
+      const fuSalta = fuDaSaltare(calMap, passaEv);
+      const ticketGiorno = [];
+      for(const [cid, evts] of Object.entries(calMap)){
+        if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
+        if(cid===fuSalta) continue;
+        for(const e of evts){
+          // Override "solo questo evento" su CATEGORIA REPORT: priorità massima,
+          // sopra la whitelist modelliInclusi decisa a livello di modello.
+          const overrideReportRaw = reportId ? (e.reportOverrides||{})[reportId] : null;
+          const overrideReportEvento = overrideReportRaw?.stato || null;
+          if(overrideReportEvento==="escluso") continue;
+          const fuoriFiltro = overrideReportEvento!=="incluso" && modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId);
+          const collegList = splitColleghi(e.collega);
+          if(filtraCollega && !collegList.some(c=>c.toUpperCase().includes(filtraCollega))) continue;
+          if(!nelPeriodoReport){ contaSottomenu(e, dateKey, overrideReportRaw); continue; }
+          if(fuoriFiltro){ contaSottomenu(e, dateKey, overrideReportRaw); continue; }
+
+          if(durataMinima>0){ ticketGiorno.push({ e, overrideReportRaw, collegList, min: e.allDay ? 1440 : minutiEffettiviEvento(e) }); continue; }
+          conta(e, dateKey, overrideReportRaw, collegList);
+        }
+      }
+      if(durataMinima>0 && ticketGiorno.length){
+        const minGiorno = ticketGiorno.reduce((s,x)=>s+x.min,0);
+        if(minGiorno>=durataMinima){
+          const top = ticketGiorno.reduce((a,x)=>x.min>a.min?x:a);
+          conta(top.e, dateKey, top.overrideReportRaw, top.collegList);
         }
       }
     }
