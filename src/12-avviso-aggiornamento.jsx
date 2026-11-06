@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import AGGIORNAMENTI_APP from "./aggiornamenti.json"
 
 // Aggiornamento dell'APK: pop-up "nuova versione disponibile".
@@ -86,7 +86,7 @@ export function controllaAggiornamenti({ forza = false, mostraSempre = false } =
     const ctrl = new AbortController()
     const stop = setTimeout(() => ctrl.abort(), 10000)
     try {
-      const r = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
+      const r = await fetch(`https://api.github.com/repos/${REPO}/releases/latest?_=${Date.now()}`, {
         headers: { Accept: "application/vnd.github+json" },
         cache: "no-store",
         signal: ctrl.signal,
@@ -200,8 +200,8 @@ function versioneDaData(iso) {
 async function leggiStatoBuild() {
   // Build e test (CI) hanno tempi diversi: si legge l'ULTIMO run di ciascun workflow, con il suo stato reale.
   const [rb, rc] = await Promise.all([
-    fetch(`${API}/workflows/build-apk.yml/runs?branch=master&per_page=8`),
-    fetch(`${API}/workflows/ci.yml/runs?branch=master&per_page=1`),
+    fetch(`${API}/workflows/build-apk.yml/runs?branch=master&per_page=8&_=${Date.now()}`, { cache: "no-store" }),
+    fetch(`${API}/workflows/ci.yml/runs?branch=master&per_page=1&_=${Date.now()}`, { cache: "no-store" }),
   ])
   const runsBuild = (await rb.json()).workflow_runs || []
   const runCi = (await rc.json()).workflow_runs?.[0] || null
@@ -252,10 +252,17 @@ export function ImpostazioniAggiornamenti({ T }) {
   const [build, setBuild] = useState(undefined) // undefined = in lettura, null = non disponibile
   const [novita, setNovita] = useState(false)
   const [licenze, setLicenze] = useState(false)
+  const vivoRef = useRef(true)
+  // Stato di test e build: si legge all'apertura della sezione e a ogni pressione del tasto "Controlla".
+  function aggiornaBuild() {
+    return leggiStatoBuild()
+      .then(b => { if (vivoRef.current) setBuild(b) })
+      .catch(() => { if (vivoRef.current) setBuild(null) })
+  }
   useEffect(() => {
-    let vivo = true
-    leggiStatoBuild().then(b => { if (vivo) setBuild(b) }).catch(() => { if (vivo) setBuild(null) })
-    return () => { vivo = false }
+    vivoRef.current = true
+    aggiornaBuild()
+    return () => { vivoRef.current = false }
   }, [])
 
   function scegli(m) {
@@ -265,7 +272,7 @@ export function ImpostazioniAggiornamenti({ T }) {
   async function controllaOra() {
     setAttesa(true)
     setStato(null)
-    const r = await controllaAggiornamenti({ forza: true, mostraSempre: true })
+    const [r] = await Promise.all([controllaAggiornamenti({ forza: true, mostraSempre: true }), aggiornaBuild()])
     setAttesa(false)
     if (r.esito === "nuova") setStato({ ok: true, testo: `🔔 Nuova versione disponibile: ${r.versione}` })
     else if (r.esito === "aggiornato") setStato({ ok: true, testo: "✅ Sei aggiornato" })
