@@ -198,25 +198,26 @@ function versioneDaData(iso) {
   return `${p.year.slice(-1)}.${g}.${p.hour === "24" ? "00" : p.hour}${p.minute}`
 }
 async function leggiStatoBuild() {
-  const r = await fetch(`${API}/workflows/build-apk.yml/runs?branch=master&per_page=8`)
-  const runs = (await r.json()).workflow_runs || []
-  const b = runs.find(x => x.status === "completed")
-  // Build ancora in coda o in elaborazione, piu' nuove dell'ultima completata: versione non ancora disponibile.
-  const attesa = runs
-    .filter(x => x.status !== "completed" && (!b || x.run_number > b.run_number))
-    .sort((x, y) => y.run_number - x.run_number)
-    .map(x => ({
-      n: x.run_number,
-      stato: x.status === "in_progress" ? "in elaborazione" : "in coda",
-      versione: versioneDaData(x.head_commit?.timestamp || x.created_at),
-    }))
-  if (!b) return attesa.length ? { n: null, esito: null, test: null, attesa } : null
-  let test = null
-  try {
-    const c = await fetch(`${API}/workflows/ci.yml/runs?head_sha=${b.head_sha}&status=completed&per_page=1`)
-    test = (await c.json()).workflow_runs?.[0]?.conclusion || null
-  } catch { /* non bloccante */ }
-  return { n: b.run_number, esito: b.conclusion, test, attesa }
+  // Build e test (CI) hanno tempi diversi: si legge l'ULTIMO run di ciascun workflow, con il suo stato reale.
+  const [rb, rc] = await Promise.all([
+    fetch(`${API}/workflows/build-apk.yml/runs?branch=master&per_page=8`),
+    fetch(`${API}/workflows/ci.yml/runs?branch=master&per_page=1`),
+  ])
+  const runsBuild = (await rb.json()).workflow_runs || []
+  const runCi = (await rc.json()).workflow_runs?.[0] || null
+  const b = runsBuild[0] || null
+  if (!b && !runCi) return null
+  const build = b ? {
+    n: b.run_number, stato: b.status, esito: b.conclusion,
+    versione: versioneDaData(b.head_commit?.timestamp || b.created_at),
+  } : null
+  const test = runCi ? {
+    stato: runCi.status, esito: runCi.conclusion,
+    // build a cui si riferiscono i test: quella dello stesso commit
+    buildN: runsBuild.find(x => x.head_sha === runCi.head_sha)?.run_number || null,
+    sha: String(runCi.head_sha || "").slice(0, 7),
+  } : null
+  return { build, test }
 }
 function apriLink(url) { window.location.href = url }
 
@@ -225,10 +226,10 @@ const LICENZE = [
   ["pdf.js", "Apache-2.0"], ["Tesseract.js", "Apache-2.0"], ["Google Generative AI SDK", "Apache-2.0"],
 ]
 
-function RigaStato({ T, ok, testo }) {
+function RigaStato({ T, ok, testo, icona }) {
   return (
     <div style={{display:"flex",alignItems:"center",gap:10,padding:"6px 0",fontSize:12,color:T.text}}>
-      <span style={{fontSize:16}}>{ok === null ? "⏳" : ok ? "✅" : "❌"}</span>
+      <span style={{fontSize:16}}>{ok === null ? (icona || "⏳") : ok ? "✅" : "❌"}</span>
       <span>{testo}</span>
     </div>
   )
@@ -305,20 +306,27 @@ export function ImpostazioniAggiornamenti({ T }) {
       <div style={{marginTop:14}}>
         {build === undefined && <RigaStato T={T} ok={null} testo="Lettura stato build..."/>}
         {build === null && <RigaStato T={T} ok={false} testo="Stato build non disponibile (serve la connessione)"/>}
-        {build && build.attesa?.map(a => (
-          <RigaStato key={a.n} T={T} ok={null}
-            testo={`Build #${a.n} ${a.stato}: versione ${a.versione}#${a.n} non ancora disponibile`}/>
-        ))}
-        {build && build.n !== null && (
-          <>
-            <RigaStato T={T} ok={build.test === null ? null : build.test === "success"}
-              testo={build.test === "success" ? `Test automatici superati (build #${build.n})`
-                : build.test === null ? `Test automatici: esito non disponibile (build #${build.n})`
-                : `Test automatici non superati (build #${build.n})`}/>
-            <RigaStato T={T} ok={build.esito === "success"}
-              testo={build.esito === "success" ? `Ultima build #${build.n} completata` : `Ultima build #${build.n} non riuscita`}/>
-          </>
-        )}
+        {build && build.test && (() => {
+          const t = build.test
+          const rif = t.buildN ? `build #${t.buildN}` : `commit ${t.sha}`
+          const inCorso = t.stato !== "completed"
+          const ok = inCorso ? null : t.esito === "success"
+          const testo = inCorso ? `Test automatici ${t.stato === "queued" ? "in coda" : "in corso"} (${rif})`
+            : t.esito === "success" ? `Test automatici superati (${rif})`
+            : t.esito === "cancelled" || t.esito === "skipped" ? `Test automatici annullati (${rif})`
+            : `Test automatici non superati (${rif})`
+          return <RigaStato T={T} ok={ok} icona="🔄" testo={testo}/>
+        })()}
+        {build && build.build && (() => {
+          const b = build.build
+          const inCorso = b.stato !== "completed"
+          const ok = inCorso ? null : b.esito === "success"
+          const testo = inCorso ? `Build #${b.n} ${b.stato === "in_progress" ? "in elaborazione" : "in coda"} (versione ${b.versione}#${b.n})`
+            : b.esito === "success" ? `Ultima build #${b.n} completata`
+            : b.esito === "cancelled" ? `Build #${b.n} annullata`
+            : `Build #${b.n} non riuscita`
+          return <RigaStato T={T} ok={ok} icona="🔄" testo={testo}/>
+        })()}
         <RigaMenu T={T} icona="<>" testo="Visualizza il codice sorgente su GitHub" onClick={() => apriLink(`https://github.com/${REPO}`)}/>
         <RigaMenu T={T} icona="🐞" testo="Segnala un problema su GitHub" onClick={() => apriLink(`https://github.com/${REPO}/issues/new`)}/>
         <RigaMenu T={T} icona="❗" testo="Novità" aperta={novita} onClick={() => setNovita(v => !v)}/>
