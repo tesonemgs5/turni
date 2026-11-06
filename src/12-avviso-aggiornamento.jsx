@@ -189,16 +189,34 @@ const OPZIONI = [
 // Stato di test e build letto da GitHub (repository pubblico): l'ultima build APK completata
 // e l'esito dei test automatici (workflow CI) sullo stesso commit.
 const API = `https://api.github.com/repos/${REPO}/actions`
+// Versione che avra' la build, calcolata come in fase di build: A.GGG.HHMM (ora italiana del commit).
+function versioneDaData(iso) {
+  const p = new Intl.DateTimeFormat("it-IT", { timeZone: "Europe/Rome", year: "numeric", month: "2-digit",
+    day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false })
+    .formatToParts(new Date(iso)).reduce((a, x) => { a[x.type] = x.value; return a }, {})
+  const g = Math.floor((Date.UTC(+p.year, +p.month - 1, +p.day) - Date.UTC(+p.year, 0, 1)) / 86400000) + 1
+  return `${p.year.slice(-1)}.${g}.${p.hour === "24" ? "00" : p.hour}${p.minute}`
+}
 async function leggiStatoBuild() {
-  const r = await fetch(`${API}/workflows/build-apk.yml/runs?branch=master&status=completed&per_page=1`)
-  const b = (await r.json()).workflow_runs?.[0]
-  if (!b) return null
+  const r = await fetch(`${API}/workflows/build-apk.yml/runs?branch=master&per_page=8`)
+  const runs = (await r.json()).workflow_runs || []
+  const b = runs.find(x => x.status === "completed")
+  // Build ancora in coda o in elaborazione, piu' nuove dell'ultima completata: versione non ancora disponibile.
+  const attesa = runs
+    .filter(x => x.status !== "completed" && (!b || x.run_number > b.run_number))
+    .sort((x, y) => y.run_number - x.run_number)
+    .map(x => ({
+      n: x.run_number,
+      stato: x.status === "in_progress" ? "in elaborazione" : "in coda",
+      versione: versioneDaData(x.head_commit?.timestamp || x.created_at),
+    }))
+  if (!b) return attesa.length ? { n: null, esito: null, test: null, attesa } : null
   let test = null
   try {
     const c = await fetch(`${API}/workflows/ci.yml/runs?head_sha=${b.head_sha}&status=completed&per_page=1`)
     test = (await c.json()).workflow_runs?.[0]?.conclusion || null
   } catch { /* non bloccante */ }
-  return { n: b.run_number, esito: b.conclusion, test }
+  return { n: b.run_number, esito: b.conclusion, test, attesa }
 }
 function apriLink(url) { window.location.href = url }
 
@@ -287,7 +305,11 @@ export function ImpostazioniAggiornamenti({ T }) {
       <div style={{marginTop:14}}>
         {build === undefined && <RigaStato T={T} ok={null} testo="Lettura stato build..."/>}
         {build === null && <RigaStato T={T} ok={false} testo="Stato build non disponibile (serve la connessione)"/>}
-        {build && (
+        {build && build.attesa?.map(a => (
+          <RigaStato key={a.n} T={T} ok={null}
+            testo={`Build #${a.n} ${a.stato}: versione ${a.versione}#${a.n} non ancora disponibile`}/>
+        ))}
+        {build && build.n !== null && (
           <>
             <RigaStato T={T} ok={build.test === null ? null : build.test === "success"}
               testo={build.test === "success" ? `Test automatici superati (build #${build.n})`
