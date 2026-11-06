@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import AGGIORNAMENTI_APP from "./aggiornamenti.json"
 
 // Aggiornamento dell'APK: pop-up "nuova versione disponibile".
 // Si sceglie in Impostazioni -> Aggiornamenti app quando controllare:
@@ -184,10 +185,58 @@ const OPZIONI = [
   ["manuale", "Solo manuale", "Nessun controllo automatico: usi il pulsante qui sotto."],
 ]
 
+// Stato di test e build letto da GitHub (repository pubblico): l'ultima build APK completata
+// e l'esito dei test automatici (workflow CI) sullo stesso commit.
+const API = `https://api.github.com/repos/${REPO}/actions`
+async function leggiStatoBuild() {
+  const r = await fetch(`${API}/workflows/build-apk.yml/runs?branch=master&status=completed&per_page=1`)
+  const b = (await r.json()).workflow_runs?.[0]
+  if (!b) return null
+  let test = null
+  try {
+    const c = await fetch(`${API}/workflows/ci.yml/runs?head_sha=${b.head_sha}&status=completed&per_page=1`)
+    test = (await c.json()).workflow_runs?.[0]?.conclusion || null
+  } catch { /* non bloccante */ }
+  return { n: b.run_number, esito: b.conclusion, test }
+}
+function apriLink(url) { window.location.href = url }
+
+const LICENZE = [
+  ["React", "MIT"], ["Vite", "MIT"], ["Capacitor", "MIT"], ["Supabase JS", "MIT"],
+  ["pdf.js", "Apache-2.0"], ["Tesseract.js", "Apache-2.0"], ["Google Generative AI SDK", "Apache-2.0"],
+]
+
+function RigaStato({ T, ok, testo }) {
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:10,padding:"6px 0",fontSize:12,color:T.text}}>
+      <span style={{fontSize:16}}>{ok === null ? "⏳" : ok ? "✅" : "❌"}</span>
+      <span>{testo}</span>
+    </div>
+  )
+}
+function RigaMenu({ T, icona, testo, onClick, aperta }) {
+  return (
+    <div onClick={onClick} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",fontSize:13,
+      color:T.text,cursor:"pointer",borderTop:`1px solid ${T.border}`}}>
+      <span style={{fontSize:16,width:20,textAlign:"center"}}>{icona}</span>
+      <span style={{flex:1}}>{testo}</span>
+      {aperta !== undefined && <span style={{color:T.sub}}>{aperta ? "▲" : "▼"}</span>}
+    </div>
+  )
+}
+
 export function ImpostazioniAggiornamenti({ T }) {
   const [modo, setModo] = useState(leggiModo())
   const [attesa, setAttesa] = useState(false)
   const [stato, setStato] = useState(null)   // { ok: bool, testo: string }
+  const [build, setBuild] = useState(undefined) // undefined = in lettura, null = non disponibile
+  const [novita, setNovita] = useState(false)
+  const [licenze, setLicenze] = useState(false)
+  useEffect(() => {
+    let vivo = true
+    leggiStatoBuild().then(b => { if (vivo) setBuild(b) }).catch(() => { if (vivo) setBuild(null) })
+    return () => { vivo = false }
+  }, [])
 
   function scegli(m) {
     salvaModo(m)
@@ -233,6 +282,45 @@ export function ImpostazioniAggiornamenti({ T }) {
         <div style={{fontSize:12,marginTop:10,textAlign:"center",fontWeight:700,
           color: stato.ok ? "#22c55e" : "#ef4444"}}>{stato.testo}</div>
       )}
+
+      <div style={{marginTop:14}}>
+        {build === undefined && <RigaStato T={T} ok={null} testo="Lettura stato build..."/>}
+        {build === null && <RigaStato T={T} ok={false} testo="Stato build non disponibile (serve la connessione)"/>}
+        {build && (
+          <>
+            <RigaStato T={T} ok={build.test === null ? null : build.test === "success"}
+              testo={build.test === "success" ? `Test automatici superati (build #${build.n})`
+                : build.test === null ? `Test automatici: esito non disponibile (build #${build.n})`
+                : `Test automatici non superati (build #${build.n})`}/>
+            <RigaStato T={T} ok={build.esito === "success"}
+              testo={build.esito === "success" ? `Ultima build #${build.n} completata` : `Ultima build #${build.n} non riuscita`}/>
+          </>
+        )}
+        <RigaMenu T={T} icona="<>" testo="Visualizza il codice sorgente su GitHub" onClick={() => apriLink(`https://github.com/${REPO}`)}/>
+        <RigaMenu T={T} icona="🐞" testo="Segnala un problema su GitHub" onClick={() => apriLink(`https://github.com/${REPO}/issues/new`)}/>
+        <RigaMenu T={T} icona="❗" testo="Novità" aperta={novita} onClick={() => setNovita(v => !v)}/>
+        {novita && (
+          <div style={{paddingBottom:8}}>
+            {AGGIORNAMENTI_APP.map(a => (
+              <div key={a.n} style={{background:T.s2,borderRadius:8,padding:"8px 10px",marginBottom:6}}>
+                <div style={{fontSize:12,fontWeight:800,color:T.text}}>{a.titolo}</div>
+                <div style={{fontSize:10,color:T.sub,marginBottom:3}}>{a.data}</div>
+                {(a.righe || []).map((r, i) => <div key={i} style={{fontSize:11,color:T.sub,lineHeight:1.45}}>• {r}</div>)}
+              </div>
+            ))}
+          </div>
+        )}
+        <RigaMenu T={T} icona="📄" testo="Visualizza licenze" aperta={licenze} onClick={() => setLicenze(v => !v)}/>
+        {licenze && (
+          <div style={{paddingBottom:8}}>
+            {LICENZE.map(([nome, lic]) => (
+              <div key={nome} style={{display:"flex",justifyContent:"space-between",fontSize:11,color:T.sub,padding:"3px 2px"}}>
+                <span>{nome}</span><span>{lic}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
