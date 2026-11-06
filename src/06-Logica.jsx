@@ -7404,11 +7404,12 @@ const importsRecenti = useMemo(()=>{
     const perCollega = {};
     const modelliInclusi = cfg?.modelliInclusi || [];
     const filtraCollega = (cfg?.filtraCollega||"").trim().toUpperCase();
-    // Report "TICKET": contano solo gli eventi di durata ufficiale di almeno 6h01m (361 minuti),
-    // salvo override "incluso" sul singolo evento. Gli eventi tutto-il-giorno (H24) contano.
+    // Report "TICKET": contano solo gli eventi con almeno 6h01m (361 minuti) di presenza EFFETTIVA
+    // (ingresso/uscita effettivi, protrazioni e recuperi inclusi), salvo override "incluso" sul singolo evento.
+    // Gli eventi tutto-il-giorno (H24) contano.
     const nomeReport = reportId ? ((store.reports||[]).find(r=>r.id===reportId)?.label||"") : "";
     const durataMinima = nomeReport.trim().toUpperCase()==="TICKET" ? 361 : 0;
-    const durataOk = (e)=> durataMinima===0 || !!e.allDay || minutiPrevistiEvento(e)>=durataMinima;
+    const durataOk = (e)=> durataMinima===0 || !!e.allDay || minutiEffettiviEvento(e)>=durataMinima;
     const sottomenu = cfg?.sottomenu || [];
     // perSottomenu[sottomenuId][gruppoKey][modelloId] = {count, dates}
     const perSottomenu = {};
