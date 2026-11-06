@@ -106,7 +106,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v$VERSION"
+          TAG="${VERSION}#${APK_BUILD_NUM}"
           # Novità mostrate nel pop-up dell'app: voci di src/aggiornamenti.json più
           # nuove di quelle già presenti nell'ultima release (marcatore agg:N).
           PREV_BODY=$(gh release view --json body --jq .body 2>/dev/null || true)

@@ -95,9 +95,10 @@ export function controllaAggiornamenti({ forza = false, mostraSempre = false } =
       const dati = await r.json()
       ultimo = Date.now()
       daRiprovare = false
-      const versione = String(dati.tag_name || "").replace(/^v/, "")
-      // Il numero di build della release e' nel titolo ("Turni 6.286.2151#1028"); il tag resta senza.
-      const numBuild = (String(dati.name || "").match(/#(\d+)/) || [])[1]
+      // Il tag e' "6.310.0105#230" (versione#build); si accetta anche il vecchio "v6.310.0105".
+      const tag = String(dati.tag_name || "").replace(/^v/, "")
+      const versione = tag.split("#")[0]
+      const numBuild = (String(dati.name || "").match(/#(\d+)/) || tag.match(/#(\d+)/) || [])[1]
       const versioneMostrata = numBuild ? `${versione}#${numBuild}` : versione
       if (versione && piuNuova(versione, corrente)) {
         if (mostraPopup && (mostraSempre || versioneIgnorata() !== versioneMostrata)) mostraPopup({ versione: versioneMostrata, note: noteDaRelease(dati.body) })
