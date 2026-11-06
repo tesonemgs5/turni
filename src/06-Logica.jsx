@@ -905,9 +905,22 @@ export function useAppCore(session){
   useEffect(()=>{
     if(primaPersistenzaModelli.current){ primaPersistenzaModelli.current = false; return; }
     if(!isInitialized.current || !Array.isArray(modelli) || modelli.length===0) return;
-    const t = setTimeout(()=>{ try{ saveToLocalStorage(undefined, undefined, modelli); }catch(e){} }, 300);
-    return ()=>clearTimeout(t);
+    // Salvataggio IMMEDIATO (prima era ritardato di 300 ms e annullato se l'app veniva chiusa o
+    // ridisegnata in quel lasso: la modifica andava persa).
+    try{ saveToLocalStorage(undefined, undefined, modelli); }catch(e){}
   }, [modelli]);
+
+  // Rete di sicurezza: OGNI cambiamento di eventi/calendari viene scritto subito nel salvataggio
+  // locale, anche dove il codice che modifica lo store non chiama saveToLocalStorage a mano
+  // (es. modifiche a un evento, protrazioni, override, giorni importanti...). I valori non passati
+  // (modelli, impostazioni) restano quelli gia' salvati: saveToLocalStorage li conserva.
+  const primaPersistenzaStore = useRef(true);
+  useEffect(()=>{
+    if(primaPersistenzaStore.current){ primaPersistenzaStore.current = false; return; }
+    if(!isInitialized.current) return;
+    if(!store || !store.events || !Array.isArray(store.calendars) || store.calendars.length===0) return;
+    try{ saveToLocalStorage(store.events, store.calendars); }catch(e){}
+  }, [store]);
 
   useEffect(()=>{
 // #endregion

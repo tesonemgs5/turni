@@ -623,7 +623,7 @@ export default function VistaCalendario({ C }){
           )}
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:15.4,fontWeight:700,color:T.text,lineHeight:1.25,
-              overflowWrap:"anywhere",wordBreak:"break-word"}}>{r.label}</div>
+              whiteSpace:"nowrap",overflow:"hidden",textOverflow:"clip"}}>{r.label}</div>
             <div style={{display:"flex",alignItems:"center",minHeight:21}}>
               <div style={{flex:1,minWidth:0}}>
                 {r.type==="conteggio_turni"&&(
