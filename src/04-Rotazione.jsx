@@ -3340,14 +3340,20 @@ export function GrigliaRotazione({ rot, T, accent, modelli, fasceAutomatiche, su
               </div>
               {settimana.map((dateKey, g) => {
                 const colore = coloreDiData(dateKey);
+                const modCella = griglia[dateKey] ? modelli.find(m => m.id === griglia[dateKey]) : null;
+                const testoCella = modCella ? (modCella.label || modCella.titolo || "") : "";
                 return (
                   <div key={dateKey} title={dateKey} onClick={() => clickPallino(dateKey)}
                     style={{
-                      flex: 1, minWidth: 0, height: 22, margin: 2, borderRadius: 11, flexShrink: 0,
+                      flex: 1, minWidth: 0, height: 34, margin: 2, borderRadius: 14, flexShrink: 0,
                       background: colore || "#ffffff",
                       border: "1.5px solid #000000",
-                      cursor: "pointer", boxSizing: "border-box"
-                    }} />
+                      cursor: "pointer", boxSizing: "border-box",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      padding: "0 1px", overflow: "hidden", textAlign: "center",
+                      fontSize: 8, fontWeight: 800, lineHeight: 1, overflowWrap: "anywhere",
+                      color: colore ? getContrastTextColor(colore) : "#0f172a"
+                    }}>{testoCella}</div>
                 );
               })}
             </div>
