@@ -11,6 +11,7 @@ import {
   fmtDataIT, impostaSilenziamentoErrore, segnalaErrore,
   ModelForm, GrigliaRotazione, NLRSScalanteView, DomenicheView, ReperibilitaView,
 } from "./04-Rotazione";
+import { infoGriglia } from "./25-calcoli-rotazione";
 import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
 
 // ═══════════════════════════════════════════════════════════════
@@ -920,7 +921,9 @@ function AppInterno({ session }){
                 :showApplyRotDialog.tipo==="reperibilita"
                 ?"Il ciclo è di 4 giorni con passo +1 / +7 / +1, e la ripetizione successiva riparte 7 giorni dopo l'ultimo giorno (blocco di 16 giorni). Quanti cicli vuoi generare?"
                 :showApplyRotDialog.tipo==="personalizzata"
-                ?"Vengono inseriti tutti i giorni configurati nella griglia, non solo il primo. Quante volte vuoi ripeterla?"
+                ?(()=>{ const g=infoGriglia(showApplyRotDialog.griglia);
+                    return g ? `La griglia ha ${g.nGiorni} giorni configurati su ${g.nSettimane} settimane. Il primo giorno configurato va sul giorno scelto; ogni ripetizione parte dopo ${g.nSettimane} settimane dalla precedente. Quante volte vuoi inserirla?`
+                      : "La griglia è vuota: configurala prima di applicarla."; })()
                 :"Il ciclo è di 4 domeniche. Quante volte vuoi ripeterlo?"}
             </div>
 

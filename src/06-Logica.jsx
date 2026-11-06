@@ -26,6 +26,7 @@ import {
   esportaBackupLocaleCompleto, importaBackupLocaleCompleto, CATEGORIE_BACKUP_LOCALE,
   applicaOpExtraHols, diffExtraHolsInOps, leggiOpExtraHols, scriviOpExtraHols, saveExtraHolsLocale,
 } from "./04-Rotazione";
+import { infoGriglia } from "./25-calcoli-rotazione";
 
 // ════════════════════════════════════════════════════════════
 // useAppCore.js — Custom hook che concentra tutto lo stato e la
@@ -7208,13 +7209,17 @@ const importsRecenti = useMemo(()=>{
 
     // LOCALE PER PRIMO: la rotazione risulta subito applicata; la configurazione
     // (data inizio e numero settimane) va a Supabase in coda, con retry automatico.
-    setRotazioni(prev=>prev.map(r=>r.id===rotId?{...r,dataInizio:startDayKey,nSettimane:numRipetizioni}:r));
-    accodaScritturaRemota({
-      tipo:"update", table:"rotazioni",
-      payload:{ data_inizio:startDayKey, n_settimane:numRipetizioni },
-      match:{ id:rotId, user_id:userId },
-      contesto:"Applicazione rotazione",
-    });
+    // NON per la personalizzata: la sua griglia e' ancorata alle proprie date e al proprio numero di
+    // settimane; sovrascriverli con il giorno scelto e il numero di ripetizioni la sfalsava a ogni applicazione.
+    if(rot.tipo !== "personalizzata"){
+      setRotazioni(prev=>prev.map(r=>r.id===rotId?{...r,dataInizio:startDayKey,nSettimane:numRipetizioni}:r));
+      accodaScritturaRemota({
+        tipo:"update", table:"rotazioni",
+        payload:{ data_inizio:startDayKey, n_settimane:numRipetizioni },
+        match:{ id:rotId, user_id:userId },
+        contesto:"Applicazione rotazione",
+      });
+    }
 
     const nuoviEventiLocali = {};
 
@@ -7328,12 +7333,14 @@ const importsRecenti = useMemo(()=>{
       }
     } else if(rot.tipo === "personalizzata") {
       const griglia = rot.griglia || {};
+      const info = infoGriglia(griglia);
+      if(!info) return;
       const [y0, m0, d0] = startDayKey.split("-").map(Number);
-      // La data di inizio va letta come data LOCALE (new Date("YYYY-MM-DD") e' UTC e sfalsa di un giorno).
-      const [ri0, ri1, ri2] = (rot.dataInizio || startDayKey).split("-").map(Number);
-      const rotInizio = new Date(ri0, ri1-1, ri2);
-      const diffDays = Math.round((new Date(y0, m0-1, d0).getTime() - rotInizio.getTime()) / (1000 * 3600 * 24));
-      const nDays = (rot.nSettimane || 52) * 7;
+      // Il PRIMO giorno configurato della griglia va sul giorno scelto (date lette come LOCALI).
+      const [p0, p1, p2] = info.prima.split("-").map(Number);
+      const diffDays = Math.round((new Date(y0, m0-1, d0).getTime() - new Date(p0, p1-1, p2).getTime()) / (1000 * 3600 * 24));
+      // Ogni ripetizione parte dopo le settimane intere della griglia (es. 8 settimane = 56 giorni).
+      const nDays = info.nSettimane * 7;
 
       for(let rep=0; rep<numRipetizioni; rep++) {
         for(const [dateKey, modId] of Object.entries(griglia)) {

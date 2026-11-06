@@ -1,10 +1,10 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { ElencoModelliTendine, PulsanteOrdineAB } from "./23-tendine-modelli";
 import { ColorPickerModal, nomeDelColore as nomeDelColoreShared, ConfermaEliminazione, preparaFixCursore, SmartTimeInput } from "./05-Comuni";
-import { oraInMinuti, calcolaAnteprimaReperibilita, costruisciMatriceGriglia } from "./25-calcoli-rotazione";
+import { oraInMinuti, calcolaAnteprimaReperibilita, costruisciMatriceGriglia, infoGriglia } from "./25-calcoli-rotazione";
 import { impostaInclusioneModelloReport, statoInclusioneModelloReport } from "./27-report-modelli";
 
-export { oraInMinuti, calcolaAnteprimaReperibilita, costruisciMatriceGriglia } from "./25-calcoli-rotazione";
+export { oraInMinuti, calcolaAnteprimaReperibilita, costruisciMatriceGriglia, infoGriglia } from "./25-calcoli-rotazione";
 
 // ═══════════════════════════════════════════════════════════════════════
 // 04-Rotazione.jsx — RICOSTRUITO
