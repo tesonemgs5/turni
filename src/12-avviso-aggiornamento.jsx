@@ -23,6 +23,13 @@ function versioneIgnorata() {
 function ignoraVersione(v) {
   try { localStorage.setItem(CHIAVE_IGNORA, v) } catch { /* non bloccante */ }
 }
+const CHIAVE_NOTE = "turnipm_note_da_fare"   // note libere dell'utente (cose da fare)
+function leggiNote() {
+  try { return localStorage.getItem(CHIAVE_NOTE) || "" } catch { return "" }
+}
+function salvaNote(t) {
+  try { localStorage.setItem(CHIAVE_NOTE, t) } catch { /* non bloccante */ }
+}
 
 export function inApk() {
   try {
@@ -252,6 +259,8 @@ export function ImpostazioniAggiornamenti({ T }) {
   const [build, setBuild] = useState(undefined) // undefined = in lettura, null = non disponibile
   const [novita, setNovita] = useState(false)
   const [licenze, setLicenze] = useState(false)
+  const [noteAperte, setNoteAperte] = useState(false)
+  const [note, setNote] = useState(leggiNote())
   const vivoRef = useRef(true)
   // Stato di test e build: si legge all'apertura della sezione e a ogni pressione del tasto "Controlla".
   function aggiornaBuild() {
@@ -346,6 +355,17 @@ export function ImpostazioniAggiornamenti({ T }) {
                 {(a.righe || []).map((r, i) => <div key={i} style={{fontSize:11,color:T.sub,lineHeight:1.45}}>• {r}</div>)}
               </div>
             ))}
+          </div>
+        )}
+        <RigaMenu T={T} icona="📝" testo="Note da fare" aperta={noteAperte} onClick={() => setNoteAperte(v => !v)}/>
+        {noteAperte && (
+          <div style={{paddingBottom:8}}>
+            <textarea value={note} rows={6}
+              onChange={e => { setNote(e.target.value); salvaNote(e.target.value) }}
+              placeholder="Scrivi qui le cose da fare..."
+              style={{width:"100%",boxSizing:"border-box",background:T.s2,color:T.text,border:`1px solid ${T.border}`,
+                borderRadius:8,padding:"8px 10px",fontSize:12,lineHeight:1.45,fontFamily:"inherit",resize:"vertical"}}/>
+            <div style={{fontSize:10,color:T.sub,marginTop:3}}>Salvate in automatico su questo dispositivo.</div>
           </div>
         )}
         <RigaMenu T={T} icona="📄" testo="Visualizza licenze" aperta={licenze} onClick={() => setLicenze(v => !v)}/>
