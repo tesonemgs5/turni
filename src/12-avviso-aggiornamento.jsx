@@ -344,6 +344,7 @@ export function ImpostazioniAggiornamenti({ T }) {
           return <RigaStato T={T} ok={ok} icona="🔄" testo={testo}/>
         })()}
         <RigaMenu T={T} icona="<>" testo="Visualizza il codice sorgente su GitHub" onClick={() => apriLink(`https://github.com/${REPO}`)}/>
+        <RigaMenu T={T} icona="⚙️" testo="Visualizza Actions su GitHub" onClick={() => apriLink(`https://github.com/${REPO}/actions`)}/>
         <RigaMenu T={T} icona="🐞" testo="Segnala un problema su GitHub" onClick={() => apriLink(`https://github.com/${REPO}/issues/new`)}/>
         <RigaMenu T={T} icona="❗" testo="Novità" aperta={novita} onClick={() => setNovita(v => !v)}/>
         {novita && (
