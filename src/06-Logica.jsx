@@ -2555,8 +2555,11 @@ export function useAppCore(session){
   // inizio = uscita del turno base e orario fine = protPagFine/protRecFine:
   // questo lo fa entrare nei report che raggruppano per modelloId, esattamente
   // come già avviene per le protrazioni importate da PDF.
-  async function sincronizzaEventiProtrazione({ idEventoBase, dayKey, calId, tInBase, tOutBase, protPagFine, protRecFine, menoRecIn, menoRecOut }){
+  async function sincronizzaEventiProtrazione({ idEventoBase, dayKey, calId, tInBase, tOutBase, tOutProtrazione, protPagFine, protRecFine, menoRecIn, menoRecOut }){
     if(!idEventoBase||!dayKey||!calId||!userId) return;
+    // La protrazione a pagamento/recupero parte da quando finisce la giornata REALE
+    // (uscita con l'eventuale ritardo), non dall'uscita ufficiale del modello.
+    const partenzaProt = tOutProtrazione || tOutBase;
     // Il terzo tipo (-PROTRAZIONE A RECUPERO, consumo del credito) NON è un
     // singolo range "da->a" come gli altri due, ed EVENT non deve essere
     // rappresentato con un orario virtuale spostato dopo la fine del turno:
@@ -2647,7 +2650,7 @@ export function useAppCore(session){
       // e per questi due tipi anche oraInizio deve essere valorizzato,
       // altrimenti l'intervallo reale non è determinabile.
       const eMenoRecupero = tipo==="meno_recupero_entrata" || tipo==="meno_recupero_uscita";
-      const durataMin = durataOverride!==undefined ? durataOverride : calcMinuti(tOutBase, oraFine);
+      const durataMin = durataOverride!==undefined ? durataOverride : calcMinuti(partenzaProt, oraFine);
       if(!oraFine || (eMenoRecupero && !oraInizio) || durataMin<=0){
         if(esistente) await delEvt(dayKey, calId, esistente.id);
         continue;
@@ -2669,7 +2672,7 @@ export function useAppCore(session){
       // invece l'intervallo reale calcolato sopra (oraInizio->oraFine),
       // che si accavalla a una porzione del turno base invece di stare
       // dopo la sua fine.
-      const tInEvento = eMenoRecupero ? oraInizio : (tOutBase||"");
+      const tInEvento = eMenoRecupero ? oraInizio : (partenzaProt||"");
       const tOutEvento = oraFine;
 
       if(esistente){
@@ -2881,6 +2884,7 @@ export function useAppCore(session){
     await sincronizzaEventiProtrazione({
       idEventoBase: idLocale, dayKey, calId,
       tInBase: tInFinal, tOutBase: tOutFinal,
+      tOutProtrazione: ((formEffettivo.modelloId||formEffettivo.evtModelloId) && formEffettivo.tOut) ? formEffettivo.tOut : tOutFinal,
       protPagFine: formEffettivo.protPagFine||"", protRecFine: formEffettivo.protRecFine||"",
       menoRecIn: formEffettivo.protMenoRecIn||"", menoRecOut: formEffettivo.protMenoRecOut||"",
     });
@@ -3102,6 +3106,7 @@ export function useAppCore(session){
       await sincronizzaEventiProtrazione({
         idEventoBase: formEffettivo.editId, dayKey, calId: editCalId,
         tInBase: tInFinal, tOutBase: tOutFinal,
+        tOutProtrazione: ((formEffettivo.modelloId||formEffettivo.evtModelloId) && formEffettivo.tOut) ? formEffettivo.tOut : tOutFinal,
         protPagFine: formEffettivo.protPagFine||"", protRecFine: formEffettivo.protRecFine||"",
         menoRecIn: formEffettivo.protMenoRecIn||"", menoRecOut: formEffettivo.protMenoRecOut||"",
       });
@@ -7995,11 +8000,11 @@ const importsRecenti = useMemo(()=>{
       effettivi -= (ritardoEntrata+anticipoUscita);
     }
     if(e.protPagFine){
-      const uscitaPrevista = oraInMinuti(e.tOut||""), finePag = oraInMinuti(e.protPagFine||"");
+      const uscitaPrevista = oraInMinuti(e.tOutNote||e.tOut||""), finePag = oraInMinuti(e.protPagFine||"");
       if(uscitaPrevista!==null&&finePag!==null){ let d=finePag-uscitaPrevista; if(d<0) d+=24*60; effettivi += Math.max(0,d); }
     }
     if(e.protRecFine){
-      const uscitaPrevista = oraInMinuti(e.tOut||""), fineRec = oraInMinuti(e.protRecFine||"");
+      const uscitaPrevista = oraInMinuti(e.tOutNote||e.tOut||""), fineRec = oraInMinuti(e.protRecFine||"");
       if(uscitaPrevista!==null&&fineRec!==null){ let d=fineRec-uscitaPrevista; if(d<0) d+=24*60; effettivi += Math.max(0,d); }
     }
     return Math.max(0, effettivi);
