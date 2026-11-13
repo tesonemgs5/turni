@@ -128,3 +128,12 @@ jobs:
           gh release list --limit 100 --json tagName,createdAt \
             --jq 'sort_by(.createdAt) | reverse | .[2:] | .[].tagName' \
           | while read -r OLD; do gh release delete "$OLD" --yes --cleanup-tag; done
+      - name: Verifica canale aggiornamenti app
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v$VERSION"
+          LATEST=$(gh release view --json tagName --jq .tagName)
+          test "$LATEST" = "$TAG"
+          gh release view "$TAG" --json assets \
+            --jq '[.assets[].name] | index("turni.apk") != null' | grep -qx true
