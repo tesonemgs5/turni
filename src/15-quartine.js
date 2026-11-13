@@ -55,7 +55,7 @@ export function quartineDaItems(itemsGrezzi){
   const avvisi = [];
 
   // 1) intestazioni dei mesi (12 colonne + l'ultimo gennaio, dell'anno dopo)
-  let intest = items.filter(i=>/^[A-Za-zÀ-ÿ]{5,}$/.test(i.s) && PREFISSI_MESI.includes(i.s.slice(0,3).toUpperCase()));
+  let intest = items.filter(i=>/^[A-Za-zÀ-ÿ]{5,}(?:['’`´]\d{2})?$/.test(i.s) && PREFISSI_MESI.includes(i.s.slice(0,3).toUpperCase()));
   if(intest.length < 12) return { ok:false, motivo:"Non trovo le intestazioni dei mesi (gennaio–dicembre).", entries:[], avvisi };
   const yIntest = mediana(intest.map(i=>i.y));
   intest = intest.filter(i=>Math.abs(i.y - yIntest) < 20).sort((a,b)=>a.x-b.x);

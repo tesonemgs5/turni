@@ -622,30 +622,34 @@ export default function VistaCalendario({ C }){
               onAnnulla={()=>setConfermaEliminaReportId(null)}/>
           )}
           <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:22,fontWeight:700,color:T.text,overflow:"hidden",
-              textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.label}</div>
-            {r.type==="conteggio_turni"&&(
-              <div style={{fontSize:17,color:T.sub}}>turni</div>
-            )}
-            {r.type==="turnazione"&&(
-              <div style={{fontSize:14,color:T.sub}}>
-                turni · {data.totale>0?Math.round(((data.primo||0)/data.totale)*100):0}% 1° - {data.totale>0?Math.round(((data.secondo||0)/data.totale)*100):0}% 2°
+            <div style={{fontSize:15.4,fontWeight:700,color:T.text,lineHeight:1.25,
+              whiteSpace:"nowrap",overflow:"hidden",textOverflow:"clip"}}>{r.label}</div>
+            <div style={{display:"flex",alignItems:"center",minHeight:21}}>
+              <div style={{flex:1,minWidth:0}}>
+                {r.type==="conteggio_turni"&&(
+                  <div style={{fontSize:17,color:T.sub}}>turni</div>
+                )}
+                {r.type==="turnazione"&&(
+                  <div style={{fontSize:14,color:T.sub}}>
+                    turni · {data.totale>0?Math.round(((data.primo||0)/data.totale)*100):0}% 1° - {data.totale>0?Math.round(((data.secondo||0)/data.totale)*100):0}% 2°
+                  </div>
+                )}
+                {r.type==="ore_turno"&&(
+                  <div style={{fontSize:17,color:T.sub}}>ore</div>
+                )}
               </div>
+            {(r.type==="conteggio_turni"||r.type==="turnazione"||r.type==="ore_turno")&&(r.type==="ore_turno"?data.totaleMin>0:data.totale>0)&&(
+              <span style={{...NUM_REPORT,fontSize:12.8,minWidth:0,color:T.text,marginRight:10}}>{r.type==="ore_turno"?fmtOreMin(data.totaleMin):data.totale}</span>
             )}
-            {r.type==="ore_turno"&&(
-              <div style={{fontSize:17,color:T.sub}}>ore</div>
-            )}
+            <div style={{display:"flex",flexDirection:"row",gap:10,marginRight:10,alignItems:"center"}} onClick={e=>e.stopPropagation()}>
+              <button onClick={e=>{e.stopPropagation();moveReport(r.id,"up");}}
+                style={{background:"none",border:"none",color:T.sub,cursor:"pointer",fontSize:14.4,padding:"0 4px",lineHeight:1}}>▲</button>
+              <button onClick={e=>{e.stopPropagation();moveReport(r.id,"down");}}
+                style={{background:"none",border:"none",color:T.sub,cursor:"pointer",fontSize:14.4,padding:"0 4px",lineHeight:1}}>▼</button>
+            </div>
+            <span style={{color:T.sub,fontSize:9.6}}>›</span>
+            </div>
           </div>
-          {(r.type==="conteggio_turni"||r.type==="turnazione"||r.type==="ore_turno")&&(r.type==="ore_turno"?data.totaleMin>0:data.totale>0)&&(
-            <span style={{...NUM_REPORT,color:T.text,marginRight:10}}>{r.type==="ore_turno"?fmtOreMin(data.totaleMin):data.totale}</span>
-          )}
-          <div style={{display:"flex",flexDirection:"row",gap:10,marginRight:10,alignItems:"center"}} onClick={e=>e.stopPropagation()}>
-            <button onClick={e=>{e.stopPropagation();moveReport(r.id,"up");}}
-              style={{background:"none",border:"none",color:T.sub,cursor:"pointer",fontSize:18,padding:"0 4px",lineHeight:1}}>▲</button>
-            <button onClick={e=>{e.stopPropagation();moveReport(r.id,"down");}}
-              style={{background:"none",border:"none",color:T.sub,cursor:"pointer",fontSize:18,padding:"0 4px",lineHeight:1}}>▼</button>
-          </div>
-          <span style={{color:T.sub,fontSize:12}}>›</span>
         </div>
         {isOpen && (
           <div style={{background:T.s2,padding:14,borderBottom:`1px solid ${T.border}`}}>

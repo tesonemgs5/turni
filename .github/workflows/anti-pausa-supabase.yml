@@ -1,10 +1,10 @@
 name: Anti-pausa Supabase
 
-# Una richiesta al giorno a Supabase: evita la pausa del piano gratuito per inattività
+# Una richiesta a Supabase domenica e mercoledì alle 03:00 UTC: evita la pausa del piano gratuito per inattività
 # e, se Supabase non risponde, il lavoro fallisce e GitHub manda un avviso.
 on:
   schedule:
-    - cron: "17 6 * * *"
+    - cron: "0 3 * * 0,3"
   workflow_dispatch:
 
 permissions:

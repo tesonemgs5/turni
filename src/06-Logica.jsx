@@ -26,6 +26,7 @@ import {
   esportaBackupLocaleCompleto, importaBackupLocaleCompleto, CATEGORIE_BACKUP_LOCALE,
   applicaOpExtraHols, diffExtraHolsInOps, leggiOpExtraHols, scriviOpExtraHols, saveExtraHolsLocale,
 } from "./04-Rotazione";
+import { infoGriglia } from "./25-calcoli-rotazione";
 
 // ════════════════════════════════════════════════════════════
 // useAppCore.js — Custom hook che concentra tutto lo stato e la
@@ -905,9 +906,22 @@ export function useAppCore(session){
   useEffect(()=>{
     if(primaPersistenzaModelli.current){ primaPersistenzaModelli.current = false; return; }
     if(!isInitialized.current || !Array.isArray(modelli) || modelli.length===0) return;
-    const t = setTimeout(()=>{ try{ saveToLocalStorage(undefined, undefined, modelli); }catch(e){} }, 300);
-    return ()=>clearTimeout(t);
+    // Salvataggio IMMEDIATO (prima era ritardato di 300 ms e annullato se l'app veniva chiusa o
+    // ridisegnata in quel lasso: la modifica andava persa).
+    try{ saveToLocalStorage(undefined, undefined, modelli); }catch(e){}
   }, [modelli]);
+
+  // Rete di sicurezza: OGNI cambiamento di eventi/calendari viene scritto subito nel salvataggio
+  // locale, anche dove il codice che modifica lo store non chiama saveToLocalStorage a mano
+  // (es. modifiche a un evento, protrazioni, override, giorni importanti...). I valori non passati
+  // (modelli, impostazioni) restano quelli gia' salvati: saveToLocalStorage li conserva.
+  const primaPersistenzaStore = useRef(true);
+  useEffect(()=>{
+    if(primaPersistenzaStore.current){ primaPersistenzaStore.current = false; return; }
+    if(!isInitialized.current) return;
+    if(!store || !store.events || !Array.isArray(store.calendars) || store.calendars.length===0) return;
+    try{ saveToLocalStorage(store.events, store.calendars); }catch(e){}
+  }, [store]);
 
   useEffect(()=>{
 // #endregion
@@ -2541,8 +2555,11 @@ export function useAppCore(session){
   // inizio = uscita del turno base e orario fine = protPagFine/protRecFine:
   // questo lo fa entrare nei report che raggruppano per modelloId, esattamente
   // come già avviene per le protrazioni importate da PDF.
-  async function sincronizzaEventiProtrazione({ idEventoBase, dayKey, calId, tInBase, tOutBase, protPagFine, protRecFine, menoRecIn, menoRecOut }){
+  async function sincronizzaEventiProtrazione({ idEventoBase, dayKey, calId, tInBase, tOutBase, tOutProtrazione, protPagFine, protRecFine, menoRecIn, menoRecOut }){
     if(!idEventoBase||!dayKey||!calId||!userId) return;
+    // La protrazione a pagamento/recupero parte da quando finisce la giornata REALE
+    // (uscita con l'eventuale ritardo), non dall'uscita ufficiale del modello.
+    const partenzaProt = tOutProtrazione || tOutBase;
     // Il terzo tipo (-PROTRAZIONE A RECUPERO, consumo del credito) NON è un
     // singolo range "da->a" come gli altri due, ed EVENT non deve essere
     // rappresentato con un orario virtuale spostato dopo la fine del turno:
@@ -2633,7 +2650,7 @@ export function useAppCore(session){
       // e per questi due tipi anche oraInizio deve essere valorizzato,
       // altrimenti l'intervallo reale non è determinabile.
       const eMenoRecupero = tipo==="meno_recupero_entrata" || tipo==="meno_recupero_uscita";
-      const durataMin = durataOverride!==undefined ? durataOverride : calcMinuti(tOutBase, oraFine);
+      const durataMin = durataOverride!==undefined ? durataOverride : calcMinuti(partenzaProt, oraFine);
       if(!oraFine || (eMenoRecupero && !oraInizio) || durataMin<=0){
         if(esistente) await delEvt(dayKey, calId, esistente.id);
         continue;
@@ -2655,7 +2672,7 @@ export function useAppCore(session){
       // invece l'intervallo reale calcolato sopra (oraInizio->oraFine),
       // che si accavalla a una porzione del turno base invece di stare
       // dopo la sua fine.
-      const tInEvento = eMenoRecupero ? oraInizio : (tOutBase||"");
+      const tInEvento = eMenoRecupero ? oraInizio : (partenzaProt||"");
       const tOutEvento = oraFine;
 
       if(esistente){
@@ -2867,6 +2884,7 @@ export function useAppCore(session){
     await sincronizzaEventiProtrazione({
       idEventoBase: idLocale, dayKey, calId,
       tInBase: tInFinal, tOutBase: tOutFinal,
+      tOutProtrazione: ((formEffettivo.modelloId||formEffettivo.evtModelloId) && formEffettivo.tOut) ? formEffettivo.tOut : tOutFinal,
       protPagFine: formEffettivo.protPagFine||"", protRecFine: formEffettivo.protRecFine||"",
       menoRecIn: formEffettivo.protMenoRecIn||"", menoRecOut: formEffettivo.protMenoRecOut||"",
     });
@@ -3088,6 +3106,7 @@ export function useAppCore(session){
       await sincronizzaEventiProtrazione({
         idEventoBase: formEffettivo.editId, dayKey, calId: editCalId,
         tInBase: tInFinal, tOutBase: tOutFinal,
+        tOutProtrazione: ((formEffettivo.modelloId||formEffettivo.evtModelloId) && formEffettivo.tOut) ? formEffettivo.tOut : tOutFinal,
         protPagFine: formEffettivo.protPagFine||"", protRecFine: formEffettivo.protRecFine||"",
         menoRecIn: formEffettivo.protMenoRecIn||"", menoRecOut: formEffettivo.protMenoRecOut||"",
       });
@@ -7195,13 +7214,17 @@ const importsRecenti = useMemo(()=>{
 
     // LOCALE PER PRIMO: la rotazione risulta subito applicata; la configurazione
     // (data inizio e numero settimane) va a Supabase in coda, con retry automatico.
-    setRotazioni(prev=>prev.map(r=>r.id===rotId?{...r,dataInizio:startDayKey,nSettimane:numRipetizioni}:r));
-    accodaScritturaRemota({
-      tipo:"update", table:"rotazioni",
-      payload:{ data_inizio:startDayKey, n_settimane:numRipetizioni },
-      match:{ id:rotId, user_id:userId },
-      contesto:"Applicazione rotazione",
-    });
+    // NON per la personalizzata: la sua griglia e' ancorata alle proprie date e al proprio numero di
+    // settimane; sovrascriverli con il giorno scelto e il numero di ripetizioni la sfalsava a ogni applicazione.
+    if(rot.tipo !== "personalizzata"){
+      setRotazioni(prev=>prev.map(r=>r.id===rotId?{...r,dataInizio:startDayKey,nSettimane:numRipetizioni}:r));
+      accodaScritturaRemota({
+        tipo:"update", table:"rotazioni",
+        payload:{ data_inizio:startDayKey, n_settimane:numRipetizioni },
+        match:{ id:rotId, user_id:userId },
+        contesto:"Applicazione rotazione",
+      });
+    }
 
     const nuoviEventiLocali = {};
 
@@ -7315,10 +7338,14 @@ const importsRecenti = useMemo(()=>{
       }
     } else if(rot.tipo === "personalizzata") {
       const griglia = rot.griglia || {};
+      const info = infoGriglia(griglia);
+      if(!info) return;
       const [y0, m0, d0] = startDayKey.split("-").map(Number);
-      const rotInizio = rot.dataInizio ? new Date(rot.dataInizio) : new Date(y0, m0-1, d0);
-      const diffDays = Math.floor((new Date(y0, m0-1, d0).getTime() - rotInizio.getTime()) / (1000 * 3600 * 24));
-      const nDays = (rot.nSettimane || 52) * 7;
+      // Il PRIMO giorno configurato della griglia va sul giorno scelto (date lette come LOCALI).
+      const [p0, p1, p2] = info.prima.split("-").map(Number);
+      const diffDays = Math.round((new Date(y0, m0-1, d0).getTime() - new Date(p0, p1-1, p2).getTime()) / (1000 * 3600 * 24));
+      // Ogni ripetizione parte dopo le settimane intere della griglia (es. 8 settimane = 56 giorni).
+      const nDays = info.nSettimane * 7;
 
       for(let rep=0; rep<numRipetizioni; rep++) {
         for(const [dateKey, modId] of Object.entries(griglia)) {
@@ -7404,6 +7431,12 @@ const importsRecenti = useMemo(()=>{
     const perCollega = {};
     const modelliInclusi = cfg?.modelliInclusi || [];
     const filtraCollega = (cfg?.filtraCollega||"").trim().toUpperCase();
+    // Report "TICKET": ogni GIORNO conta 1 se la somma dei minuti di presenza EFFETTIVA degli eventi dei
+    // modelli selezionati (ingresso/uscita effettivi, protrazioni e recuperi inclusi) arriva ad almeno 6h01m
+    // (361 minuti): anche più eventi insieme (es. 5h + 1h01m). Un evento tutto-il-giorno (H24) vale 24 ore.
+    // Il ticket è attribuito all'evento più lungo del giorno (modello e collega).
+    const nomeReport = reportId ? ((store.reports||[]).find(r=>r.id===reportId)?.label||"") : "";
+    const durataMinima = nomeReport.trim().toUpperCase()==="TICKET" ? 361 : 0;
     const sottomenu = cfg?.sottomenu || [];
     // perSottomenu[sottomenuId][gruppoKey][modelloId] = {count, dates}
     const perSottomenu = {};
@@ -7454,25 +7487,7 @@ const importsRecenti = useMemo(()=>{
         });
       });
     };
-    for(const [dateKey, calMap] of Object.entries(store.events)){
-      const nelPeriodoReport = dateKey>=from && dateKey<=to;
-      if(!nelPeriodoReport && !inUnPeriodoGruppo(dateKey)) continue;
-      const fuSalta = fuDaSaltare(calMap, passaEv);
-      for(const [cid, evts] of Object.entries(calMap)){
-        if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
-        if(cid===fuSalta) continue;
-        for(const e of evts){
-          // Override "solo questo evento" su CATEGORIA REPORT: priorità massima,
-          // sopra la whitelist modelliInclusi decisa a livello di modello.
-          const overrideReportRaw = reportId ? (e.reportOverrides||{})[reportId] : null;
-          const overrideReportEvento = overrideReportRaw?.stato || null;
-          if(overrideReportEvento==="escluso") continue;
-          const fuoriFiltro = overrideReportEvento!=="incluso" && modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId);
-          const collegList = splitColleghi(e.collega);
-          if(filtraCollega && !collegList.some(c=>c.toUpperCase().includes(filtraCollega))) continue;
-          if(!nelPeriodoReport){ contaSottomenu(e, dateKey, overrideReportRaw); continue; }
-          if(fuoriFiltro){ contaSottomenu(e, dateKey, overrideReportRaw); continue; }
-
+    const conta = (e, dateKey, overrideReportRaw, collegList)=>{
           result.totale++;
           if(e.modelloId){
             if(!perModello[e.modelloId]) perModello[e.modelloId] = { count:0, dates:[] };
@@ -7495,6 +7510,36 @@ const importsRecenti = useMemo(()=>{
           // (comportamento identico a "escluso" nei report esistenti: niente
           // auto-classificazione).
           contaSottomenu(e, dateKey, overrideReportRaw);
+    };
+    for(const [dateKey, calMap] of Object.entries(store.events)){
+      const nelPeriodoReport = dateKey>=from && dateKey<=to;
+      if(!nelPeriodoReport && !inUnPeriodoGruppo(dateKey)) continue;
+      const fuSalta = fuDaSaltare(calMap, passaEv);
+      const ticketGiorno = [];
+      for(const [cid, evts] of Object.entries(calMap)){
+        if(reportCalIds.length>0 && !reportCalIds.includes(cid)) continue;
+        if(cid===fuSalta) continue;
+        for(const e of evts){
+          // Override "solo questo evento" su CATEGORIA REPORT: priorità massima,
+          // sopra la whitelist modelliInclusi decisa a livello di modello.
+          const overrideReportRaw = reportId ? (e.reportOverrides||{})[reportId] : null;
+          const overrideReportEvento = overrideReportRaw?.stato || null;
+          if(overrideReportEvento==="escluso") continue;
+          const fuoriFiltro = overrideReportEvento!=="incluso" && modelliInclusi.length>0 && !modelliInclusi.includes(e.modelloId);
+          const collegList = splitColleghi(e.collega);
+          if(filtraCollega && !collegList.some(c=>c.toUpperCase().includes(filtraCollega))) continue;
+          if(!nelPeriodoReport){ contaSottomenu(e, dateKey, overrideReportRaw); continue; }
+          if(fuoriFiltro){ contaSottomenu(e, dateKey, overrideReportRaw); continue; }
+
+          if(durataMinima>0){ ticketGiorno.push({ e, overrideReportRaw, collegList, min: e.allDay ? 1440 : minutiEffettiviEvento(e) }); continue; }
+          conta(e, dateKey, overrideReportRaw, collegList);
+        }
+      }
+      if(durataMinima>0 && ticketGiorno.length){
+        const minGiorno = ticketGiorno.reduce((s,x)=>s+x.min,0);
+        if(minGiorno>=durataMinima){
+          const top = ticketGiorno.reduce((a,x)=>x.min>a.min?x:a);
+          conta(top.e, dateKey, top.overrideReportRaw, top.collegList);
         }
       }
     }
@@ -7955,11 +8000,11 @@ const importsRecenti = useMemo(()=>{
       effettivi -= (ritardoEntrata+anticipoUscita);
     }
     if(e.protPagFine){
-      const uscitaPrevista = oraInMinuti(e.tOut||""), finePag = oraInMinuti(e.protPagFine||"");
+      const uscitaPrevista = oraInMinuti(e.tOutNote||e.tOut||""), finePag = oraInMinuti(e.protPagFine||"");
       if(uscitaPrevista!==null&&finePag!==null){ let d=finePag-uscitaPrevista; if(d<0) d+=24*60; effettivi += Math.max(0,d); }
     }
     if(e.protRecFine){
-      const uscitaPrevista = oraInMinuti(e.tOut||""), fineRec = oraInMinuti(e.protRecFine||"");
+      const uscitaPrevista = oraInMinuti(e.tOutNote||e.tOut||""), fineRec = oraInMinuti(e.protRecFine||"");
       if(uscitaPrevista!==null&&fineRec!==null){ let d=fineRec-uscitaPrevista; if(d<0) d+=24*60; effettivi += Math.max(0,d); }
     }
     return Math.max(0, effettivi);

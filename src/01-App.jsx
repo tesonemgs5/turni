@@ -11,6 +11,7 @@ import {
   fmtDataIT, impostaSilenziamentoErrore, segnalaErrore,
   ModelForm, GrigliaRotazione, NLRSScalanteView, DomenicheView, ReperibilitaView,
 } from "./04-Rotazione";
+import { infoGriglia } from "./25-calcoli-rotazione";
 import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
 
 // ═══════════════════════════════════════════════════════════════
@@ -560,7 +561,7 @@ function AppInterno({ session }){
                     return (
                       <div key={r.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                         <div onClick={()=>{
-                          if(r.tipo==="domeniche"||r.tipo==="nlrs_scalante"||r.tipo==="reperibilita"){
+                          if(r.tipo==="domeniche"||r.tipo==="nlrs_scalante"||r.tipo==="reperibilita"||r.tipo==="personalizzata"){
                             setRotGiornoPartenza(0);
                             setShowApplyRotDialog(r);
                           } else {
@@ -912,13 +913,17 @@ function AppInterno({ session }){
             <div style={{fontSize:13,color:T.sub,marginBottom:16}}>
               Stai applicando la rotazione <strong>{showApplyRotDialog.titolo||"Senza nome"}</strong> a partire dal {fmtDataIT(dayKey)}
               {showApplyRotDialog.tipo==="nlrs_scalante"?" (primo RS)"
-                :showApplyRotDialog.tipo==="reperibilita"?""
+                :showApplyRotDialog.tipo==="reperibilita"||showApplyRotDialog.tipo==="personalizzata"?""
                 :" (domenica)"}.
               <br/><br/>
               {showApplyRotDialog.tipo==="nlrs_scalante"
                 ?"Il ciclo scalante è di 6 coppie RS/NL. Quante volte vuoi ripeterlo?"
                 :showApplyRotDialog.tipo==="reperibilita"
                 ?"Il ciclo è di 4 giorni con passo +1 / +7 / +1, e la ripetizione successiva riparte 7 giorni dopo l'ultimo giorno (blocco di 16 giorni). Quanti cicli vuoi generare?"
+                :showApplyRotDialog.tipo==="personalizzata"
+                ?(()=>{ const g=infoGriglia(showApplyRotDialog.griglia);
+                    return g ? `La griglia ha ${g.nGiorni} giorni configurati su ${g.nSettimane} settimane. Il primo giorno configurato va sul giorno scelto; ogni ripetizione parte dopo ${g.nSettimane} settimane dalla precedente. Quante volte vuoi inserirla?`
+                      : "La griglia è vuota: configurala prima di applicarla."; })()
                 :"Il ciclo è di 4 domeniche. Quante volte vuoi ripeterlo?"}
             </div>
 
@@ -985,7 +990,7 @@ function AppInterno({ session }){
 
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
               <span style={{fontSize:13,color:T.text,fontWeight:700}}>Ripetizioni:</span>
-              <input type="number" defaultValue={4} min={1} max={52} id="num_ripetizioni_rot"
+              <input type="number" defaultValue={showApplyRotDialog.tipo==="personalizzata"?1:4} min={1} max={52} id="num_ripetizioni_rot"
                 style={{width:70,background:T.s2,border:`1px solid ${T.border}`,borderRadius:8,
                   padding:"6px 8px",color:T.text,fontSize:14,fontWeight:700,outline:"none",textAlign:"center"}}/>
             </div>
@@ -997,7 +1002,7 @@ function AppInterno({ session }){
                 Annulla
               </button>
               <button onClick={async()=>{
-                const inputVal = parseInt(document.getElementById("num_ripetizioni_rot")?.value) || 4;
+                const inputVal = parseInt(document.getElementById("num_ripetizioni_rot")?.value) || (showApplyRotDialog.tipo==="personalizzata"?1:4);
                 const modPartenza = document.getElementById("modello_partenza_rot")?.value || "RS";
                 setShowApplyRotDialog(null);
                 setShowRotazionePicker(false);

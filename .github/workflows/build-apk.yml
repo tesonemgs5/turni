@@ -106,7 +106,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v$VERSION"
+          TAG="${VERSION}#${APK_BUILD_NUM}"
           # Novità mostrate nel pop-up dell'app: voci di src/aggiornamenti.json più
           # nuove di quelle già presenti nell'ultima release (marcatore agg:N).
           PREV_BODY=$(gh release view --json body --jq .body 2>/dev/null || true)
@@ -119,12 +119,23 @@ jobs:
             | .[] | "• \(.titolo)\n" + ((.righe // []) | map("   – " + .) | join("\n")) + "\n"
           ' src/aggiornamenti.json)
           BODY=$(printf '%s\n\nBuild automatica dal commit %s\n<!-- agg:%s -->' "$NOTE" "${GITHUB_SHA::7}" "$MAX_N")
-          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
-          gh release create "$TAG" release-artifacts/turni.apk \
-            --target "$GITHUB_SHA" \
-            --title "Turni $VERSION#$APK_BUILD_NUM" \
-            --notes "$BODY" \
-            --latest
+          # Fino a 3 tentativi: un errore momentaneo di GitHub non deve far fallire la build.
+          for TENTATIVO in 1 2 3; do
+            gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+            if gh release create "$TAG" release-artifacts/turni.apk \
+              --target "$GITHUB_SHA" \
+              --title "Turni $VERSION#$APK_BUILD_NUM" \
+              --notes "$BODY" \
+              --latest; then
+              break
+            fi
+            if [ "$TENTATIVO" = 3 ]; then
+              echo "Pubblicazione release fallita dopo 3 tentativi"
+              exit 1
+            fi
+            echo "Pubblicazione fallita (tentativo $TENTATIVO/3), riprovo tra 15 secondi"
+            sleep 15
+          done
           gh release list --limit 100 --json tagName,createdAt \
             --jq 'sort_by(.createdAt) | reverse | .[2:] | .[].tagName' \
           | while read -r OLD; do gh release delete "$OLD" --yes --cleanup-tag; done
