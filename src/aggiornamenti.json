@@ -1,5 +1,15 @@
 [
   {
+    "n": 8,
+    "data": "2026-11-14",
+    "titolo": "Condividi un documento verso Turni",
+    "righe": [
+      "Da un'altra app (mail, WhatsApp, File) tocca Condividi e scegli Turni: si apre il calendario.",
+      "Scegli il giorno e l'evento a cui legare il documento, oppure solo il giorno.",
+      "Resta sul telefono come promemoria e si cancella da solo 4 mesi dopo la data."
+    ]
+  },
+  {
     "n": 7,
     "data": "2026-11-14",
     "titolo": "Documenti allegati agli eventi",

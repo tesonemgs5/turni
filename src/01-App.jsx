@@ -4,6 +4,7 @@ import { useAppCore } from "./06-Logica";
 import VistaCalendario from "./03-Calendario";
 import VistaModelli from "./02-Modelli";
 import { DialogoScarica } from "./19-dialogo-scarica";
+import { RiceviDocumento } from "./34-ricevi-documento";
 import { ElencoModelliTendine, PulsanteOrdineAB, ContestoTendine } from "./23-tendine-modelli";
 import { ModaleErroriMultipli, SpiegazioneErrore, NAV_HEIGHT, NAV_HEIGHT_CSS, ConfermaEliminazione, CercaModelli, NessunModello } from "./05-Comuni";
 import {
@@ -337,6 +338,7 @@ function AppInterno({ session }){
         background:"rgba(0,0,0,0.75)",color:"#fff",padding:"6px 16px",
         borderRadius:20,fontSize:12,zIndex:9999,pointerEvents:"none"}}>{banner}</div>}
       <DialogoScarica T={T}/>
+      <RiceviDocumento T={T} accent={accent} store={store}/>
       {confermaCancellaEventiMese&&(()=>{
         // Scelta multipla di CALENDARI e TURNI (modelli) da eliminare nel mese
         // aperto. I turni elencati sono quelli realmente presenti nei calendari

@@ -22,7 +22,7 @@ import { ImpostazioniAggiornamenti, inApk } from "./12-avviso-aggiornamento";
 import AGGIORNAMENTI_APP from "./aggiornamenti.json";
 import { QuartineSection } from "./16-QuartineSection";
 import { SezioneDocumenti, useDocumentiVersione } from "./33-documenti-ui";
-import { haDocumenti, eliminaDocumentiEvento } from "./32-documenti";
+import { haDocumenti, eliminaDocumentiEvento, documentiEvento, idGiorno } from "./32-documenti";
 import { scaricaFileTesto } from "./18-scarica-file";
 import { classeModelloA, ordinaClassiA, ordinaPerInizio } from "./21-ordine";
 import { ordinaModelliInGruppo } from "./26-ordine-modelli";
@@ -3063,6 +3063,11 @@ export default function VistaModelli({ C }){
               setConfermaEliminaEvento(null);
             }}
             onAnnulla={()=>setConfermaEliminaEvento(null)}/>
+        )}
+        {!form&&dayKey&&documentiEvento(idGiorno(dayKey)).length>0&&(
+          <div style={{marginTop:8,background:T.s2,borderRadius:12,padding:14}}>
+            <SezioneDocumenti T={T} accent={accent} eventId={idGiorno(dayKey)} dateKey={dayKey} prenotaId={()=>idGiorno(dayKey)}/>
+          </div>
         )}
         {form&&(
           <div style={{background:T.s2,borderRadius:12,padding:14,marginTop:8}}>
