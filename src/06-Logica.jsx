@@ -11,6 +11,7 @@ import { widgetDisponibile, inviaAlWidget, descriviStatoWidget } from "./17-widg
 import { scaricaFileTesto } from "./18-scarica-file";
 import { trovaModelloIdentita, tempoDaEvento } from "./31-identita-modello";
 import { fasceIndennitaDi, pulsantiFasciaDi, minutiPerFasceEvento, tariffaOraria } from "./24-fasce-indennita";
+import { pulisciDocumenti, idEventiDaStore } from "./32-documenti";
 import {
   FASCE_AUTOMATICHE_DEFAULT, FESTIVITA_DEFAULT_ATTIVE, MONTHS, NOMI_GIORNI_IT, PALETTE, COLORE_H24,
   calcFine6h15, calcFine6h30, calcFineModello, categoriaAppAutoAutomatica, categoriaTurnoAutomatica,
@@ -74,6 +75,11 @@ export function useAppCore(session){
   // già presente. Stesso pattern già usato per modelliRef qui sotto.
   const storeRef = useRef(INIT);
   useEffect(()=>{ storeRef.current = store; }, [store]);
+  // Documenti allegati agli eventi: pulizia dei scaduti (4 mesi dopo la data evento) e degli orfani da tempo.
+  useEffect(()=>{
+    const t = setTimeout(()=>{ pulisciDocumenti(idEventiDaStore(storeRef.current)).catch(()=>{}); }, 10000);
+    return ()=>clearTimeout(t);
+  }, []);
   const flushExtraHolsRef = useRef(false);
   const [loading, setLoading] = useState(true);
   const [riordinaDopoCache, setRiordinaDopoCache] = useState(false);
@@ -2799,7 +2805,7 @@ export function useAppCore(session){
     // L'id viene generato QUI, non più dal database: così l'evento locale
     // e quello su Supabase condividono lo stesso id fin dal primo istante,
     // nessuna riconciliazione necessaria dopo che il server risponde.
-    const idLocale = generaIdLocale();
+    const idLocale = form.idPrenotato || generaIdLocale();
     const payload = {
       id: idLocale,
       user_id: userId, calendar_id: calId, date_key: dayKey,

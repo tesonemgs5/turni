@@ -1,5 +1,15 @@
 [
   {
+    "n": 7,
+    "data": "2026-11-14",
+    "titolo": "Documenti allegati agli eventi",
+    "righe": [
+      "Dentro un evento trovi «Allega documento»: scegli un PDF o una foto e resta salvato sul telefono come promemoria.",
+      "Con «Invia» lo mandi via mail (o con un'altra app) direttamente dall'evento.",
+      "I giorni con documenti hanno una graffetta 📎. Il documento si cancella da solo 4 mesi dopo la data dell'evento."
+    ]
+  },
+  {
     "n": 6,
     "data": "2026-10-24",
     "titolo": "Sezione Aggiornamenti a scomparsa",

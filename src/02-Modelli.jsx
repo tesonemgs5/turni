@@ -7,7 +7,7 @@ import {
   isModelloTurnazioneDefault, withEventoAggiunto, saveToLocalStorage,
   loadFromLocalStorage, clearLocalStorageCache, resolveFestivitaCatalogo,
   leggiLogErrori, leggiErroriSilenziati, impostaSilenziamentoErrore, statoSupabaseVoce, statoSheetsVoce,
-  cancellaLogErrori, segnalaErrore, CATEGORIE_BACKUP_LOCALE,
+  cancellaLogErrori, segnalaErrore, CATEGORIE_BACKUP_LOCALE, generaIdLocale,
 } from "./04-Rotazione";
 import { CalBadge, SmartTimeInput, AutocompleteInput, ColorPickerModal,
   ModaleErroriMultipli, SpiegazioneErrore, FasceExpand, ConteggioConfigCard, TurnazioneConfigCard,
@@ -21,6 +21,8 @@ import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
 import { ImpostazioniAggiornamenti, inApk } from "./12-avviso-aggiornamento";
 import AGGIORNAMENTI_APP from "./aggiornamenti.json";
 import { QuartineSection } from "./16-QuartineSection";
+import { SezioneDocumenti, useDocumentiVersione } from "./33-documenti-ui";
+import { haDocumenti, eliminaDocumentiEvento } from "./32-documenti";
 import { scaricaFileTesto } from "./18-scarica-file";
 import { classeModelloA, ordinaClassiA, ordinaPerInizio } from "./21-ordine";
 import { ordinaModelliInGruppo } from "./26-ordine-modelli";
@@ -92,6 +94,7 @@ function ColorRow({ T, accent, hex, label, sub, count, onClick, onRemove, onMove
 // ═══════════════════════════════════════════════════════════════
 
 export default function VistaModelli({ C }){
+  useDocumentiVersione();
   const [ricercaModelli, setRicercaModelli] = useState("");
   const [mostraRegoleOrdine, setMostraRegoleOrdine] = useState(false); // pannello ℹ️ con le regole di ordine e gruppi
   // Gruppi a scomparsa dell'elenco modelli (solo visualizzazione, per dispositivo)
@@ -2982,6 +2985,7 @@ export default function VistaModelli({ C }){
               <div style={{color:cardTextColor,fontSize:20,fontWeight:800,textShadow:cardShadow,display:"flex",alignItems:"baseline",gap:6,flexWrap:"wrap"}}>
                 {labelDaMostrare}
                 {orarioModello&&<span style={{fontSize:13,fontWeight:700,opacity:0.85}}>{orarioModello}</span>}
+                {haDocumenti(e.id)&&<span title="Documenti allegati" style={{fontSize:15}}>📎</span>}
               </div>
               {!e.allDay&&tInMostrato&&(
                 <div style={{color:cardSubColor,fontSize:17,marginTop:2,display:"flex",flexWrap:"wrap",columnGap:8,rowGap:2}}>
@@ -3055,7 +3059,7 @@ export default function VistaModelli({ C }){
         {confermaEliminaEvento&&(
           <ConfermaEliminazione T={T} testo="Vuoi eliminare questo evento?"
             onConferma={()=>{
-              delEvt(confermaEliminaEvento.dKey,confermaEliminaEvento.cId,confermaEliminaEvento.id);
+              delEvt(confermaEliminaEvento.dKey,confermaEliminaEvento.cId,confermaEliminaEvento.id); eliminaDocumentiEvento(confermaEliminaEvento.id);
               setConfermaEliminaEvento(null);
             }}
             onAnnulla={()=>setConfermaEliminaEvento(null)}/>
@@ -3986,6 +3990,8 @@ export default function VistaModelli({ C }){
               style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,
                 borderRadius:8,padding:"8px 10px",color:T.text,fontSize:12,
                 marginBottom:12,boxSizing:"border-box",outline:"none",textTransform:"uppercase"}}/>
+            <SezioneDocumenti T={T} accent={accent} eventId={form.editId||form.idPrenotato||null} dateKey={dayKey}
+              prenotaId={()=>{ const nuovo=generaIdLocale(); setForm(f=>({...f,idPrenotato:f.idPrenotato||nuovo})); return nuovo; }}/>
             {form.editId&&(()=>{
               const calCorrenteEvt = store.calendars.find(c=>c.id===(form.editCid||calId));
               const visibileAncheInEvt = form.visibileAncheIn || [];

@@ -13,6 +13,8 @@ import { CalBadge, SmartTimeInput, AutocompleteInput, ColorPickerModal,
   ModaleErroriMultipli, FasceExpand, ConteggioConfigCard, TurnazioneConfigCard, OreTurnoConfigCard, fmtOreMin,
   IndennitaConfig, PeriodoReportButton, OrePerTurnoView, StraordinariView, GuadagniView,
   ViabilitaView, TicketConfig, NAV_HEIGHT_CSS, ConfermaEliminazione, CercaModelli, NessunModello, NUM_REPORT } from "./05-Comuni";
+import { haDocumenti } from "./32-documenti";
+import { useDocumentiVersione } from "./33-documenti-ui";
 import { ElencoModelliTendine, PulsanteOrdineAB } from "./23-tendine-modelli";
 import { ModelloCard, ModelForm, RotazioneCard, RotazioneForm, ModelloSelector,
   GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView } from "./04-Rotazione";
@@ -54,6 +56,7 @@ const romanoSuQuartina = (q)=> lumQ(q)<0.6 ? mixQ(q,255,0.38) : mixQ(q,0,0.30);
 // ═══════════════════════════════════════════════════════════════
 
 export default function VistaCalendario({ C }){
+  useDocumentiVersione();
   const [confermaEliminaReportId, setConfermaEliminaReportId] = useState(null);
   const {
     today, store, setStore, loading, setLoading, year,
@@ -246,7 +249,7 @@ export default function VistaCalendario({ C }){
           fontSize:evtFontSize,fontWeight:800,color:textColor,overflow:"hidden",
           whiteSpace:"nowrap",display:"flex",alignItems:"center",lineHeight:1,
           textShadow:shadow,gridRow:"span 1"}}>
-          {e.label}
+          {e.label}{haDocumenti(e.id)?" 📎":""}
         </div>
       );
     }
@@ -259,7 +262,7 @@ export default function VistaCalendario({ C }){
         <div style={{fontSize:evtFontSize,fontWeight:800,color:textColor,overflow:"hidden",
           whiteSpace:"nowrap",lineHeight:1.15,textShadow:shadow,
           flexShrink:0}}>
-          {row1}
+          {row1}{haDocumenti(e.id)?" 📎":""}
         </div>
         {calRow2Field!=="---" && (
           <div style={{fontSize:row2FontSize,fontWeight:600,color:textColor,opacity:0.9,
