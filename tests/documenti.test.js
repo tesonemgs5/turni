@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { nomeSicuro, scadenzaDa, documentiDaPulire, idEventiDaStore, GIORNI_ATTESA_ORFANI } from "../src/32-documenti.js";
+import { nomeSicuro, scadenzaDa, documentiDaPulire, idEventiDaStore, idGiorno, GIORNI_ATTESA_ORFANI } from "../src/32-documenti.js";
 
 test("la scadenza e' 4 mesi dopo la data dell'evento", () => {
   assert.equal(scadenzaDa("2026-11-14"), "2027-03-14");
@@ -56,4 +56,14 @@ test("nomeSicuro toglie i caratteri pericolosi e tiene accenti ed estensione", (
   assert.equal(nomeSicuro("Perché già.pdf"), "Perché già.pdf");
   assert.equal(nomeSicuro(""), "documento");
   assert.ok(nomeSicuro("a".repeat(200)).length <= 80);
+});
+
+test("i documenti legati a un giorno non sono mai orfani, ma scadono come gli altri", () => {
+  const vecchio = ADESSO - (GIORNI_ATTESA_ORFANI + 10) * GIORNO;
+  const elenco = [
+    { id: "g1", eventId: idGiorno("2027-06-01"), scade: "2027-10-01", creato: vecchio },
+    { id: "g2", eventId: idGiorno("2026-11-01"), scade: "2027-03-01", creato: vecchio },
+  ];
+  assert.equal(idGiorno("2027-06-01"), "giorno:2027-06-01");
+  assert.deepEqual(documentiDaPulire(elenco, "2027-04-01", new Set(["e1"]), ADESSO), ["g2"]);
 });

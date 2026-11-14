@@ -14,6 +14,11 @@ export const MAX_BYTES = 25 * 1024 * 1024;
 // Un documento senza evento viene considerato "orfano" solo dopo questo tempo,
 // per non cancellare nulla durante sincronizzazioni o form ancora aperti.
 export const GIORNI_ATTESA_ORFANI = 30;
+// Un documento puo' essere legato a un giorno senza evento: eventId = "giorno:AAAA-MM-GG".
+export const PREFISSO_GIORNO = "giorno:";
+export function idGiorno(dateKey) {
+  return PREFISSO_GIORNO + dateKey;
+}
 
 // ── Logica pura (testata in tests/documenti.test.js) ────────────────────────
 
@@ -58,7 +63,8 @@ export function documentiDaPulire(elenco, oggiISO, idEventiPresenti, adessoMs) {
   for (const d of elenco || []) {
     if (!d || !d.id) continue;
     const scaduto = d.scade && d.scade < oggiISO;
-    const orfano = conosco && !idEventiPresenti.has(d.eventId) && adessoMs - (d.creato || 0) > soglia;
+    const delGiorno = String(d.eventId || "").startsWith(PREFISSO_GIORNO);
+    const orfano = conosco && !delGiorno && !idEventiPresenti.has(d.eventId) && adessoMs - (d.creato || 0) > soglia;
     if (scaduto || orfano) ids.push(d.id);
   }
   return ids;
@@ -123,6 +129,10 @@ function leggiBase64(file) {
   });
 }
 
+function nuovoIdDocumento() {
+  return "doc_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
 function messaggio(e) {
   return String((e && e.message) || e);
 }
@@ -132,7 +142,7 @@ export async function aggiungiDocumento({ eventId, dateKey, file }) {
     if (!eventId || !dateKey || !file) return { ok: false, errore: "Dati mancanti" };
     if (file.size > MAX_BYTES) return { ok: false, errore: "File troppo grande (massimo 25 MB)" };
     const base64 = await leggiBase64(file);
-    const id = "doc_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    const id = nuovoIdDocumento();
     const nome = nomeSicuro(file.name);
     const path = `${CARTELLA}/${id}-${nome}`;
     const { Filesystem, Directory } = await import("@capacitor/filesystem");
@@ -229,4 +239,59 @@ export async function pulisciDocumenti(idEventiPresenti) {
   for (const d of leggi()) if (set.has(d.id)) await cancellaFile(d.path);
   scrivi(leggi().filter((d) => !set.has(d.id)));
   return ids.length;
+}
+
+// ── File ricevuti da "Condividi" di altre app (solo Android) ─────────────────
+// Il plugin nativo copia i file in "in-arrivo" (Directory.Data). Qui si leggono,
+// poi si collegano a un evento/giorno (spostandoli nell'archivio) o si scartano.
+
+let pluginNativo = null;
+async function chiamaNativo(metodo, opzioni) {
+  const C = typeof window !== "undefined" ? window.Capacitor : null;
+  if (C && typeof C.nativePromise === "function") return await C.nativePromise("TurniFile", metodo, opzioni || {});
+  if (!pluginNativo) {
+    const { registerPlugin } = await import("@capacitor/core");
+    pluginNativo = registerPlugin("TurniFile");
+  }
+  return await pluginNativo[metodo](opzioni || {});
+}
+
+// Ritorna { items: [{ nome, mime, size, path } | { nome, errore }], inCorso }.
+export async function prendiCondivisi() {
+  try {
+    const { Capacitor } = await import("@capacitor/core");
+    if (!Capacitor.isNativePlatform()) return { items: [], inCorso: false };
+    const r = await chiamaNativo("prendiCondivisi");
+    return { items: Array.isArray(r && r.items) ? r.items : [], inCorso: !!(r && r.inCorso) };
+  } catch (e) {
+    return { items: [], inCorso: false };
+  }
+}
+
+export async function scartaCondiviso(voce) {
+  if (!voce || !voce.path) return { ok: true };
+  await cancellaFile(voce.path);
+  return { ok: true };
+}
+
+// Sposta il file ricevuto nell'archivio e lo lega all'evento (o al giorno).
+export async function collegaCondiviso({ voce, eventId, dateKey }) {
+  try {
+    if (!voce || !voce.path || !eventId || !dateKey) return { ok: false, errore: "Dati mancanti" };
+    const { Filesystem, Directory } = await import("@capacitor/filesystem");
+    const id = nuovoIdDocumento();
+    const nome = nomeSicuro(voce.nome);
+    const path = `${CARTELLA}/${id}-${nome}`;
+    try { await Filesystem.mkdir({ path: CARTELLA, directory: Directory.Data, recursive: true }); } catch (e) { /* esiste gia' */ }
+    await Filesystem.rename({ from: voce.path, to: path, directory: Directory.Data, toDirectory: Directory.Data });
+    const doc = {
+      id, eventId, dateKey, nome: voce.nome || nome, path,
+      mime: voce.mime || "", size: voce.size || 0,
+      creato: Date.now(), scade: scadenzaDa(dateKey),
+    };
+    scrivi([...leggi(), doc]);
+    return { ok: true, doc };
+  } catch (e) {
+    return { ok: false, errore: messaggio(e) };
+  }
 }

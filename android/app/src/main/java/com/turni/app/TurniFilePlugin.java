@@ -6,11 +6,15 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.UriPermission;
+import android.database.Cursor;
 import android.net.Uri;
+import android.os.Build;
 import android.provider.DocumentsContract;
+import android.provider.OpenableColumns;
 
 import androidx.activity.result.ActivityResult;
 
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -18,16 +22,24 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Salvataggio di file di testo sul telefono:
  *  - salvaConNome: selettore di Android "Salva con nome" (si sceglie cartella e nome);
  *  - scegliCartella / salvaInCartella: una cartella scelta una volta (permesso persistente)
  *    in cui salvare poi senza altre domande;
- *  - infoCartella / dimenticaCartella: stato della cartella scelta.
+ *  - infoCartella / dimenticaCartella: stato della cartella scelta;
+ *  - prendiCondivisi: file ricevuti da "Condividi" di altre app (vedi in fondo).
  * (La condivisione resta gestita dal plugin Share.)
  */
 @CapacitorPlugin(name = "TurniFile")
@@ -191,5 +203,150 @@ public class TurniFilePlugin extends Plugin {
         } catch (Exception e) {
             call.reject("Salvataggio nella cartella non riuscito: " + e.getMessage());
         }
+    }
+
+    // -- File ricevuti da "Condividi" (altre app -> Turni) ----------------------
+    // Il permesso di lettura dato da Android e' temporaneo, quindi i file condivisi
+    // vengono copiati subito in una cartella temporanea dell'app (files/in-arrivo).
+    // L'app li legge con prendiCondivisi() e poi li sposta nell'archivio documenti.
+
+    private static final String CARTELLA_IN_ARRIVO = "in-arrivo";
+    private static final long MAX_BYTES_IN_ARRIVO = 25L * 1024 * 1024;
+    private static final long ETA_MAX_IN_ARRIVO_MS = 24L * 60 * 60 * 1000;
+
+    private final ExecutorService copiaExecutor = Executors.newSingleThreadExecutor();
+    private final AtomicInteger contatoreCopie = new AtomicInteger(0);
+    private final List<JSObject> pronti = new ArrayList<>();
+    private int inCorso = 0;
+
+    @Override
+    public void load() {
+        try {
+            copiaExecutor.execute(this::eliminaVecchiInArrivo);
+            if (getActivity() != null) raccogliCondivisi(getActivity().getIntent());
+        } catch (Exception ignorato) { /* nessun file condiviso da raccogliere */ }
+    }
+
+    @Override
+    protected void handleOnNewIntent(Intent intent) {
+        super.handleOnNewIntent(intent);
+        raccogliCondivisi(intent);
+    }
+
+    private List<Uri> urisDa(Intent intent) {
+        List<Uri> uris = new ArrayList<>();
+        String azione = intent.getAction();
+        if (Intent.ACTION_SEND.equals(azione)) {
+            Uri uri;
+            if (Build.VERSION.SDK_INT >= 33) {
+                uri = intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri.class);
+            } else {
+                uri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+            }
+            if (uri != null) uris.add(uri);
+        } else if (Intent.ACTION_SEND_MULTIPLE.equals(azione)) {
+            ArrayList<Uri> lista;
+            if (Build.VERSION.SDK_INT >= 33) {
+                lista = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri.class);
+            } else {
+                lista = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+            }
+            if (lista != null) uris.addAll(lista);
+        }
+        return uris;
+    }
+
+    private void raccogliCondivisi(Intent intent) {
+        try {
+            if (intent == null) return;
+            List<Uri> uris = urisDa(intent);
+            if (uris.isEmpty()) return;
+            // L'intent e' "consumato": se l'attivita' viene ricreata non va rielaborato.
+            intent.removeExtra(Intent.EXTRA_STREAM);
+            intent.setAction(Intent.ACTION_MAIN);
+            synchronized (pronti) { inCorso += uris.size(); }
+            for (Uri uri : uris) copiaExecutor.execute(() -> copiaInArrivo(uri));
+        } catch (Exception ignorato) { /* niente da raccogliere */ }
+    }
+
+    private String nomeDa(ContentResolver cr, Uri uri) {
+        String nome = null;
+        try (Cursor c = cr.query(uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+            if (c != null && c.moveToFirst()) nome = c.getString(0);
+        } catch (Exception ignorato) { /* si usa il nome di ripiego */ }
+        if (nome == null || nome.trim().isEmpty()) {
+            String ultimo = uri.getLastPathSegment();
+            nome = (ultimo == null || ultimo.isEmpty()) ? "documento" : ultimo;
+        }
+        nome = nome.replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]+", "_").trim();
+        if (nome.isEmpty()) nome = "documento";
+        if (nome.length() > 80) nome = nome.substring(nome.length() - 80);
+        return nome;
+    }
+
+    private void copiaInArrivo(Uri uri) {
+        JSObject voce = new JSObject();
+        String nome = "documento";
+        try {
+            ContentResolver cr = getContext().getContentResolver();
+            nome = nomeDa(cr, uri);
+            String mime = cr.getType(uri);
+            File cartella = new File(getContext().getFilesDir(), CARTELLA_IN_ARRIVO);
+            if (!cartella.exists() && !cartella.mkdirs()) throw new Exception("cartella temporanea non creata");
+            String nomeFile = System.currentTimeMillis() + "-" + contatoreCopie.incrementAndGet() + "-" + nome;
+            File dest = new File(cartella, nomeFile);
+            long totale = 0;
+            try (InputStream in = cr.openInputStream(uri); OutputStream out = new FileOutputStream(dest)) {
+                if (in == null) throw new Exception("file non leggibile");
+                byte[] buf = new byte[64 * 1024];
+                int n;
+                while ((n = in.read(buf)) > 0) {
+                    totale += n;
+                    if (totale > MAX_BYTES_IN_ARRIVO) throw new Exception("File troppo grande (massimo 25 MB)");
+                    out.write(buf, 0, n);
+                }
+            } catch (Exception e) {
+                dest.delete();
+                throw e;
+            }
+            voce.put("nome", nome);
+            voce.put("mime", mime == null ? "" : mime);
+            voce.put("size", totale);
+            voce.put("path", CARTELLA_IN_ARRIVO + "/" + nomeFile);
+        } catch (Exception e) {
+            voce = new JSObject();
+            voce.put("nome", nome);
+            voce.put("errore", e.getMessage() == null ? "copia non riuscita" : e.getMessage());
+        }
+        synchronized (pronti) {
+            pronti.add(voce);
+            inCorso--;
+        }
+    }
+
+    private void eliminaVecchiInArrivo() {
+        try {
+            File cartella = new File(getContext().getFilesDir(), CARTELLA_IN_ARRIVO);
+            File[] files = cartella.listFiles();
+            if (files == null) return;
+            long limite = System.currentTimeMillis() - ETA_MAX_IN_ARRIVO_MS;
+            for (File f : files) if (f.isFile() && f.lastModified() < limite) f.delete();
+        } catch (Exception ignorato) { /* pulizia non essenziale */ }
+    }
+
+    /** Ritorna i file ricevuti da Condividi non ancora letti: { items: [...], inCorso: bool }. */
+    @PluginMethod
+    public void prendiCondivisi(PluginCall call) {
+        JSArray items = new JSArray();
+        boolean incorso;
+        synchronized (pronti) {
+            for (JSObject o : pronti) items.put(o);
+            pronti.clear();
+            incorso = inCorso > 0;
+        }
+        JSObject ret = new JSObject();
+        ret.put("items", items);
+        ret.put("inCorso", incorso);
+        call.resolve(ret);
     }
 }
