@@ -179,7 +179,22 @@ export async function leggiFotoQuartine(file, onProgress){
   try{
     data = await leggiConMotore("tesseract", file, onProgress);
   }catch(e){
-    return { ok:false, motivo:"Impossibile caricare il modulo di lettura delle foto (problema di connessione). Riprova o usa il PDF.", entries:[], avvisi:[] };
+    try{
+      data = await leggiConMotore("paddle", file, onProgress);
+    }catch(ePaddle){
+      return { ok:false, motivo:"Impossibile caricare i moduli OCR delle foto (problema di connessione). Riprova o usa il PDF.", entries:[], avvisi:[] };
+    }
+  }
+  if(data){
+    try{
+      const paddle = await leggiConMotore("paddle", file, onProgress);
+      data = {
+        text: [data.text || "", paddle.text || ""].filter(Boolean).join("\n"),
+        words: [...(data.words || []), ...(paddle.words || [])],
+      };
+    }catch(ePaddle){
+      // Paddle facoltativo: Tesseract resta sufficiente se il secondo motore non parte.
+    }
   }
   const parole = data.words || [];
   const items = parole.filter(w=>w.text && w.bbox)

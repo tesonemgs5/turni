@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, Fragment } from "react";
 import {
   NOMI_MESI_IT, cancellaRegistroImportProblemi, estraiJsonDaTesto, fmtDataIT,
   getContrastTextColor, leggiRegistroImportProblemi, normalizzaRigheImportGrezzo,
-  normalizzaTestoGrezzoTurni, oraInMinuti, registraProblemiImport, segnalaErroreSoloLog, leggiDettaglioImport, impostaDettaglioImport
+  normalizzaTestoGrezzoTurni, oraInMinuti, registraProblemiImport, registraAttivita, segnalaErroreSoloLog, leggiDettaglioImport, impostaDettaglioImport
 } from "./04-Rotazione";
 import { ConfermaEliminazione } from "./05-Comuni";
 import { leggiPdfCalendarioTurni } from "./14-pdf-turni";
@@ -652,13 +652,26 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
     try{
       data = await leggiConMotore("tesseract", file, onProgress);
     }catch(errTess){
-      // Tesseract scarica il modello linguistico italiano da un CDN esterno al
-      // primo uso; se la rete non lo raggiunge, l'errore arriva qui invece che
-      // come "zero parole lette" -> lo segnaliamo in modo esplicito e distinto.
       segnalaErroreSoloLog(errTess, "OCR Tesseract (download modello linguistico)");
-      const erroreRete = new Error("Impossibile caricare il modulo di lettura offline (problema di connessione). Riprova o usa l'AI (non operativa).");
-      erroreRete.isErroreRete = true;
-      throw erroreRete;
+      try{
+        data = await leggiConMotore("paddle", file, onProgress);
+      }catch(errPaddle){
+        segnalaErroreSoloLog(errPaddle, "OCR PaddleOCR (dopo Tesseract)");
+        const erroreRete = new Error("Impossibile caricare i moduli di lettura offline. Riprova o usa il PDF/JSON.");
+        erroreRete.isErroreRete = true;
+        throw erroreRete;
+      }
+    }
+    if(data){
+      try{
+        const datiPaddle = await leggiConMotore("paddle", file, onProgress);
+        data = {
+          text: [data.text || "", datiPaddle.text || ""].filter(Boolean).join("\n"),
+          words: [...(data.words || []), ...(datiPaddle.words || [])],
+        };
+      }catch(errPaddle){
+        segnalaErroreSoloLog(errPaddle, "OCR PaddleOCR automatico");
+      }
     }
     const testo = data.text || "";
     const parole = data.words || [];
@@ -749,6 +762,10 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
         const n = await onConfirm(risultato.righeElaborate);
         setNRigheAggiunte(n||0);
         registraProblemiImport(risultato.mancanti, []);
+        try { registraAttivita("Import foto", `OCR completato: ${n||0} aggiunti, ${risultato.mancanti?.length||0} non riconosciuti`, {
+          dettagli:[`Aggiunti: ${n||0}`, `Saltati: 0`, `Non riconosciuti: ${risultato.mancanti?.length||0}`],
+          origine:"Import foto", esito:"Completato"
+        }) } catch {}
         setRisultatoImportOcr({ mancanti: risultato.mancanti||[], sospetti: [] });
         setStep("riepilogo");
         return;
