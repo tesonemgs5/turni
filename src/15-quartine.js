@@ -10,6 +10,8 @@
 // viene ignorato: domeniche e festivi hanno lo stesso colore.
 // ═══════════════════════════════════════════════════════════════
 
+import { leggiConMotore } from "./35-ocr-motori.js";
+
 export const QUARTINE = ["I", "II", "III", "IV"];
 const PREFISSI_MESI = ["GEN","FEB","MAR","APR","MAG","GIU","LUG","AGO","SET","OTT","NOV","DIC"];
 const GIORNI_MAX = [31,29,31,30,31,30,31,31,30,31,30,31];
@@ -173,17 +175,13 @@ export async function leggiPdfQuartine(file){
 }
 
 export async function leggiFotoQuartine(file, onProgress){
-  const Tesseract = (await import("tesseract.js")).default;
   let data;
   try{
-    const r = await Tesseract.recognize(file, "ita", {
-      logger: m => { if(m.status==="recognizing text" && onProgress) onProgress(Math.round((m.progress||0)*100)); }
-    });
-    data = r.data;
+    data = await leggiConMotore("tesseract", file, onProgress);
   }catch(e){
     return { ok:false, motivo:"Impossibile caricare il modulo di lettura delle foto (problema di connessione). Riprova o usa il PDF.", entries:[], avvisi:[] };
   }
-  const parole = data.words || (data.lines||[]).flatMap(l=>l.words||[]);
+  const parole = data.words || [];
   const items = parole.filter(w=>w.text && w.bbox)
     .map(w=>({ s:w.text, x:(w.bbox.x0+w.bbox.x1)/2, y:(w.bbox.y0+w.bbox.y1)/2 }));
   const r = quartineDaItems(items);

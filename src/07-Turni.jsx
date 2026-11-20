@@ -7,6 +7,7 @@ import {
 import { ConfermaEliminazione } from "./05-Comuni";
 import { leggiPdfCalendarioTurni } from "./14-pdf-turni";
 import { leggiPdfCotStella } from "./30-pdf-cot";
+import { leggiConMotore } from "./35-ocr-motori";
 
 // ═══════════════════════════════════════════════════════════════
 // importTurni.jsx — Dialog di importazione turni: da JSON e da
@@ -647,13 +648,9 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
   // tipoTabella: "personale" (Primo/Secondo/Terzo/Notte, un modello per giorno)
   //           o "stella" (ricerca "stella" per fascia oraria, più modelli per giorno).
   async function tentativoOCR(file, onProgress, tipoTabella){
-    const Tesseract = (await import("tesseract.js")).default;
     let data;
     try{
-      const risultato = await Tesseract.recognize(file, "ita", {
-        logger: m => { if(m.status==="recognizing text" && onProgress) onProgress(Math.round((m.progress||0)*100)); }
-      });
-      data = risultato.data;
+      data = await leggiConMotore("tesseract", file, onProgress);
     }catch(errTess){
       // Tesseract scarica il modello linguistico italiano da un CDN esterno al
       // primo uso; se la rete non lo raggiunge, l'errore arriva qui invece che
@@ -718,9 +715,10 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
       }
     }
 
-    // data.words è disponibile nell'output di Tesseract.js v5+; se assente
-    // per qualche motivo, si tratta come se nessuna parola rilevante fosse
-    // stata trovata (forza il tentativo successivo, con messaggio corretto).
+    // Le parole con posizione arrivano dal modulo 35-ocr-motori.js (con
+    // tesseract.js 7 vanno chieste esplicitamente); se la lista fosse vuota si
+    // tratta come se nessuna parola rilevante fosse stata trovata (forza il
+    // tentativo successivo, con messaggio corretto).
     const { confidenza, nessunaParolaRilevante } = calcolaConfidenzaTurni(parole, radiciTrovate);
 
     return { righeElaborate, confidenza, nessunaParolaRilevante, mancanti };
