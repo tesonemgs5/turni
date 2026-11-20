@@ -18,7 +18,7 @@ const CHIAVE_MODO = "turnipm_aggiornamenti_modo"
 const MODI = ["ogni", "avvio", "manuale"]
 const CHIAVE_IGNORA = "turnipm_aggiornamenti_ignora"   // versione per cui non chiedere piu'
 let pluginUpdateNativo = null
-async function scaricaAggiornamentoPatch(tag) {
+async function scaricaAggiornamentoPatch(tag, usaPatch = true) {
   try {
     const C = typeof window !== "undefined" ? window.Capacitor : null
     if (!C || typeof C.isNativePlatform !== "function" || !C.isNativePlatform()) {
@@ -28,7 +28,17 @@ async function scaricaAggiornamentoPatch(tag) {
     const build = typeof __BUILD_NUM__ !== "undefined" ? String(__BUILD_NUM__) : ""
     if (!build) { window.location.href = APK_URL; return }
     const opzioni = { tag, build }
-    if (typeof C.nativePromise === "function") {
+    if (!usaPatch) {
+      if (typeof C.nativePromise === "function") {
+        await C.nativePromise("TurniUpdate", "scaricaEInstalla", opzioni)
+      } else {
+        if (!pluginUpdateNativo) {
+          const { registerPlugin } = await import("@capacitor/core")
+          pluginUpdateNativo = registerPlugin("TurniUpdate")
+        }
+        await pluginUpdateNativo.scaricaEInstalla(opzioni)
+      }
+    } else if (typeof C.nativePromise === "function") {
       await C.nativePromise("TurniUpdate", "scaricaPatchEInstalla", opzioni)
     } else {
       if (!pluginUpdateNativo) {
@@ -85,6 +95,12 @@ function piuNuova(a, b) { // true se a > b
   for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0)
   return false
 }
+function formatoByte(n) {
+  const v = Number(n || 0)
+  if (v >= 1024 * 1024) return `${(v / 1024 / 1024).toFixed(1)} MB`
+  if (v >= 1024) return `${Math.round(v / 1024)} KB`
+  return `${v} B`
+}
 
 // Le note della release contengono l'elenco delle novità (scritto dal workflow
 // da src/aggiornamenti.json), la riga «Build automatica...» e un marcatore interno.
@@ -132,8 +148,32 @@ export function controllaAggiornamenti({ forza = false, mostraSempre = false } =
       const numBuild = (String(dati.name || "").match(/#(\d+)/) || tag.match(/#(\d+)/) || [])[1]
       const versioneMostrata = numBuild ? `${versione}#${numBuild}` : versione
       if (versione && piuNuova(versione, corrente)) {
-        if (mostraPopup && (mostraSempre || versioneIgnorata() !== versioneMostrata)) mostraPopup({ versione: versioneMostrata, note: noteDaRelease(dati.body) })
-        return { esito: "nuova", versione: versioneMostrata }
+        let patchList = []
+        try {
+          const manifestAsset = (dati.assets || []).find(a => a.name === "patches.json")
+          if (manifestAsset) {
+            const mr = await fetch(manifestAsset.browser_download_url, { cache: "no-store" })
+            if (mr.ok) {
+              const manifest = await mr.json()
+              const installedBuild = Number((typeof __BUILD_NUM__ !== "undefined" ? __BUILD_NUM__ : 0) || 0)
+              let cursor = installedBuild
+              while (cursor < manifest.current.build) {
+                const edge = (manifest.patches || []).find(p => p.from === cursor)
+                if (!edge) break
+                const asset = (dati.assets || []).find(a => a.name === edge.asset)
+                patchList.push({
+                  from: edge.from, to: edge.to, asset: edge.asset,
+                  size: asset?.size || edge.size || 0,
+                })
+                cursor = edge.to
+              }
+            }
+          }
+        } catch {}
+        if (mostraPopup && (mostraSempre || versioneIgnorata() !== versioneMostrata)) mostraPopup({
+          versione: versioneMostrata, tag: String(dati.tag_name || ""), note: noteDaRelease(dati.body), patchList,
+        })
+        return { esito: "nuova", versione: versioneMostrata, patchList }
       }
       return { esito: "aggiornato", versione: versioneCompleta() || corrente }
     } catch {
@@ -149,6 +189,12 @@ export function controllaAggiornamenti({ forza = false, mostraSempre = false } =
 
 export default function AvvisoAggiornamento() {
   const [nuova, setNuova] = useState(null)
+  const [patchSelezionate, setPatchSelezionate] = useState([])
+
+  useEffect(() => {
+    if (!nuova) { setPatchSelezionate([]); return }
+    setPatchSelezionate((nuova.patchList || []).map((_, i) => i))
+  }, [nuova])
 
   useEffect(() => {
     if (!inApk()) return
@@ -194,11 +240,25 @@ export default function AvvisoAggiornamento() {
             </div>
           </div>
         ) : null}
+        {(nuova.patchList || []).length > 0 ? (
+          <div style={{textAlign:"left",marginBottom:18}}>
+            <div style={{fontSize:12,fontWeight:800,marginBottom:6}}>Patch da installare</div>
+            {(nuova.patchList || []).map((p, i) => (
+              <label key={p.asset} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 2px",
+                fontSize:12,color:"#cbd5e1",cursor:"pointer"}}>
+                <input type="checkbox" checked={patchSelezionate.includes(i)}
+                  onChange={e => setPatchSelezionate(v => e.target.checked ? [...v, i] : v.filter(n => n !== i))}/>
+                <span style={{flex:1}}>Build {p.from} → {p.to}</span>
+                <b style={{fontWeight:800}}>{formatoByte(p.size)}</b>
+              </label>
+            ))}
+          </div>
+        ) : null}
         <div style={{display:"flex",gap:10}}>
           <button onClick={() => setNuova(null)}
             style={{flex:1,background:"#334155",border:"none",borderRadius:10,color:"#e2e8f0",
               padding:"12px 0",fontWeight:700,fontSize:14}}>Dopo</button>
-          <button onClick={() => { scaricaAggiornamentoPatch(nuova.versione) }}
+          <button onClick={() => { scaricaAggiornamentoPatch(nuova.tag || nuova.versione, patchSelezionate.length > 0) }}
             style={{flex:1,background:"#3b82f6",border:"none",borderRadius:10,color:"#fff",
               padding:"12px 0",fontWeight:800,fontSize:14}}>Scarica ora</button>
         </div>

@@ -41,7 +41,7 @@ public class TurniUpdatePlugin extends Plugin {
     @PluginMethod
     public void scaricaEInstalla(PluginCall call) {
         String tag = call.getString("tag");
-        if (tag == null || !tag.matches("^v[0-9]+(\\.[0-9]+){2}$")) {
+        if (tag == null || tag.trim().isEmpty()) {
             call.reject("Tag della release non valido");
             return;
         }
@@ -149,7 +149,8 @@ public class TurniUpdatePlugin extends Plugin {
             });
         }
     private File scaricaApk(String tag) throws Exception {
-        URL url = new URL("https://github.com/tesonemgs5/turni/releases/download/" + tag + "/turni.apk");
+        String releaseTag = tag.replace("#", "%23");
+        URL url = new URL("https://github.com/tesonemgs5/turni/releases/download/" + releaseTag + "/turni.apk");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setConnectTimeout(15000);
         conn.setReadTimeout(30000);
@@ -335,7 +336,7 @@ public class TurniUpdatePlugin extends Plugin {
         }
         String tag = call.getString("tag");
         File apk = new File(getContext().getCacheDir(), "turni-update.apk");
-        if (tag == null || !tag.matches("^v[0-9]+(\\.[0-9]+){2}$") || !apk.isFile()) {
+        if (tag == null || tag.trim().isEmpty() || !apk.isFile()) {
             call.reject("APK scaricato non più disponibile; riprova il download");
             return;
         }
