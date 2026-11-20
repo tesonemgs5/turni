@@ -659,7 +659,7 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
       // primo uso; se la rete non lo raggiunge, l'errore arriva qui invece che
       // come "zero parole lette" -> lo segnaliamo in modo esplicito e distinto.
       segnalaErroreSoloLog(errTess, "OCR Tesseract (download modello linguistico)");
-      const erroreRete = new Error("Impossibile caricare il modulo di lettura offline (problema di connessione). Riprova o usa l'AI.");
+      const erroreRete = new Error("Impossibile caricare il modulo di lettura offline (problema di connessione). Riprova o usa l'AI (non operativa).");
       erroreRete.isErroreRete = true;
       throw erroreRete;
     }
@@ -861,14 +861,14 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
       }
 
       if(righeElaborate.length===0){
-        setErrore("Anche l'AI non è riuscita a riconoscere turni in questo file.");
+        setErrore("Anche l'AI (non operativa) non è riuscita a riconoscere turni in questo file.");
         setStep("upload");
         return;
       }
       await onConfirm(righeElaborate);
     }catch(err){
       segnalaErroreSoloLog(err, "OCR/interpretazione con AI (Gemini)");
-      setErrore("Errore durante la lettura con l'AI. Riprova.");
+      setErrore("Errore durante la lettura con l'AI (non operativa). Riprova.");
       setStep("upload");
     }
   }
@@ -1387,7 +1387,7 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
               <label style={{display:"block",marginTop:10,border:`2px dashed ${accent}`,borderRadius:12,
                 padding:"14px 16px",textAlign:"center",cursor:"pointer",color:"#1a1a1a",fontSize:13,fontWeight:700,
                 background:"#ffffff"}}>
-                🤖 Importa da PDF o foto
+                🤖 Importa da PDF o foto (AI non operativa)
                 <input type="file" accept="image/*,application/pdf" style={{display:"none"}}
                   onChange={e=>{ const f=e.target.files?.[0]; if(f){ pendingFile.current=f; setImgPreviewUrl(f.type.startsWith("image")?URL.createObjectURL(f):null); handleFileConGemini(f); } }}/>
               </label>
@@ -1469,7 +1469,7 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
                   {statoBackendOcr==="verificando" && "⏳ Controllo se il backend di verifica è raggiungibile…"}
                   {statoBackendOcr==="pronto" && "🟢 Backend di verifica pronto — risposta rapida attesa"}
                   {statoBackendOcr==="risveglio" && "🟡 Il backend era inattivo e si sta risvegliando — la verifica può impiegare fino a 1 minuto"}
-                  {statoBackendOcr==="assente" && "🔴 Backend di verifica non raggiungibile al momento — puoi comunque procedere solo con Gemini/Tesseract.js"}
+                  {statoBackendOcr==="assente" && "🔴 Backend di verifica non raggiungibile al momento — puoi comunque procedere solo con Gemini (non operativa)/Tesseract.js"}
                 </div>
 
                 <input type="file" accept="image/*"
@@ -1623,7 +1623,7 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
                 </div>
               )}
               <div style={{fontSize:13,color:"#1a1a1a",marginBottom:16,fontWeight:700}}>
-                Il file non è leggibile in locale. Vuoi provare con l'intelligenza artificiale (Gemini)?
+                Il file non è leggibile in locale. Vuoi provare con l'intelligenza artificiale (Gemini, non operativa)?
               </div>
               <div style={{display:"flex",gap:8}}>
                 <button onClick={()=>{ setStep("upload"); setErrore(""); }}
@@ -1634,7 +1634,7 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
                 <button onClick={()=>handleFileConGemini(pendingFile.current)}
                   style={{flex:1,background:accent,border:"none",borderRadius:10,
                     color:getContrastTextColor(accent),padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
-                  🤖 Sì, usa l'AI
+                  🤖 Sì, usa l'AI (non operativa)
                 </button>
               </div>
               <button onClick={()=>{ setErrore(""); setStep("incolla-json"); }}
@@ -1683,7 +1683,7 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
           {step==="gemini-ocr"&&(
             <div style={{textAlign:"center",padding:"40px 16px"}}>
               {imgPreviewUrl&&<img src={imgPreviewUrl} alt="" style={{maxWidth:"100%",maxHeight:140,borderRadius:8,marginBottom:16}}/>}
-              <div style={{fontSize:13,color:"#444444"}}>Lettura del file con l'AI in corso…</div>
+              <div style={{fontSize:13,color:"#444444"}}>Lettura del file con l'AI (non operativa) in corso…</div>
             </div>
           )}
         </div>
