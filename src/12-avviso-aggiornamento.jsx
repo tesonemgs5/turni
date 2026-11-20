@@ -17,6 +17,30 @@ const PAUSA_MIN_MS = 60 * 1000   // evita controlli doppi ravvicinati
 const CHIAVE_MODO = "turnipm_aggiornamenti_modo"
 const MODI = ["ogni", "avvio", "manuale"]
 const CHIAVE_IGNORA = "turnipm_aggiornamenti_ignora"   // versione per cui non chiedere piu'
+let pluginUpdateNativo = null
+async function scaricaAggiornamentoPatch(tag) {
+  try {
+    const C = typeof window !== "undefined" ? window.Capacitor : null
+    if (!C || typeof C.isNativePlatform !== "function" || !C.isNativePlatform()) {
+      window.location.href = APK_URL
+      return
+    }
+    const build = typeof __BUILD_NUM__ !== "undefined" ? String(__BUILD_NUM__) : ""
+    if (!build) { window.location.href = APK_URL; return }
+    const opzioni = { tag, build }
+    if (typeof C.nativePromise === "function") {
+      await C.nativePromise("TurniUpdate", "scaricaPatchEInstalla", opzioni)
+    } else {
+      if (!pluginUpdateNativo) {
+        const { registerPlugin } = await import("@capacitor/core")
+        pluginUpdateNativo = registerPlugin("TurniUpdate")
+      }
+      await pluginUpdateNativo.scaricaPatchEInstalla(opzioni)
+    }
+  } catch {
+    window.location.href = APK_URL
+  }
+}
 function versioneIgnorata() {
   try { return localStorage.getItem(CHIAVE_IGNORA) || "" } catch { return "" }
 }
@@ -174,7 +198,7 @@ export default function AvvisoAggiornamento() {
           <button onClick={() => setNuova(null)}
             style={{flex:1,background:"#334155",border:"none",borderRadius:10,color:"#e2e8f0",
               padding:"12px 0",fontWeight:700,fontSize:14}}>Dopo</button>
-          <button onClick={() => { window.location.href = APK_URL }}
+          <button onClick={() => { scaricaAggiornamentoPatch(nuova.versione) }}
             style={{flex:1,background:"#3b82f6",border:"none",borderRadius:10,color:"#fff",
               padding:"12px 0",fontWeight:800,fontSize:14}}>Scarica ora</button>
         </div>

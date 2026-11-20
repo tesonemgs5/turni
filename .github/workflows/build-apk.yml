@@ -75,6 +75,7 @@ jobs:
           cp "$APK" turni.apk
           VERSION=$(grep -oP 'versionName "\K[^"]+' android/app/build.gradle)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "apk=$APK" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -96,7 +97,9 @@ jobs:
       # Serve solo src/aggiornamenti.json (novità mostrate nel pop-up dell'app)
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          sparse-checkout: src/aggiornamenti.json
+          sparse-checkout: |
+            src/aggiornamenti.json
+            tool/apk_patch.py
           sparse-checkout-cone-mode: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -107,6 +110,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${VERSION}#${APK_BUILD_NUM}"
+          mkdir -p patch-release
+          python3 tool/apk_patch.py plan \
+            --repo "${GH_REPO}" \
+            --tag latest \
+            --new release-artifacts/turni.apk \
+            --build "${APK_BUILD_NUM}" \
+            --out patch-release \
+            --slim true
           # Novità mostrate nel pop-up dell'app: voci di src/aggiornamenti.json più
           # nuove di quelle già presenti nell'ultima release (marcatore agg:N).
           PREV_BODY=$(gh release view --json body --jq .body 2>/dev/null || true)
@@ -122,7 +133,11 @@ jobs:
           # Fino a 3 tentativi: un errore momentaneo di GitHub non deve far fallire la build.
           for TENTATIVO in 1 2 3; do
             gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
-            if gh release create "$TAG" release-artifacts/turni.apk \
+            ASSET_ARGS=(release-artifacts/turni.apk patch-release/patches.json)
+            DECISION=$(cat patch-release/decision.json)
+            PATCH=$(printf '%s' "$DECISION" | jq -r '.patch // empty')
+            if [ -n "$PATCH" ]; then ASSET_ARGS+=(patch-release/"$PATCH"); fi
+            if gh release create "$TAG" "${ASSET_ARGS[@]}" \
               --target "$GITHUB_SHA" \
               --title "Turni $VERSION#$APK_BUILD_NUM" \
               --notes "$BODY" \
