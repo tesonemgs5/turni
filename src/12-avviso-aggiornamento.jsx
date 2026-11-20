@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import AGGIORNAMENTI_APP from "./aggiornamenti.json"
+import { registraAttivita } from "./04-Rotazione"
 
 // Aggiornamento dell'APK: pop-up "nuova versione disponibile".
 // Si sceglie in Impostazioni -> Aggiornamenti app quando controllare:
@@ -148,6 +149,9 @@ export function controllaAggiornamenti({ forza = false, mostraSempre = false } =
       const numBuild = (String(dati.name || "").match(/#(\d+)/) || tag.match(/#(\d+)/) || [])[1]
       const versioneMostrata = numBuild ? `${versione}#${numBuild}` : versione
       if (versione && piuNuova(versione, corrente)) {
+        const tipoAggiornamento = /update-kind:\s*patch/i.test(String(dati.body || "")) ? "patch" :
+          /update-kind:\s*full/i.test(String(dati.body || "")) ? "completa" : "aggiornamento"
+        const descrizione = noteDaRelease(dati.body)
         let patchList = []
         try {
           const manifestAsset = (dati.assets || []).find(a => a.name === "patches.json")
@@ -171,8 +175,18 @@ export function controllaAggiornamenti({ forza = false, mostraSempre = false } =
           }
         } catch {}
         if (mostraPopup && (mostraSempre || versioneIgnorata() !== versioneMostrata)) mostraPopup({
-          versione: versioneMostrata, tag: String(dati.tag_name || ""), note: noteDaRelease(dati.body), patchList,
+          versione: versioneMostrata, tag: String(dati.tag_name || ""), note: descrizione,
+          descrizione, tipoAggiornamento, patchList,
         })
+        try {
+          registraAttivita("Aggiornamenti app",
+            `Nuova versione ${versioneMostrata}: ${tipoAggiornamento}. ${descrizione || "Nessuna descrizione nella release."}`,
+            { dettagli: [
+              `Tipo: ${tipoAggiornamento}`,
+              `Descrizione: ${descrizione || "Nessuna descrizione"}`,
+              `Patch disponibili: ${patchList.length}`,
+            ], origine: "Aggiornamenti app", esito: "Nuova versione disponibile" })
+        } catch {}
         return { esito: "nuova", versione: versioneMostrata, patchList }
       }
       return { esito: "aggiornato", versione: versioneCompleta() || corrente }
@@ -229,6 +243,7 @@ export default function AvvisoAggiornamento() {
         <div style={{fontSize:17,fontWeight:800,marginBottom:8}}>Nuova versione disponibile</div>
         <div style={{fontSize:13,color:"#cbd5e1",lineHeight:1.5,marginBottom:18}}>
           Versione <b>{nuova.versione}</b>{corrente ? <> (installata: {corrente})</> : null}.<br/>
+          Aggiornamento <b>{nuova.tipoAggiornamento || "disponibile"}</b>.<br/>
           Vuoi scaricarla ora?
         </div>
         {nuova.note ? (

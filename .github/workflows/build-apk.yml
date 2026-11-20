@@ -129,7 +129,8 @@ jobs:
             | (if length == 0 then .[:0] else . end)
             | .[] | "• \(.titolo)\n" + ((.righe // []) | map("   – " + .) | join("\n")) + "\n"
           ' src/aggiornamenti.json)
-          BODY=$(printf '%s\n\nBuild automatica dal commit %s\n<!-- agg:%s -->' "$NOTE" "${GITHUB_SHA::7}" "$MAX_N")
+          KIND=$(jq -r 'if (.patch // "") != "" then "patch" else "full" end' patch-release/decision.json)
+          BODY=$(printf '%s\n\nTipo aggiornamento: %s\nBuild automatica dal commit %s\n<!-- update-kind:%s -->\n<!-- agg:%s -->' "$NOTE" "$KIND" "${GITHUB_SHA::7}" "$KIND" "$MAX_N")
           # Fino a 3 tentativi: un errore momentaneo di GitHub non deve far fallire la build.
           for TENTATIVO in 1 2 3; do
             gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
