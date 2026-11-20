@@ -219,7 +219,7 @@ export function QuartineSection({ T, accent, dark, store, salvaQuartine, fasceAu
                       </div>
                     );
                   })}
-                  <div style={{fontSize:10,color:T.sub,marginBottom:8}}>* = giorno infrasettimanale (festivo). Salvando, sostituisco i giorni già presenti per questo anno.</div>
+                  <div style={{fontSize:10,color:T.sub,marginBottom:8}}>* = giorno infrasettimanale (festivo). L'import aggiunge solo i giorni mancanti e non modifica quelli già presenti.</div>
                   {ris.avvisi.length>0 && (
                     <div style={{background:dark?"#3a2a05":"#fffbeb",border:"1px solid #f59e0b",borderRadius:8,padding:"8px 10px",marginBottom:10}}>
                       {ris.avvisi.map((a,i)=><div key={i} style={{fontSize:11,color:dark?"#fcd34d":"#92400e",lineHeight:1.45,marginBottom:2}}>⚠ {a}</div>)}

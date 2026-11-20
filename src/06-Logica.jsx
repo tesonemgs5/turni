@@ -6980,6 +6980,21 @@ const importsRecenti = useMemo(()=>{
         const invariato = up(esistente.note)===up(note) && up(esistente.collega)===up(collega) && up(esistente.auto)===up(auto)
           && up(esistente.protPagFine)===up(protPagFine||"") && up(esistente.protRecFine)===up(protRecFine||"");
         if(invariato){ nInvariati++; elencoInvariati.push({ data: dateKey, titolo: mod.titolo||"" }); continue; }
+        nInvariati++;
+        elencoInvariati.push({ data: dateKey, titolo: mod.titolo||"" });
+        sospetti.push({ data:dateKey, titolo:`Diverso da quello presente: import richiesto ${mod.titolo||r.titolo||""}`, oraInizio:mod.inizio||"", oraFine:mod.fine||"", motivo:"turno_diverso" });
+        continue;
+      }
+      // Qualunque altro turno esistente nello stesso giorno non viene mai
+      // modificato: la differenza viene solo segnalata nel riepilogo/Log.
+      if(eventiEsistenti.length){
+        const vecchio = eventiEsistenti.map(ev=>ev.modelloTitolo||ev.titolo||ev.label||"").filter(Boolean).join(" + ");
+        nInvariati++;
+        elencoInvariati.push({ data: dateKey, titolo: mod.titolo||"" });
+        sospetti.push({ data:dateKey, titolo:`Diverso da "${vecchio||"turno presente"}": richiesto ${mod.titolo||r.titolo||""}`, oraInizio:mod.inizio||"", oraFine:mod.fine||"", motivo:"turno_diverso" });
+        continue;
+      }
+/*
         const [yy,mm,dd] = dateKey.split("-").map(Number);
         const giornoSett = NOMI_GIORNI_IT[new Date(yy,mm-1,dd).getDay()];
         // Niente più alert() per ogni singola riga: si accoda il dettaglio
@@ -7001,7 +7016,8 @@ const importsRecenti = useMemo(()=>{
         });
         idsDaCancellare.push(esistente.id);
         nSostituiti++;
-      } else {
+*/
+      {
         nAggiunti++;
         elencoAggiunti.push({ data: dateKey, titolo: mod.titolo||"" });
       }
@@ -7155,20 +7171,18 @@ const importsRecenti = useMemo(()=>{
         dettaglio.invariati.push({ data:r.dateKey, titolo: mod.titolo||mod.label||"" });
         continue;
       }
-      // Turni personali: se quel giorno c'è già un ALTRO dei turni importati (es. Primo al
-      // posto di Secondo) il turno è cambiato: il vecchio viene sostituito dal nuovo.
-      const daSostituire = tipoTabella==="personale"
-        ? eventiEsistenti.filter(ev=>ev.modelloId && modelliInGioco.has(ev.modelloId)) : [];
-      if(daSostituire.length){
-        for(const ev of daSostituire) idsDaSostituire.push(ev.id);
+      // Qualunque turno gia' presente nello stesso giorno viene soltanto
+      // segnalato. Gli import mai modificano un turno esistente.
+      if(eventiEsistenti.length){
+        const vecchi = eventiEsistenti.map(ev=>nomeMod(ev.modelloId)||ev.titolo||ev.label||"?").join(" + ");
         dettaglio.modificati.push({
           data:r.dateKey,
-          vecchio: daSostituire.map(ev=>nomeMod(ev.modelloId)||ev.label||"?").join(" + "),
+          vecchio: vecchi,
           nuovo: mod.titolo||mod.label||"",
         });
-      } else {
-        dettaglio.aggiunti.push({ data:r.dateKey, titolo: mod.titolo||mod.label||"" });
+        continue;
       }
+      dettaglio.aggiunti.push({ data:r.dateKey, titolo: mod.titolo||mod.label||"" });
       const [y,m,d] = r.dateKey.split("-").map(Number);
       const dataEv = new Date(y, m-1, d);
       await inserisciEventoGenerico(mod, dataEv, null, nuoviEventiLocali, null, { importId, calIdOverride: calDest });

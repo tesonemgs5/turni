@@ -523,12 +523,6 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
   const [registroOcr, setRegistroOcr] = useState(null);
   const [confermaCancellaRegistroOcr, setConfermaCancellaRegistroOcr] = useState(false);
   const [importando, setImportando] = useState(false); // true durante l'elaborazione del JSON incollato, per disabilitare il pulsante e mostrare feedback visivo
-  // --- Verifica incrociata OCR (backend Render) sul JSON incollato ---
-  const [fotoVerifica, setFotoVerifica] = useState(null); // File della foto per il doppio controllo
-  const [verificandoOcr, setVerificandoOcr] = useState(false);
-  const [risultatoVerifica, setRisultatoVerifica] = useState(null); // {totale_controllati, numero_gruppi_rilevati, disaccordi[]} oppure null
-  const [erroreVerifica, setErroreVerifica] = useState("");
-  const [indiceGruppoVerifica, setIndiceGruppoVerifica] = useState(0); // quale fascia oraria (0-based) si sta controllando ora
   const pendingFile = useRef(null);
 
   // Radici testo-foto -> titolo modello reale. Basta trovare la radice (2-3 lettere)
@@ -1147,103 +1141,6 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
     return true;
   }
 
-  // URL del backend di doppio controllo OCR (Tesseract + confronto),
-  // ospitato separatamente su Render. Se in futuro cambia dominio o si
-  // sposta, va aggiornato solo qui.
-  const URL_BACKEND_OCR = "https://ocr-mqup.onrender.com";
-
-  // Stato del backend Render: "verificando" | "pronto" | "risveglio" | "assente"
-  // Serve solo per informare l'utente PRIMA che clicchi "Verifica con
-  // foto", così sa se aspettarsi una risposta rapida o un'attesa fino a
-  // un minuto (il piano gratuito di Render va in sleep se inattivo).
-  const [statoBackendOcr, setStatoBackendOcr] = useState("verificando");
-
-  useEffect(()=>{
-    if(step!=="incolla-json") return;
-    let annullato = false;
-    setStatoBackendOcr("verificando");
-
-    // Primo tentativo: se risponde entro ~4 secondi, il backend era già
-    // sveglio. Se non risponde in tempo, mostriamo "risveglio in corso" e
-    // continuiamo ad aspettare la risposta reale (fino al timeout lungo),
-    // senza far ripartire una seconda richiesta.
-    const timerRisveglio = setTimeout(()=>{
-      if(!annullato) setStatoBackendOcr("risveglio");
-    }, 4000);
-
-    const controller = new AbortController();
-    const timeoutAssente = setTimeout(()=>controller.abort(), 70000); // 70s: oltre il tempo massimo plausibile di risveglio
-
-    fetch(URL_BACKEND_OCR+"/", { signal: controller.signal })
-      .then(resp=>{
-        if(annullato) return;
-        clearTimeout(timerRisveglio);
-        setStatoBackendOcr(resp.ok ? "pronto" : "assente");
-      })
-      .catch(()=>{
-        if(annullato) return;
-        clearTimeout(timerRisveglio);
-        setStatoBackendOcr("assente");
-      })
-      .finally(()=>clearTimeout(timeoutAssente));
-
-    return ()=>{ annullato=true; clearTimeout(timerRisveglio); clearTimeout(timeoutAssente); controller.abort(); };
-  }, [step]);
-
-  async function handleVerificaConFoto(){
-    if(verificandoOcr) return;
-    if(!fotoVerifica){
-      setErroreVerifica("Carica prima una foto della tabella turni.");
-      return;
-    }
-    let parsed;
-    try{
-      parsed = JSON.parse(estraiJsonDaTesto((testoJsonIncollato||"").trim()));
-    }catch(err){
-      setErroreVerifica("Il JSON incollato sopra non è valido: correggilo prima di verificare con la foto.");
-      return;
-    }
-    if(!Array.isArray(parsed)){
-      setErroreVerifica("La verifica con foto funziona solo con il formato JSON \"piatto\" (un array di {data, turno}), non con quello raggruppato per fascia.");
-      return;
-    }
-
-    setVerificandoOcr(true);
-    setErroreVerifica("");
-    setRisultatoVerifica(null);
-    try{
-      const formData = new FormData();
-      formData.append("foto", fotoVerifica);
-      formData.append("json_gemini", JSON.stringify(parsed));
-      formData.append("anno", String(year));
-      formData.append("mese", String(month+1)); // month è 0-based in JS, il backend vuole 1-12
-      formData.append("indice_gruppo_atteso", String(indiceGruppoVerifica));
-
-      // Nota: il backend Render (piano gratuito) va in sleep dopo un
-      // periodo di inattività — la prima chiamata dopo una pausa può
-      // impiegare 30-60 secondi in più per "svegliarsi". Non è un errore,
-      // solo un'attesa più lunga del solito.
-      const resp = await fetch(`${URL_BACKEND_OCR}/confronta`, {
-        method: "POST",
-        body: formData
-      });
-      if(!resp.ok){
-        const testoErrore = await resp.text().catch(()=>null);
-        throw new Error(testoErrore || `Il backend ha risposto con errore (${resp.status})`);
-      }
-      const risultato = await resp.json();
-      setRisultatoVerifica(risultato);
-    }catch(err){
-      segnalaErroreSoloLog(err, "Verifica OCR incrociata (backend Render)");
-      setErroreVerifica(
-        "Non sono riuscito a completare la verifica. Se il backend era inattivo da un po', "+
-        "potrebbe aver bisogno di 30-60 secondi per svegliarsi: riprova tra poco. "+
-        "Dettaglio tecnico: "+(err&&err.message?err.message:"errore sconosciuto")
-      );
-    }finally{
-      setVerificandoOcr(false);
-    }
-  }
 
 
   return (
@@ -1457,89 +1354,6 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
                 </button>
               </div>
 
-              {/* --- Doppio controllo OCR opzionale, prima dell'import --- */}
-              <div style={{marginTop:20,paddingTop:16,borderTop:`1px solid ${T.border}`}}>
-                <div style={{fontSize:12,color:"#444444",marginBottom:8,fontWeight:700}}>
-                  Verifica facoltativa: confronta questo JSON con una foto della tabella
-                </div>
-                <div style={{fontSize:11,color:"#444444",marginBottom:10}}>
-                  Carica la foto originale: un secondo motore (Tesseract, indipendente da Gemini)
-                  rilegge la tabella e segnala le celle dove non è d'accordo, da controllare a mano.
-                </div>
-
-                {/* Indicatore di stato del backend Render: informa l'utente
-                    se aspettarsi una risposta rapida o un risveglio lento,
-                    PRIMA che clicchi "Verifica con foto" */}
-                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10,
-                  fontSize:11,padding:"6px 10px",borderRadius:8,
-                  background:
-                    statoBackendOcr==="pronto" ? "#22c55e22" :
-                    statoBackendOcr==="risveglio" ? "#f59e0b22" :
-                    statoBackendOcr==="assente" ? "#ef444422" : T.s2,
-                  border:`1px solid ${
-                    statoBackendOcr==="pronto" ? "#22c55e" :
-                    statoBackendOcr==="risveglio" ? "#f59e0b" :
-                    statoBackendOcr==="assente" ? "#ef4444" : T.border
-                  }`}}>
-                  {statoBackendOcr==="verificando" && "⏳ Controllo se il backend di verifica è raggiungibile…"}
-                  {statoBackendOcr==="pronto" && "🟢 Backend di verifica pronto — risposta rapida attesa"}
-                  {statoBackendOcr==="risveglio" && "🟡 Il backend era inattivo e si sta risvegliando — la verifica può impiegare fino a 1 minuto"}
-                  {statoBackendOcr==="assente" && "🔴 Backend di verifica non raggiungibile al momento — puoi comunque procedere solo con Gemini (non operativa)/Tesseract.js"}
-                </div>
-
-                <input type="file" accept="image/*"
-                  onChange={e=>{ setFotoVerifica(e.target.files?.[0]||null); setRisultatoVerifica(null); setErroreVerifica(""); }}
-                  style={{fontSize:12,marginBottom:10,width:"100%"}}
-                />
-
-                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-                  <label style={{fontSize:12,color:"#444444"}}>Fascia oraria da controllare:</label>
-                  <input type="number" min={0} value={indiceGruppoVerifica}
-                    onChange={e=>setIndiceGruppoVerifica(Math.max(0, parseInt(e.target.value)||0))}
-                    style={{width:50,padding:"4px 6px",borderRadius:6,border:`1px solid ${T.border}`,
-                      background:T.s2,color:T.text,fontSize:12}}
-                  />
-                  <span style={{fontSize:11,color:"#444444"}}>(0 = prima fascia da sinistra, 1 = seconda, ecc.)</span>
-                </div>
-
-                {erroreVerifica&&(
-                  <div style={{background:"#ef444422",border:"1px solid #ef4444",borderRadius:8,
-                    padding:"8px 10px",fontSize:12,color:"#ef4444",marginBottom:10}}>
-                    {erroreVerifica}
-                  </div>
-                )}
-
-                <button onClick={handleVerificaConFoto}
-                  disabled={verificandoOcr||!fotoVerifica}
-                  style={{width:"100%",background:verificandoOcr?T.border:(fotoVerifica?T.s2:T.s2),
-                    border:`1px solid ${T.border}`,borderRadius:10,
-                    color:"#444444",padding:"10px 0",
-                    cursor:(fotoVerifica&&!verificandoOcr)?"pointer":"not-allowed",fontWeight:700,fontSize:12,marginBottom:10}}>
-                  {verificandoOcr?"⏳ Verifica in corso… (può richiedere fino a 1 minuto se il servizio era inattivo)":"🔍 Verifica con foto"}
-                </button>
-
-                {risultatoVerifica&&(
-                  <div style={{background:risultatoVerifica.disaccordi.length===0?"#22c55e22":"#f59e0b22",
-                    border:`1px solid ${risultatoVerifica.disaccordi.length===0?"#22c55e":"#f59e0b"}`,
-                    borderRadius:8,padding:"10px",fontSize:12}}>
-                    <div style={{fontWeight:700,marginBottom:6}}>
-                      {risultatoVerifica.disaccordi.length===0
-                        ? `✅ Nessun disaccordo su ${risultatoVerifica.totale_controllati} date controllate`
-                        : `⚠️ ${risultatoVerifica.disaccordi.length} disaccordo${risultatoVerifica.disaccordi.length===1?"":"i"} su ${risultatoVerifica.totale_controllati} date controllate`}
-                    </div>
-                    <div style={{fontSize:11,color:"#444444",marginBottom:8}}>
-                      Fasce orarie rilevate nella foto: {risultatoVerifica.numero_gruppi_rilevati}
-                    </div>
-                    {risultatoVerifica.disaccordi.map((d,i)=>(
-                      <div key={i} style={{marginBottom:6,paddingBottom:6,
-                        borderBottom:i<risultatoVerifica.disaccordi.length-1?`1px solid ${T.border}`:"none"}}>
-                        <div style={{fontWeight:700}}>{d.data}</div>
-                        <div style={{color:"#444444"}}>{d.dettaglio}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
             </div>
           )}
 
@@ -1571,7 +1385,7 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
                   <div style={{marginTop:12}}>
                     <ElencoGiorni titolo="⚠️ Giorni non riconosciuti" lista={d.errori} aperto/>
                     <ElencoGiorni titolo="✅ Giorni aggiunti" lista={d.aggiunti}/>
-                    <ElencoGiorni titolo="♻️ Giorni modificati (turno cambiato)" lista={d.modificati} aperto/>
+                    <ElencoGiorni titolo="⚠️ Giorni diversi (segnalati, non modificati)" lista={d.modificati} aperto/>
                     <ElencoGiorni titolo="⏸️ Giorni non modificati (già presenti)" lista={d.invariati}/>
                   </div>
                 );

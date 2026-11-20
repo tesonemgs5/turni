@@ -149,15 +149,13 @@ export function quartineDaItems(itemsGrezzi){
   return { ok:true, motivo:"", anno, entries, avvisi, metodo };
 }
 
-// Aggiorna le date di una quartina-config con un import: sostituisce l'anno letto
-// (e il gennaio dell'anno dopo, letto dalla stessa tabella), lascia gli altri anni.
+// Aggiunge le date lette senza cancellare o sostituire niente dell'anno già salvato.
 export function applicaImportQuartine(cfg, anno, entries){
   const date = { ...(cfg?.date||{}) };
-  for(const k of Object.keys(date)){
-    const [y,m] = k.split("-").map(Number);
-    if(y===anno || (y===anno+1 && m===1)) delete date[k];
+  for(const e of entries){
+    const key = chiaveData(anno, e.mese, e.giorno);
+    if(!(key in date)) date[key] = e.q;
   }
-  for(const e of entries) date[chiaveData(anno, e.mese, e.giorno)] = e.q;
   return { ...cfg, date };
 }
 
