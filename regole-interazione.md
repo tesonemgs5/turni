@@ -62,3 +62,10 @@ non volio messaggi lunghi
 ## 8. Regole invariabili del progetto
 
 Leggere sempre `REGOLE-INVARIABILI.md` (identità del modello = nome + tipo durata + inizio + fine). Non vanno mai modificate senza ordine esplicito dell'utente.
+
+## 9. Gemini non funziona
+
+Gemini al momento NON funziona: non e' stata attivata nessuna API perche' sono tutte a pagamento e l'utente non vuole attivarla.
+- Non proporre Gemini come soluzione, ripiego o funzione su cui contare.
+- Non includere Gemini nei piani, nei confronti o nei controlli incrociati.
+- Non ricordarlo all'utente: e' gia' stato detto piu' volte.

@@ -7,6 +7,7 @@ Calendario Turni aiuta chi lavora su turni a organizzare il proprio orario di la
 - Piu' calendari, modelli di turno e schemi di rotazione.
 - Eventi, report e impostazioni personali.
 - Backup e importazione dei turni da immagini o PDF.
+- La lettura dei turni con Gemini (AI) al momento non funziona: nessuna API attivata, perche' a pagamento. Restano la lettura locale con OCR (Tesseract) e l'importazione da JSON incollato.
 - Integrazione facoltativa con Google Sheets.
 - Web app installabile e build per Android e Windows.
 
@@ -42,7 +43,7 @@ Le procedure di rilascio Android e Windows sono documentate negli script e nel w
 - `usage_stats` salva `user_id`, `last_active` e `login_count`: sono dati di utilizzo collegati all'account, non anonimi. La funzione `get_app_stats()` restituisce conteggi aggregati all'amministratore configurato.
 - RLS non equivale a cifratura end-to-end. Il proprietario del progetto Supabase o un amministratore del database con accesso privilegiato puo' accedere ai dati. L'app non cifra i calendari in modo che solo i dispositivi dell'utente possano decifrarli.
 - La sessione di autenticazione Supabase e' conservata nel local storage del browser; i dati mantenuti sul dispositivo possono essere accessibili a chi ha accesso al dispositivo o al relativo profilo.
-- Quando si sceglie l'estrazione dei turni, l'immagine o il PDF selezionato viene inviato tramite l'API dell'app a Google Gemini per l'elaborazione.
+- Gemini al momento NON funziona: nessuna chiave API e' stata attivata, perche' i servizi sono a pagamento e non si intende attivarli. Se in futuro verra' attivato, l'immagine o il PDF selezionato verrebbe inviato tramite l'API dell'app a Google Gemini per l'elaborazione.
 - Se si configura la sincronizzazione con Google Sheets, i dati sincronizzati vengono inviati all'endpoint Apps Script configurato dall'utente.
 
 Queste note descrivono il comportamento tecnico attuale; non sostituiscono un'informativa privacy completa su titolare del servizio, basi giuridiche, conservazione e diritti degli utenti.
