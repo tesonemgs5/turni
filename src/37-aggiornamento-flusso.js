@@ -8,10 +8,13 @@ import {
 
 let plugin = null
 async function pluginUpdate() {
-  if (plugin) return plugin
+  if (plugin) return { P: plugin }
   const { registerPlugin } = await import("@capacitor/core")
   plugin = registerPlugin("TurniUpdate")
-  return plugin
+  // Il proxy del plugin NON va restituito da una funzione async: la Promise proverebbe a chiamare
+  // plugin.then() e Capacitor risponderebbe "TurniUpdate.then() is not implemented" (e il flusso
+  // resterebbe fermo). Per questo lo si incapsula in un oggetto normale.
+  return { P: plugin }
 }
 
 function conTempo(promessa, ms, messaggio) {
@@ -27,7 +30,7 @@ async function chiama(metodo, opzioni, msMax) {
   const C = typeof window !== "undefined" ? window.Capacitor : null
   const lancia = C && typeof C.nativePromise === "function"
     ? C.nativePromise("TurniUpdate", metodo, opzioni || {})
-    : pluginUpdate().then(P => P[metodo](opzioni || {}))
+    : pluginUpdate().then(({ P }) => P[metodo](opzioni || {}))
   return msMax ? conTempo(lancia, msMax, `Il telefono non risponde (${metodo})`) : lancia
 }
 
@@ -52,7 +55,7 @@ export async function eseguiAggiornamentoApp({ repo, buildInstallata, buildNuova
   // comunque l'elenco dei pezzi e la spunta a ogni pezzo finito).
   let ascolto = { remove: async () => {} }
   try {
-    const P = await conTempo(pluginUpdate(), 5000, "plugin non pronto")
+    const { P } = await conTempo(pluginUpdate(), 5000, "plugin non pronto")
     ascolto = await conTempo(P.addListener("avanzamentoAggiornamento", e => {
     const tot = passi.reduce((s, p) => s + p.size, 0)
     const prima = passi.slice(0, e.indice).reduce((s, p) => s + p.size, 0)

@@ -153,6 +153,7 @@ export default function AvvisoAggiornamento() {
   const [nuova, setNuova] = useState(null)
   const [download, setDownload] = useState(null)
   const ultimaInfo = useRef(null)
+  const annullato = useRef(false)   // dopo Annulla/Chiudi le risposte in ritardo non riaprono la finestra
 
   useEffect(() => {
     if (!inApk()) return
@@ -177,16 +178,21 @@ export default function AvvisoAggiornamento() {
 
   async function avvia(info) {
     ultimaInfo.current = info
+    annullato.current = false
     setNuova(null)
     setDownload({ fase: "preparazione", passi: [], fatti: 0, frazione: null, intestazione: null, errore: null })
     try {
       await eseguiAggiornamentoApp({
         repo: REPO, buildInstallata: info.buildInstallata, buildNuova: info.build,
-        onStato: x => setDownload(s => ({ ...(s || {}), ...x })),
+        onStato: x => { if (!annullato.current) setDownload(s => ({ ...(s || {}), ...x })) },
         scrivi: scriviLog,
       })
     } catch (e) {
       const m = String((e && (e.message || e.errorMessage)) || e || "errore sconosciuto")
+      if (annullato.current) {
+        scriviLog("annullato", "Aggiornamento annullato", "Annullato da te prima della fine del download.")
+        return
+      }
       if (/annullat/i.test(m)) {
         scriviLog("annullato", "Aggiornamento annullato", "Annullato da te prima della fine del download.")
         setDownload(null)
@@ -199,8 +205,8 @@ export default function AvvisoAggiornamento() {
 
   if (download) {
     return <DialogoDownload stato={download}
-      onAnnulla={() => { annullaAggiornamentoApp() }}
-      onChiudi={() => setDownload(null)}
+      onAnnulla={() => { annullato.current = true; setDownload(null); annullaAggiornamentoApp() }}
+      onChiudi={() => { annullato.current = true; setDownload(null) }}
       onRiprova={() => { if (ultimaInfo.current) avvia(ultimaInfo.current) }} />
   }
   if (!nuova) return null

@@ -3615,7 +3615,7 @@ export function useAppCore(session){
   // scarica sul proprio dispositivo. A differenza del backup su Supabase
   // (handleExportSupabase sotto), questo non fa nessuna chiamata di rete:
   // legge solo ciò che è già salvato sul dispositivo in quel momento.
-  async function handleEsportaBackupLocale(categorieSelezionate){
+  async function handleEsportaBackupLocale(categorieSelezionate, tutto = false){
     try {
       // categorieSelezionate: array di id (vedi CATEGORIE_BACKUP_LOCALE in
       // 04-Rotazione.jsx) scelto nell'interfaccia (02-Modelli.jsx). Se
@@ -3627,7 +3627,7 @@ export function useAppCore(session){
         Array.isArray(categorieSelezionate) && categorieSelezionate.length < CATEGORIE_BACKUP_LOCALE.length
           ? categorieSelezionate
           : null;
-      const backup = esportaBackupLocaleCompleto({ dataInizio: backupPeriodoDa, dataFine: backupPeriodoA, categorie: filtroCategorieDaPassare });
+      const backup = esportaBackupLocaleCompleto({ dataInizio: tutto ? "" : backupPeriodoDa, dataFine: tutto ? "" : backupPeriodoA, categorie: filtroCategorieDaPassare });
       const bollino = new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
       const esitoFile = await scaricaFileTesto(`turnipm_backup_locale_${bollino}.json`, JSON.stringify(backup, null, 2));
       if(!esitoFile.ok){ segnalaErrore(esitoFile.errore, "Backup locale (salvataggio file)"); return; }

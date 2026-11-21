@@ -2256,11 +2256,31 @@ export default function VistaModelli({ C }){
         <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
           Dati salvati su questo dispositivo, indipendenti da Supabase: statistiche, esportazione e ripristino da file.
         </div>
-        <button onClick={()=>setShowLocalDataModal(true)}
-          style={{width:"100%",background:"#7c3aed",border:"none",borderRadius:10,
-            color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
-          📱 Visualizza Dati Locali (Telefono)
-        </button>
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          <button onClick={()=>handleEsportaBackupLocale(null, true)}
+            style={{width:"100%",background:"#2563eb",border:"none",borderRadius:10,
+              color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
+            ⬇️ Esegui backup locale (tutto)
+          </button>
+          <label style={{width:"100%",boxSizing:"border-box",background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
+            color:T.text,padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12,textAlign:"center",display:"block"}}>
+            ⬆️ Importa backup da file
+            <input type="file" accept="application/json,.json" style={{display:"none"}}
+              onChange={e=>{ const file = e.target.files?.[0]; handleFileSelezionatoImportLocale(file); e.target.value = ""; }} />
+          </label>
+          <button onClick={()=>setShowLocalDataModal(true)}
+            style={{width:"100%",background:"#7c3aed",border:"none",borderRadius:10,
+              color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
+            📱 Visualizza Dati Locali (Telefono)
+          </button>
+          {esitoBackupLocale&&!showLocalDataModal&&(
+            <div style={{padding:"10px 12px",borderRadius:8,fontSize:12,fontWeight:700,
+              background: esitoBackupLocale.tipo==="ok" ? "rgba(16,185,129,0.12)" : "rgba(239,68,68,0.12)",
+              color: esitoBackupLocale.tipo==="ok" ? "#10b981" : "#ef4444"}}>
+              {esitoBackupLocale.tipo==="ok" ? "✅ " : "❌ "}{esitoBackupLocale.messaggio}
+            </div>
+          )}
+        </div>
       </SecCollapsible>
 
       {showLocalDataModal&&(()=>{

@@ -1,5 +1,15 @@
 [
   {
+    "n": 16,
+    "data": "2026-11-21",
+    "titolo": "Backup locale in Impostazioni e aggiornamento sbloccato",
+    "righe": [
+      "In Backup locale ci sono i tasti Esegui backup locale (tutto) e Importa backup da file.",
+      "Corretto l'errore TurniUpdate.then() che bloccava la finestra Preparazione.",
+      "Annulla chiude sempre la finestra dell'aggiornamento."
+    ]
+  },
+  {
     "n": 15,
     "data": "2026-11-21",
     "titolo": "Aggiornamento: niente più blocco su Preparazione",
