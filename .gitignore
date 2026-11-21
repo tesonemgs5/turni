@@ -21,3 +21,4 @@ __pycache__/
 build-auto.log
 .build-apk.lock
 _backup_prima_applica/
+public/icons/icon-512.png

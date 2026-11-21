@@ -23,4 +23,4 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run lint
-      - run: npm run build
+      # La compilazione della web app e' nel processo separato "Build Web" (build-web.yml).

@@ -1,0 +1,124 @@
+name: Build Windows
+
+# Processo separato dalla Build APK e dalla Build Web. Compila l'installatore Windows (Electron + NSIS)
+# e lo allega alla release dell'APK con lo stesso identificativo VERSIONE#BUILD (turni-windows.exe).
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: build-windows
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      actions: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      # Un push che non cambia il codice dell'app (solo .md, tool, workflow) non ricompila Windows:
+      # la versione resta quella dell'ultimo codice e l'installatore e' gia' quello giusto.
+      - name: Serve ricompilare?
+        id: serve
+        env:
+          PRIMA: ${{ github.event.before }}
+          EVENTO: ${{ github.event_name }}
+        run: |
+          SERVE=true
+          if [ "$EVENTO" = "push" ] && [ -n "$PRIMA" ] && ! echo "$PRIMA" | grep -qE '^0+$'; then
+            if git cat-file -e "$PRIMA^{commit}" 2>/dev/null; then
+              if ! git diff --name-only "$PRIMA" "$GITHUB_SHA" -- src public index.html package.json package-lock.json vite.config.js capacitor.config.ts android api electron vercel.json | grep -q .; then
+                SERVE=false
+              fi
+            fi
+          fi
+          echo "serve=$SERVE" >> "$GITHUB_OUTPUT"
+          if [ "$SERVE" = "false" ]; then echo "Nessun cambiamento di codice: Windows non viene ricompilato." >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - name: Identificativo (versione e numero build)
+        id: id
+        if: steps.serve.outputs.serve == 'true'
+        run: |
+          python tool/identificativo.py --attuale >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: steps.serve.outputs.serve == 'true'
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Crea .env per la build (solo nel cloud)
+        if: steps.serve.outputs.serve == 'true'
+        env:
+          SUPA_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPA_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          printf 'VITE_SUPABASE_URL=%s\nVITE_SUPABASE_ANON_KEY=%s\n' "$SUPA_URL" "$SUPA_KEY" > .env
+
+      - name: Installa dipendenze e icona PNG
+        if: steps.serve.outputs.serve == 'true'
+        run: |
+          npm ci
+          npm i --no-save sharp
+          node tool/icona_png.mjs
+
+      - name: Compila Windows (installatore NSIS)
+        if: steps.serve.outputs.serve == 'true'
+        env:
+          # Stesso "#" della Build APK e del sito: vite lo legge da qui.
+          APK_BUILD_NUM: ${{ steps.id.outputs.build }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: |
+          npm run electron:build -- --publish never
+          EXE=$(ls release/*.exe | head -1)
+          test -n "$EXE"
+          cp "$EXE" turni-windows.exe
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: steps.serve.outputs.serve == 'true'
+        with:
+          name: turni-windows-${{ steps.id.outputs.version }}-${{ steps.id.outputs.build }}
+          path: turni-windows.exe
+          if-no-files-found: error
+          retention-days: 7
+
+      # La release la crea la Build APK (tag VERSIONE#BUILD): qui si aspetta che compaia e si allega l'.exe.
+      - name: Allega l'installatore alla release
+        if: steps.serve.outputs.serve == 'true'
+        env:
+          VERSIONE: ${{ steps.id.outputs.version }}
+          BUILD: ${{ steps.id.outputs.build }}
+        run: |
+          TAG="${VERSIONE}#${BUILD}"
+          echo "## Build Windows — ${TAG}" >> "$GITHUB_STEP_SUMMARY"
+          TROVATO=""
+          for i in $(seq 1 90); do
+            if gh release view "$TAG" >/dev/null 2>&1; then TROVATO="$TAG"; break; fi
+            # Push senza codice nuovo: la release col numero esatto puo' non esistere piu', vale quella con la stessa versione.
+            ALTRO=$(gh release list --limit 30 --json tagName,createdAt --jq "map(select(.tagName | startswith(\"${VERSIONE}#\"))) | sort_by(.createdAt) | reverse | .[0].tagName // empty")
+            if [ -n "$ALTRO" ]; then TROVATO="$ALTRO"; break; fi
+            sleep 20
+          done
+          if [ -z "$TROVATO" ]; then
+            echo "::warning::Release ${TAG} non trovata: l'installatore resta negli artefatti di questa esecuzione."
+            echo "Release non trovata: .exe solo negli artefatti." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          gh release upload "$TROVATO" turni-windows.exe --clobber
+          echo "turni-windows.exe allegato alla release ${TROVATO}" >> "$GITHUB_STEP_SUMMARY"

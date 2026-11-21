@@ -1,0 +1,62 @@
+name: Build Web
+
+# Processo separato dalla Build APK e dalla Build Windows: compila la web app (lo stesso codice che Vercel
+# pubblica) con lo stesso identificativo VERSIONE#BUILD.
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: build-web
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Identificativo (versione e numero build)
+        id: id
+        run: python3 tool/identificativo.py --attuale >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Crea .env per la build (solo nel cloud)
+        env:
+          SUPA_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPA_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          printf 'VITE_SUPABASE_URL=%s\nVITE_SUPABASE_ANON_KEY=%s\n' "$SUPA_URL" "$SUPA_KEY" > .env
+
+      - run: npm ci
+
+      - name: Compila la web app
+        env:
+          # Stesso "#" della Build APK e del sito su Vercel.
+          APK_BUILD_NUM: ${{ steps.id.outputs.build }}
+        run: |
+          npm run build
+          echo "## Build Web — ${{ steps.id.outputs.id }}" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: turni-web-${{ steps.id.outputs.version }}-${{ steps.id.outputs.build }}
+          path: dist
+          if-no-files-found: error
+          retention-days: 3

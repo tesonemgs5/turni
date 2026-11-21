@@ -28,3 +28,4 @@ L'identificativo è la stringa che si vede in Impostazioni, per esempio `6.325.1
   `eval "$(python3 tool/identificativo.py)"` poi `GIT_COMMITTER_DATE="$DATA" git commit -m "$ID — descrizione"`.
 - A fine lavoro si scrive solo l'identificativo, dopo aver controllato su Actions che il `#` sia quello vero della build.
 - Un push che cambia solo file non di codice (`.md`, `tool/`) non cambia la versione, ma il `#` cresce: l'identificativo resta unico.
+- **Tre processi separati** partono a ogni push, ognuno con il suo workflow ma con lo stesso identificativo: **Build APK** (`build-apk.yml`), **Build Windows** (`build-windows.yml`, `turni-windows.exe` allegato alla release dell'APK) e **Build Web** (`build-web.yml`, la web app che pubblica anche Vercel). CI (`ci.yml`) fa solo test e lint. Windows e Web prendono il `#` dalla Build APK dello stesso codice (`tool/identificativo.py --attuale`), come fa il sito. Un push senza modifiche al codice non ricompila Windows.
