@@ -90,3 +90,17 @@ test("indirizzo del canale", () => {
   assert.equal(urlCanale("a/b", "patches.json"),
     "https://github.com/a/b/releases/download/canale-aggiornamenti/patches.json")
 })
+
+test("noteTraBuild: novita' di tutte le build saltate, la piu' recente per prima", async () => {
+  const { noteTraBuild, rigaTipoDaPiano } = await import("../src/36-aggiornamento-piano.js")
+  const voci = [
+    { build: 263, note: "• Vecchia" },
+    { build: 264, note: "• Aggiornamenti\n   – Finestre come DartPDF" },
+    { build: 265, note: "• Simulatore turni" },
+  ]
+  const r = noteTraBuild(voci, 263, 265)
+  assert.deepEqual(r, ["Build #265", "- Simulatore turni", "Build #264", "- Aggiornamenti", "   - Finestre come DartPDF"])
+  assert.deepEqual(noteTraBuild(voci, 264, 265), ["- Simulatore turni"])
+  assert.deepEqual(noteTraBuild(voci, 265, 265), [])
+  assert.equal(rigaTipoDaPiano({ usaBase: false, byte: 3.1 * 1024 * 1024 }), "Aggiornamento: patch, circa 3.1 MB")
+})

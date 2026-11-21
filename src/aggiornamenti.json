@@ -1,5 +1,15 @@
 [
   {
+    "n": 13,
+    "data": "2026-11-21",
+    "titolo": "Aggiornamenti: spiegazione completa ed elenco patch",
+    "righe": [
+      "Il popup mostra le novità di tutte le build tra la tua e la nuova, anche quelle saltate.",
+      "Elenco delle patch da scaricare con la dimensione di ognuna e il totale reale.",
+      "Nella finestra di download l'elenco dei pezzi compare sempre."
+    ]
+  },
+  {
     "n": 12,
     "data": "2026-11-21",
     "titolo": "Simulatore turni",

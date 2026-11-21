@@ -3,7 +3,7 @@
 // installatore Android. Il lavoro pesante lo fa il plugin nativo TurniUpdate; qui si
 // sceglie la strada e si racconta l'avanzamento alla finestra.
 import {
-  baseUrlCanale, urlCanale, pianificaAggiornamento, passiDaPiano, formatoMb,
+  baseUrlCanale, urlCanale, pianificaAggiornamento, passiDaPiano, formatoMb, noteTraBuild, rigaTipoDaPiano,
 } from "./36-aggiornamento-piano.js"
 
 let plugin = null
@@ -101,4 +101,31 @@ export async function eseguiAggiornamentoApp({ repo, buildInstallata, buildNuova
   } finally {
     try { await ascolto.remove() } catch { /* gia' rimosso */ }
   }
+}
+
+// Per il popup "nuova versione": elenco delle patch da scaricare (con MB) e novita' di tutte
+// le build tra quella installata e quella nuova. Ogni parte e' facoltativa: se manca, il popup
+// usa le note della release.
+export async function leggiDettagliAggiornamento({ repo, buildInstallata, buildNuova }) {
+  const fuori = { passi: [], rigaTipo: null, note: [] }
+  let P
+  try { P = await pluginUpdate() } catch { return fuori }
+  const leggi = async nome => {
+    const r = await Promise.race([
+      P.leggiTesto({ url: urlCanale(repo, nome) }),
+      new Promise((_, no) => setTimeout(() => no(new Error("tempo scaduto")), 8000)),
+    ])
+    return JSON.parse(r.testo)
+  }
+  try {
+    const piano = pianificaAggiornamento(await leggi("patches.json"), buildInstallata)
+    if (piano) {
+      fuori.passi = passiDaPiano(piano)
+      fuori.rigaTipo = rigaTipoDaPiano(piano)
+    }
+  } catch { /* elenco non disponibile */ }
+  try {
+    fuori.note = noteTraBuild(await leggi("note.json"), buildInstallata, buildNuova)
+  } catch { /* note per build non disponibili */ }
+  return fuori
 }

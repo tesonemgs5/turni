@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react"
 import AGGIORNAMENTI_APP from "./aggiornamenti.json"
 import { registraAttivita } from "./04-Rotazione"
 import { DialogoDisponibile, DialogoDownload } from "./13-aggiornamento-dialoghi"
-import { eseguiAggiornamentoApp, annullaAggiornamentoApp } from "./37-aggiornamento-flusso"
-import { leggiBodyRelease } from "./36-aggiornamento-piano"
+import { eseguiAggiornamentoApp, annullaAggiornamentoApp, leggiDettagliAggiornamento } from "./37-aggiornamento-flusso"
+import { leggiBodyRelease, formatoMb } from "./36-aggiornamento-piano"
 
 // Aggiornamento dell'APK: pop-up "nuova versione disponibile".
 // Si sceglie in Impostazioni -> Aggiornamenti app quando controllare:
@@ -121,16 +121,19 @@ export function controllaAggiornamenti({ forza = false, mostraSempre = false } =
         const lettura = leggiBodyRelease(dati.body)
         const buildInstallata = Number(typeof __BUILD_NUM__ !== "undefined" ? __BUILD_NUM__ : 0) || 0
         const buildNuova = Number(numBuild) || lettura.build || 0
+        const extra = inApk() ? await leggiDettagliAggiornamento({ repo: REPO, buildInstallata, buildNuova }) : { passi: [], rigaTipo: null, note: [] }
         const info = {
           versione: versioneMostrata, build: buildNuova, buildInstallata,
-          note: lettura.note, rigaTipo: lettura.rigaTipo || "Aggiornamento: completo",
+          note: extra.note.length ? extra.note : lettura.note,
+          rigaTipo: extra.rigaTipo || lettura.rigaTipo || "Aggiornamento: completo",
+          passi: extra.passi,
         }
         if (mostraPopup && (mostraSempre || versioneIgnorata() !== versioneMostrata)) mostraPopup(info)
         if (versioneLoggata !== versioneMostrata) {
           versioneLoggata = versioneMostrata
           scriviLog("nuova-versione", "Nuova versione disponibile",
             `#${buildNuova} (hai la #${buildInstallata}). ${info.rigaTipo}`,
-            ["Cosa cambia:", ...(lettura.note.length ? lettura.note : ["Nessuna descrizione nella release"]), info.rigaTipo])
+            ["Cosa cambia:", ...(info.note.length ? info.note : ["Nessuna descrizione nella release"]), info.rigaTipo, ...info.passi.map(p => `${p.etichetta}: ${formatoMb(p.size)} MB`)])
         }
         return { esito: "nuova", versione: versioneMostrata }
       }
@@ -314,7 +317,7 @@ export function ImpostazioniAggiornamenti({ T }) {
     <div>
       <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
         Scegli quando l'app controlla se c'e' una versione nuova. Se c'e', compare un pop-up con
-        "Scarica ora" oppure "Dopo". Versione installata: <b>{versioneCompleta() || "dev"}</b>
+        "Aggiorna ora" oppure "Più tardi". Versione installata: <b>{versioneCompleta() || "dev"}</b>
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>
         {OPZIONI.map(([v, titolo, sub]) => {

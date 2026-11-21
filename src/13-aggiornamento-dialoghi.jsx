@@ -43,6 +43,17 @@ export function DialogoDisponibile({ info, onPiuTardi, onSalta, onAggiorna }) {
     <Scheda>
       <div style={{ textAlign: "center", marginBottom: 16 }}><IconaAggiorna /></div>
       <div style={{ fontSize: 16, lineHeight: "24px", whiteSpace: "pre-wrap" }}>{testo}</div>
+      {info.passi && info.passi.length ? (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Da scaricare</div>
+          {info.passi.map((p, i) => (
+            <div key={p.asset + i} style={{ display: "flex", gap: 12, padding: "3px 0", fontSize: 16 }}>
+              <div style={{ flex: 1 }}>{p.etichetta}</div>
+              <div>{formatoMb(p.size)} MB</div>
+            </div>
+          ))}
+        </div>
+      ) : null}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8, marginTop: 28 }}>
         <button style={bTesto} onClick={onPiuTardi}>Più tardi</button>
         <button style={bTesto} onClick={onSalta}>Salta questa versione</button>
@@ -100,7 +111,7 @@ export function DialogoDownload({ stato, onAnnulla, onChiudi, onRiprova }) {
       <div style={{ fontSize: 24, lineHeight: "32px", marginBottom: 16 }}>Download dell’aggiornamento</div>
       {s.intestazione ? <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>{s.intestazione}</div> : null}
       <div style={{ fontSize: 16, lineHeight: "24px" }}>{etichettaStato(s)}</div>
-      {passi.length > 1 ? (
+      {passi.length > 0 ? (
         <div style={{ marginTop: 8, maxHeight: 240, overflowY: "auto" }}>
           {passi.map((p, i) => (
             <Riga key={p.asset + i} passo={p} fatto={finito || i < (s.fatti || 0)} corrente={!errore && i === (s.fatti || 0)} />

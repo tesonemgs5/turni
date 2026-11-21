@@ -97,3 +97,30 @@ export function leggiBodyRelease(body) {
   if (!rigaTipo && tipo) rigaTipo = tipo === "patch" ? "Aggiornamento: patch" : "Aggiornamento: completo"
   return { note, rigaTipo, tipo, build: mb ? Number(mb[1]) : null }
 }
+
+// Novita' di TUTTE le build tra quella installata e quella nuova (la piu' recente per prima),
+// lette da note.json del canale: cosi' chi salta una build vede anche cosa e' cambiato in quella.
+export function noteTraBuild(voci, buildInstallata, buildNuova) {
+  const da = Number(buildInstallata) || 0
+  const a = Number(buildNuova) || 0
+  const scelte = (Array.isArray(voci) ? voci : [])
+    .filter(v => Number(v.build) > da && Number(v.build) <= a && String(v.note || "").trim())
+    .sort((x, y) => Number(y.build) - Number(x.build))
+  const righe = []
+  for (const v of scelte) {
+    if (scelte.length > 1) righe.push(`Build #${v.build}`)
+    for (const r of String(v.note).split("\n")) {
+      if (!r.trim()) continue
+      righe.push(r.replace(/\s+$/, "").replace(/^(\s*)[\u2022]/, "$1-").replace(/^(\s*)\u2013/, "$1-"))
+    }
+  }
+  return righe
+}
+
+// Riga "Aggiornamento: ..." calcolata sul piano reale (tutte le patch da scaricare, non solo l'ultima).
+export function rigaTipoDaPiano(piano) {
+  const mb = formatoMb(piano.byte)
+  return piano.usaBase
+    ? `Aggiornamento: APK base e patch, circa ${mb} MB`
+    : `Aggiornamento: patch, circa ${mb} MB`
+}

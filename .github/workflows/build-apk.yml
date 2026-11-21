@@ -100,6 +100,7 @@ jobs:
           sparse-checkout: |
             src/aggiornamenti.json
             tool/apk_patch.py
+            tool/note_build.py
           sparse-checkout-cone-mode: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -174,6 +175,15 @@ jobs:
           if [ -z "$(printf '%s' "$NOTE" | tr -d '[:space:]')" ]; then
             SUBJECT=$(printf '%s' "$HEAD_MSG" | head -n 1 | sed -E 's/^[0-9]+[[:space:]]+//')
             NOTE="• ${SUBJECT:-Miglioramenti e correzioni}"
+          fi
+          # Novita' di ogni build nel canale (note.json): l'app mostra anche quelle delle build saltate.
+          printf '%s' "$NOTE" > note-testo.txt
+          SEMINA=""
+          gh release download "$CANALE" --pattern note.json --output note.json --clobber 2>/dev/null || { rm -f note.json; SEMINA="--semina"; }
+          if python3 tool/note_build.py --file note.json --build "${APK_BUILD_NUM}" --note-file note-testo.txt $SEMINA; then
+            gh release upload "$CANALE" note.json --clobber || echo "::warning::note.json non caricato"
+          else
+            echo "::warning::note.json non aggiornato"
           fi
           BODY=$(printf '%s\n\n%s\n<!-- update-kind:%s -->\n<!-- agg:%s -->\n<!-- app-build:%s -->\n<!-- commit:%s -->' \
             "$NOTE" "$KIND_LINE" "$KIND" "$MAX_N" "$APK_BUILD_NUM" "${GITHUB_SHA::7}")
