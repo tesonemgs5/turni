@@ -108,18 +108,60 @@ jobs:
       - name: Pubblica su Releases (tiene le ultime 2)
         env:
           GH_TOKEN: ${{ github.token }}
+          HEAD_MSG: ${{ github.event.head_commit.message }}
         run: |
           TAG="${VERSION}#${APK_BUILD_NUM}"
+          CANALE="canale-aggiornamenti"
           mkdir -p patch-release
-          python3 tool/apk_patch.py plan \
-            --repo "${GH_REPO}" \
-            --tag latest \
-            --new release-artifacts/turni.apk \
-            --build "${APK_BUILD_NUM}" \
-            --out patch-release \
-            --slim true
-          # Novità mostrate nel pop-up dell'app: voci di src/aggiornamenti.json più
-          # nuove di quelle già presenti nell'ultima release (marcatore agg:N).
+          # Canale fisso con l'APK base e le patch: l'app scarica da qui solo la differenza.
+          # E' una pre-release: non diventa mai "l'ultima versione" e non rientra nelle
+          # ultime 2 release da tenere (la pulizia piu' sotto lo salta).
+          gh release view "$CANALE" >/dev/null 2>&1 || gh release create "$CANALE" \
+            --title "Canale aggiornamenti (patch)" \
+            --notes "File usati dall'app per aggiornarsi scaricando poco: APK base e patch. Non e' una versione da installare a mano." \
+            --prerelease --latest=false
+          FORCE_FULL=false
+          case "$HEAD_MSG" in *"[completo]"*) FORCE_FULL=true ;; esac
+          if ! python3 tool/apk_patch.py plan \
+              --repo "${GH_REPO}" --tag "$CANALE" \
+              --new release-artifacts/turni.apk --build "${APK_BUILD_NUM}" \
+              --out patch-release --slim true --force-full "$FORCE_FULL"; then
+            rm -f patch-release/patches.json patch-release/patch-*.dpat
+            echo '{"full": true, "patch": null, "delete": [], "reason": "calcolo delle patch non riuscito"}' > patch-release/decision.json
+          fi
+          IS_FULL=$(jq -r .full patch-release/decision.json)
+          if [ -f patch-release/patches.json ]; then
+            # Prima la base (se nuova), poi l'elenco: l'elenco non punta mai a una base assente.
+            if [ "$IS_FULL" = "true" ]; then
+              gh release upload "$CANALE" release-artifacts/turni.apk --clobber
+            fi
+            UPLOAD=(patch-release/patches.json)
+            for F in patch-release/patch-*.dpat; do
+              if [ -f "$F" ]; then UPLOAD+=("$F"); fi
+            done
+            gh release upload "$CANALE" "${UPLOAD[@]}" --clobber
+            for NOME in $(jq -r '.delete[]' patch-release/decision.json); do
+              gh release delete-asset "$CANALE" "$NOME" --yes || true
+            done
+          fi
+          # Descrizione del tipo di aggiornamento, come in DartPDF.
+          APK_BYTES=$(stat -c%s release-artifacts/turni.apk)
+          if [ "$IS_FULL" = "true" ]; then
+            KIND=full
+            MOTIVO=$(jq -r '.reason // "serve l'"'"'APK intero"' patch-release/decision.json | sed \
+              -e "s/nessuna base precedente/non c'e' una versione precedente da cui partire/" \
+              -e "s/patch troppo grande/la patch sarebbe troppo grande/" \
+              -e "s/richiesto con \[completo\]/e' stato richiesto l'APK completo/" \
+              -e "s/catena di patch troppo lunga/la catena di patch e' troppo lunga/")
+            KIND_LINE="Aggiornamento: completo, circa $(( (APK_BYTES + 1048575) / 1048576 )) MB, perche' ${MOTIVO}"
+          else
+            KIND=patch
+            PATCH_FILE=$(jq -r .patch patch-release/decision.json)
+            PATCH_BYTES=$(stat -c%s "patch-release/$PATCH_FILE")
+            KIND_LINE="Aggiornamento: patch, circa $(( (PATCH_BYTES + 1048575) / 1048576 )) MB"
+          fi
+          # Novita' mostrate nel pop-up dell'app: voci di src/aggiornamenti.json piu'
+          # nuove di quelle gia' presenti nell'ultima release (marcatore agg:N).
           PREV_BODY=$(gh release view --json body --jq .body 2>/dev/null || true)
           PREV_N=$(printf '%s' "$PREV_BODY" | sed -n 's/.*<!-- agg:\([0-9][0-9]*\) -->.*/\1/p' | head -1)
           PREV_N=${PREV_N:-0}
@@ -129,16 +171,16 @@ jobs:
             | (if length == 0 then .[:0] else . end)
             | .[] | "• \(.titolo)\n" + ((.righe // []) | map("   – " + .) | join("\n")) + "\n"
           ' src/aggiornamenti.json)
-          KIND=$(jq -r 'if (.patch // "") != "" then "patch" else "full" end' patch-release/decision.json)
-          BODY=$(printf '%s\n\nTipo aggiornamento: %s\nBuild automatica dal commit %s\n<!-- update-kind:%s -->\n<!-- agg:%s -->' "$NOTE" "$KIND" "${GITHUB_SHA::7}" "$KIND" "$MAX_N")
+          if [ -z "$(printf '%s' "$NOTE" | tr -d '[:space:]')" ]; then
+            SUBJECT=$(printf '%s' "$HEAD_MSG" | head -n 1 | sed -E 's/^[0-9]+[[:space:]]+//')
+            NOTE="• ${SUBJECT:-Miglioramenti e correzioni}"
+          fi
+          BODY=$(printf '%s\n\n%s\n<!-- update-kind:%s -->\n<!-- agg:%s -->\n<!-- app-build:%s -->\n<!-- commit:%s -->' \
+            "$NOTE" "$KIND_LINE" "$KIND" "$MAX_N" "$APK_BUILD_NUM" "${GITHUB_SHA::7}")
           # Fino a 3 tentativi: un errore momentaneo di GitHub non deve far fallire la build.
           for TENTATIVO in 1 2 3; do
             gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
-            ASSET_ARGS=(release-artifacts/turni.apk patch-release/patches.json)
-            DECISION=$(cat patch-release/decision.json)
-            PATCH=$(printf '%s' "$DECISION" | jq -r '.patch // empty')
-            if [ -n "$PATCH" ]; then ASSET_ARGS+=(patch-release/"$PATCH"); fi
-            if gh release create "$TAG" "${ASSET_ARGS[@]}" \
+            if gh release create "$TAG" release-artifacts/turni.apk \
               --target "$GITHUB_SHA" \
               --title "Turni $VERSION#$APK_BUILD_NUM" \
               --notes "$BODY" \
@@ -153,7 +195,7 @@ jobs:
             sleep 15
           done
           gh release list --limit 100 --json tagName,createdAt \
-            --jq 'sort_by(.createdAt) | reverse | .[2:] | .[].tagName' \
+            --jq "map(select(.tagName != \"${CANALE}\")) | sort_by(.createdAt) | reverse | .[2:] | .[].tagName" \
           | while read -r OLD; do gh release delete "$OLD" --yes --cleanup-tag; done
       - name: Verifica canale aggiornamenti app
         env:
@@ -164,3 +206,8 @@ jobs:
           test "$LATEST" = "$TAG"
           gh release view "$TAG" --json assets \
             --jq '[.assets[].name] | index("turni.apk") != null' | grep -qx true
+          # Il canale delle patch deve essere alla build appena pubblicata (avviso, non blocca).
+          CUR=$(gh release download canale-aggiornamenti --pattern patches.json --output - 2>/dev/null | jq -r '.current.build' 2>/dev/null || true)
+          if [ "$CUR" != "$APK_BUILD_NUM" ]; then
+            echo "::warning::Canale patch alla build '${CUR:-?}' invece di ${APK_BUILD_NUM}: l'app scarichera' l'APK completo"
+          fi

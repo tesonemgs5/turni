@@ -1,5 +1,33 @@
 [
   {
+    "n": 11,
+    "data": "2026-11-21",
+    "titolo": "Aggiornamenti come in DartPDF",
+    "righe": [
+      "Scarichi solo la differenza (patch) invece dell'app intera, quando si può.",
+      "Il download va nella cache dell'app, non nella cartella Download del telefono.",
+      "Finestre identiche a DartPDF: elenco dei pezzi con dimensione e spunta quando sono scaricati.",
+      "Descrizione dell'aggiornamento nel popup e nel Log."
+    ]
+  },
+  {
+    "n": 10,
+    "data": "2026-11-20",
+    "titolo": "Import: nessuna sovrascrittura",
+    "righe": [
+      "Un turno già presente non viene modificato: si salta.",
+      "Tolto il controllo con il backend Render."
+    ]
+  },
+  {
+    "n": 9,
+    "data": "2026-11-20",
+    "titolo": "Foto: PaddleOCR dopo Tesseract",
+    "righe": [
+      "Dopo la lettura con Tesseract, sulle foto interviene PaddleOCR come secondo motore."
+    ]
+  },
+  {
     "n": 8,
     "data": "2026-11-14",
     "titolo": "Condividi un documento verso Turni",
