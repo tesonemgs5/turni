@@ -6,6 +6,11 @@ export function percentualeSim(n, totale) {
   return totale > 0 ? Math.round((n / totale) * 100) : 0
 }
 
+// Percentuale di 1° o 2° turno fuori dall'equilibrio: sotto il 40% o sopra il 60% (pallino rosso).
+export function pctFuoriRange(pct) {
+  return pct < 40 || pct > 60
+}
+
 export function SimulatoreTurni({ totale, primo, secondo, T, accent, onClose }) {
   const [tot, setTot] = useState(totale || 0)
   const [p, setP] = useState(primo || 0)
@@ -23,7 +28,7 @@ export function SimulatoreTurni({ totale, primo, secondo, T, accent, onClose }) 
     <div style={{ display: "flex", alignItems: "center", gap: 8, background: T.s2, borderRadius: 10, padding: "8px 10px" }}>
       <span style={{ flex: 1, fontSize: 13, fontWeight: 800, color: "#0f172a" }}>{etichetta}</span>
       {pct !== undefined && (
-        <span style={{ fontSize: 12, fontWeight: 700, color: "#0f172a", background: accent + "33", borderRadius: 6, padding: "2px 7px" }}>{pct}%</span>
+        <span style={{ fontSize: 12, fontWeight: 700, color: pctFuoriRange(pct) ? "#fff" : "#0f172a", background: pctFuoriRange(pct) ? "#ef4444" : accent + "33", borderRadius: 6, padding: "2px 7px" }}>{pct}%</span>
       )}
       <button style={btn} onClick={() => cambiaFn(-1)}>−</button>
       <span style={{ minWidth: 32, textAlign: "center", fontSize: 20, fontWeight: 900, color: "#0f172a" }}>{valore}</span>

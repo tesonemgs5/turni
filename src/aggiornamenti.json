@@ -1,5 +1,13 @@
 [
   {
+    "n": 18,
+    "data": "2026-11-21",
+    "titolo": "Percentuali turni in rosso",
+    "righe": [
+      "Nel report e nel simulatore la percentuale di 1° e 2° turno diventa rossa sotto il 40% o sopra il 60%."
+    ]
+  },
+  {
     "n": 17,
     "data": "2026-11-21",
     "titolo": "Backup locale automatico in cartella",

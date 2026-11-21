@@ -4,7 +4,9 @@ import { fasceIndennitaDi, pulsantiFasciaDi, periodiDi } from "./24-fasce-indenn
 import { ordineAttivo, minutiInizio } from "./21-ordine";
 import { impostaSelezioneModelliGruppo } from "./29-periodo-sottomenu";
 import { spiegaErrore } from "./31-spiega-errore";
-import { SimulatoreTurni } from "./38-simulatore-turni";
+import { SimulatoreTurni, pctFuoriRange } from "./38-simulatore-turni";
+// Pallino rosso: percentuale di 1° o 2° turno sotto il 40% o sopra il 60%.
+const pctRossa = f => (f.key === "primo" || f.key === "secondo") && pctFuoriRange(f.pct);
 
 // Ordina le voci di data.perModello:
 // in ordine A (alfabetico) per nome A-Z; in ordine B (orario) per orario d'inizio crescente.
@@ -466,7 +468,7 @@ export function FasceExpand({data, pct1, pct2, T, modelli, accent, cfg}){
               {f.label} {openFascia===f.key?"▲":"▼"}
             </span>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <span style={{fontSize:12,fontWeight:700,color:"#0f172a",background:f.color+"33",
+              <span style={{fontSize:12,fontWeight:700,color:pctRossa(f)?"#fff":"#0f172a",background:pctRossa(f)?"#ef4444":f.color+"33",
                 borderRadius:6,padding:"2px 7px"}}>{f.pct}%</span>
               <span style={{...NUM_REPORT,color:"#0f172a"}}>{f.count}</span>
             </div>
@@ -1292,7 +1294,7 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
                 border:`1px solid ${f.color}44`}}>
               <span style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>{f.label} {isOpen?"▲":"▼"}</span>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <span style={{fontSize:12,fontWeight:700,color:"#0f172a",background:f.color+"33",
+                <span style={{fontSize:12,fontWeight:700,color:pctRossa(f)?"#fff":"#0f172a",background:pctRossa(f)?"#ef4444":f.color+"33",
                   borderRadius:6,padding:"2px 7px"}}>{f.pct}%</span>
                 <span style={{...NUM_REPORT,color:"#0f172a"}}>{f.count}</span>
               </div>
