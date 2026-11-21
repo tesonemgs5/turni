@@ -1,5 +1,15 @@
 [
   {
+    "n": 15,
+    "data": "2026-11-21",
+    "titolo": "Aggiornamento: niente più blocco su Preparazione",
+    "righe": [
+      "Il download usa il canale diretto del telefono, come widget e file.",
+      "Se il telefono non risponde compare un errore chiaro con Riprova, invece della finestra ferma.",
+      "Sotto Preparazione si vede cosa sta facendo."
+    ]
+  },
+  {
     "n": 14,
     "data": "2026-11-21",
     "titolo": "Simulatore: totale automatico",

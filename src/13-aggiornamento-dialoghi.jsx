@@ -97,7 +97,7 @@ function etichettaStato(s) {
   if (s.fase === "installatore") return "Aggiornamento scaricato. Apertura del programma di installazione…"
   if (s.fase === "applico") return "Applico l’aggiornamento…"
   if (s.fase === "scarico" && typeof s.frazione === "number") return `Download… ${Math.round(s.frazione * 100)}%`
-  return "Preparazione…"
+  return s.dettaglio ? `Preparazione… ${s.dettaglio}` : "Preparazione…"
 }
 
 export function DialogoDownload({ stato, onAnnulla, onChiudi, onRiprova }) {
