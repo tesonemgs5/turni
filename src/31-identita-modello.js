@@ -1,5 +1,5 @@
 // ============================================================================
-// IDENTITA' DEL MODELLO — REGOLA INVARIABILE (vedi REGOLE-INVARIABILI.md)
+// IDENTITA' DEL MODELLO — REGOLA INVARIABILE (vedi note1977/note/turni/REGOLE-INVARIABILI.md)
 //
 // Un modello è identificato da: NOME + TIPO DURATA + ORARIO DI INIZIO + ORARIO DI FINE.
 //   - H24 e PERSONALIZZATO (anche senza orari) sono modelli DIVERSI, a parità di nome.

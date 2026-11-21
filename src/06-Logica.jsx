@@ -2757,7 +2757,7 @@ export function useAppCore(session){
   // Match volutamente RIGOROSO (stesso calendario, stesso testo, stessi
   // orari): meglio lasciare un evento orfano isolato che agganciarlo al
   // modello sbagliato.
-  // Identità modello = NOME + TIPO DURATA + INIZIO + FINE (REGOLE-INVARIABILI.md, src/31-identita-modello.js).
+  // Identità modello = NOME + TIPO DURATA + INIZIO + FINE (note1977/note/turni/REGOLE-INVARIABILI.md, src/31-identita-modello.js).
   // `extra`: { allDay, tempoEvento } per distinguere H24 / personalizzato / 6h15 / 6h30.
   function trovaModelloCorrispondente(calId, label, tIn, tOut, extra={}){
     return trovaModelloIdentita(modelli, {
