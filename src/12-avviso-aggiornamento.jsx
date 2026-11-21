@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react"
 import AGGIORNAMENTI_APP from "./aggiornamenti.json"
 import { registraAttivita } from "./04-Rotazione"
+import { DialogoDisponibile, DialogoDownload } from "./13-aggiornamento-dialoghi"
+import { eseguiAggiornamentoApp, annullaAggiornamentoApp } from "./37-aggiornamento-flusso"
+import { leggiBodyRelease } from "./36-aggiornamento-piano"
 
 // Aggiornamento dell'APK: pop-up "nuova versione disponibile".
 // Si sceglie in Impostazioni -> Aggiornamenti app quando controllare:
@@ -13,45 +16,18 @@ import { registraAttivita } from "./04-Rotazione"
 // "Dopo" chiude il pop-up; te lo ripropone al prossimo controllo.
 // Non fa nulla su web/PWA/Electron: tutto vale solo dentro l'APK.
 const REPO = "tesonemgs5/turni"
-const APK_URL = `https://github.com/${REPO}/releases/latest/download/turni.apk`
 const PAUSA_MIN_MS = 60 * 1000   // evita controlli doppi ravvicinati
 const CHIAVE_MODO = "turnipm_aggiornamenti_modo"
 const MODI = ["ogni", "avvio", "manuale"]
 const CHIAVE_IGNORA = "turnipm_aggiornamenti_ignora"   // versione per cui non chiedere piu'
-let pluginUpdateNativo = null
-async function scaricaAggiornamentoPatch(tag, usaPatch = true) {
+// Riga nel Log (una chiave per fase: le voci con la stessa chiave entro 8 s si fonderebbero).
+function scriviLog(chiave, titolo, testo, dettagli = []) {
   try {
-    const C = typeof window !== "undefined" ? window.Capacitor : null
-    if (!C || typeof C.isNativePlatform !== "function" || !C.isNativePlatform()) {
-      window.location.href = APK_URL
-      return
-    }
-    const build = typeof __BUILD_NUM__ !== "undefined" ? String(__BUILD_NUM__) : ""
-    if (!build) { window.location.href = APK_URL; return }
-    const opzioni = { tag, build }
-    if (!usaPatch) {
-      if (typeof C.nativePromise === "function") {
-        await C.nativePromise("TurniUpdate", "scaricaEInstalla", opzioni)
-      } else {
-        if (!pluginUpdateNativo) {
-          const { registerPlugin } = await import("@capacitor/core")
-          pluginUpdateNativo = registerPlugin("TurniUpdate")
-        }
-        await pluginUpdateNativo.scaricaEInstalla(opzioni)
-      }
-    } else if (typeof C.nativePromise === "function") {
-      await C.nativePromise("TurniUpdate", "scaricaPatchEInstalla", opzioni)
-    } else {
-      if (!pluginUpdateNativo) {
-        const { registerPlugin } = await import("@capacitor/core")
-        pluginUpdateNativo = registerPlugin("TurniUpdate")
-      }
-      await pluginUpdateNativo.scaricaPatchEInstalla(opzioni)
-    }
-  } catch {
-    window.location.href = APK_URL
-  }
+    registraAttivita("Aggiornamenti app", `${titolo}: ${testo}`,
+      { dettagli, origine: "Aggiornamenti app", esito: titolo, chiave: `Aggiornamenti app: ${chiave}` })
+  } catch { /* il Log non deve bloccare l'aggiornamento */ }
 }
+let versioneLoggata = ""   // la nuova versione si scrive nel Log una volta sola
 function versioneIgnorata() {
   try { return localStorage.getItem(CHIAVE_IGNORA) || "" } catch { return "" }
 }
@@ -96,13 +72,6 @@ function piuNuova(a, b) { // true se a > b
   for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0)
   return false
 }
-function formatoByte(n) {
-  const v = Number(n || 0)
-  if (v >= 1024 * 1024) return `${(v / 1024 / 1024).toFixed(1)} MB`
-  if (v >= 1024) return `${Math.round(v / 1024)} KB`
-  return `${v} B`
-}
-
 // Le note della release contengono l'elenco delle novità (scritto dal workflow
 // da src/aggiornamenti.json), la riga «Build automatica...» e un marcatore interno.
 function noteDaRelease(body) {
@@ -149,45 +118,21 @@ export function controllaAggiornamenti({ forza = false, mostraSempre = false } =
       const numBuild = (String(dati.name || "").match(/#(\d+)/) || tag.match(/#(\d+)/) || [])[1]
       const versioneMostrata = numBuild ? `${versione}#${numBuild}` : versione
       if (versione && piuNuova(versione, corrente)) {
-        const tipoAggiornamento = /update-kind:\s*patch/i.test(String(dati.body || "")) ? "patch" :
-          /update-kind:\s*full/i.test(String(dati.body || "")) ? "completa" : "aggiornamento"
-        const descrizione = noteDaRelease(dati.body)
-        let patchList = []
-        try {
-          const manifestAsset = (dati.assets || []).find(a => a.name === "patches.json")
-          if (manifestAsset) {
-            const mr = await fetch(manifestAsset.browser_download_url, { cache: "no-store" })
-            if (mr.ok) {
-              const manifest = await mr.json()
-              const installedBuild = Number((typeof __BUILD_NUM__ !== "undefined" ? __BUILD_NUM__ : 0) || 0)
-              let cursor = installedBuild
-              while (cursor < manifest.current.build) {
-                const edge = (manifest.patches || []).find(p => p.from === cursor)
-                if (!edge) break
-                const asset = (dati.assets || []).find(a => a.name === edge.asset)
-                patchList.push({
-                  from: edge.from, to: edge.to, asset: edge.asset,
-                  size: asset?.size || edge.size || 0,
-                })
-                cursor = edge.to
-              }
-            }
-          }
-        } catch {}
-        if (mostraPopup && (mostraSempre || versioneIgnorata() !== versioneMostrata)) mostraPopup({
-          versione: versioneMostrata, tag: String(dati.tag_name || ""), note: descrizione,
-          descrizione, tipoAggiornamento, patchList,
-        })
-        try {
-          registraAttivita("Aggiornamenti app",
-            `Nuova versione ${versioneMostrata}: ${tipoAggiornamento}. ${descrizione || "Nessuna descrizione nella release."}`,
-            { dettagli: [
-              `Tipo: ${tipoAggiornamento}`,
-              `Descrizione: ${descrizione || "Nessuna descrizione"}`,
-              `Patch disponibili: ${patchList.length}`,
-            ], origine: "Aggiornamenti app", esito: "Nuova versione disponibile" })
-        } catch {}
-        return { esito: "nuova", versione: versioneMostrata, patchList }
+        const lettura = leggiBodyRelease(dati.body)
+        const buildInstallata = Number(typeof __BUILD_NUM__ !== "undefined" ? __BUILD_NUM__ : 0) || 0
+        const buildNuova = Number(numBuild) || lettura.build || 0
+        const info = {
+          versione: versioneMostrata, build: buildNuova, buildInstallata,
+          note: lettura.note, rigaTipo: lettura.rigaTipo || "Aggiornamento: completo",
+        }
+        if (mostraPopup && (mostraSempre || versioneIgnorata() !== versioneMostrata)) mostraPopup(info)
+        if (versioneLoggata !== versioneMostrata) {
+          versioneLoggata = versioneMostrata
+          scriviLog("nuova-versione", "Nuova versione disponibile",
+            `#${buildNuova} (hai la #${buildInstallata}). ${info.rigaTipo}`,
+            ["Cosa cambia:", ...(lettura.note.length ? lettura.note : ["Nessuna descrizione nella release"]), info.rigaTipo])
+        }
+        return { esito: "nuova", versione: versioneMostrata }
       }
       return { esito: "aggiornato", versione: versioneCompleta() || corrente }
     } catch {
@@ -203,12 +148,8 @@ export function controllaAggiornamenti({ forza = false, mostraSempre = false } =
 
 export default function AvvisoAggiornamento() {
   const [nuova, setNuova] = useState(null)
-  const [patchSelezionate, setPatchSelezionate] = useState([])
-
-  useEffect(() => {
-    if (!nuova) { setPatchSelezionate([]); return }
-    setPatchSelezionate((nuova.patchList || []).map((_, i) => i))
-  }, [nuova])
+  const [download, setDownload] = useState(null)
+  const ultimaInfo = useRef(null)
 
   useEffect(() => {
     if (!inApk()) return
@@ -231,58 +172,39 @@ export default function AvvisoAggiornamento() {
     }
   }, [])
 
+  async function avvia(info) {
+    ultimaInfo.current = info
+    setNuova(null)
+    setDownload({ fase: "preparazione", passi: [], fatti: 0, frazione: null, intestazione: null, errore: null })
+    try {
+      await eseguiAggiornamentoApp({
+        repo: REPO, buildInstallata: info.buildInstallata, buildNuova: info.build,
+        onStato: x => setDownload(s => ({ ...(s || {}), ...x })),
+        scrivi: scriviLog,
+      })
+    } catch (e) {
+      const m = String((e && (e.message || e.errorMessage)) || e || "errore sconosciuto")
+      if (/annullat/i.test(m)) {
+        scriviLog("annullato", "Aggiornamento annullato", "Annullato da te prima della fine del download.")
+        setDownload(null)
+        return
+      }
+      scriviLog("errore", "Aggiornamento non riuscito", m)
+      setDownload(s => ({ ...(s || {}), fase: "errore", errore: m }))
+    }
+  }
+
+  if (download) {
+    return <DialogoDownload stato={download}
+      onAnnulla={() => { annullaAggiornamentoApp() }}
+      onChiudi={() => setDownload(null)}
+      onRiprova={() => { if (ultimaInfo.current) avvia(ultimaInfo.current) }} />
+  }
   if (!nuova) return null
-  const corrente = versioneCompleta() || ""
-  return (
-    <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.65)",
-      display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div style={{background:"#1e293b",border:"1px solid #3b82f6",borderRadius:16,color:"#f1f5f9",
-        width:"100%",maxWidth:360,padding:"22px 20px",textAlign:"center",
-        boxShadow:"0 10px 40px rgba(0,0,0,0.5)"}}>
-        <div style={{fontSize:34,marginBottom:6}}>🔔</div>
-        <div style={{fontSize:17,fontWeight:800,marginBottom:8}}>Nuova versione disponibile</div>
-        <div style={{fontSize:13,color:"#cbd5e1",lineHeight:1.5,marginBottom:18}}>
-          Versione <b>{nuova.versione}</b>{corrente ? <> (installata: {corrente})</> : null}.<br/>
-          Aggiornamento <b>{nuova.tipoAggiornamento || "disponibile"}</b>.<br/>
-          Vuoi scaricarla ora?
-        </div>
-        {nuova.note ? (
-          <div style={{textAlign:"left",marginBottom:18}}>
-            <div style={{fontSize:12,fontWeight:800,marginBottom:4}}>Cosa cambia</div>
-            <div style={{fontSize:12,color:"#cbd5e1",lineHeight:1.45,whiteSpace:"pre-wrap",
-              maxHeight:200,overflowY:"auto",background:"#0f172a",borderRadius:10,padding:"8px 10px"}}>
-              {nuova.note}
-            </div>
-          </div>
-        ) : null}
-        {(nuova.patchList || []).length > 0 ? (
-          <div style={{textAlign:"left",marginBottom:18}}>
-            <div style={{fontSize:12,fontWeight:800,marginBottom:6}}>Patch da installare</div>
-            {(nuova.patchList || []).map((p, i) => (
-              <label key={p.asset} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 2px",
-                fontSize:12,color:"#cbd5e1",cursor:"pointer"}}>
-                <input type="checkbox" checked={patchSelezionate.includes(i)}
-                  onChange={e => setPatchSelezionate(v => e.target.checked ? [...v, i] : v.filter(n => n !== i))}/>
-                <span style={{flex:1}}>Build {p.from} → {p.to}</span>
-                <b style={{fontWeight:800}}>{formatoByte(p.size)}</b>
-              </label>
-            ))}
-          </div>
-        ) : null}
-        <div style={{display:"flex",gap:10}}>
-          <button onClick={() => setNuova(null)}
-            style={{flex:1,background:"#334155",border:"none",borderRadius:10,color:"#e2e8f0",
-              padding:"12px 0",fontWeight:700,fontSize:14}}>Dopo</button>
-          <button onClick={() => { scaricaAggiornamentoPatch(nuova.tag || nuova.versione, patchSelezionate.length > 0) }}
-            style={{flex:1,background:"#3b82f6",border:"none",borderRadius:10,color:"#fff",
-              padding:"12px 0",fontWeight:800,fontSize:14}}>Scarica ora</button>
-        </div>
-        <button onClick={() => { ignoraVersione(nuova.versione); setNuova(null) }}
-          style={{width:"100%",marginTop:10,background:"none",border:"1px solid #475569",borderRadius:10,color:"#94a3b8",
-            padding:"10px 0",fontWeight:700,fontSize:12}}>Non chiedere più per questa versione</button>
-      </div>
-    </div>
-  )
+  return <DialogoDisponibile info={nuova}
+    onPiuTardi={() => setNuova(null)}
+    onSalta={() => { ignoraVersione(nuova.versione); setNuova(null) }}
+    onAggiorna={() => avvia(nuova)} />
 }
 
 // Contenuto della sezione "AGGIORNAMENTI APP" nelle Impostazioni

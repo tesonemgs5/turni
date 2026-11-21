@@ -148,6 +148,170 @@ public class TurniUpdatePlugin extends Plugin {
                 }
             });
         }
+    // ---- Aggiornamento guidato dall'app (finestre come in DartPDF) ------------------------------
+    // L'app sceglie i pezzi da scaricare (APK base e/o patch) e li passa qui: si scaricano nella
+    // cache dell'app (mai nella cartella Download del telefono), si applicano le patch e si apre
+    // l'installatore. L'avanzamento arriva all'app con l'evento "avanzamentoAggiornamento".
+    private static final String URL_RELEASE = "https://github.com/tesonemgs5/turni/releases/download/";
+    private volatile boolean aggiornamentoAnnullato = false;
+
+    @PluginMethod
+    public void leggiTesto(PluginCall call) {
+        final String url = call.getString("url");
+        if (url == null || !url.startsWith(URL_RELEASE)) {
+            call.reject("Indirizzo non valido");
+            return;
+        }
+        downloadExecutor.execute(() -> {
+            File tmp = new File(getContext().getCacheDir(), "turni-testo.tmp");
+            try {
+                scaricaAsset(url, tmp);
+                if (tmp.length() > 2L * 1024 * 1024) throw new Exception("file troppo grande");
+                String testo = new String(java.nio.file.Files.readAllBytes(tmp.toPath()), "UTF-8");
+                JSObject out = new JSObject();
+                out.put("testo", testo);
+                call.resolve(out);
+            } catch (Exception e) {
+                call.reject("Lettura non riuscita: " + e.getMessage());
+            } finally {
+                tmp.delete();
+            }
+        });
+    }
+
+    @PluginMethod
+    public void annullaAggiornamento(PluginCall call) {
+        aggiornamentoAnnullato = true;
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void eseguiAggiornamento(PluginCall call) {
+        final String baseUrl = call.getString("baseUrl");
+        final JSONArray passi = call.getArray("passi");
+        final String partenza = call.getString("partenza", "installata");
+        final String shaBase = call.getString("shaBase", "");
+        final String shaFinale = call.getString("shaFinale", "");
+        if (baseUrl == null || !baseUrl.startsWith(URL_RELEASE) || passi == null || passi.length() == 0
+                || shaFinale == null || shaFinale.isEmpty()) {
+            call.reject("Dati aggiornamento mancanti");
+            return;
+        }
+        aggiornamentoAnnullato = false;
+        downloadExecutor.execute(() -> {
+            File work = new File(getContext().getCacheDir(), "turni-patch");
+            try {
+                if (work.exists()) eliminaRicorsivo(work);
+                work.mkdirs();
+                File corrente = "base".equals(partenza)
+                        ? null : new File(getContext().getApplicationInfo().sourceDir);
+                final int n = passi.length();
+                for (int i = 0; i < n; i++) {
+                    JSONObject passo = passi.getJSONObject(i);
+                    String tipo = passo.getString("tipo");
+                    File scaricato = new File(work, "passo-" + i + ("base".equals(tipo) ? ".apk" : ".dpat"));
+                    scaricaConAvanzamento(URL_RELEASE_DI(baseUrl) + passo.getString("asset"), scaricato,
+                            i, n, passo.optLong("size", 0));
+                    if ("base".equals(tipo)) {
+                        eventoAvanzamento(i, n, "verifica", 0, 0);
+                        if (!shaBase.isEmpty() && !sha256(scaricato).equals(shaBase)) {
+                            throw new Exception("APK base non valido");
+                        }
+                        corrente = scaricato;
+                    } else {
+                        if (corrente == null) throw new Exception("APK di partenza non disponibile");
+                        eventoAvanzamento(i, n, "applico", 0, 0);
+                        String daSha = passo.optString("from_sha", "");
+                        if (!daSha.isEmpty() && !sha256(corrente).equals(daSha)) {
+                            throw new Exception("L'APK installato non coincide con quello della patch");
+                        }
+                        File uscita = new File(work, "passo-" + i + ".apk");
+                        applicaDpat(corrente, scaricato, uscita);
+                        String aSha = passo.optString("to_sha", "");
+                        if (!aSha.isEmpty() && !sha256(uscita).equals(aSha)) {
+                            throw new Exception("APK ricostruito non valido");
+                        }
+                        scaricato.delete();
+                        if (corrente.getParentFile() != null && corrente.getParentFile().equals(work)) {
+                            corrente.delete();
+                        }
+                        corrente = uscita;
+                    }
+                    if (aggiornamentoAnnullato) throw new Exception("Aggiornamento annullato");
+                }
+                if (corrente == null || !sha256(corrente).equals(shaFinale)) {
+                    throw new Exception("Impronta dell'APK finale non valida");
+                }
+                if (!apkValido(corrente)) throw new Exception("File APK non valido");
+                File apk = new File(getContext().getCacheDir(), "turni-update.apk");
+                if (apk.exists()) apk.delete();
+                if (!corrente.renameTo(apk)) {
+                    try (InputStream in = new FileInputStream(corrente);
+                         FileOutputStream out = new FileOutputStream(apk)) {
+                        copiaFlusso(in, out);
+                    }
+                }
+                eliminaRicorsivo(work);
+                eventoAvanzamento(n, n, "pronto", 0, 0);
+                getActivity().runOnUiThread(() -> avviaInstallazione(call, apk));
+            } catch (Exception e) {
+                eliminaRicorsivo(work);
+                String msg = e.getMessage();
+                call.reject(msg == null || msg.isEmpty() ? "Aggiornamento non riuscito" : msg);
+            }
+        });
+    }
+
+    private static String URL_RELEASE_DI(String baseUrl) {
+        return baseUrl.endsWith("/") ? baseUrl : baseUrl + "/";
+    }
+
+    private void eventoAvanzamento(int indice, int totale, String fase, long letti, long byteTotali) {
+        JSObject dati = new JSObject();
+        dati.put("indice", indice);
+        dati.put("totale", totale);
+        dati.put("fase", fase);
+        dati.put("byteLetti", letti);
+        dati.put("byteTotali", byteTotali);
+        notifyListeners("avanzamentoAggiornamento", dati);
+    }
+
+    private void scaricaConAvanzamento(String urlText, File destinazione, int indice, int totale,
+                                       long attesa) throws Exception {
+        HttpURLConnection conn = (HttpURLConnection) new URL(urlText).openConnection();
+        conn.setConnectTimeout(15000);
+        conn.setReadTimeout(30000);
+        conn.setInstanceFollowRedirects(true);
+        conn.setRequestProperty("User-Agent", "Turni-Android-Updater");
+        try {
+            if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) {
+                throw new Exception("Download non riuscito (HTTP " + conn.getResponseCode() + ")");
+            }
+            long byteTotali = conn.getContentLengthLong() > 0 ? conn.getContentLengthLong() : attesa;
+            long letti = 0;
+            long ultimoEvento = 0;
+            try (InputStream input = conn.getInputStream();
+                 FileOutputStream output = new FileOutputStream(destinazione)) {
+                byte[] buffer = new byte[32768];
+                int read;
+                while ((read = input.read(buffer)) != -1) {
+                    if (aggiornamentoAnnullato) throw new Exception("Aggiornamento annullato");
+                    output.write(buffer, 0, read);
+                    letti += read;
+                    long ora = System.currentTimeMillis();
+                    if (ora - ultimoEvento > 150) {
+                        ultimoEvento = ora;
+                        eventoAvanzamento(indice, totale, "scarico", letti, byteTotali);
+                    }
+                }
+                output.getFD().sync();
+            }
+            eventoAvanzamento(indice, totale, "scarico", letti, byteTotali);
+        } finally {
+            conn.disconnect();
+        }
+    }
+
     private File scaricaApk(String tag) throws Exception {
         String releaseTag = tag.replace("#", "%23");
         URL url = new URL("https://github.com/tesonemgs5/turni/releases/download/" + releaseTag + "/turni.apk");
@@ -334,9 +498,8 @@ public class TurniUpdatePlugin extends Plugin {
             call.reject("Autorizzazione Android per installare app non concessa");
             return;
         }
-        String tag = call.getString("tag");
         File apk = new File(getContext().getCacheDir(), "turni-update.apk");
-        if (tag == null || tag.trim().isEmpty() || !apk.isFile()) {
+        if (!apk.isFile()) {
             call.reject("APK scaricato non più disponibile; riprova il download");
             return;
         }
