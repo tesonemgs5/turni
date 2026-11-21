@@ -1,5 +1,14 @@
 [
   {
+    "n": 12,
+    "data": "2026-11-21",
+    "titolo": "Simulatore turni",
+    "righe": [
+      "Nel report TURNAZIONE, accanto al totale, c'è il tasto 🧮 che apre il simulatore.",
+      "Totale, 1° e 2° turno si cambiano con + e −, con la percentuale che si ricalcola."
+    ]
+  },
+  {
     "n": 11,
     "data": "2026-11-21",
     "titolo": "Aggiornamenti come in DartPDF",

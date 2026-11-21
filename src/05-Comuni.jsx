@@ -4,6 +4,7 @@ import { fasceIndennitaDi, pulsantiFasciaDi, periodiDi } from "./24-fasce-indenn
 import { ordineAttivo, minutiInizio } from "./21-ordine";
 import { impostaSelezioneModelliGruppo } from "./29-periodo-sottomenu";
 import { spiegaErrore } from "./31-spiega-errore";
+import { SimulatoreTurni } from "./38-simulatore-turni";
 
 // Ordina le voci di data.perModello:
 // in ordine A (alfabetico) per nome A-Z; in ordine B (orario) per orario d'inizio crescente.
@@ -1204,6 +1205,7 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
   const [perCollegaAperto, setPerCollegaAperto] = useState(()=>leggiAperto("turnipm_turnazione_percollega_aperto"));
   const alternaAperto = (k, corrente, setter)=>{ const n=!corrente; setter(n); try{ localStorage.setItem(k, n?"1":"0"); }catch(e){} };
   const [openGruppo, setOpenGruppo] = useState(null);
+  const [simAperto, setSimAperto] = useState(false);
   const pct1 = data.totale>0 ? Math.round(((data.primo||0)/data.totale)*100) : 0;
   const pct2 = data.totale>0 ? Math.round(((data.secondo||0)/data.totale)*100) : 0;
   const pctApp = data.totale>0 ? Math.round(((data.app||0)/data.totale)*100) : 0;
@@ -1267,8 +1269,13 @@ export function TurnazioneConfigCard({T, r, cfg, data, modelli, modelliOrdinati,
       <div style={{background:T.surface,borderRadius:10,padding:"10px 12px",
         display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <span style={{fontSize:12,color:"#0f172a",fontWeight:700}}>TOTALE TURNI</span>
-        <span style={{fontSize:20,fontWeight:900,color:T.text}}>{data.totale}</span>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:20,fontWeight:900,color:T.text}}>{data.totale}</span>
+          <button onClick={()=>setSimAperto(true)} title="Simulatore turni"
+            style={{background:accent,border:"none",borderRadius:8,color:getContrastTextColor(accent),padding:"4px 8px",cursor:"pointer",fontSize:14,fontWeight:800}}>🧮</button>
+        </div>
       </div>
+      {simAperto&&<SimulatoreTurni totale={data.totale} primo={data.primo||0} secondo={data.secondo||0} T={T} accent={accent} onClose={()=>setSimAperto(false)}/>}
 
       <div style={{display:"flex",justifyContent:"flex-end"}}>
         <PulsanteOrdineAB ordine={ordineLista} onCambia={setOrdineLista} T={T} accent={accent}/>
