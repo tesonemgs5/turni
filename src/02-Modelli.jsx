@@ -117,7 +117,7 @@ export default function VistaModelli({ C }){
   const [confermaEliminaCalId, setConfermaEliminaCalId] = useState(null);
   const [confermaEliminaEvento, setConfermaEliminaEvento] = useState(null); // {dKey, cId, id}
   const [confermaCancellaLogErrori, setConfermaCancellaLogErrori] = useState(false);
-  const [filtroLog, setFiltroLog] = useState("tutto"); // tutto | operazioni | errori | supabase
+  const [filtroLog, setFiltroLog] = useState("tutto"); // tutto | operazioni | salvataggi | errori | supabase
   // Categorie incluse nel backup locale (export): di default TUTTE attive,
   // così senza toccare nulla il comportamento resta "esporta tutto" come
   // prima dei checkbox — l'utente deve deselezionare esplicitamente per
@@ -1634,10 +1634,10 @@ export default function VistaModelli({ C }){
           </div>
         )}
 
-        <div style={{display:"flex",gap:6,marginBottom:8}}>
-          {[["tutto","Tutto"],["operazioni","Operazioni"],["errori","Errori"],["supabase","Supabase"]].map(([v,l])=>(
+        <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
+          {[["tutto","Tutto"],["operazioni","Operazioni"],["salvataggi","Salvataggi"],["errori","Errori"],["supabase","Supabase"]].map(([v,l])=>(
             <button key={v} onClick={()=>setFiltroLog(v)}
-              style={{flex:1,padding:"7px 4px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:11,
+              style={{flex:"1 1 auto",padding:"7px 8px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:11,
                 background:filtroLog===v?"#6366f1":T.s2,color:filtroLog===v?"#fff":T.sub,
                 border:`1px solid ${filtroLog===v?"#6366f1":T.border}`}}>{l}</button>
           ))}
@@ -1672,7 +1672,15 @@ export default function VistaModelli({ C }){
         ) : (
           <div style={{maxHeight:340,overflowY:"auto",background:T.s2,borderRadius:10,padding:10,marginBottom:12}}>
             {logErroriVisibile
-              .filter(v=>filtroLog==="tutto" || (filtroLog==="operazioni" ? v.tipo==="operazione" : filtroLog==="supabase" ? v.contesto==="Controllo Supabase" : (v.tipo!=="operazione" && v.tipo!=="controllo")))
+              .filter(v=>{
+                // Salvataggio = modifica salvata sul telefono (non gli aggiornamenti arrivati da Supabase).
+                const salv = v.tipo==="operazione" && v.origine!=="remoto" && (/^Salv/i.test(v.contesto||"") || String(v.chiave||"").includes("|"));
+                if(filtroLog==="tutto") return true;
+                if(filtroLog==="salvataggi") return salv;
+                if(filtroLog==="operazioni") return v.tipo==="operazione" && !salv;
+                if(filtroLog==="supabase") return v.contesto==="Controllo Supabase";
+                return v.tipo!=="operazione" && v.tipo!=="controllo";
+              })
               .slice().reverse().map((voce,i)=>{
                 const st = statoSupabaseVoce(voce);
                 const colSt = st ? (st.colore==="ok" ? "#10b981" : st.colore==="errore" ? "#ef4444" : "#f59e0b") : T.sub;

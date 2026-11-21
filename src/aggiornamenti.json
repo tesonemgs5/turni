@@ -1,5 +1,13 @@
 [
   {
+    "n": 19,
+    "data": "2026-11-21",
+    "titolo": "Log: filtro Salvataggi",
+    "righe": [
+      "Nel Log c'è il filtro Salvataggi, separato da Operazioni: mostra le modifiche salvate sul telefono."
+    ]
+  },
+  {
     "n": 18,
     "data": "2026-11-21",
     "titolo": "Percentuali turni in rosso",
