@@ -1,5 +1,14 @@
 [
   {
+    "n": 17,
+    "data": "2026-11-21",
+    "titolo": "Backup locale automatico in cartella",
+    "righe": [
+      "Esegui backup locale salva da solo nella cartella scelta (la scegli una volta sola).",
+      "Importa ultimo backup trova da solo il file più recente nella cartella e chiede conferma prima di importarlo."
+    ]
+  },
+  {
     "n": 16,
     "data": "2026-11-21",
     "titolo": "Backup locale in Impostazioni e aggiornamento sbloccato",

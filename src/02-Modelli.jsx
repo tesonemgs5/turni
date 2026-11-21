@@ -164,7 +164,7 @@ export default function VistaModelli({ C }){
     setBackupsList, showBackupsModal, setShowBackupsModal, showLocalDataModal, setShowLocalDataModal, syncing,
     esitoBackupLocale, setEsitoBackupLocale, confermaImportLocale, setConfermaImportLocale,
     backupPeriodoDa, setBackupPeriodoDa, backupPeriodoA, setBackupPeriodoA,
-    handleEsportaBackupLocale, handleFileSelezionatoImportLocale, confermaEsegueImportBackupLocale,
+    handleEsportaBackupLocale, handleFileSelezionatoImportLocale, handleImportaUltimoBackupCartella, confermaEsegueImportBackupLocale,
     setSyncing, nhD, setNhD, nhM, setNhM, nhY, setNhY, bgSyncing,
     setBgSyncing, dbError, setDbError, isWideScreen, setIsWideScreen, evtFontSize,
     dbErrorTimer, codaErrori, setCodaErrori, logErroriVisibile, setLogErroriVisibile, erroriSilenziatiVisibile,
@@ -2262,12 +2262,20 @@ export default function VistaModelli({ C }){
               color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
             ⬇️ Esegui backup locale (tutto)
           </button>
-          <label style={{width:"100%",boxSizing:"border-box",background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
-            color:T.text,padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12,textAlign:"center",display:"block"}}>
-            ⬆️ Importa backup da file
-            <input type="file" accept="application/json,.json" style={{display:"none"}}
-              onChange={e=>{ const file = e.target.files?.[0]; handleFileSelezionatoImportLocale(file); e.target.value = ""; }} />
-          </label>
+          {inApk() ? (
+            <button onClick={()=>handleImportaUltimoBackupCartella()}
+              style={{width:"100%",boxSizing:"border-box",background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
+                color:T.text,padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
+              ⬆️ Importa ultimo backup (dalla cartella)
+            </button>
+          ) : (
+            <label style={{width:"100%",boxSizing:"border-box",background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
+              color:T.text,padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12,textAlign:"center",display:"block"}}>
+              ⬆️ Importa backup da file
+              <input type="file" accept="application/json,.json" style={{display:"none"}}
+                onChange={e=>{ const file = e.target.files?.[0]; handleFileSelezionatoImportLocale(file); e.target.value = ""; }} />
+            </label>
+          )}
           <button onClick={()=>setShowLocalDataModal(true)}
             style={{width:"100%",background:"#7c3aed",border:"none",borderRadius:10,
               color:"#fff",padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>

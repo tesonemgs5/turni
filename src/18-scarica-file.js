@@ -57,6 +57,25 @@ export async function salvaInCartella(nome, testo) {
 export async function salvaConNome(nome, testo) {
   try { return await chiamaNativo("salvaConNome", { nome, dati: testo, mime: "application/json" }); } catch (e) { return esito(e); }
 }
+// Backup automatico: salva nella cartella scelta (la chiede solo la prima volta), senza altri dialoghi.
+export async function salvaBackupInCartella(nome, testo) {
+  try {
+    const info = await infoCartella();
+    if (!info || !info.presente) {
+      const s = await scegliCartella();
+      if (s && s.annullato) return { ok: true, annullato: true };
+      if (!s || s.ok === false) return { ok: false, errore: (s && s.errore) || "Cartella non utilizzabile." };
+    }
+    const r = await salvaInCartella(nome, testo);
+    if (r && r.ok === false) return { ok: false, errore: r.errore || "Salvataggio nella cartella non riuscito." };
+    return { ok: true, cartella: r && r.cartella };
+  } catch (e) { return esito(e); }
+}
+// Import automatico: l'ultimo file col prefisso nella cartella scelta ({ trovato, nome, testo, cartella } o { nessunaCartella }).
+export async function leggiUltimoBackupCartella(prefisso) {
+  try { return await chiamaNativo("leggiUltimoInCartella", { prefisso }); } catch (e) { return esito(e); }
+}
+
 export async function condividi(nome, testo) {
   try {
     const { Filesystem, Directory, Encoding } = await import("@capacitor/filesystem");

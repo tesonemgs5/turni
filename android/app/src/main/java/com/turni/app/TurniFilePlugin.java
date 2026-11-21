@@ -22,6 +22,7 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
@@ -203,6 +204,80 @@ public class TurniFilePlugin extends Plugin {
         } catch (Exception e) {
             call.reject("Salvataggio nella cartella non riuscito: " + e.getMessage());
         }
+    }
+
+
+    // -- Ultimo file nella cartella scelta (per l'import automatico dei backup) -----------------
+    /** Cerca nella cartella scelta il file piu' recente col prefisso dato (.json) e ne ritorna il testo:
+     *  { ok, trovato, nome, testo, cartella } oppure { ok:false, nessunaCartella:true }. */
+    @PluginMethod
+    public void leggiUltimoInCartella(PluginCall call) {
+        final Uri tree = cartellaValida();
+        if (tree == null) {
+            JSObject ret = new JSObject();
+            ret.put("ok", false);
+            ret.put("nessunaCartella", true);
+            call.resolve(ret);
+            return;
+        }
+        final String prefisso = call.getString("prefisso", "");
+        copiaExecutor.execute(() -> {
+            JSObject ret = new JSObject();
+            try {
+                ContentResolver cr = getContext().getContentResolver();
+                Uri figli = DocumentsContract.buildChildDocumentsUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree));
+                String migliorId = null;
+                String migliorNome = null;
+                long migliorData = -1;
+                try (Cursor c = cr.query(figli, new String[]{
+                        DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                        DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                        DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+                        DocumentsContract.Document.COLUMN_MIME_TYPE}, null, null, null)) {
+                    while (c != null && c.moveToNext()) {
+                        String id = c.getString(0);
+                        String nome = c.getString(1);
+                        long data = c.isNull(2) ? 0 : c.getLong(2);
+                        String mime = c.getString(3);
+                        if (nome == null || DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)) continue;
+                        if (!nome.startsWith(prefisso) || !nome.toLowerCase().endsWith(".json")) continue;
+                        // il piu' recente per data; a parita' il nome piu' grande (porta la data e l'ora)
+                        if (data > migliorData || (data == migliorData && migliorNome != null && nome.compareTo(migliorNome) > 0)) {
+                            migliorId = id;
+                            migliorNome = nome;
+                            migliorData = data;
+                        }
+                    }
+                }
+                ret.put("cartella", nomeCartella(tree));
+                if (migliorId == null) {
+                    ret.put("ok", true);
+                    ret.put("trovato", false);
+                    call.resolve(ret);
+                    return;
+                }
+                Uri file = DocumentsContract.buildDocumentUriUsingTree(tree, migliorId);
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                try (InputStream in = cr.openInputStream(file)) {
+                    if (in == null) throw new Exception("file non leggibile");
+                    byte[] buf = new byte[64 * 1024];
+                    int n;
+                    long totale = 0;
+                    while ((n = in.read(buf)) > 0) {
+                        totale += n;
+                        if (totale > 100L * 1024 * 1024) throw new Exception("file troppo grande");
+                        out.write(buf, 0, n);
+                    }
+                }
+                ret.put("ok", true);
+                ret.put("trovato", true);
+                ret.put("nome", migliorNome);
+                ret.put("testo", new String(out.toByteArray(), StandardCharsets.UTF_8));
+                call.resolve(ret);
+            } catch (Exception e) {
+                call.reject("Lettura dalla cartella non riuscita: " + e.getMessage());
+            }
+        });
     }
 
     // -- File ricevuti da "Condividi" (altre app -> Turni) ----------------------

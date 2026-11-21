@@ -8,7 +8,7 @@ import { impostaInclusioneModelloReport, statoInclusioneModelloReport } from "./
 import { meseCorrenteReport, statoInizialeMeseReport } from "./28-periodo-report";
 import { dataNelPeriodoReport, intervalloPersonalizzatoReport } from "./29-periodo-sottomenu";
 import { widgetDisponibile, inviaAlWidget, descriviStatoWidget } from "./17-widget";
-import { scaricaFileTesto } from "./18-scarica-file";
+import { scaricaFileTesto, inNativo, salvaBackupInCartella, leggiUltimoBackupCartella, scegliCartella } from "./18-scarica-file";
 import { trovaModelloIdentita, tempoDaEvento } from "./31-identita-modello";
 import { fasceIndennitaDi, pulsantiFasciaDi, minutiPerFasceEvento, tariffaOraria } from "./24-fasce-indennita";
 import { pulisciDocumenti, idEventiDaStore } from "./32-documenti";
@@ -3629,7 +3629,10 @@ export function useAppCore(session){
           : null;
       const backup = esportaBackupLocaleCompleto({ dataInizio: tutto ? "" : backupPeriodoDa, dataFine: tutto ? "" : backupPeriodoA, categorie: filtroCategorieDaPassare });
       const bollino = new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
-      const esitoFile = await scaricaFileTesto(`turnipm_backup_locale_${bollino}.json`, JSON.stringify(backup, null, 2));
+      const nomeBackup = `turnipm_backup_locale_${bollino}.json`;
+      const testoBackup = JSON.stringify(backup, null, 2);
+      // Tasto "Esegui backup locale (tutto)" nell'APK: salva da solo nella cartella scelta (chiesta una sola volta).
+      const esitoFile = (tutto && inNativo()) ? await salvaBackupInCartella(nomeBackup, testoBackup) : await scaricaFileTesto(nomeBackup, testoBackup);
       if(!esitoFile.ok){ segnalaErrore(esitoFile.errore, "Backup locale (salvataggio file)"); return; }
       if(esitoFile.annullato) return; // dialogo chiuso senza salvare
       // "_numeroChiavi" conta le CATEGORIE di dati in localStorage (cache
@@ -3665,6 +3668,7 @@ export function useAppCore(session){
         tipo = "errore";
         messaggio = `⚠️ Backup locale scaricato ma NON coincide con l'app. File: ${riga}. App: ${nellApp.E} eventi, ${nellApp.C} calendari, ${nellApp.M} modelli, ${nellApp.R} rotazioni.`;
       }
+      if(esitoFile.cartella) messaggio += ` Salvato in «${esitoFile.cartella}»: ${nomeBackup}.`;
       registraAttivita("Backup locale", messaggio, { chiave:"backup-locale", supabase:"n/a" });
       setEsitoBackupLocale({tipo, messaggio});
     } catch(e){
@@ -3696,6 +3700,38 @@ export function useAppCore(session){
     };
     reader.onerror = () => setEsitoBackupLocale({tipo:"errore", messaggio:"Impossibile leggere il file selezionato."});
     reader.readAsText(file);
+  }
+
+  // Import automatico (APK): trova da solo l'ultimo backup nella cartella scelta e lo tiene in attesa
+  // della stessa conferma esplicita dell'import da file.
+  async function handleImportaUltimoBackupCartella(){
+    setEsitoBackupLocale(null);
+    try {
+      const PREFISSO = "turnipm_backup_locale_";
+      let r = await leggiUltimoBackupCartella(PREFISSO);
+      if(r && r.nessunaCartella){
+        const s = await scegliCartella();
+        if(s && s.annullato) return;
+        if(!s || s.ok===false){ setEsitoBackupLocale({tipo:"errore", messaggio:(s&&s.errore)||"Cartella non utilizzabile."}); return; }
+        r = await leggiUltimoBackupCartella(PREFISSO);
+      }
+      if(!r || r.ok===false){ setEsitoBackupLocale({tipo:"errore", messaggio:(r&&r.errore)||"Lettura dalla cartella non riuscita."}); return; }
+      if(!r.trovato){
+        setEsitoBackupLocale({tipo:"errore", messaggio:`Nessun backup trovato nella cartella «${r.cartella||"scelta"}». Fai prima «Esegui backup locale».`});
+        return;
+      }
+      let backup;
+      try { backup = JSON.parse(r.testo); } catch(e){ backup = null; }
+      if(!backup || backup._tipo !== "turnipm_backup_locale" || !backup.localStorage){
+        setEsitoBackupLocale({tipo:"errore", messaggio:`Il file «${r.nome}» non è un backup locale valido di questa app.`});
+        return;
+      }
+      registraAttivita("Backup locale", `Trovato l'ultimo backup: ${r.nome} (cartella «${r.cartella||""}»).`, { chiave:"backup-locale-trovato", supabase:"n/a" });
+      setConfermaImportLocale(backup);
+    } catch(e){
+      segnalaErrore(e, "Importazione ultimo backup locale");
+      setEsitoBackupLocale({tipo:"errore", messaggio:"Errore durante la ricerca del backup: "+(e?.message||e)});
+    }
   }
 
   // Eseguita solo dopo la conferma esplicita dell'utente nel modale.
@@ -8740,6 +8776,7 @@ const importsRecenti = useMemo(()=>{
     handleRestoreBackup,
     handleEsportaBackupLocale,
     handleFileSelezionatoImportLocale,
+    handleImportaUltimoBackupCartella,
     confermaEsegueImportBackupLocale,
     handleLogout,
     eseguiNormalizzazione,
