@@ -1,5 +1,13 @@
 [
   {
+    "n": 14,
+    "data": "2026-11-21",
+    "titolo": "Simulatore: totale automatico",
+    "righe": [
+      "Cambiando 1° o 2° turno il totale diventa la somma dei due e le percentuali si ricalcolano."
+    ]
+  },
+  {
     "n": 13,
     "data": "2026-11-21",
     "titolo": "Aggiornamenti: spiegazione completa ed elenco patch",

@@ -11,20 +11,23 @@ export function SimulatoreTurni({ totale, primo, secondo, T, accent, onClose }) 
   const [p, setP] = useState(primo || 0)
   const [s, setS] = useState(secondo || 0)
   const cambia = (set, v, d) => set(Math.max(0, v + d))
+  // Il totale e' la somma automatica di 1° e 2° turno; il + e - sul totale resta per ritocchi a mano.
+  const cambiaPrimo = d => { const n = Math.max(0, p + d); setP(n); setTot(n + s) }
+  const cambiaSecondo = d => { const n = Math.max(0, s + d); setS(n); setTot(p + n) }
 
   const btn = {
     width: 40, height: 40, borderRadius: 10, border: "none", cursor: "pointer",
     background: accent, color: "#fff", fontSize: 22, fontWeight: 900, lineHeight: 1,
   }
-  const riga = (etichetta, valore, set, pct) => (
+  const riga = (etichetta, valore, cambiaFn, pct) => (
     <div style={{ display: "flex", alignItems: "center", gap: 8, background: T.s2, borderRadius: 10, padding: "8px 10px" }}>
       <span style={{ flex: 1, fontSize: 13, fontWeight: 800, color: "#0f172a" }}>{etichetta}</span>
       {pct !== undefined && (
         <span style={{ fontSize: 12, fontWeight: 700, color: "#0f172a", background: accent + "33", borderRadius: 6, padding: "2px 7px" }}>{pct}%</span>
       )}
-      <button style={btn} onClick={() => cambia(set, valore, -1)}>−</button>
+      <button style={btn} onClick={() => cambiaFn(-1)}>−</button>
       <span style={{ minWidth: 32, textAlign: "center", fontSize: 20, fontWeight: 900, color: "#0f172a" }}>{valore}</span>
-      <button style={btn} onClick={() => cambia(set, valore, 1)}>+</button>
+      <button style={btn} onClick={() => cambiaFn(1)}>+</button>
     </div>
   )
 
@@ -35,9 +38,9 @@ export function SimulatoreTurni({ totale, primo, secondo, T, accent, onClose }) 
           <span style={{ fontSize: 15, fontWeight: 900, color: "#0f172a" }}>SIMULATORE TURNI</span>
           <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#0f172a" }}>✕</button>
         </div>
-        {riga("TURNI TOTALI", tot, setTot)}
-        {riga("1° TURNO", p, setP, percentualeSim(p, tot))}
-        {riga("2° TURNO", s, setS, percentualeSim(s, tot))}
+        {riga("TURNI TOTALI", tot, d => cambia(setTot, tot, d))}
+        {riga("1° TURNO", p, cambiaPrimo, percentualeSim(p, tot))}
+        {riga("2° TURNO", s, cambiaSecondo, percentualeSim(s, tot))}
       </div>
     </div>
   )
