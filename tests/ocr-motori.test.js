@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { paroleDaBlocchi, leggiConMotore, MOTORI_OCR, righeDaDizionarioDictionary,
-  decodificaCTC, paroleDaRiga } from "../src/35-ocr-motori.js";
+  decodificaCTC, paroleDaRiga, sha256Hex, MODELLI_SHA256 } from "../src/35-ocr-motori.js";
 
 test("paroleDaBlocchi appiattisce blocks > paragraphs > lines > words", () => {
   const blocks = [
@@ -44,4 +44,17 @@ test("paroleDaRiga divide il testo mantenendo bbox e confidenza", () => {
   assert.deepEqual(words.map(w => w.text), ["Primo", "Secondo"]);
   assert.equal(words[0].confidence, 87);
   assert.equal(words[1].bbox.x1, 110);
+});
+
+test("sha256Hex calcola l'impronta SHA-256 corretta", async () => {
+  const buf = new TextEncoder().encode("abc");
+  assert.equal(await sha256Hex(buf), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+});
+
+test("i modelli bundled in public/ hanno l'impronta SHA-256 attesa", async () => {
+  const { readFile } = await import("node:fs/promises");
+  for(const [nome, atteso] of Object.entries(MODELLI_SHA256)){
+    const buf = await readFile(new URL(`../public/ocr/pp-ocrv5-mobile/${nome}`, import.meta.url));
+    assert.equal(await sha256Hex(buf), atteso, nome);
+  }
 });

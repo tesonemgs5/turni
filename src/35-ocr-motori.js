@@ -120,44 +120,78 @@ async function leggiTesseract(file, onProgress){
   }
 }
 
+// Impronta SHA-256 (esadecimale) di un file: serve a verificare che i modelli
+// non siano corrotti o alterati. Se il browser non la sa calcolare l'OCR Paddle
+// non parte (meglio un errore chiaro che un modello non verificato).
+export async function sha256Hex(buffer){
+  const sub = globalThis.crypto?.subtle;
+  if(!sub) throw new Error("Controllo SHA-256 non disponibile in questo ambiente: modelli OCR non verificabili.");
+  const digest = await sub.digest("SHA-256", buffer);
+  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Impronte ufficiali dei modelli PP-OCRv5 mobile (le stesse di dart-pdf, ocr_model.dart).
+export const MODELLI_SHA256 = {
+  "det.onnx": "d5de5df358366210d16419b9636a2fc1efa5d7a20688f38a7869ec7b1a4f4f7d",
+  "rec.onnx": "0030c6b05fbe29b07a93701503938d637efe7423325e2efb2bd7c8f220d40a8d",
+  "dict.txt": "d1979e9f794c464c0d2e0b70a7fe14dd978e9dc644c0e71f14158cdf8342af1b",
+};
+
+async function verificaSha(buffer, nome){
+  const atteso = MODELLI_SHA256[nome];
+  if(!atteso) throw new Error(`Modello OCR sconosciuto: ${nome}.`);
+  return (await sha256Hex(buffer)) === atteso;
+}
+
 async function fetchModello(url, onBytes){
+  const nome = url.split("/").pop();
   let cache = null;
   try{
     cache = await caches.open(PADDLE_CACHE);
     const hit = await cache.match(url);
     if(hit){
       const buffer = await hit.arrayBuffer();
-      onBytes?.(buffer.byteLength, buffer.byteLength);
-      return buffer;
+      // Copia in cache corrotta o vecchia: si scarta e si riscarica.
+      if(await verificaSha(buffer, nome)){
+        onBytes?.(buffer.byteLength, buffer.byteLength);
+        return buffer;
+      }
+      await cache.delete(url);
     }
-  }catch{
+  }catch(e){
+    if(e && /SHA-256/.test(e.message || "")) throw e;
     cache = null;
   }
   const response = await fetch(url);
   if(!response.ok) throw new Error(`OCR model ${url}: HTTP ${response.status}`);
   const total = Number(response.headers.get("content-length")) || 0;
   const reader = response.body?.getReader();
+  let buffer;
   if(!reader){
-    const buffer = await response.arrayBuffer();
+    buffer = await response.arrayBuffer();
     onBytes?.(buffer.byteLength, buffer.byteLength);
-    return buffer;
+  }else{
+    const chunks = [];
+    let loaded = 0;
+    for(;;){
+      const step = await reader.read();
+      if(step.done) break;
+      chunks.push(step.value);
+      loaded += step.value.byteLength;
+      onBytes?.(loaded, Math.max(total, loaded));
+    }
+    const unito = new Uint8Array(loaded);
+    let offset = 0;
+    for(const chunk of chunks){ unito.set(chunk, offset); offset += chunk.byteLength; }
+    buffer = unito.buffer;
   }
-  const chunks = [];
-  let loaded = 0;
-  for(;;){
-    const step = await reader.read();
-    if(step.done) break;
-    chunks.push(step.value);
-    loaded += step.value.byteLength;
-    onBytes?.(loaded, Math.max(total, loaded));
+  if(!(await verificaSha(buffer, nome))){
+    throw new Error(`Modello OCR ${nome} corrotto o alterato (SHA-256 diverso dall'originale).`);
   }
-  const buffer = new Uint8Array(loaded);
-  let offset = 0;
-  for(const chunk of chunks){ buffer.set(chunk, offset); offset += chunk.byteLength; }
   if(cache){
-    try{ await cache.put(url, new Response(buffer.slice().buffer)); }catch{}
+    try{ await cache.put(url, new Response(buffer.slice(0))); }catch{}
   }
-  return buffer.buffer;
+  return buffer;
 }
 
 async function creaImmagine(file){
