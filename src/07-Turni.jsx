@@ -17,7 +17,7 @@ import { leggiConMotore } from "./35-ocr-motori";
 
 // #region SEZIONE 28: IMPORT TURNI DA JSON
 // ═══════════════════════════════════════════════════════════════
-// Elenco apribile di giorni: aggiunti / modificati / non modificati / non riconosciuti.
+// Elenco apribile di giorni: aggiunti / non modificati / non riconosciuti.
 function ElencoGiorni({ titolo, lista, aperto=false }) {
   if (!lista || lista.length===0) return null;
   return (
@@ -134,7 +134,14 @@ Regole: una riga per ogni turno. "data" in formato YYYY-MM-DD. "titolo" esattame
       setImportando(false);
       return;
     }
-    const esito = await onConfirm(righeValide);
+    let esito;
+    try{
+      esito = await onConfirm(righeValide);
+    }catch(err){
+      setErrore(err?.message || "Importazione non riuscita.");
+      setImportando(false);
+      return;
+    }
     setRisultato(esito);
     setImportando(false);
     setStep("riepilogo");
@@ -303,8 +310,7 @@ Regole: una riga per ogni turno. "data" in formato YYYY-MM-DD. "titolo" esattame
           <div style={{padding:20}}>
             <div style={{fontSize:16,fontWeight:900,color:T.text,marginBottom:14}}>Importazione completata</div>
             <div style={{fontSize:13,color:T.text,marginBottom:4}}>✅ Aggiunti: <strong>{risultato.nAggiunti}</strong></div>
-            <div style={{fontSize:13,color:T.text,marginBottom:4}}>♻️ Sostituiti: <strong>{risultato.nSostituiti}</strong></div>
-            <div style={{fontSize:13,color:T.text,marginBottom:10}}>⏸️ Invariati: <strong>{risultato.nInvariati}</strong></div>
+            <div style={{fontSize:13,color:T.text,marginBottom:10}}>⏸️ Non modificati (già presenti): <strong>{risultato.nInvariati}</strong></div>
             <ElencoGiorni titolo="✅ Giorni aggiunti" lista={risultato.elencoAggiunti}/>
             <ElencoGiorni titolo="⏸️ Giorni non modificati" lista={risultato.elencoInvariati}/>
 
@@ -760,8 +766,8 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
         setNRigheAggiunte(n||0);
         registraProblemiImport(risultato.mancanti, []);
         const d = leggiDettaglioImport();
-        try { registraAttivita(`Import foto (${nome})`, `${nome}: ${n||0} aggiunti, ${d?.invariati?.length||0} già presenti, ${d?.modificati?.length||0} diversi (non modificati), ${risultato.mancanti?.length||0} non riconosciuti`, {
-          dettagli:[`Aggiunti: ${n||0}`, `Già presenti: ${d?.invariati?.length||0}`, `Diversi, non modificati: ${d?.modificati?.length||0}`, `Non riconosciuti: ${risultato.mancanti?.length||0}`],
+        try { registraAttivita(`Import foto (${nome})`, `${nome}: ${n||0} aggiunti, ${d?.invariati?.length||0} non modificati (già presenti), ${risultato.mancanti?.length||0} non riconosciuti`, {
+          dettagli:[`Aggiunti: ${n||0}`, `Non modificati (già presenti): ${d?.invariati?.length||0}`, `Non riconosciuti: ${risultato.mancanti?.length||0}`],
           origine:`Import foto (${nome})`, esito:"Completato"
         }) } catch {}
         setRisultatoImportOcr({ mancanti: risultato.mancanti||[], sospetti: [] });
@@ -816,6 +822,7 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
         }
       }catch(errPdf){
         segnalaErroreSoloLog(errPdf, "Lettura PDF locale (pdf.js)");
+        if(errPdf?.isErroreImport){ setErrore(errPdf.message); setStep("upload"); return; }
       }
     }
 
@@ -1141,7 +1148,14 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
       setImportando(false);
       return false;
     }
-    const n = righeElaborate.length>0 ? await onConfirm(righeElaborate) : 0;
+    let n = 0;
+    try{
+      n = righeElaborate.length>0 ? await onConfirm(righeElaborate) : 0;
+    }catch(err){
+      setErrore(err?.message || "Importazione non riuscita.");
+      setImportando(false);
+      return false;
+    }
     registraProblemiImport(mancanti, sospetti);
     setNRigheAggiunte(n||0);
     setRisultatoImportOcr({ mancanti, sospetti });
@@ -1405,7 +1419,6 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
                   <div style={{marginTop:12}}>
                     <ElencoGiorni titolo="⚠️ Giorni non riconosciuti" lista={d.errori} aperto/>
                     <ElencoGiorni titolo="✅ Giorni aggiunti" lista={d.aggiunti}/>
-                    <ElencoGiorni titolo="⚠️ Giorni diversi (segnalati, non modificati)" lista={d.modificati} aperto/>
                     <ElencoGiorni titolo="⏸️ Giorni non modificati (già presenti)" lista={d.invariati}/>
                   </div>
                 );

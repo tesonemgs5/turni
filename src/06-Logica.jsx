@@ -6954,10 +6954,26 @@ const importsRecenti = useMemo(()=>{
     return creato;
   }
 
+  // Un import non deve mai saltare in silenzio: ogni errore (anche imprevisto) esce
+  // con il popup di errore e viene rilanciato, cosi' il dialog lo mostra e lo scrive nel Log.
+  function erroreImport(msg){ const e = new Error(msg); e.isErroreImport = true; return e; }
+  async function importProtetto(fn){
+    try{ return await fn(); }
+    catch(e){
+      const err = e?.isErroreImport ? e : erroreImport("Importazione interrotta: "+(e?.message||e));
+      segnalaErrore(err, "Importazione turni");
+      throw err;
+    }
+  }
   async function importaTurniPdfJson(righeJson){
+    return importProtetto(()=>importaTurniPdfJsonInterno(righeJson));
+  }
+  async function importaTurniPdfJsonInterno(righeJson){
     segnaContestoLog("Importazione turni");
     const risultatoVuoto = { nAggiunti:0, nSostituiti:0, nInvariati:0, mancanti:[], sospetti:[], importId:null, sostituzioni:[] };
-    if(!userId || !calId || !righeJson?.length) return risultatoVuoto;
+    if(!userId) throw erroreImport("Importazione non eseguita: utente non collegato. Accedi e riprova.");
+    if(!calId) throw erroreImport("Importazione non eseguita: nessun calendario attivo su cui importare.");
+    if(!righeJson?.length) throw erroreImport("Importazione non eseguita: nessun turno da importare.");
 
     const importId = `imp_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
     const nuoviEventiLocali = {};
@@ -7017,8 +7033,7 @@ const importsRecenti = useMemo(()=>{
           && up(esistente.protPagFine)===up(protPagFine||"") && up(esistente.protRecFine)===up(protRecFine||"");
         if(invariato){ nInvariati++; elencoInvariati.push({ data: dateKey, titolo: mod.titolo||"" }); continue; }
         nInvariati++;
-        elencoInvariati.push({ data: dateKey, titolo: mod.titolo||"" });
-        sospetti.push({ data:dateKey, titolo:`Diverso da quello presente: import richiesto ${mod.titolo||r.titolo||""}`, oraInizio:mod.inizio||"", oraFine:mod.fine||"", motivo:"turno_diverso" });
+        elencoInvariati.push({ data: dateKey, titolo: `${mod.titolo||""} (già presente, con dati diversi: non modificato)` });
         continue;
       }
       // Qualunque altro turno esistente nello stesso giorno non viene mai
@@ -7026,8 +7041,7 @@ const importsRecenti = useMemo(()=>{
       if(eventiEsistenti.length){
         const vecchio = eventiEsistenti.map(ev=>ev.modelloTitolo||ev.titolo||ev.label||"").filter(Boolean).join(" + ");
         nInvariati++;
-        elencoInvariati.push({ data: dateKey, titolo: mod.titolo||"" });
-        sospetti.push({ data:dateKey, titolo:`Diverso da "${vecchio||"turno presente"}": richiesto ${mod.titolo||r.titolo||""}`, oraInizio:mod.inizio||"", oraFine:mod.fine||"", motivo:"turno_diverso" });
+        elencoInvariati.push({ data: dateKey, titolo: `${mod.titolo||""} (giorno con già "${vecchio||"un altro turno"}": non modificato)` });
         continue;
       }
 /*
@@ -7142,7 +7156,7 @@ const importsRecenti = useMemo(()=>{
 
     registraProblemiImport(mancanti, sospetti);
     registraAttivita("Importazione turni",
-      `Importazione completata: ${nAggiunti} aggiunti, ${nSostituiti} sostituiti, ${nInvariati} invariati` +
+      `Importazione completata: ${nAggiunti} aggiunti, ${nInvariati} non modificati` +
       (((mancanti?.length||0)+(sospetti?.length||0))>0 ? `, ${mancanti?.length||0} mancanti, ${sospetti?.length||0} sospetti` : ""),
       { chiave:`riepilogo-${importId}`, supabase:"n/a" });
     return { nAggiunti, nSostituiti, nInvariati, mancanti, sospetti, importId, sostituzioni, elencoAggiunti, elencoInvariati };
@@ -7174,26 +7188,30 @@ const importsRecenti = useMemo(()=>{
   }
 
   async function importaEventiSingoli(righe, tipoTabella=null){
+    return importProtetto(()=>importaEventiSingoliInterno(righe, tipoTabella));
+  }
+  async function importaEventiSingoliInterno(righe, tipoTabella=null){
     segnaContestoLog("Importazione turni");
     // righe: [{ dateKey, modelloId }] -- righe senza modelloId finiscono tra i "non riconosciuti"
     // tipoTabella: "personale" -> calendario FU, "stella" -> calendario COT
     // (nomi in cima al file); altrimenti il calendario attivo.
-    // Restituisce il numero di turni EFFETTIVAMENTE scritti (aggiunti + modificati).
+    // Restituisce il numero di turni EFFETTIVAMENTE scritti (solo aggiunti: mai modifiche).
     // Il dettaglio (aggiunti / modificati / non modificati / non riconosciuti) viene
     // pubblicato con impostaDettaglioImport e mostrato nel riepilogo del dialog.
-    const dettaglio = { aggiunti:[], modificati:[], invariati:[], errori:[], importId:null };
+    const dettaglio = { aggiunti:[], invariati:[], errori:[], importId:null };
     impostaDettaglioImport(dettaglio);
-    if(!userId || !righe?.length) return 0;
+    if(!userId) throw erroreImport("Importazione non eseguita: utente non collegato. Accedi e riprova.");
+    if(!righe?.length) throw erroreImport("Importazione non eseguita: nessun turno da importare.");
     const calDest = tipoTabella==="stella" ? calStellaId : tipoTabella==="personale" ? calPersonaleId : calId;
     if(!calDest){
       const nome = tipoTabella==="stella" ? NOME_CAL_TURNI_STELLA : NOME_CAL_TURNI_PERSONALI;
-      segnalaErrore(`Calendario "${nome}" non trovato: importazione annullata. Se l'hai rinominato, aggiorna il nome in cima a 06-Logica.jsx.`, "Importa da foto");
-      return 0;
+      throw erroreImport(`Importazione non eseguita: calendario "${nome}" non trovato. Se l'hai rinominato, aggiorna il nome in cima a 06-Logica.jsx.`);
     }
     const importId = `imp_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
     dettaglio.importId = importId;
     const nuoviEventiLocali = {};
     const idsDaSostituire = [];
+    const inseritiRun = new Set();
     const modelliInGioco = new Set(righe.filter(r=>r.modelloId).map(r=>r.modelloId));
     const nomeMod = (id) => { const m = modelli.find(x=>x.id===id); return m ? (m.titolo||m.label||"") : ""; };
     let nScritte = 0;
@@ -7207,17 +7225,18 @@ const importsRecenti = useMemo(()=>{
         dettaglio.invariati.push({ data:r.dateKey, titolo: mod.titolo||mod.label||"" });
         continue;
       }
-      // Qualunque turno gia' presente nello stesso giorno viene soltanto
-      // segnalato. Gli import mai modificano un turno esistente.
-      if(eventiEsistenti.length){
+      // Un turno gia' presente non si modifica MAI: si salta e si segna "non modificato".
+      // Turni personali: un solo turno al giorno. Stella: piu' fasce nello stesso giorno,
+      // si salta solo la stessa fascia (controllo sopra).
+      if(tipoTabella!=="stella" && eventiEsistenti.length){
         const vecchi = eventiEsistenti.map(ev=>nomeMod(ev.modelloId)||ev.titolo||ev.label||"?").join(" + ");
-        dettaglio.modificati.push({
-          data:r.dateKey,
-          vecchio: vecchi,
-          nuovo: mod.titolo||mod.label||"",
-        });
+        dettaglio.invariati.push({ data:r.dateKey, titolo:`${vecchi} (già presente) — letto: ${mod.titolo||mod.label||""}` });
         continue;
       }
+      // Stessa riga letta due volte nello stesso import: si scrive una volta sola.
+      const chiaveRun = `${r.dateKey}|${r.modelloId}`;
+      if(inseritiRun.has(chiaveRun)) continue;
+      inseritiRun.add(chiaveRun);
       dettaglio.aggiunti.push({ data:r.dateKey, titolo: mod.titolo||mod.label||"" });
       const [y,m,d] = r.dateKey.split("-").map(Number);
       const dataEv = new Date(y, m-1, d);
@@ -7250,12 +7269,11 @@ const importsRecenti = useMemo(()=>{
     if(nScritte>0) setSelectedCalIds(prev => prev.length===0 || prev.includes(calDest) ? prev : [...prev, calDest]);
     registraAttivita("Importazione turni",
       `Importazione completata (${store.calendars.find(c=>c.id===calDest)?.name||"calendario"}): ` +
-      `${dettaglio.aggiunti.length} aggiunti, ${dettaglio.modificati.length} modificati, ${dettaglio.invariati.length} non modificati` +
+      `${dettaglio.aggiunti.length} aggiunti, ${dettaglio.invariati.length} non modificati` +
       (dettaglio.errori.length ? `, ${dettaglio.errori.length} non riconosciuti` : ""),
       {
         chiave:`riepilogo-${importId}`, supabase:"n/a",
         dettagli: [
-          ...dettaglio.modificati.map(x=>`~ ${x.data}: ${x.vecchio} → ${x.nuovo}`),
           ...dettaglio.invariati.map(x=>`= ${x.data} · ${x.titolo} (non modificato)`),
           ...dettaglio.errori.map(x=>`✗ ${x.data}: ${x.titolo}`),
         ],
