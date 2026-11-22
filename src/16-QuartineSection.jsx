@@ -30,13 +30,16 @@ export function QuartineSection({ T, accent, dark, store, salvaQuartine, fasceAu
   const anni = [...new Set(Object.keys(cfg.date).map(k=>parseInt(k.slice(0,4),10)))].sort();
   const nVisibili = QUARTINE.filter(q=>cfg.visibili[q]).length;
 
+  const fotoRef = useRef(null);
+  const NOME_MOTORE = { tesseract:"Tesseract", paddle:"Paddle" };
+
   async function leggiFile(file){
     if(!file) return;
+    const isPdf = file.type==="application/pdf" || /\.pdf$/i.test(file.name||"");
+    if(!isPdf){ fotoRef.current = file; await leggiFoto("tesseract"); return; }
     setImp({ stato:"lettura", progresso:null });
     try{
-      const isPdf = file.type==="application/pdf" || /\.pdf$/i.test(file.name||"");
-      const ris = isPdf ? await leggiPdfQuartine(file)
-                        : await leggiFotoQuartine(file, p=>setImp(s=>s?({...s,progresso:p}):s));
+      const ris = await leggiPdfQuartine(file);
       if(!ris.ok){ setImp({ stato:"errore", motivo:ris.motivo }); return; }
       setImp({ stato:"anteprima", ris, anno: ris.anno || new Date().getFullYear() });
     }catch(e){
@@ -44,10 +47,25 @@ export function QuartineSection({ T, accent, dark, store, salvaQuartine, fasceAu
     }
   }
 
+  // Foto: due flussi separati (prima Tesseract, poi Paddle), ognuno con il suo popup.
+  async function leggiFoto(motore){
+    const file = fotoRef.current;
+    if(!file) { setImp(null); return; }
+    setImp({ stato:"lettura", progresso:0, motore });
+    try{
+      const ris = await leggiFotoQuartine(file, p=>setImp(s=>s?({...s,progresso:p}):s), motore);
+      if(!ris.ok){ setImp({ stato:"errore", motivo:ris.motivo, motore }); return; }
+      setImp({ stato:"anteprima", ris, anno: ris.anno || new Date().getFullYear(), motore });
+    }catch(e){
+      setImp({ stato:"errore", motivo:"Lettura non riuscita: "+(e?.message||e), motore });
+    }
+  }
+
   function confermaImport(){
     if(!imp?.ris) return;
+    const motore = imp.motore;
     salvaQuartine(applicaImportQuartine(cfg, imp.anno, imp.ris.entries));
-    setImp(null);
+    if(motore==="tesseract") leggiFoto("paddle"); else setImp(null);
   }
 
   function salvaModifica(){
@@ -185,14 +203,15 @@ export function QuartineSection({ T, accent, dark, store, salvaQuartine, fasceAu
               <>
                 <div style={{fontSize:15,fontWeight:900,color:T.text,marginBottom:8}}>Lettura non riuscita</div>
                 <div style={{fontSize:12,color:T.sub,marginBottom:14,lineHeight:1.45}}>{imp.motivo}</div>
-                <button onClick={()=>setImp(null)} style={{...bottone,width:"100%",padding:"10px 0",fontSize:13}}>Chiudi</button>
+                {imp.motore && <div style={{fontSize:11,color:T.sub,marginBottom:8}}>{imp.motore==="tesseract"?"Lettura 1 di 2 · Tesseract":"Lettura 2 di 2 · Paddle"}</div>}
+                <button onClick={()=>{ if(imp.motore==="tesseract") leggiFoto("paddle"); else setImp(null); }} style={{...bottone,width:"100%",padding:"10px 0",fontSize:13}}>{imp.motore==="tesseract"?"OK · leggi con Paddle":"Chiudi"}</button>
               </>
             )}
             {imp.stato==="anteprima" && (()=>{
               const { ris, anno } = imp;
               return (
                 <>
-                  <div style={{fontSize:16,fontWeight:900,color:T.text,marginBottom:4,textAlign:"center"}}>Quartine lette</div>
+                  <div style={{fontSize:16,fontWeight:900,color:T.text,marginBottom:4,textAlign:"center"}}>Quartine lette{imp.motore?(imp.motore==="tesseract"?" · Tesseract (1 di 2)":" · Paddle (2 di 2)"):""}</div>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:10}}>
                     <span style={{fontSize:12,color:T.sub}}>Anno</span>
                     <input type="number" value={anno} onChange={e=>setImp(s=>({...s,anno:parseInt(e.target.value,10)||s.anno}))}
@@ -226,7 +245,8 @@ export function QuartineSection({ T, accent, dark, store, salvaQuartine, fasceAu
                     </div>
                   )}
                   <div style={{display:"flex",gap:8}}>
-                    <button onClick={confermaImport} style={{...bottone,flex:1,background:accent,color:"#fff",border:"none",padding:"10px 0",fontSize:13}}>Conferma e salva</button>
+                    <button onClick={confermaImport} style={{...bottone,flex:1,background:accent,color:"#fff",border:"none",padding:"10px 0",fontSize:13}}>{imp.motore==="tesseract"?"Conferma e salva · poi Paddle":"Conferma e salva"}</button>
+                    {imp.motore==="tesseract" && <button onClick={()=>leggiFoto("paddle")} style={{...bottone,color:T.sub,padding:"10px 14px",fontSize:13}}>Salta</button>}
                     <button onClick={()=>setImp(null)} style={{...bottone,color:T.sub,padding:"10px 14px",fontSize:13}}>Annulla</button>
                   </div>
                 </>

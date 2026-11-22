@@ -172,27 +172,15 @@ export async function leggiPdfQuartine(file){
   return quartineDaItems(items);
 }
 
-export async function leggiFotoQuartine(file, onProgress){
+// Un solo motore per volta ("tesseract" | "paddle"): i due flussi sono separati,
+// ciascuno con il suo risultato (i risultati non si fondono).
+export async function leggiFotoQuartine(file, onProgress, motore = "tesseract"){
+  const nome = motore === "paddle" ? "Paddle" : "Tesseract";
   let data;
   try{
-    data = await leggiConMotore("tesseract", file, onProgress);
+    data = await leggiConMotore(motore, file, onProgress);
   }catch(e){
-    try{
-      data = await leggiConMotore("paddle", file, onProgress);
-    }catch(ePaddle){
-      return { ok:false, motivo:"Impossibile caricare i moduli OCR delle foto (problema di connessione). Riprova o usa il PDF.", entries:[], avvisi:[] };
-    }
-  }
-  if(data){
-    try{
-      const paddle = await leggiConMotore("paddle", file, onProgress);
-      data = {
-        text: [data.text || "", paddle.text || ""].filter(Boolean).join("\n"),
-        words: [...(data.words || []), ...(paddle.words || [])],
-      };
-    }catch(ePaddle){
-      // Paddle facoltativo: Tesseract resta sufficiente se il secondo motore non parte.
-    }
+    return { ok:false, motivo:`${nome} non è riuscito a leggere la foto (modulo non caricato o errore di lettura). Riprova o usa il PDF.`, entries:[], avvisi:[] };
   }
   const parole = data.words || [];
   const items = parole.filter(w=>w.text && w.bbox)

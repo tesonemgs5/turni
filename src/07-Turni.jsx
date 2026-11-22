@@ -508,6 +508,8 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
   const [testoJsonIncollato, setTestoJsonIncollato] = useState("");
   const [promptCopiato, setPromptCopiato] = useState(false);
   const [nRigheAggiunte, setNRigheAggiunte] = useState(0);
+  const [motoreFase, setMotoreFase] = useState(null); // "tesseract" | "paddle" | null (JSON/PDF)
+  const [esitoMotore, setEsitoMotore] = useState(""); // messaggio se il motore non ha importato niente
   // Doppio controllo del PDF COT: null | { stato:"ok" } | { stato:"diverso"|"nonverificato", differenze, motivo, turni }
   const [verificaCot, setVerificaCot] = useState(null);
   // Dettaglio {mancanti, sospetti} dell'ultima importazione (OCR o JSON
@@ -641,31 +643,19 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
   // media raggiunta sulle sole parole rilevanti per i turni.
   // tipoTabella: "personale" (Primo/Secondo/Terzo/Notte, un modello per giorno)
   //           o "stella" (ricerca "stella" per fascia oraria, più modelli per giorno).
-  async function tentativoOCR(file, onProgress, tipoTabella){
+  async function tentativoOCR(file, onProgress, tipoTabella, motore){
+    // Un solo motore per volta: Tesseract e Paddle hanno due flussi separati
+    // (ciascuno con il suo risultato e il suo popup), i risultati NON si fondono.
     let data;
     try{
-      data = await leggiConMotore("tesseract", file, onProgress);
-    }catch(errTess){
-      segnalaErroreSoloLog(errTess, "OCR Tesseract (download modello linguistico)");
-      try{
-        data = await leggiConMotore("paddle", file, onProgress);
-      }catch(errPaddle){
-        segnalaErroreSoloLog(errPaddle, "OCR PaddleOCR (dopo Tesseract)");
-        const erroreRete = new Error("Impossibile caricare i moduli di lettura offline. Riprova o usa il PDF/JSON.");
-        erroreRete.isErroreRete = true;
-        throw erroreRete;
-      }
-    }
-    if(data){
-      try{
-        const datiPaddle = await leggiConMotore("paddle", file, onProgress);
-        data = {
-          text: [data.text || "", datiPaddle.text || ""].filter(Boolean).join("\n"),
-          words: [...(data.words || []), ...(datiPaddle.words || [])],
-        };
-      }catch(errPaddle){
-        segnalaErroreSoloLog(errPaddle, "OCR PaddleOCR automatico");
-      }
+      data = await leggiConMotore(motore, file, onProgress);
+    }catch(errMotore){
+      segnalaErroreSoloLog(errMotore, motore==="paddle" ? "OCR PaddleOCR" : "OCR Tesseract (download modello linguistico)");
+      const erroreRete = new Error(motore==="paddle"
+        ? "Paddle non è riuscito a leggere la foto (modello non caricato o errore di lettura)."
+        : "Impossibile caricare il modulo di lettura Tesseract (problema di connessione).");
+      erroreRete.isErroreRete = true;
+      throw erroreRete;
     }
     const testo = data.text || "";
     const parole = data.words || [];
@@ -731,56 +721,73 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
     return { righeElaborate, confidenza, nessunaParolaRilevante, mancanti };
   }
 
+  // Due flussi separati sulla stessa foto: prima Tesseract, poi Paddle. Ognuno
+  // importa i suoi turni (quelli già presenti si saltano), scrive nel Log e
+  // mostra il proprio popup con OK.
+  const NOME_MOTORE = { tesseract:"Tesseract", paddle:"Paddle" };
+
   async function handleFile(file){
     pendingFile.current = file;
     setImgPreviewUrl(URL.createObjectURL(file));
+    await eseguiMotore("tesseract");
+  }
+
+  async function eseguiMotore(motore){
+    const file = pendingFile.current;
+    if(!file) return;
+    const nome = NOME_MOTORE[motore];
+    setMotoreFase(motore);
     setErrore("");
+    setEsitoMotore("");
     setStep("ocr");
     setProgresso(0);
     setConfidenzaRaggiunta(null);
     setNessunTurnoRilevato(false);
     setRisultatoImportOcr(null);
+    setNRigheAggiunte(0);
+    impostaDettaglioImport(null);
     try{
-      // Preprocessing sempre applicato (contrasto, bianco/nero, upscaling) per
-      // dare a Tesseract la miglior immagine possibile fin dal primo tentativo.
-      const filePreproc = await preprocessaImmagine(file);
-      const risultato = await tentativoOCR(filePreproc, setProgresso, tipoTabella);
+      // Tesseract: immagine preprocessata (contrasto, bianco/nero, 2x), come prima.
+      // Paddle: immagine originale a colori.
+      const input = motore==="tesseract" ? await preprocessaImmagine(file) : file;
+      const risultato = await tentativoOCR(input, setProgresso, tipoTabella, motore);
 
       setNessunTurnoRilevato(risultato.nessunaParolaRilevante);
       if(!risultato.nessunaParolaRilevante) setConfidenzaRaggiunta(risultato.confidenza);
 
-      // Nessuna soglia di confidenza bloccante: se sono stati riconosciuti
-      // turni, si accettano. La confidenza resta visibile solo come
-      // informazione, non come filtro che scarta risultati validi.
       if(risultato.righeElaborate.length>0){
         const n = await onConfirm(risultato.righeElaborate);
         setNRigheAggiunte(n||0);
         registraProblemiImport(risultato.mancanti, []);
-        try { registraAttivita("Import foto", `OCR completato: ${n||0} aggiunti, ${risultato.mancanti?.length||0} non riconosciuti`, {
-          dettagli:[`Aggiunti: ${n||0}`, `Saltati: 0`, `Non riconosciuti: ${risultato.mancanti?.length||0}`],
-          origine:"Import foto", esito:"Completato"
+        const d = leggiDettaglioImport();
+        try { registraAttivita(`Import foto (${nome})`, `${nome}: ${n||0} aggiunti, ${d?.invariati?.length||0} già presenti, ${d?.modificati?.length||0} diversi (non modificati), ${risultato.mancanti?.length||0} non riconosciuti`, {
+          dettagli:[`Aggiunti: ${n||0}`, `Già presenti: ${d?.invariati?.length||0}`, `Diversi, non modificati: ${d?.modificati?.length||0}`, `Non riconosciuti: ${risultato.mancanti?.length||0}`],
+          origine:`Import foto (${nome})`, esito:"Completato"
         }) } catch {}
         setRisultatoImportOcr({ mancanti: risultato.mancanti||[], sospetti: [] });
         setStep("riepilogo");
         return;
       }
 
-      if(risultato.nessunaParolaRilevante){
-        setErrore(tipoTabella==="stella"
+      const msg = risultato.nessunaParolaRilevante
+        ? (tipoTabella==="stella"
           ? "Non ho trovato nella foto nessuna occorrenza di \"Stella\"."
-          : "Non ho trovato nella foto nessuna parola simile a un turno conosciuto (Primo, Secondo, Terzo, Notte).");
-      }else{
-        setErrore("Non sono riuscito a riconoscere nessun turno dalla foto in locale.");
-      }
-      setStep("chiedi-gemini");
+          : "Non ho trovato nella foto nessuna parola simile a un turno conosciuto (Primo, Secondo, Terzo, Notte).")
+        : "Non sono riuscito a riconoscere nessun turno dalla foto.";
+      setEsitoMotore(msg);
+      try { registraAttivita(`Import foto (${nome})`, `${nome}: nessun turno letto. ${msg}`, { origine:`Import foto (${nome})`, esito:"Nessun turno" }) } catch {}
     }catch(err){
-      segnalaErroreSoloLog(err, "OCR lettura foto (locale)");
-      setErrore(err && err.isErroreRete ? err.message : "Errore durante la lettura della foto in locale.");
-      setStep("chiedi-gemini");
+      segnalaErroreSoloLog(err, `OCR lettura foto (${nome})`);
+      const msg = err && (err.isErroreRete || err.isErroreImport) ? err.message : `Errore durante la lettura della foto con ${nome}.`;
+      setEsitoMotore(msg);
+      try { registraAttivita(`Import foto (${nome})`, `${nome}: errore. ${msg}`, { origine:`Import foto (${nome})`, esito:"Errore" }) } catch {}
     }
+    setStep("riepilogo");
   }
 
   async function handleFileConGemini(file){
+    setMotoreFase(null);
+    setEsitoMotore("");
     setErrore("");
     setStep("gemini-ocr");
 
@@ -1051,6 +1058,8 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
   // Elabora un JSON già interpretato (incollato a mano oppure ricavato
   // dalla lettura locale del PDF COT). Restituisce true se ha importato.
   async function elaboraJsonParsed(parsed){
+    setMotoreFase(null);
+    setEsitoMotore("");
     setImportando(true);
     const righeElaborate = [];
     // Stesso schema di ImportaTurniJsonDialog (righe scartate tracciate con
@@ -1360,12 +1369,23 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
           {step==="riepilogo"&&(
             <div style={{textAlign:"left",padding:"24px 20px"}}>
               <div style={{textAlign:"center"}}>
-                <div style={{fontSize:36,marginBottom:12}}>✅</div>
-                <div style={{fontSize:15,color:"#1a1a1a",fontWeight:800,marginBottom:8}}>
+                {motoreFase&&(
+                  <div style={{fontSize:12,color:"#555",fontWeight:800,marginBottom:8}}>
+                    {motoreFase==="tesseract"?"Lettura 1 di 2 · Tesseract":"Lettura 2 di 2 · Paddle"}
+                  </div>
+                )}
+                {esitoMotore&&(
+                  <>
+                    <div style={{fontSize:36,marginBottom:12}}>⚠️</div>
+                    <div style={{fontSize:14,color:"#b91c1c",fontWeight:800,marginBottom:12}}>{esitoMotore}</div>
+                  </>
+                )}
+                {!esitoMotore&&<div style={{fontSize:36,marginBottom:12}}>✅</div>}
+                {!esitoMotore&&<div style={{fontSize:15,color:"#1a1a1a",fontWeight:800,marginBottom:8}}>
                   {nRigheAggiunte>0
                     ? `${nRigheAggiunte} turno${nRigheAggiunte===1?"":"i"} aggiunto${nRigheAggiunte===1?"":"i"} al calendario`
                     : "Nessun turno nuovo aggiunto"}
-                </div>
+                </div>}
                 {verificaCot && verificaCot.stato==="ok"&&(
                   <div style={{fontSize:12,color:"#1a1a1a",fontWeight:700,marginBottom:8}}>
                     ✓ Verificato con 3 metodi
@@ -1424,10 +1444,10 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
                 </details>
               )}
 
-              <button onClick={()=>{ onClose(); }}
+              <button onClick={()=>{ if(motoreFase==="tesseract") eseguiMotore("paddle"); else onClose(); }}
                 style={{width:"100%",marginTop:2,background:accent,border:"none",borderRadius:10,
                   color:getContrastTextColor(accent),padding:"11px 0",cursor:"pointer",fontWeight:700,fontSize:13}}>
-                Fatto
+                {motoreFase==="tesseract" ? "OK · leggi con Paddle" : motoreFase==="paddle" ? "OK · Fatto" : "Fatto"}
               </button>
             </div>
           )}
