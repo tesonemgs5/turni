@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { prendiCondivisi, collegaCondiviso, scartaCondiviso, idGiorno } from "./32-documenti";
+import { prendiCondivisi, collegaCondiviso, scartaCondiviso, idGiorno, DURATA_24_ORE, DURATA_4_MESI } from "./32-documenti";
 import { NOMI_MESI_IT } from "./04-Rotazione";
 
 // Schermata che si apre quando si condivide un file verso Turni da un'altra app:
@@ -37,6 +37,7 @@ export function RiceviDocumento({ T, accent, store }) {
   const [mese, setMese] = useState({ y: oggi.getFullYear(), m: oggi.getMonth() });
   const [giorno, setGiorno] = useState(null);
   const [scelta, setScelta] = useState(null); // id evento oppure "giorno"
+  const [durata, setDurata] = useState(null); // DURATA_24_ORE | DURATA_4_MESI: va scelta a ogni allegato
   const [lavoro, setLavoro] = useState(false);
   const [esito, setEsito] = useState("");
   const occupato = useRef(false);
@@ -88,16 +89,17 @@ export function RiceviDocumento({ T, accent, store }) {
     setCoda([]);
     setGiorno(null);
     setScelta(null);
+    setDurata(null);
   }
 
   async function collega() {
-    if (!giorno || !scelta) return;
+    if (!giorno || !scelta || !durata) return;
     setLavoro(true);
     const eventId = scelta === "giorno" ? idGiorno(giorno) : scelta;
     let fatti = 0;
     let errore = "";
     for (const voce of coda) {
-      const r = await collegaCondiviso({ voce, eventId, dateKey: giorno });
+      const r = await collegaCondiviso({ voce, eventId, dateKey: giorno, durata });
       if (!r.ok) { errore = `${voce.nome}: ${r.errore || "non riuscito"}`; break; }
       fatti++;
     }
@@ -106,6 +108,7 @@ export function RiceviDocumento({ T, accent, store }) {
     if (errore) { setErrori((er) => [...er, errore]); return; }
     setGiorno(null);
     setScelta(null);
+    setDurata(null);
     setEsito(`✅ ${fatti === 1 ? "Documento collegato" : fatti + " documenti collegati"} al ${dataIt(giorno)}`);
     setTimeout(() => setEsito(""), 3500);
   }
@@ -224,6 +227,16 @@ export function RiceviDocumento({ T, accent, store }) {
         </div>
       )}
 
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6 }}>Per quanto tempo tenerlo?</div>
+        {rigaScelta(durata === DURATA_24_ORE, () => setDurata(DURATA_24_ORE), (
+          <span style={{ fontSize: 14, fontWeight: 800 }}>⏱️ 24 ore</span>
+        ))}
+        {rigaScelta(durata === DURATA_4_MESI, () => setDurata(DURATA_4_MESI), (
+          <span style={{ fontSize: 14, fontWeight: 800 }}>📅 4 mesi dopo l'evento</span>
+        ))}
+      </div>
+
       <div style={{
         position: "sticky", bottom: 0, background: T.bg, display: "flex", gap: 8,
         padding: "10px 0 calc(env(safe-area-inset-bottom, 0px) + 12px)",
@@ -232,9 +245,9 @@ export function RiceviDocumento({ T, accent, store }) {
           flex: 1, background: T.surface, color: T.sub, border: `1px solid ${T.border}`,
           borderRadius: 10, padding: "13px 0", fontWeight: 800, fontSize: 15, cursor: "pointer",
         }}>Annulla</button>
-        <button type="button" disabled={lavoro || !giorno || !scelta} onClick={collega} style={{
+        <button type="button" disabled={lavoro || !giorno || !scelta || !durata} onClick={collega} style={{
           flex: 2, background: accent, color: "#fff", border: "none", borderRadius: 10, padding: "13px 0",
-          fontWeight: 800, fontSize: 15, cursor: "pointer", opacity: (lavoro || !giorno || !scelta) ? 0.45 : 1,
+          fontWeight: 800, fontSize: 15, cursor: "pointer", opacity: (lavoro || !giorno || !scelta || !durata) ? 0.45 : 1,
         }}>{lavoro ? "Attendi…" : "Collega"}</button>
       </div>
     </div>

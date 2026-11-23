@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   documentiEvento, aggiungiDocumento, eliminaDocumento, inviaDocumento,
-  anteprimaDocumento, sottoscrivi,
+  anteprimaDocumento, sottoscrivi, DURATA_24_ORE, DURATA_4_MESI,
 } from "./32-documenti";
 import { ConfermaEliminazione } from "./05-Comuni";
 
@@ -23,6 +23,16 @@ function dataIt(iso) {
   return m ? `${m[3]}/${m[2]}/${m[1]}` : "";
 }
 
+// "scade il 25/11/2026" oppure, per i documenti da 24 ore, "scade il 25/11/2026 alle 10:30".
+function testoScadenza(d) {
+  if (d.scadeMs) {
+    const x = new Date(d.scadeMs);
+    const p = (n) => String(n).padStart(2, "0");
+    return `scade il ${p(x.getDate())}/${p(x.getMonth() + 1)}/${x.getFullYear()} alle ${p(x.getHours())}:${p(x.getMinutes())}`;
+  }
+  return d.scade ? `scade il ${dataIt(d.scade)}` : "";
+}
+
 // Sezione "Documenti" del form evento.
 //  - eventId: id dell'evento (esistente o riservato per un evento nuovo)
 //  - prenotaId: crea e ritorna un id riservato quando l'evento non e' ancora salvato
@@ -33,6 +43,7 @@ export function SezioneDocumenti({ T, accent, eventId, dateKey, prenotaId }) {
   const [errore, setErrore] = useState("");
   const [anteprima, setAnteprima] = useState(null);
   const [daEliminare, setDaEliminare] = useState(null);
+  const [inAttesa, setInAttesa] = useState(null); // file scelti, in attesa della durata
   const docs = documentiEvento(eventId);
 
   async function scelti(ev) {
@@ -40,10 +51,16 @@ export function SezioneDocumenti({ T, accent, eventId, dateKey, prenotaId }) {
     ev.target.value = "";
     if (files.length === 0) return;
     setErrore("");
+    setInAttesa(files); // prima si chiede per quanto tempo tenerli
+  }
+
+  async function allega(durata) {
+    const files = inAttesa || [];
+    setInAttesa(null);
     setLavoro(true);
     const id = eventId || prenotaId();
     for (const file of files) {
-      const r = await aggiungiDocumento({ eventId: id, dateKey, file });
+      const r = await aggiungiDocumento({ eventId: id, dateKey, file, durata });
       if (!r.ok) { setErrore(`${file.name}: ${r.errore}`); break; }
     }
     setLavoro(false);
@@ -73,7 +90,7 @@ export function SezioneDocumenti({ T, accent, eventId, dateKey, prenotaId }) {
   return (
     <div style={{ marginBottom: 12 }}>
       <div style={{ fontSize: 11, color: T.sub, marginBottom: 6 }}>
-        📎 <b style={{ color: T.text }}>Documenti</b> (copia promemoria, si cancella 4 mesi dopo l'evento)
+        📎 <b style={{ color: T.text }}>Documenti</b> (copia promemoria: a ogni allegato scegli se tenerlo 24 ore o 4 mesi dopo l'evento)
       </div>
       {docs.map((d) => (
         <div key={d.id} style={{
@@ -85,7 +102,7 @@ export function SezioneDocumenti({ T, accent, eventId, dateKey, prenotaId }) {
               {d.nome}
             </div>
             <div style={{ fontSize: 10, color: T.sub }}>
-              {[dimensione(d.size), d.scade ? `scade il ${dataIt(d.scade)}` : ""].filter(Boolean).join(" · ")}
+              {[dimensione(d.size), testoScadenza(d)].filter(Boolean).join(" · ")}
             </div>
           </div>
           <button type="button" disabled={lavoro} onClick={() => invia(d.id)} style={bottone}>✉️ Invia</button>
@@ -93,7 +110,19 @@ export function SezioneDocumenti({ T, accent, eventId, dateKey, prenotaId }) {
         </div>
       ))}
       <input ref={inputRef} type="file" multiple style={{ display: "none" }} onChange={scelti} />
-      <button type="button" disabled={lavoro} onClick={() => inputRef.current && inputRef.current.click()}
+      {inAttesa && (
+        <div style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: 8, padding: 10, marginBottom: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: T.text, marginBottom: 8 }}>
+            Per quanto tempo tenere {inAttesa.length === 1 ? "il documento" : `i ${inAttesa.length} documenti`}?
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button type="button" onClick={() => allega(DURATA_24_ORE)} style={{ ...bottone, flex: 1 }}>⏱️ 24 ore</button>
+            <button type="button" onClick={() => allega(DURATA_4_MESI)} style={{ ...bottone, flex: 1 }}>📅 4 mesi dopo l'evento</button>
+          </div>
+          <button type="button" onClick={() => setInAttesa(null)} style={{ ...bottone, width: "100%", marginTop: 6, color: T.sub }}>Annulla</button>
+        </div>
+      )}
+      <button type="button" disabled={lavoro || !!inAttesa} onClick={() => inputRef.current && inputRef.current.click()}
         style={{
           width: "100%", background: T.s2, color: T.text, border: `1px solid ${T.border}`,
           borderRadius: 8, padding: "8px 0", fontWeight: 800, fontSize: 12, cursor: "pointer",

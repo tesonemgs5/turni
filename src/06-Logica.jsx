@@ -75,10 +75,14 @@ export function useAppCore(session){
   // già presente. Stesso pattern già usato per modelliRef qui sotto.
   const storeRef = useRef(INIT);
   useEffect(()=>{ storeRef.current = store; }, [store]);
-  // Documenti allegati agli eventi: pulizia dei scaduti (4 mesi dopo la data evento) e degli orfani da tempo.
+  // Documenti allegati agli eventi: pulizia dei scaduti (24 ore dall'allegato o 4 mesi dopo la data evento) e degli orfani da tempo.
+  // Parte all'avvio e ogni volta che l'app torna in primo piano.
   useEffect(()=>{
-    const t = setTimeout(()=>{ pulisciDocumenti(idEventiDaStore(storeRef.current)).catch(()=>{}); }, 10000);
-    return ()=>clearTimeout(t);
+    const pulisci = ()=>{ pulisciDocumenti(idEventiDaStore(storeRef.current)).catch(()=>{}); };
+    const t = setTimeout(pulisci, 10000);
+    const alRitorno = ()=>{ if(document.visibilityState === "visible") pulisci(); };
+    document.addEventListener("visibilitychange", alRitorno);
+    return ()=>{ clearTimeout(t); document.removeEventListener("visibilitychange", alRitorno); };
   }, []);
   const flushExtraHolsRef = useRef(false);
   const [loading, setLoading] = useState(true);

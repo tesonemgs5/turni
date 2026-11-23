@@ -3,14 +3,19 @@
 //  - I file stanno nella memoria privata dell'app (Filesystem, Directory.Data).
 //  - L'elenco degli allegati sta in localStorage ("turni_documenti_v1"), separato
 //    dagli eventi: non tocca Supabase, la sincronizzazione ne' i backup.
-//  - Ogni documento scade 4 mesi dopo la DATA DELL'EVENTO e viene cancellato in
-//    automatico (pulisciDocumenti, chiamata all'avvio dell'app).
+//  - A ogni allegato si sceglie la durata: 24 ORE da quando lo si allega, oppure
+//    4 MESI dopo la DATA DELL'EVENTO. Il documento scaduto viene cancellato in
+//    automatico (pulisciDocumenti, chiamata all'avvio e quando si riapre l'app).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const CHIAVE = "turni_documenti_v1";
 const CARTELLA = "documenti";
 export const MESI_VALIDITA = 4;
 export const MAX_BYTES = 25 * 1024 * 1024;
+// Durata scelta quando si allega un documento.
+export const DURATA_24_ORE = "24h";
+export const DURATA_4_MESI = "4mesi";
+export const MS_24_ORE = 24 * 60 * 60 * 1000;
 // Un documento senza evento viene considerato "orfano" solo dopo questo tempo,
 // per non cancellare nulla durante sincronizzazioni o form ancora aperti.
 export const GIORNI_ATTESA_ORFANI = 30;
@@ -47,6 +52,16 @@ export function scadenzaDa(dateKey, mesi = MESI_VALIDITA) {
   return `${annoFine}-${p(meseFine0 + 1)}-${p(giornoFine)}`;
 }
 
+// Scadenza di un documento nuovo. 24 ore: scadenza con ora precisa (scadeMs).
+// 4 mesi (predefinita): 4 mesi dopo la data dell'evento (scade, solo data).
+export function scadenzaDocumento(durata, dateKey, adessoMs = Date.now()) {
+  if (durata === DURATA_24_ORE) {
+    const scadeMs = adessoMs + MS_24_ORE;
+    return { scade: dataISO(scadeMs), scadeMs };
+  }
+  return { scade: scadenzaDa(dateKey) };
+}
+
 export function dataISO(ms) {
   const d = new Date(ms);
   const p = (n) => String(n).padStart(2, "0");
@@ -62,7 +77,7 @@ export function documentiDaPulire(elenco, oggiISO, idEventiPresenti, adessoMs) {
   const ids = [];
   for (const d of elenco || []) {
     if (!d || !d.id) continue;
-    const scaduto = d.scade && d.scade < oggiISO;
+    const scaduto = d.scadeMs ? adessoMs >= d.scadeMs : (d.scade && d.scade < oggiISO);
     const delGiorno = String(d.eventId || "").startsWith(PREFISSO_GIORNO);
     const orfano = conosco && !delGiorno && !idEventiPresenti.has(d.eventId) && adessoMs - (d.creato || 0) > soglia;
     if (scaduto || orfano) ids.push(d.id);
@@ -137,7 +152,7 @@ function messaggio(e) {
   return String((e && e.message) || e);
 }
 
-export async function aggiungiDocumento({ eventId, dateKey, file }) {
+export async function aggiungiDocumento({ eventId, dateKey, file, durata }) {
   try {
     if (!eventId || !dateKey || !file) return { ok: false, errore: "Dati mancanti" };
     if (file.size > MAX_BYTES) return { ok: false, errore: "File troppo grande (massimo 25 MB)" };
@@ -150,7 +165,7 @@ export async function aggiungiDocumento({ eventId, dateKey, file }) {
     const doc = {
       id, eventId, dateKey, nome: file.name || nome, path,
       mime: file.type || "", size: file.size || 0,
-      creato: Date.now(), scade: scadenzaDa(dateKey),
+      creato: Date.now(), ...scadenzaDocumento(durata, dateKey),
     };
     scrivi([...leggi(), doc]);
     return { ok: true, doc };
@@ -231,7 +246,7 @@ export async function anteprimaDocumento(id) {
   }
 }
 
-// Pulizia: scaduti (4 mesi dalla data evento) e orfani da tempo.
+// Pulizia: scaduti (24 ore dall'allegato o 4 mesi dalla data evento) e orfani da tempo.
 export async function pulisciDocumenti(idEventiPresenti) {
   const ids = documentiDaPulire(leggi(), dataISO(Date.now()), idEventiPresenti, Date.now());
   if (ids.length === 0) return 0;
@@ -275,7 +290,7 @@ export async function scartaCondiviso(voce) {
 }
 
 // Sposta il file ricevuto nell'archivio e lo lega all'evento (o al giorno).
-export async function collegaCondiviso({ voce, eventId, dateKey }) {
+export async function collegaCondiviso({ voce, eventId, dateKey, durata }) {
   try {
     if (!voce || !voce.path || !eventId || !dateKey) return { ok: false, errore: "Dati mancanti" };
     const { Filesystem, Directory } = await import("@capacitor/filesystem");
@@ -287,7 +302,7 @@ export async function collegaCondiviso({ voce, eventId, dateKey }) {
     const doc = {
       id, eventId, dateKey, nome: voce.nome || nome, path,
       mime: voce.mime || "", size: voce.size || 0,
-      creato: Date.now(), scade: scadenzaDa(dateKey),
+      creato: Date.now(), ...scadenzaDocumento(durata, dateKey),
     };
     scrivi([...leggi(), doc]);
     return { ok: true, doc };

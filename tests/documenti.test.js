@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { nomeSicuro, scadenzaDa, documentiDaPulire, idEventiDaStore, idGiorno, GIORNI_ATTESA_ORFANI } from "../src/32-documenti.js";
+import { nomeSicuro, scadenzaDa, scadenzaDocumento, documentiDaPulire, idEventiDaStore, idGiorno, GIORNI_ATTESA_ORFANI, DURATA_24_ORE, DURATA_4_MESI } from "../src/32-documenti.js";
 
 test("la scadenza e' 4 mesi dopo la data dell'evento", () => {
   assert.equal(scadenzaDa("2026-11-14"), "2027-03-14");
@@ -66,4 +66,21 @@ test("i documenti legati a un giorno non sono mai orfani, ma scadono come gli al
   ];
   assert.equal(idGiorno("2027-06-01"), "giorno:2027-06-01");
   assert.deepEqual(documentiDaPulire(elenco, "2027-04-01", new Set(["e1"]), ADESSO), ["g2"]);
+});
+
+test("durata 24 ore: scadenza con ora precisa, indipendente dalla data evento", () => {
+  const r = scadenzaDocumento(DURATA_24_ORE, "2027-12-25", ADESSO);
+  assert.equal(r.scadeMs, ADESSO + GIORNO);
+});
+
+test("durata 4 mesi: scadenza 4 mesi dopo la data evento, senza ora", () => {
+  const r = scadenzaDocumento(DURATA_4_MESI, "2026-11-14", ADESSO);
+  assert.deepEqual(r, { scade: "2027-03-14" });
+  assert.deepEqual(scadenzaDocumento(undefined, "2026-11-14", ADESSO), { scade: "2027-03-14" });
+});
+
+test("un documento da 24 ore si cancella dopo 24 ore esatte, non prima", () => {
+  const elenco = [{ id: "d", eventId: "giorno:2027-12-25", scade: "2027-04-02", scadeMs: ADESSO + GIORNO, creato: ADESSO }];
+  assert.deepEqual(documentiDaPulire(elenco, "2027-04-01", new Set(), ADESSO + GIORNO - 1), []);
+  assert.deepEqual(documentiDaPulire(elenco, "2027-04-01", new Set(), ADESSO + GIORNO), ["d"]);
 });
