@@ -6,6 +6,8 @@
 // Gira interamente nel browser (nessuna API, nessun server).
 // ═══════════════════════════════════════════════════════════════
 
+import { trovaGiorniInTesto } from "./39-formato-giorno.js";
+
 const MESI = {
   gennaio: 1, febbraio: 2, marzo: 3, aprile: 4, maggio: 5, giugno: 6,
   luglio: 7, agosto: 8, settembre: 9, ottobre: 10, novembre: 11, dicembre: 12,
@@ -18,9 +20,10 @@ const TURNO_APP = { primo: "Primo", secondo: "Secondo", terzo: "Terzo", notturno
 // Riposo settimanale / Art.19 / Non lavoro non combaciano -> ignorati.
 const RIGA_RE = /(?:Lun|Mar|Mer|Gio|Ven|Sab|Dom)\.\s*(\d{1,2})\s+(Primo|Secondo|Terzo|Notturno)\b/gi;
 
-// Riga del formato nuovo: "Mercoledì 04/11/0026 Primo" (giorno intero + data gg/mm/aaaa).
-// L'anno puo' essere scritto a 2 o 4 cifre ("0026" = 2026).
-const RIGA_DATA_RE = /(?:Lun|Mar|Mer|Gio|Ven|Sab|Dom)[a-zà-ù\u0300]*\s+(\d{1,2})\/(\d{1,2})\/(\d{2,4})\s+(Primo|Secondo|Terzo|Notturno)\b/gi;
+// Riga del formato nuovo: giorno + data (qualsiasi variante riconosciuta da
+// 39-formato-giorno.js) seguita dal turno: "Mercoledì 04/11/0026 Primo".
+const TURNO_INIZIO_RE = /^\s*(Primo|Secondo|Terzo|Notturno)\b/i;
+const MESE_ANNO_RE = /\b(?:gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+(\d{4})\b/i;
 
 // Totali stampati in fondo al PDF, usati come controllo di coerenza
 // ("Giorni primo turno = 9" nel formato vecchio, "Giorni primo turno 9" nel nuovo).
@@ -37,18 +40,21 @@ export function parseTestoCalendarioTurni(testo) {
 
   const turni = [];
   const viste = new Set();
-  const nuove = [...t.matchAll(RIGA_DATA_RE)];
+  const annoTitolo = MESE_ANNO_RE.exec(t);
+  const nuove = [];
+  for (const g of trovaGiorniInTesto(t, { richiediMese: true })) {
+    const mt = TURNO_INIZIO_RE.exec(g.resto);
+    if (!mt) continue; // riposo, assenza, Art.19, Non lavoro...
+    const anno = g.anno ?? (annoTitolo ? parseInt(annoTitolo[1], 10) : null);
+    if (anno == null) continue;
+    nuove.push({ giorno: g.giorno, mese: g.mese, anno, turno: mt[1] });
+  }
   if (nuove.length > 0) {
     for (const m of nuove) {
-      const giorno = parseInt(m[1], 10);
-      const mese = parseInt(m[2], 10);
-      let anno = parseInt(m[3], 10);
-      if (anno < 100) anno += 2000;
-      if (giorno < 1 || giorno > 31 || mese < 1 || mese > 12) continue;
-      const data = `${anno}-${String(mese).padStart(2, "0")}-${String(giorno).padStart(2, "0")}`;
+      const data = `${m.anno}-${String(m.mese).padStart(2, "0")}-${String(m.giorno).padStart(2, "0")}`;
       if (viste.has(data)) continue;
       viste.add(data);
-      turni.push({ data, turno: TURNO_APP[m[4].toLowerCase()] });
+      turni.push({ data, turno: TURNO_APP[m.turno.toLowerCase()] });
     }
   } else {
     const mTit = /Calendario\s+turni\s*-\s*([A-Za-zàèéìòù]+)\s+(\d{4})/i.exec(t);

@@ -7,6 +7,7 @@ import {
 import { ConfermaEliminazione } from "./05-Comuni";
 import { leggiPdfCalendarioTurni } from "./14-pdf-turni";
 import { leggiPdfCotStella } from "./30-pdf-cot";
+import { riconosciInizioRiga, trovaGiorniInTesto } from "./39-formato-giorno";
 import { leggiConMotore } from "./35-ocr-motori";
 
 // ═══════════════════════════════════════════════════════════════
@@ -542,19 +543,11 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
     { radice: "nott", titoli: ["NOTTE"] },
   ];
 
-  const GIORNI_ABBR = "lun|mar|mer|gio|ven|sab|dom";
-  // Riconosce l'inizio di una riga tabella: "mer 01", "mer. 01", "01 mer", ecc.
-  // Tollerante a icone/simboli spuri prima del giorno (es. emoji di ferie/riposo
-  // lette da Tesseract come caratteri strani), non solo spazi bianchi.
-  // Accetta anche il giorno scritto per intero seguito dalla data: "Mercoledì 04/11/0026".
-  const INIZIO_RIGA_REGEX = new RegExp(`^[^a-zA-Z0-9]{0,6}(?:(${GIORNI_ABBR})[a-zàèéìòù]*\\.?\\s*(\\d{1,2})|(\\d{1,2})\\s*(${GIORNI_ABBR})[a-zàèéìòù]*\\.?)`, "i");
-  // Resto della data dopo il giorno ("/11/0026"): si scarta, il turno viene dopo.
-  const RESTO_DATA_REGEX = /^\s*[/.\-|]\s*\d{1,2}\s*[/.\-|]\s*\d{2,4}\s*/;
+  // Il riconoscimento del giorno (nome, data, mese in lettere, ISO...) sta in
+  // 39-formato-giorno.js: lì si aggiungono le varianti nuove.
   // Righe che non sono un turno di lavoro: si ignorano senza segnalarle come non riconosciute.
   const RIGA_NON_TURNO = /riposo|assenza|non\s*lavoro|art\s*\.?\s*19/i;
   const PAROLA_TURNO_REGEX = /prim|second|terz|nott|riposo|assenza|lavoro|art\s*\.?\s*19/i;
-  // Fallback: cerca ovunque nel testo, usato solo per completare i giorni mancanti
-  const RIGA_REGEX_GLOBALE = new RegExp(`(${GIORNI_ABBR})[a-zàèéìòù]*\\.?\\s*(\\d{1,2})(?:\\s*[/.\\-]\\s*\\d{1,2}\\s*[/.\\-]\\s*\\d{2,4})?[^\\wàèéìòù]*([a-zA-Zàèéìòù°'\\s]+)`, "gi");
 
   function trovaModelloPerTesto(testoLetto){
     const t = (testoLetto||"").toLowerCase().trim();
@@ -616,19 +609,16 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
     const linee = testo.split(/\r?\n/);
     for(let i=0;i<linee.length;i++){
       const linea = linee[i];
-      const mtc = INIZIO_RIGA_REGEX.exec(linea);
-      if(!mtc) continue;
-      const numGiorno = parseInt(mtc[2] || mtc[3], 10);
-      if(!numGiorno || numGiorno<1 || numGiorno>31) continue;
-      // il testo del turno è quello che resta sulla stessa riga dopo il match iniziale
-      let restoRiga = linea.slice(mtc.index + mtc[0].length);
-      const conDataCompleta = RESTO_DATA_REGEX.test(restoRiga);
-      restoRiga = restoRiga.replace(RESTO_DATA_REGEX, "").trim();
+      const rc = riconosciInizioRiga(linea);
+      if(!rc) continue;
+      const numGiorno = rc.giorno;
+      // il testo del turno è quello che resta sulla stessa riga dopo giorno/data
+      let restoRiga = rc.resto.trim();
       // se sulla riga non resta nulla di utile (es. il turno è andato a capo, come
       // quando il motore legge ogni colonna della tabella come riga a sé), guarda
-      // anche le righe successive, fino alla prossima riga-data
-      if(conDataCompleta && !PAROLA_TURNO_REGEX.test(restoRiga)){
-        for(let k=i+1; k<=i+3 && k<linee.length && !INIZIO_RIGA_REGEX.test(linee[k]) && !PAROLA_TURNO_REGEX.test(restoRiga); k++){
+      // anche le righe successive, fino alla prossima riga-giorno
+      if(rc.mese!=null && !PAROLA_TURNO_REGEX.test(restoRiga)){
+        for(let k=i+1; k<=i+3 && k<linee.length && !riconosciInizioRiga(linee[k]) && !PAROLA_TURNO_REGEX.test(restoRiga); k++){
           restoRiga = (restoRiga + " " + linee[k]).trim();
         }
       } else if(restoRiga.length < 2 && linee[i+1]){
@@ -645,14 +635,10 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
   // lasciati dal passaggio 1 (es. quando l'OCR non mette a capo correttamente).
   function parseGlobale(testo){
     const risultato = new Map();
-    let mtc;
-    RIGA_REGEX_GLOBALE.lastIndex = 0;
-    while((mtc = RIGA_REGEX_GLOBALE.exec(testo)) !== null){
-      const numGiorno = parseInt(mtc[2],10);
-      if(!numGiorno || numGiorno<1 || numGiorno>31) continue;
-      if(!risultato.has(numGiorno)){
-        risultato.set(numGiorno, mtc[3].trim());
-      }
+    for(const g of trovaGiorniInTesto(testo)){
+      if(risultato.has(g.giorno)) continue;
+      const mt = /^[^a-zA-Zàèéìòù]*([a-zA-Zàèéìòù°'\s]+)/.exec(g.resto);
+      if(mt && mt[1].trim()) risultato.set(g.giorno, mt[1].trim());
     }
     return risultato;
   }
@@ -695,7 +681,7 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
     if(tipoTabella==="stella"){
       // Percorso per posizione: serve la Y di ogni riga-data nota, dedotta
       // dalle parole che compongono il numero di giorno riconosciuto da
-      // INIZIO_RIGA_REGEX (stesso regex del parsing testuale, ma qui si cerca
+      // riconosciInizioRiga (stesso riconoscimento del parsing testuale, ma qui si cerca
       // la parola-numero corrispondente dentro `parole` per prenderne la Y).
       const numeroGiorniRigheData = [];
       for(const numGiorno of numeriGiorno){
