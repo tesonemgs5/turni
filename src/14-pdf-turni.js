@@ -97,6 +97,29 @@ export function parseTestoCalendarioTurni(testo) {
 }
 
 // Legge il file PDF nel browser e restituisce il risultato del parsing.
+// Disegna la prima pagina del PDF in un'immagine PNG, cosi' i due motori OCR
+// (Tesseract e Paddle) leggono il PDF come leggono una foto.
+export async function renderPdfInImmagine(file, larghezza = 1100) {
+  const pdfjs = await import("pdfjs-dist");
+  const worker = (await import("pdfjs-dist/build/pdf.worker.min.mjs?url")).default;
+  pdfjs.GlobalWorkerOptions.workerSrc = worker;
+  const pdf = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
+  const pagina = await pdf.getPage(1);
+  const base = pagina.getViewport({ scale: 1 });
+  const viewport = pagina.getViewport({ scale: larghezza / base.width });
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.ceil(viewport.width);
+  canvas.height = Math.ceil(viewport.height);
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  await pagina.render({ canvasContext: ctx, canvas, viewport }).promise;
+  const blob = await new Promise((res, rej) =>
+    canvas.toBlob((b) => (b ? res(b) : rej(new Error("Immagine del PDF non creata"))), "image/png"));
+  const nome = (file.name || "calendario-turni").replace(/\.pdf$/i, "");
+  return new File([blob], `${nome}.png`, { type: "image/png" });
+}
+
 export async function leggiPdfCalendarioTurni(file) {
   const pdfjs = await import("pdfjs-dist");
   const worker = (await import("pdfjs-dist/build/pdf.worker.min.mjs?url")).default;

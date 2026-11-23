@@ -5,7 +5,7 @@ import {
   normalizzaTestoGrezzoTurni, oraInMinuti, registraProblemiImport, registraAttivita, segnalaErroreSoloLog, leggiDettaglioImport, impostaDettaglioImport
 } from "./04-Rotazione";
 import { ConfermaEliminazione } from "./05-Comuni";
-import { leggiPdfCalendarioTurni } from "./14-pdf-turni";
+import { leggiPdfCalendarioTurni, renderPdfInImmagine } from "./14-pdf-turni";
 import { leggiPdfCotStella } from "./30-pdf-cot";
 import { riconosciInizioRiga, trovaGiorniInTesto } from "./39-formato-giorno";
 import { leggiConMotore } from "./35-ocr-motori";
@@ -515,7 +515,7 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
   const [testoJsonIncollato, setTestoJsonIncollato] = useState("");
   const [promptCopiato, setPromptCopiato] = useState(false);
   const [nRigheAggiunte, setNRigheAggiunte] = useState(0);
-  const [motoreFase, setMotoreFase] = useState(null); // "tesseract" | "paddle" | null (JSON/PDF)
+  const [motoreFase, setMotoreFase] = useState(null); // "pdf" | "tesseract" | "paddle" | null (JSON)
   const [esitoMotore, setEsitoMotore] = useState(""); // messaggio se il motore non ha importato niente
   // Doppio controllo del PDF COT: null | { stato:"ok" } | { stato:"diverso"|"nonverificato", differenze, motivo, turni }
   const [verificaCot, setVerificaCot] = useState(null);
@@ -533,6 +533,7 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
   const [confermaCancellaRegistroOcr, setConfermaCancellaRegistroOcr] = useState(false);
   const [importando, setImportando] = useState(false); // true durante l'elaborazione del JSON incollato, per disabilitare il pulsante e mostrare feedback visivo
   const pendingFile = useRef(null);
+  const pdfOrigine = useRef(null); // PDF personale in lettura: dopo il popup PDF seguono Tesseract e Paddle sull'immagine creata
 
   // Radici testo-foto -> titolo modello reale. Basta trovare la radice (2-3 lettere)
   // dentro il testo letto dall'OCR, anche con rumore/orari/spazi attorno.
@@ -733,6 +734,7 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
   const NOME_MOTORE = { tesseract:"Tesseract", paddle:"Paddle" };
 
   async function handleFile(file){
+    pdfOrigine.current = null;
     pendingFile.current = file;
     setImgPreviewUrl(URL.createObjectURL(file));
     await eseguiMotore("tesseract");
@@ -791,7 +793,26 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
     setStep("riepilogo");
   }
 
+  // Disegna il PDF in un'immagine e la fa leggere da Tesseract, poi da Paddle.
+  async function avviaOcrDaPdf(file){
+    setErrore("");
+    setEsitoMotore("");
+    setStep("lettura-pdf");
+    try{
+      const immagine = await renderPdfInImmagine(file);
+      pendingFile.current = immagine;
+      setImgPreviewUrl(URL.createObjectURL(immagine));
+    }catch(errRender){
+      segnalaErroreSoloLog(errRender, "Disegno del PDF in immagine");
+      setErrore("Non sono riuscito a preparare il PDF per Tesseract e Paddle.");
+      setStep("upload");
+      return;
+    }
+    await eseguiMotore("tesseract");
+  }
+
   async function handleFilePdf(file){
+    pdfOrigine.current = (file.type==="application/pdf" && tipoTabella==="personale") ? file : null;
     setMotoreFase(null);
     setEsitoMotore("");
     setErrore("");
@@ -818,6 +839,7 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
             setNRigheAggiunte(n||0);
             registraProblemiImport(mancantiLocali, []);
             setRisultatoImportOcr({ mancanti: mancantiLocali, sospetti: [] });
+            setMotoreFase("pdf");
             setStep("riepilogo");
             return;
           }
@@ -1356,7 +1378,12 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
               <div style={{textAlign:"center"}}>
                 {motoreFase&&(
                   <div style={{fontSize:12,color:"#555",fontWeight:800,marginBottom:8}}>
-                    {motoreFase==="tesseract"?"Lettura 1 di 2 · Tesseract":"Lettura 2 di 2 · Paddle"}
+                    {(()=>{
+                      const tot = pdfOrigine.current ? 3 : 2;
+                      if(motoreFase==="pdf") return "Lettura 1 di 3 · PDF";
+                      if(motoreFase==="tesseract") return `Lettura ${tot-1} di ${tot} · Tesseract`;
+                      return `Lettura ${tot} di ${tot} · Paddle`;
+                    })()}
                   </div>
                 )}
                 {esitoMotore&&(
@@ -1428,10 +1455,10 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
                 </details>
               )}
 
-              <button onClick={()=>{ if(motoreFase==="tesseract") eseguiMotore("paddle"); else onClose(); }}
+              <button onClick={()=>{ if(motoreFase==="pdf") avviaOcrDaPdf(pdfOrigine.current); else if(motoreFase==="tesseract") eseguiMotore("paddle"); else onClose(); }}
                 style={{width:"100%",marginTop:2,background:accent,border:"none",borderRadius:10,
                   color:getContrastTextColor(accent),padding:"11px 0",cursor:"pointer",fontWeight:700,fontSize:13}}>
-                {motoreFase==="tesseract" ? "OK · leggi con Paddle" : motoreFase==="paddle" ? "OK · Fatto" : "Fatto"}
+                {motoreFase==="pdf" ? "OK · leggi con Tesseract" : motoreFase==="tesseract" ? "OK · leggi con Paddle" : motoreFase==="paddle" ? "OK · Fatto" : "Fatto"}
               </button>
             </div>
           )}
