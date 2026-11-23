@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════
 // 14-pdf-turni.js — Lettura diretta del PDF "Calendario turni" (turni
-// personali) SENZA OCR e SENZA AI: il PDF ha un livello di testo, quindi
+// personali) SENZA OCR: il PDF ha un livello di testo, quindi
 // si legge il testo esatto con pdf.js e si ricostruisce il JSON
 // [{ "data":"YYYY-MM-DD", "turno":"Primo|Secondo|Terzo|Notte" }].
 // Gira interamente nel browser (nessuna API, nessun server).
@@ -18,34 +18,53 @@ const TURNO_APP = { primo: "Primo", secondo: "Secondo", terzo: "Terzo", notturno
 // Riposo settimanale / Art.19 / Non lavoro non combaciano -> ignorati.
 const RIGA_RE = /(?:Lun|Mar|Mer|Gio|Ven|Sab|Dom)\.\s*(\d{1,2})\s+(Primo|Secondo|Terzo|Notturno)\b/gi;
 
-// Totali stampati in fondo al PDF, usati come controllo di coerenza.
+// Riga del formato nuovo: "Mercoledì 04/11/0026 Primo" (giorno intero + data gg/mm/aaaa).
+// L'anno puo' essere scritto a 2 o 4 cifre ("0026" = 2026).
+const RIGA_DATA_RE = /(?:Lun|Mar|Mer|Gio|Ven|Sab|Dom)[a-zà-ù\u0300]*\s+(\d{1,2})\/(\d{1,2})\/(\d{2,4})\s+(Primo|Secondo|Terzo|Notturno)\b/gi;
+
+// Totali stampati in fondo al PDF, usati come controllo di coerenza
+// ("Giorni primo turno = 9" nel formato vecchio, "Giorni primo turno 9" nel nuovo).
 const TOTALI_RE = {
-  Primo:   /giorni\s+primo\s+turno\s*=\s*(\d+)/i,
-  Secondo: /giorni\s+secondo\s+turno\s*=\s*(\d+)/i,
-  Terzo:   /giorni\s+terzo\s+turno\s*=\s*(\d+)/i,
-  Notte:   /giorni\s+notturno\s*=\s*(\d+)/i,
+  Primo:   /giorni\s+primo\s+turno\s*=?\s*(\d+)/i,
+  Secondo: /giorni\s+secondo\s+turno\s*=?\s*(\d+)/i,
+  Terzo:   /giorni\s+terzo\s+turno\s*=?\s*(\d+)/i,
+  Notte:   /giorni\s+(?:turno\s+)?notturno\s*=?\s*(\d+)/i,
 };
 
 // Funzione pura (testabile senza browser): da testo del PDF a risultato.
 export function parseTestoCalendarioTurni(testo) {
   const t = (testo || "").replace(/\s+/g, " ");
 
-  const mTit = /Calendario\s+turni\s*-\s*([A-Za-zàèéìòù]+)\s+(\d{4})/i.exec(t);
-  if (!mTit) return { ok: false, motivo: "Titolo \"Calendario turni - Mese Anno\" non trovato", turni: [] };
-  const mese = MESI[mTit[1].toLowerCase()];
-  const anno = mTit[2];
-  if (!mese) return { ok: false, motivo: `Mese non riconosciuto: ${mTit[1]}`, turni: [] };
-
   const turni = [];
   const viste = new Set();
-  for (const m of t.matchAll(RIGA_RE)) {
-    const giorno = parseInt(m[1], 10);
-    if (giorno < 1 || giorno > 31 || viste.has(giorno)) continue;
-    viste.add(giorno);
-    turni.push({
-      data: `${anno}-${String(mese).padStart(2, "0")}-${String(giorno).padStart(2, "0")}`,
-      turno: TURNO_APP[m[2].toLowerCase()],
-    });
+  const nuove = [...t.matchAll(RIGA_DATA_RE)];
+  if (nuove.length > 0) {
+    for (const m of nuove) {
+      const giorno = parseInt(m[1], 10);
+      const mese = parseInt(m[2], 10);
+      let anno = parseInt(m[3], 10);
+      if (anno < 100) anno += 2000;
+      if (giorno < 1 || giorno > 31 || mese < 1 || mese > 12) continue;
+      const data = `${anno}-${String(mese).padStart(2, "0")}-${String(giorno).padStart(2, "0")}`;
+      if (viste.has(data)) continue;
+      viste.add(data);
+      turni.push({ data, turno: TURNO_APP[m[4].toLowerCase()] });
+    }
+  } else {
+    const mTit = /Calendario\s+turni\s*-\s*([A-Za-zàèéìòù]+)\s+(\d{4})/i.exec(t);
+    if (!mTit) return { ok: false, motivo: "Titolo \"Calendario turni - Mese Anno\" non trovato", turni: [] };
+    const mese = MESI[mTit[1].toLowerCase()];
+    const anno = mTit[2];
+    if (!mese) return { ok: false, motivo: `Mese non riconosciuto: ${mTit[1]}`, turni: [] };
+    for (const m of t.matchAll(RIGA_RE)) {
+      const giorno = parseInt(m[1], 10);
+      if (giorno < 1 || giorno > 31 || viste.has(giorno)) continue;
+      viste.add(giorno);
+      turni.push({
+        data: `${anno}-${String(mese).padStart(2, "0")}-${String(giorno).padStart(2, "0")}`,
+        turno: TURNO_APP[m[2].toLowerCase()],
+      });
+    }
   }
 
   // Controllo con i totali del PDF (se presenti).

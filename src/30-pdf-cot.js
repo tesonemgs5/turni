@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════
 // 30-pdf-cot.js — Lettura diretta del PDF "Programmazione autopattuglie"
-// (prospetto COT) SENZA OCR e SENZA AI. Il PDF ha il livello di testo:
+// (prospetto COT) SENZA OCR. Il PDF ha il livello di testo:
 // ogni cella è una parola con coordinate. Una occorrenza di "Stella" è
 // l'INCONTRO tra asse Y (riga = giorno) e asse X (colonna = fascia).
 //

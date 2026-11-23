@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // 15-quartine.js — Quartine (I-IV): lettura del PDF/foto "QUARTINE ANNO xxxx"
 // e funzioni di supporto. Il PDF ha un livello di testo: si leggono i numeri con
-// la loro posizione (pdf.js), senza AI. Per le foto si usa Tesseract (stessa
+// la loro posizione (pdf.js). Per le foto si usa Tesseract (stessa
 // logica sulle posizioni delle parole). Tutto gira nel browser.
 //
 // Modello dati salvato in reportSettings.quartine:

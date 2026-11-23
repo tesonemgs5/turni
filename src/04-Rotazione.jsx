@@ -1623,11 +1623,11 @@ function scriviRegistroImportProblemi(voce) {
   }
 }
 
-// Ripulisce testo grezzo (spesso output di OCR/AI esterno, es. screenshot
+// Ripulisce testo grezzo (spesso output di OCR esterno, es. screenshot
 // di un turnario incollato) prima di passarlo a JSON.parse: rimuove i fence
 // markdown ```json ... ``` (o ``` ... ```) se presenti, e taglia via
 // eventuale testo prima della prima { o [ e dopo l'ultima } o ] --
-// artefatti tipici di OCR/AI che aggiungono frasi introduttive o note
+// artefatti tipici di OCR che aggiungono frasi introduttive o note
 // finali attorno al JSON vero e proprio.
 export function estraiJsonDaTesto(testo) {
   let t = String(testo || "").trim();
@@ -1716,7 +1716,7 @@ export function normalizzaTestoGrezzoTurni(testo) {
 }
 
 // Normalizza un JSON "grezzo" (parsato ma di forma libera, spesso output
-// di un OCR/AI esterno) nel formato canonico [{data, titolo, oraInizio,
+// di un OCR esterno) nel formato canonico [{data, titolo, oraInizio,
 // oraFine, auto, collega, note}]. Gestisce le varianti più comuni:
 // - array piatto già nel formato giusto (o quasi)
 // - oggetto singolo invece di array (un solo giorno)

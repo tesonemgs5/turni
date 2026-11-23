@@ -11,7 +11,7 @@ test("errore di programma: spiega cosa succede ai dati", () => {
 test("rete assente", () => {
   assert.match(spiegaErrore("TypeError: Failed to fetch", "x").cosaSuccede, /internet/);
 });
-test("risposta non JSON (servizio AI)", () => {
+test("risposta non JSON", () => {
   assert.match(spiegaErrore("Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON", "x").cosaSuccede, /formato/);
 });
 test("errore sconosciuto: spiegazione generica con il contesto", () => {

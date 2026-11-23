@@ -168,7 +168,7 @@
   {
     "n": 1,
     "data": "2026-10-24",
-    "titolo": "Import PDF COT (Stella) senza AI e senza API",
+    "titolo": "Import PDF COT (Stella) senza API",
     "righe": [
       "Il PDF del prospetto COT viene letto direttamente dall'app: nessuna chiave API necessaria.",
       "Ogni «Stella» viene assegnata a giorno (riga) e fascia (colonna), anche se le colonne per fascia cambiano da mese a mese.",

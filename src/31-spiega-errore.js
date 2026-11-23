@@ -39,12 +39,12 @@ const REGOLE = [
       "con quel testo il difetto si trova e si corregge.",
   },
   {
-    // Risposta non valida dal server / servizio AI
+    // Risposta non valida dal server
     test: /not valid json|unexpected token|unexpected end of json|json\.parse|<!doctype/i,
     cosaSuccede:
       "L'app si aspettava una risposta in un certo formato, ma dal server è arrivata una pagina o un " +
       "testo diverso (di solito una pagina di errore). Succede quando il servizio contattato non è " +
-      "raggiungibile o non è configurato (per esempio manca la chiave API dell'AI sul server).",
+      "raggiungibile o non è configurato.",
     perIDati:
       "Non è stato salvato né importato nulla da questa operazione: i tuoi dati esistenti non sono stati toccati.",
     cosaFare:

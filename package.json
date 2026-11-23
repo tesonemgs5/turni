@@ -20,7 +20,6 @@
     "@capacitor/core": "^8.5.3",
     "@capacitor/filesystem": "^8.1.5",
     "@capacitor/share": "^8.0.3",
-    "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.118.0",
     "onnxruntime-web": "^1.23.2",
     "pdfjs-dist": "^6.4.299",

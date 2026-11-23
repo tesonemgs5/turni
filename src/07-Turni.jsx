@@ -120,7 +120,7 @@ Regole: una riga per ogni turno. "data" in formato YYYY-MM-DD. "titolo" esattame
     }
     // Il formato "canonico" è un array piatto [{data, titolo, oraInizio,
     // oraFine, auto, collega, note}], ma qui arriva spesso l'output libero
-    // di un OCR/AI esterno all'app (foto -> JSON fatto fuori da qui), che
+    // di un OCR esterno all'app (foto -> JSON fatto fuori da qui), che
     // cambia struttura a ogni tentativo: annidato sotto chiavi diverse,
     // "giorno" numerico invece di "data", "orario" come intervallo unico,
     // a volte un solo giorno come oggetto invece di un array. Si prova a
@@ -240,7 +240,7 @@ Regole: una riga per ogni turno. "data" in formato YYYY-MM-DD. "titolo" esattame
               {promptCopiatoJson ? "✅ Prompt copiato!" : "🤖 Copia prompt per Claude"}
             </button>
             <div style={{fontSize:11,color:T.sub,marginBottom:8}}>
-              Va bene anche l'output "grezzo" di un OCR/AI esterno, o un testo semplice tipo:
+              Va bene anche l'output "grezzo" di un OCR esterno, o un testo semplice tipo:
               "Giovedi 01/01/2026" seguito da righe "Turno:", "Orario:", "Auto:", "Collega:", "Note:".
               Basta che ogni turno abbia una data e un titolo (campo Turno).
             </div>
@@ -499,7 +499,7 @@ async function preprocessaImmagine(file){
 }
 
 export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliStella, nomeCalPersonale, nomeCalStella, importsRecenti, year, month, onClose, onConfirm: onConfirmProp, onDeleteImport}){
-  const [step, setStep] = useState("scegli-tipo"); // scegli-tipo | upload | ocr | chiedi-gemini | gemini-ocr | incolla-json | riepilogo
+  const [step, setStep] = useState("scegli-tipo"); // scegli-tipo | upload | ocr | lettura-pdf | incolla-json | riepilogo
   const [tipoTabella, setTipoTabella] = useState(null); // "personale" | "stella"
   // I modelli usati dipendono dal tipo: personali -> calendario FU, Stella -> calendario COT.
   const modelli = (tipoTabella==="stella" ? modelliStella : modelliPersonali) || [];
@@ -526,7 +526,7 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
   const [risultatoImportOcr, setRisultatoImportOcr] = useState(null);
   // Il riepilogo mostra il dettaglio dell'ULTIMA importazione: si azzera quando si riparte.
   useEffect(()=>{
-    if(step!=="riepilogo" && step!=="ocr" && step!=="gemini-ocr") impostaDettaglioImport(null);
+    if(step!=="riepilogo" && step!=="ocr" && step!=="lettura-pdf") impostaDettaglioImport(null);
   }, [step]);
   const [registroOcr, setRegistroOcr] = useState(null);
   const [confermaCancellaRegistroOcr, setConfermaCancellaRegistroOcr] = useState(false);
@@ -546,9 +546,15 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
   // Riconosce l'inizio di una riga tabella: "mer 01", "mer. 01", "01 mer", ecc.
   // Tollerante a icone/simboli spuri prima del giorno (es. emoji di ferie/riposo
   // lette da Tesseract come caratteri strani), non solo spazi bianchi.
-  const INIZIO_RIGA_REGEX = new RegExp(`^[^a-zA-Z0-9]{0,6}(?:(${GIORNI_ABBR})\\.?\\s*(\\d{1,2})|(\\d{1,2})\\s*(${GIORNI_ABBR})\\.?)`, "i");
+  // Accetta anche il giorno scritto per intero seguito dalla data: "Mercoledì 04/11/0026".
+  const INIZIO_RIGA_REGEX = new RegExp(`^[^a-zA-Z0-9]{0,6}(?:(${GIORNI_ABBR})[a-zàèéìòù]*\\.?\\s*(\\d{1,2})|(\\d{1,2})\\s*(${GIORNI_ABBR})[a-zàèéìòù]*\\.?)`, "i");
+  // Resto della data dopo il giorno ("/11/0026"): si scarta, il turno viene dopo.
+  const RESTO_DATA_REGEX = /^\s*[/.\-|]\s*\d{1,2}\s*[/.\-|]\s*\d{2,4}\s*/;
+  // Righe che non sono un turno di lavoro: si ignorano senza segnalarle come non riconosciute.
+  const RIGA_NON_TURNO = /riposo|assenza|non\s*lavoro|art\s*\.?\s*19/i;
+  const PAROLA_TURNO_REGEX = /prim|second|terz|nott|riposo|assenza|lavoro|art\s*\.?\s*19/i;
   // Fallback: cerca ovunque nel testo, usato solo per completare i giorni mancanti
-  const RIGA_REGEX_GLOBALE = new RegExp(`(${GIORNI_ABBR})\\.?\\s*(\\d{1,2})[^\\wàèéìòù]*([a-zA-Zàèéìòù°'\\s]+)`, "gi");
+  const RIGA_REGEX_GLOBALE = new RegExp(`(${GIORNI_ABBR})[a-zàèéìòù]*\\.?\\s*(\\d{1,2})(?:\\s*[/.\\-]\\s*\\d{1,2}\\s*[/.\\-]\\s*\\d{2,4})?[^\\wàèéìòù]*([a-zA-Zàèéìòù°'\\s]+)`, "gi");
 
   function trovaModelloPerTesto(testoLetto){
     const t = (testoLetto||"").toLowerCase().trim();
@@ -615,10 +621,17 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
       const numGiorno = parseInt(mtc[2] || mtc[3], 10);
       if(!numGiorno || numGiorno<1 || numGiorno>31) continue;
       // il testo del turno è quello che resta sulla stessa riga dopo il match iniziale
-      let restoRiga = linea.slice(mtc.index + mtc[0].length).trim();
-      // se sulla riga non resta nulla di utile (es. il turno è andato a capo),
-      // guarda anche la riga successiva come possibile continuazione
-      if(restoRiga.length < 2 && linee[i+1]){
+      let restoRiga = linea.slice(mtc.index + mtc[0].length);
+      const conDataCompleta = RESTO_DATA_REGEX.test(restoRiga);
+      restoRiga = restoRiga.replace(RESTO_DATA_REGEX, "").trim();
+      // se sulla riga non resta nulla di utile (es. il turno è andato a capo, come
+      // quando il motore legge ogni colonna della tabella come riga a sé), guarda
+      // anche le righe successive, fino alla prossima riga-data
+      if(conDataCompleta && !PAROLA_TURNO_REGEX.test(restoRiga)){
+        for(let k=i+1; k<=i+3 && k<linee.length && !INIZIO_RIGA_REGEX.test(linee[k]) && !PAROLA_TURNO_REGEX.test(restoRiga); k++){
+          restoRiga = (restoRiga + " " + linee[k]).trim();
+        }
+      } else if(restoRiga.length < 2 && linee[i+1]){
         restoRiga = (restoRiga + " " + linee[i+1]).trim();
       }
       if(restoRiga){
@@ -705,6 +718,7 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
     }else{
       for(const numGiorno of numeriGiorno){
         const testoTurno = daRigaPerRiga.get(numGiorno) || daGlobale.get(numGiorno);
+        if(RIGA_NON_TURNO.test(testoTurno||"")) continue;
         const dd = String(numGiorno).padStart(2,"0");
         const dateKey = `${year}-${mm}-${dd}`;
         const mod = trovaModelloPerTesto(testoTurno);
@@ -791,18 +805,20 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
     setStep("riepilogo");
   }
 
-  async function handleFileConGemini(file){
+  async function handleFilePdf(file){
     setMotoreFase(null);
     setEsitoMotore("");
     setErrore("");
-    setStep("gemini-ocr");
+    setStep("lettura-pdf");
 
     // PDF dei turni personali: lettura diretta del testo (pdf.js), senza
-    // OCR e senza AI. Se i conteggi tornano con i totali stampati nel PDF
-    // si importa subito; altrimenti si ripiega su Gemini come prima.
+    // OCR. Se i conteggi tornano con i totali stampati nel PDF
+    // si importa subito.
+    let motivoPdf = "";
     if(file.type==="application/pdf" && tipoTabella==="personale"){
       try{
         const r = await leggiPdfCalendarioTurni(file);
+        if(!r.ok) motivoPdf = r.motivo || "";
         if(r.ok){
           const righeLocali = [];
           const mancantiLocali = [];
@@ -827,7 +843,7 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
     }
 
     // PDF del prospetto COT (Stella): lettura diretta del testo con le
-    // coordinate (incrocio riga=giorno / colonna=fascia), senza AI e senza API.
+    // coordinate (incrocio riga=giorno / colonna=fascia), senza API.
     if(file.type==="application/pdf" && tipoTabella==="stella"){
       try{
         setVerificaCot(null);
@@ -861,39 +877,8 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
       return;
     }
 
-    try{
-      const base64 = await new Promise((res, rej)=>{
-        const r = new FileReader();
-        r.onload = () => res(r.result.split(",")[1]);
-        r.onerror = () => rej(new Error("Lettura file fallita"));
-        r.readAsDataURL(file);
-      });
-      const resp = await fetch("/api/estrai-turni", {
-        method: "POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ fileBase64: base64, mimeType: file.type })
-      });
-      if(!resp.ok) throw new Error("Chiamata AI fallita");
-      const turniTrovati = await resp.json(); // [{data:"YYYY-MM-DD", turno:"..."}]
-
-      const righeElaborate = [];
-      for(const t of (turniTrovati||[])){
-        const mod = trovaModelloPerTesto(t.turno);
-        if(!mod) continue;
-        righeElaborate.push({ dateKey: t.data, modelloId: mod.id });
-      }
-
-      if(righeElaborate.length===0){
-        setErrore("Anche l'AI (non operativa) non è riuscita a riconoscere turni in questo file.");
-        setStep("upload");
-        return;
-      }
-      await onConfirm(righeElaborate);
-    }catch(err){
-      segnalaErroreSoloLog(err, "OCR/interpretazione con AI (Gemini)");
-      setErrore("Errore durante la lettura con l'AI (non operativa). Riprova.");
-      setStep("upload");
-    }
+    setErrore(motivoPdf ? `Non sono riuscito a leggere questo PDF: ${motivoPdf}` : "Non sono riuscito a leggere questo PDF dei turni.");
+    setStep("upload");
   }
 
   // Converte "1 agosto 2026" -> "2026-08-01". Tollerante a maiuscole/minuscole
@@ -1322,9 +1307,9 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
               <label style={{display:"block",marginTop:10,border:`2px dashed ${accent}`,borderRadius:12,
                 padding:"14px 16px",textAlign:"center",cursor:"pointer",color:"#1a1a1a",fontSize:13,fontWeight:700,
                 background:"#ffffff"}}>
-                🤖 Importa da PDF o foto (AI non operativa)
-                <input type="file" accept="image/*,application/pdf" style={{display:"none"}}
-                  onChange={e=>{ const f=e.target.files?.[0]; if(f){ pendingFile.current=f; setImgPreviewUrl(f.type.startsWith("image")?URL.createObjectURL(f):null); handleFileConGemini(f); } }}/>
+                📄 Importa da PDF
+                <input type="file" accept="application/pdf" style={{display:"none"}}
+                  onChange={e=>{ const f=e.target.files?.[0]; if(f){ pendingFile.current=f; setImgPreviewUrl(f.type.startsWith("image")?URL.createObjectURL(f):null); handleFilePdf(f); } }}/>
               </label>
               <button onClick={()=>{ setErrore(""); setStep("incolla-json"); }}
                 style={{display:"block",width:"100%",marginTop:10,border:`2px dashed #666`,borderRadius:12,
@@ -1475,38 +1460,6 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
             </div>
           )}
 
-          {step==="chiedi-gemini"&&(
-            <div style={{textAlign:"center",padding:"20px 8px"}}>
-              {imgPreviewUrl&&<img src={imgPreviewUrl} alt="" style={{maxWidth:"100%",maxHeight:140,borderRadius:8,marginBottom:16}}/>}
-              {errore&&<div style={{fontSize:13,color:"#1a1a1a",fontWeight:600,marginBottom:16}}>{errore}</div>}
-              {confidenzaRaggiunta!=null&&!nessunTurnoRilevato&&(
-                <div style={{fontSize:12,color:"#1a1a1a",fontWeight:600,marginBottom:16}}>
-                  Confidenza lettura locale raggiunta: {Math.round(confidenzaRaggiunta)}%
-                </div>
-              )}
-              <div style={{fontSize:13,color:"#1a1a1a",marginBottom:16,fontWeight:700}}>
-                Il file non è leggibile in locale. Vuoi provare con l'intelligenza artificiale (Gemini, non operativa)?
-              </div>
-              <div style={{display:"flex",gap:8}}>
-                <button onClick={()=>{ setStep("upload"); setErrore(""); }}
-                  style={{flex:1,background:T.s2,border:`1px solid ${T.border}`,borderRadius:10,
-                    color:"#444444",padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
-                  No, riprovo la foto
-                </button>
-                <button onClick={()=>handleFileConGemini(pendingFile.current)}
-                  style={{flex:1,background:accent,border:"none",borderRadius:10,
-                    color:getContrastTextColor(accent),padding:"10px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
-                  🤖 Sì, usa l'AI (non operativa)
-                </button>
-              </div>
-              <button onClick={()=>{ setErrore(""); setStep("incolla-json"); }}
-                style={{width:"100%",marginTop:8,background:"transparent",border:`1px solid ${T.border}`,
-                  borderRadius:10,color:"#444444",padding:"9px 0",cursor:"pointer",fontWeight:700,fontSize:12}}>
-                📋 Oppure incolla un JSON già pronto
-              </button>
-            </div>
-          )}
-
           {step==="conferma-cot"&&verificaCot&&(
             <div style={{textAlign:"left",padding:"20px 8px"}}>
               <div style={{fontSize:14,color:"#1a1a1a",fontWeight:800,marginBottom:8}}>
@@ -1542,10 +1495,10 @@ Una riga per ogni giorno con un turno. La data in formato YYYY-MM-DD. Nel campo 
             </div>
           )}
 
-          {step==="gemini-ocr"&&(
+          {step==="lettura-pdf"&&(
             <div style={{textAlign:"center",padding:"40px 16px"}}>
               {imgPreviewUrl&&<img src={imgPreviewUrl} alt="" style={{maxWidth:"100%",maxHeight:140,borderRadius:8,marginBottom:16}}/>}
-              <div style={{fontSize:13,color:"#444444"}}>Lettura del file con l'AI (non operativa) in corso…</div>
+              <div style={{fontSize:13,color:"#444444"}}>Lettura del PDF in corso…</div>
             </div>
           )}
         </div>

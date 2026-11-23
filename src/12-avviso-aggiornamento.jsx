@@ -260,7 +260,7 @@ function apriLink(url) { window.location.href = url }
 
 const LICENZE = [
   ["React", "MIT"], ["Vite", "MIT"], ["Capacitor", "MIT"], ["Supabase JS", "MIT"],
-  ["pdf.js", "Apache-2.0"], ["Tesseract.js", "Apache-2.0"], ["Google Generative AI SDK", "Apache-2.0"],
+  ["pdf.js", "Apache-2.0"], ["Tesseract.js", "Apache-2.0"],
   ["PaddleOCR PP-OCRv5 mobile", "Apache-2.0"], ["onnxruntime-web", "MIT"],
 ]
 
