@@ -5,7 +5,7 @@ import {
   normalizzaTestoGrezzoTurni, oraInMinuti, registraProblemiImport, registraAttivita, segnalaErroreSoloLog, leggiDettaglioImport, impostaDettaglioImport
 } from "./04-Rotazione";
 import { ConfermaEliminazione } from "./05-Comuni";
-import { leggiPdfCalendarioTurni } from "./14-pdf-turni";
+import { leggiPdfCalendarioTurni, renderPdfInImmagine } from "./14-pdf-turni";
 import { leggiPdfCotStella } from "./30-pdf-cot";
 import { riconosciInizioRiga, trovaGiorniInTesto } from "./39-formato-giorno";
 import { leggiConMotore } from "./35-ocr-motori";
@@ -802,6 +802,16 @@ export function ImportaFotoDialog({T, accent, dark, modelliPersonali, modelliSte
     // si importa subito.
     let motivoPdf = "";
     if(file.type==="application/pdf" && tipoTabella==="personale"){
+      // Il PDF viene disegnato in un'immagine e letto dai due motori OCR,
+      // ognuno col suo popup: prima Tesseract, poi Paddle.
+      try{
+        const immagine = await renderPdfInImmagine(file);
+        await handleFile(immagine);
+        return;
+      }catch(errRender){
+        segnalaErroreSoloLog(errRender, "Disegno del PDF in immagine");
+      }
+      // Ripiego: lettura diretta del testo del PDF (un solo popup).
       try{
         const r = await leggiPdfCalendarioTurni(file);
         if(!r.ok) motivoPdf = r.motivo || "";
