@@ -15,6 +15,7 @@ import { CalBadge, SmartTimeInput, AutocompleteInput, ColorPickerModal,
   ViabilitaView, TicketConfig, NAV_HEIGHT_CSS, ConfermaEliminazione, CercaModelli, NessunModello, NUM_REPORT } from "./05-Comuni";
 import { haDocumenti } from "./32-documenti";
 import { useDocumentiVersione } from "./33-documenti-ui";
+import { CronologiaReport } from "./41-cronologia-report-ui";
 import { ElencoModelliTendine, PulsanteOrdineAB } from "./23-tendine-modelli";
 import { ModelloCard, ModelForm, RotazioneCard, RotazioneForm, ModelloSelector,
   GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView } from "./04-Rotazione";
@@ -659,6 +660,8 @@ export default function VistaCalendario({ C }){
             <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
               <PeriodoReportButton T={T} accent={accent} intervallo={cfg.intervallo} labelGlobale={range.label}
                 onChange={iv=>{ const {intervallo:_vecchio, ...resto} = cfg; updateConteggioConfig(r.id, iv ? {...resto, intervallo:iv} : resto); }}/>
+              <CronologiaReport T={T} accent={accent} reportId={r.id}
+                onRipristina={(cfgVecchia, motivo)=>updateConteggioConfig(r.id, cfgVecchia, `ripristinato lo stato precedente a «${motivo||"modifica"}»`)}/>
               <button onClick={()=>setShowReportModelliPicker(r.id)}
                 style={{display:"flex",alignItems:"center",gap:6,background:"#ffffff",
                   border:`1px solid ${T.border}`,borderRadius:20,padding:"6px 12px",

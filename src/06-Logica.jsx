@@ -12,6 +12,7 @@ import { scaricaFileTesto, inNativo, salvaBackupInCartella, leggiUltimoBackupCar
 import { trovaModelloIdentita, tempoDaEvento } from "./31-identita-modello";
 import { fasceIndennitaDi, pulsantiFasciaDi, minutiPerFasceEvento, tariffaOraria } from "./24-fasce-indennita";
 import { pulisciDocumenti, idEventiDaStore } from "./32-documenti";
+import { descriviModificheReport, aggiungiVersioneReport } from "./40-cronologia-report";
 import {
   FASCE_AUTOMATICHE_DEFAULT, FESTIVITA_DEFAULT_ATTIVE, MONTHS, NOMI_GIORNI_IT, PALETTE, COLORE_H24,
   calcFine6h15, calcFine6h30, calcFineModello, categoriaAppAutoAutomatica, categoriaTurnoAutomatica,
@@ -2298,7 +2299,7 @@ export function useAppCore(session){
     }
   }
 
-  async function saveSettings(updates={}){
+  async function saveSettings(updates={}, opzioni={}){
     // Giorni importanti / festivi personali: PRIMA in locale, poi in coda verso Supabase (vedi sopra).
     const { extra_hols: nuovaExtraHols, ...altri } = updates;
     if(nuovaExtraHols!==undefined){
@@ -2325,8 +2326,11 @@ export function useAppCore(session){
         ...altri,
         updated_at: new Date().toISOString(),
       },
-      contesto:"Salvataggio impostazioni",
+      contesto: opzioni.contesto || "Salvataggio impostazioni",
+      ...(opzioni.voceLogId ? { voceLogId: opzioni.voceLogId } : {}),
     });
+    // L'esito di Supabase (✓ / in coda / non salvato) viene scritto sulla voce del Log quando la coda lavora.
+    if(opzioni.voceLogId) aggiornaEsitoVoceLog(opzioni.voceLogId, (typeof navigator!=="undefined" && navigator.onLine===false) ? "coda" : "attesa");
   }
 
   // ── Quartine (I-IV): salvate dentro report_settings.quartine (colonna già esistente, nessuna modifica al DB).
@@ -8225,10 +8229,32 @@ const importsRecenti = useMemo(()=>{
     return { fasceFiltro:[], modelliInclusi:[], sottomenu:[] };
   }
 
-  function updateConteggioConfig(reportId, cfg){
+  // Registra nel Log (categoria «Report») cosa e' cambiato in un report e salva la versione precedente
+  // per poter tornare indietro. Ritorna l'id della voce di Log (per l'esito di Supabase) o null.
+  function tracciaModificaReport(reportId, prima, dopo, riepilogoForzato){
+    try{
+      const m = descriviModificheReport(prima, dopo);
+      if(!m.cambiato) return null;
+      const nome = (store.reports||[]).find(x=>x.id===reportId)?.label || "Report";
+      const dettagli = [...m.dettagli];
+      dettagli.push(`Dimensione delle impostazioni dei report salvate: circa ${Math.max(1, Math.round(JSON.stringify(dopo||{}).length/1024))} KB`);
+      const v = aggiungiVersioneReport(reportId, prima, m.riepilogo);
+      if(!v.ok) dettagli.push(`Attenzione: ${v.errore}`);
+      return registraAttivita("Report", `${nome}: ${riepilogoForzato || m.riepilogo}`, { chiave:"report|"+reportId, dettagli, supabase:"n/a" });
+    }catch(e){
+      segnalaErroreSoloLog(e, "Report: registrazione della modifica non riuscita");
+      return null;
+    }
+  }
+
+  // riepilogo (facoltativo): testo per il Log al posto della descrizione automatica (es. «ripristinato lo stato precedente»).
+  function updateConteggioConfig(reportId, cfg, riepilogo){
+    const tipo = (store.reports||[]).find(x=>x.id===reportId)?.type;
+    const prima = conteggioConfigs[reportId] ?? getConteggioConfig(reportId, tipo);
+    const voceLogId = tracciaModificaReport(reportId, prima, cfg, riepilogo);
     const newCfg = {...conteggioConfigs, [reportId]: cfg};
     setConteggioConfigs(newCfg);
-    saveSettings({conteggio_configs: newCfg});
+    saveSettings({conteggio_configs: newCfg}, { voceLogId, contesto:"Salvataggio report" });
   }
 
   // Applica in UNA sola scrittura le scelte fatte per un modello nei report (dal form del modello, anche alla creazione).
@@ -8239,6 +8265,7 @@ const importsRecenti = useMemo(()=>{
     if(!modello?.id || !scelte || Object.keys(scelte).length===0) return;
     const id = modello.id;
     const base = {...(conteggioConfigsRef.current||{})};
+    const primaDi = {...base};
     let toccato = false;
     Object.entries(scelte).forEach(([rid, sc])=>{
       const r = (store.reports||[]).find(x=>x.id===rid);
@@ -8279,9 +8306,17 @@ const importsRecenti = useMemo(()=>{
       base[rid] = cfg;
     });
     if(!toccato) return;
+    let voceLogId = null;
+    Object.keys(scelte).forEach(rid=>{
+      const r = (store.reports||[]).find(x=>x.id===rid);
+      if(!r || !base[rid]) return;
+      const prima = primaDi[rid] ?? getConteggioConfig(rid, r.type);
+      const v = tracciaModificaReport(rid, prima, base[rid], `dal modello «${modello.titolo||modello.label||""}»: ${descriviModificheReport(prima, base[rid]).riepilogo}`);
+      if(v) voceLogId = v;
+    });
     conteggioConfigsRef.current = base;
     setConteggioConfigs(base);
-    saveSettings({conteggio_configs: base});
+    saveSettings({conteggio_configs: base}, { voceLogId, contesto:"Salvataggio report" });
   }
 
 
@@ -8443,6 +8478,7 @@ const importsRecenti = useMemo(()=>{
     return { idsAggiornati };
   }
 
+  const SPIEGAZIONE_WIDGET = "Cos'è: il widget è il riquadro dei turni che puoi mettere sulla schermata Home del telefono Android. L'app gli manda i dati dei prossimi giorni ogni volta che apri l'app o cambi qualcosa. Non riguarda il salvataggio dei dati.";
   // ── Widget Android (2 settimane) ──
   // widgetTick sale ogni volta che l'app torna visibile: cosi' il widget si aggiorna APPENA APRI L'APP,
   // non solo quando cambia qualcosa nei dati.
@@ -8478,7 +8514,6 @@ const importsRecenti = useMemo(()=>{
         const campo2 = store.calEventRows===2 ? (store.calRow2Field||"---") : "---";
         const riga2 = (e)=>{
           switch(campo2){
-  const SPIEGAZIONE_WIDGET = "Cos'è: il widget è il riquadro dei turni che puoi mettere sulla schermata Home del telefono Android. L'app gli manda i dati dei prossimi giorni ogni volta che apri l'app o cambi qualcosa. Non riguarda il salvataggio dei dati.";
             case "titolo": return e.label||"";
             case "inizio": return e.tIn||"";
             case "fine":   return e.tOut||"";
