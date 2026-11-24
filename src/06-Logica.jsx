@@ -8461,14 +8461,14 @@ const importsRecenti = useMemo(()=>{
     if(!widgetDisponibile()){
       if(!widgetStatoLoggatoRef.current){
         widgetStatoLoggatoRef.current = true;
-        registraAttivita("Widget Android", `Widget NON attivo in questa app: ${descriviStatoWidget()}`, { chiave:"widget-stato", supabase:"n/a" });
+        registraAttivita("Widget schermata Home", "Il widget della schermata Home non è attivo in questa versione dell'app.", { chiave:"widget-stato", supabase:"n/a", dettagli:[SPIEGAZIONE_WIDGET, `Dettaglio tecnico: ${descriviStatoWidget()}`] });
       }
       return;
     }
     if(!store.calendars || store.calendars.length===0) return;   // dati non ancora caricati
     if(!widgetStatoLoggatoRef.current){
       widgetStatoLoggatoRef.current = true;
-      registraAttivita("Widget Android", `Widget attivo, preparo i dati: ${descriviStatoWidget()}`, { chiave:"widget-stato", supabase:"n/a" });
+      registraAttivita("Widget schermata Home", "Widget della schermata Home attivo: l'app gli invia i turni dei prossimi giorni.", { chiave:"widget-stato", supabase:"n/a", dettagli:[SPIEGAZIONE_WIDGET, `Dettaglio tecnico: ${descriviStatoWidget()}`] });
     }
     const timer = setTimeout(()=>{
       try{
@@ -8478,6 +8478,7 @@ const importsRecenti = useMemo(()=>{
         const campo2 = store.calEventRows===2 ? (store.calRow2Field||"---") : "---";
         const riga2 = (e)=>{
           switch(campo2){
+  const SPIEGAZIONE_WIDGET = "Cos'è: il widget è il riquadro dei turni che puoi mettere sulla schermata Home del telefono Android. L'app gli manda i dati dei prossimi giorni ogni volta che apri l'app o cambi qualcosa. Non riguarda il salvataggio dei dati.";
             case "titolo": return e.label||"";
             case "inizio": return e.tIn||"";
             case "fine":   return e.tOut||"";
@@ -8503,16 +8504,16 @@ const importsRecenti = useMemo(()=>{
         inviaAlWidget({ v:1, dark: !!dark, sunday: sundayColor, holiday: holidayColor, giorni }).then(esito=>{
           // L'esito finisce nel Log dell'app (Impostazioni): cosi' si vede cosa succede sul telefono.
           if(esito.ok){
-            registraAttivita("Widget Android", `Widget aggiornato: ${Object.keys(giorni).length} giorni con dati`, { chiave:"widget", supabase:"n/a" });
+            registraAttivita("Widget schermata Home", `Widget della schermata Home aggiornato: inviati i turni di ${Object.keys(giorni).length} giorni.`, { chiave:"widget", supabase:"n/a", dettagli:[SPIEGAZIONE_WIDGET] });
           } else if(!esito.saltato && !widgetErroreSegnalatoRef.current){
             widgetErroreSegnalatoRef.current = true;
-            segnalaErroreSoloLog({ message:`${esito.errore} (${esito.stato})` }, "Widget Android: invio dei dati non riuscito");
+            segnalaErroreSoloLog({ message:`${esito.errore} (${esito.stato})` }, "Widget schermata Home: invio dei dati non riuscito");
           }
         });
       }catch(err){
         if(!widgetErroreSegnalatoRef.current){
           widgetErroreSegnalatoRef.current = true;
-          segnalaErroreSoloLog(err, `Widget Android: preparazione dei dati non riuscita (${descriviStatoWidget()})`);
+          segnalaErroreSoloLog(err, `Widget schermata Home: preparazione dei dati non riuscita (${descriviStatoWidget()})`);
         }
       }
     }, 300);

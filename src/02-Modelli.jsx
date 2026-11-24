@@ -117,7 +117,7 @@ export default function VistaModelli({ C }){
   const [confermaEliminaCalId, setConfermaEliminaCalId] = useState(null);
   const [confermaEliminaEvento, setConfermaEliminaEvento] = useState(null); // {dKey, cId, id}
   const [confermaCancellaLogErrori, setConfermaCancellaLogErrori] = useState(false);
-  const [filtroLog, setFiltroLog] = useState("tutto"); // tutto | operazioni | salvataggi | errori | supabase
+  const [filtroLog, setFiltroLog] = useState("tutto"); // tutto | operazioni | salvataggi | errori | supabase | widget | report
   // Categorie incluse nel backup locale (export): di default TUTTE attive,
   // così senza toccare nulla il comportamento resta "esporta tutto" come
   // prima dei checkbox — l'utente deve deselezionare esplicitamente per
@@ -1609,7 +1609,7 @@ export default function VistaModelli({ C }){
         <div style={{fontSize:11,color:T.sub,marginBottom:12}}>
           Qui finisce tutto: ogni modifica salvata in locale (💾) con l'elenco preciso di cosa è
           cambiato, la conferma di Supabase (☁️ ✓ salvato, 🕓 in coda, ⚠️ non confermato) e ogni
-          errore. Le voci con più dettagli si aprono con "Mostra dettagli".
+          errore. Le voci con più dettagli si aprono con "Mostra dettagli". Categorie: 🧩 Widget = il riquadro dei turni sulla schermata Home del telefono (non riguarda i salvataggi); 📊 Report = ogni modifica ai report, con la conferma di Supabase.
         </div>
 
         {erroriSilenziatiVisibile && erroriSilenziatiVisibile.length>0 && (
@@ -1635,7 +1635,7 @@ export default function VistaModelli({ C }){
         )}
 
         <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
-          {[["tutto","Tutto"],["operazioni","Operazioni"],["salvataggi","Salvataggi"],["errori","Errori"],["supabase","Supabase"]].map(([v,l])=>(
+          {[["tutto","Tutto"],["operazioni","Operazioni"],["salvataggi","Salvataggi"],["report","Report"],["widget","Widget"],["errori","Errori"],["supabase","Supabase"]].map(([v,l])=>(
             <button key={v} onClick={()=>setFiltroLog(v)}
               style={{flex:"1 1 auto",padding:"7px 8px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:11,
                 background:filtroLog===v?"#6366f1":T.s2,color:filtroLog===v?"#fff":T.sub,
@@ -1675,9 +1675,12 @@ export default function VistaModelli({ C }){
               .filter(v=>{
                 // Salvataggio = modifica salvata sul telefono (non gli aggiornamenti arrivati da Supabase).
                 const salv = v.tipo==="operazione" && v.origine!=="remoto" && (/^Salv/i.test(v.contesto||"") || String(v.chiave||"").includes("|"));
+                const eWidget = /^Widget/i.test(v.contesto||""), eReport = /^Report/i.test(v.contesto||"");
                 if(filtroLog==="tutto") return true;
+                if(filtroLog==="widget") return eWidget;
+                if(filtroLog==="report") return eReport;
                 if(filtroLog==="salvataggi") return salv;
-                if(filtroLog==="operazioni") return v.tipo==="operazione" && !salv;
+                if(filtroLog==="operazioni") return v.tipo==="operazione" && !salv && !eWidget && !eReport;
                 if(filtroLog==="supabase") return v.contesto==="Controllo Supabase";
                 return v.tipo!=="operazione" && v.tipo!=="controllo";
               })
@@ -1689,7 +1692,7 @@ export default function VistaModelli({ C }){
                 return (
                   <div key={voce.id||i} style={{padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
                     <div style={{fontSize:10,color:T.sub,marginBottom:2}}>
-                      {op ? "💾 " : "⚠️ "}{new Date(voce.ts).toLocaleString("it-IT")} — <strong>{voce.contesto}</strong>
+                      {/^Widget/i.test(voce.contesto||"") ? "🧩 " : /^Report/i.test(voce.contesto||"") ? "📊 " : op ? "💾 " : "⚠️ "}{new Date(voce.ts).toLocaleString("it-IT")} — <strong>{voce.contesto}</strong>
                     </div>
                     <div style={{fontSize:12,color:T.text,wordBreak:"break-word"}}>
                       {voce.message || voce.messaggio}{voce.conteggio>1 && !voce.conteggi ? ` (×${voce.conteggio})` : ""}
