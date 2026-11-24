@@ -250,13 +250,13 @@ export function DocumentiScheda({ T, eventId, colore, coloreSub }) {
   }
 
   return (
-    <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 8 }}>
+    <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 8, minWidth: 0, maxWidth: "100%" }}>
       {docs.map((d) => (
-        <div key={d.id} style={{
+        <div key={d.id} onClick={(e) => { e.stopPropagation(); if (!lavoro) apri(d); }} style={{
           display: "flex", alignItems: "center", gap: 8, background: "rgba(255,255,255,0.18)",
-          borderRadius: 8, padding: "6px 8px", marginBottom: 4,
+          borderRadius: 8, padding: "6px 8px", marginBottom: 4, minWidth: 0, cursor: "pointer",
         }}>
-          <span style={{ fontSize: 16 }}>📎</span>
+          <span style={{ fontSize: 16, flexShrink: 0 }}>📎</span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 14, fontWeight: 800, color: colore, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {d.nome}

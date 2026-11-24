@@ -3017,7 +3017,7 @@ export default function VistaModelli({ C }){
                 : ((modelloDiQuestoEvento && e.tIn) ? `${e.tIn}→${e.tOut||""}` : ((modelloDiQuestoEvento && modelloDiQuestoEvento.tempo==="h24") ? "00:00→24:00" : null));
               return (
               <>
-            <div style={{flex:1}}>
+            <div style={{flex:1,minWidth:0}}>
               <div style={{color:cardTextColor,fontSize:20,fontWeight:800,textShadow:cardShadow,display:"flex",alignItems:"baseline",gap:6,flexWrap:"wrap"}}>
                 {labelDaMostrare}
                 {orarioModello&&<span style={{fontSize:13,fontWeight:700,opacity:0.85}}>{orarioModello}</span>}
