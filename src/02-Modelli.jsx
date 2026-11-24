@@ -3769,6 +3769,24 @@ export default function VistaModelli({ C }){
     const ovAll = form.reportOverrides || {};
     const turnoAttivo = !!(form.categoriaTurno||form.categoriaAppAuto||form.turnoVuoto||form.appAutoVuoto);
     const tutti = activeReports.filter(rr=>sc[rr.id]==="tutti" && (ovAll[rr.id] || (rr.type==="turnazione" && turnoAttivo)));
+    // Gruppi dei sottomenu: sono SEMPRE del modello (nome+orario), mai del singolo evento.
+    // La scelta fatta qui va sul modello e si toglie dagli eventi: vale l'ultima modifica, ovunque sia fatta.
+    const soloGruppi = modelloCorrente ? activeReports.filter(rr=>!tutti.includes(rr) && Object.keys(ovAll[rr.id]?.sottomenu||{}).length>0) : [];
+    if(soloGruppi.length>0){
+      soloGruppi.forEach(rr=>applicaConfigModello(rr.id, {sottomenu: ovAll[rr.id].sottomenu}));
+      const togliGruppi = (ev)=>{
+        const next = {...(ev.reportOverrides||{})};
+        soloGruppi.forEach(rr=>{ const o = next[rr.id]; if(!o) return; const {sottomenu:_s, ...resto} = o; if(Object.keys(resto).length>0) next[rr.id]=resto; else delete next[rr.id]; });
+        return { reportOverrides: next };
+      };
+      applicaReportOverrideATuttiGliEventi(form.label||"", form.tIn||"", form.tOut||"", togliGruppi,
+        (nuovo)=>({ report_overrides: Object.keys(nuovo.reportOverrides||{}).length>0 ? nuovo.reportOverrides : null }));
+      setForm(f=>{
+        const ro = {...(f.reportOverrides||{})};
+        soloGruppi.forEach(rr=>{ const o = ro[rr.id]; if(!o) return; const {sottomenu:_s, ...resto} = o; if(Object.keys(resto).length>0) ro[rr.id]=resto; else delete ro[rr.id]; });
+        return {...f, reportOverrides:ro};
+      });
+    }
     if(tutti.length===0){ setForm(f=>({...f, applicaReport:{}})); return; }
     tutti.forEach(rr=>{ if(ovAll[rr.id]) applicaConfigModello(rr.id, ovAll[rr.id]); });
     const turnoTutti = tutti.some(rr=>rr.type==="turnazione") && turnoAttivo;
@@ -3818,7 +3836,7 @@ export default function VistaModelli({ C }){
             const cfgReport = getConteggioConfig(r.id, r.type);
             const sottomenuTutti = cfgReport.sottomenu||[];
             const smEspanso = sottomenuEspansoEvento[r.id]||null;
-            const haOverride = !!overrideAttuale || Object.keys(overrideR.sottomenu||{}).length>0 || (r.type==="turnazione" && !!(form.categoriaTurno||form.categoriaAppAuto||form.turnoVuoto||form.appAutoVuoto));
+            const haOverride = !!overrideAttuale || (r.type==="turnazione" && !!(form.categoriaTurno||form.categoriaAppAuto||form.turnoVuoto||form.appAutoVuoto));
             return (
               <div key={r.id} style={{background:inclusoEffettivo?accent+"1f":T.s2,borderRadius:10,overflow:"hidden"}}>
                 <button onClick={()=>setReportEspansoEvento(espanso?null:r.id)}
@@ -3915,6 +3933,7 @@ export default function VistaModelli({ C }){
                           </button>
                           {smAperto && gestisceGruppi && (
                             <div style={{padding:"0 10px 8px"}}>
+                              <div style={{fontSize:10,color:T.sub,marginBottom:4}}>Vale per il modello e per tutti i suoi eventi (nome+orario). Conta l'ultima modifica.</div>
                               {(sm.gruppi||[]).map(g=>(
                                 <div key={g.key} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:6,padding:"3px 0"}}>
                                   {(sm.gruppi||[]).length>1 && <span style={{fontSize:12,fontWeight:700,color:T.text}}>{g.label||"(senza nome)"}</span>}
