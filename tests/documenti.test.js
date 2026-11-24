@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { nomeSicuro, scadenzaDa, scadenzaDocumento, documentiDaPulire, idEventiDaStore, idGiorno, GIORNI_ATTESA_ORFANI, DURATA_24_ORE, DURATA_4_MESI } from "../src/32-documenti.js";
+import { nomeSicuro, scadenzaDa, scadenzaDocumento, scadenzaPeriodo, testoPeriodo, periodoValido, leggiPeriodi, PERIODI_PREDEFINITI, documentiDaPulire, idEventiDaStore, idGiorno, GIORNI_ATTESA_ORFANI } from "../src/32-documenti.js";
 
 test("la scadenza e' 4 mesi dopo la data dell'evento", () => {
   assert.equal(scadenzaDa("2026-11-14"), "2027-03-14");
@@ -68,15 +68,45 @@ test("i documenti legati a un giorno non sono mai orfani, ma scadono come gli al
   assert.deepEqual(documentiDaPulire(elenco, "2027-04-01", new Set(["e1"]), ADESSO), ["g2"]);
 });
 
-test("durata 24 ore: scadenza con ora precisa, indipendente dalla data evento", () => {
-  const r = scadenzaDocumento(DURATA_24_ORE, "2027-12-25", ADESSO);
-  assert.equal(r.scadeMs, ADESSO + GIORNO);
+test("scadenzaPeriodo: giorni, settimane, mesi e anni dopo la data dell'evento", () => {
+  assert.equal(scadenzaPeriodo("2026-11-14", 0, "giorno"), "2026-11-14");
+  assert.equal(scadenzaPeriodo("2026-11-14", 1, "giorno"), "2026-11-15");
+  assert.equal(scadenzaPeriodo("2026-12-31", 1, "giorno"), "2027-01-01");
+  assert.equal(scadenzaPeriodo("2026-11-14", 2, "settimana"), "2026-11-28");
+  assert.equal(scadenzaPeriodo("2026-11-14", 4, "mese"), "2027-03-14");
+  assert.equal(scadenzaPeriodo("2026-10-31", 4, "mese"), "2027-02-28");
+  assert.equal(scadenzaPeriodo("2026-11-14", 1, "anno"), "2027-11-14");
+  assert.equal(scadenzaPeriodo("14/11/2026", 1, "giorno"), null);
+  assert.equal(scadenzaPeriodo("2026-11-14", 1, "secolo"), null);
 });
 
-test("durata 4 mesi: scadenza 4 mesi dopo la data evento, senza ora", () => {
-  const r = scadenzaDocumento(DURATA_4_MESI, "2026-11-14", ADESSO);
-  assert.deepEqual(r, { scade: "2027-03-14" });
-  assert.deepEqual(scadenzaDocumento(undefined, "2026-11-14", ADESSO), { scade: "2027-03-14" });
+test("scadenzaDocumento: senza periodo valido sono 4 mesi dopo l'evento", () => {
+  assert.deepEqual(scadenzaDocumento(null, "2026-11-14"), { scade: "2027-03-14" });
+  assert.deepEqual(scadenzaDocumento({ n: 1, unita: "giorno" }, "2026-11-14"), { scade: "2026-11-15" });
+  assert.deepEqual(scadenzaDocumento({ n: 0, unita: "giorno" }, "2026-11-14"), { scade: "2026-11-14" });
+});
+
+test("periodo 0: resta fino alle 23.59 del giorno dell'evento, sparisce alle 00.00 dopo", () => {
+  const elenco = [{ id: "d", eventId: "e1", scade: "2026-11-14", creato: ADESSO }];
+  const presenti = new Set(["e1"]);
+  assert.deepEqual(documentiDaPulire(elenco, "2026-11-14", presenti, ADESSO), []);
+  assert.deepEqual(documentiDaPulire(elenco, "2026-11-15", presenti, ADESSO), ["d"]);
+});
+
+test("testoPeriodo e periodoValido", () => {
+  assert.equal(testoPeriodo({ n: 1, unita: "giorno" }), "1 giorno");
+  assert.equal(testoPeriodo({ n: 0, unita: "giorno" }), "0 giorni");
+  assert.equal(testoPeriodo({ n: 4, unita: "mese" }), "4 mesi");
+  assert.equal(testoPeriodo({ n: 2, unita: "settimana" }), "2 settimane");
+  assert.equal(testoPeriodo({ n: 1, unita: "anno" }), "1 anno");
+  assert.equal(periodoValido({ n: -1, unita: "giorno" }), false);
+  assert.equal(periodoValido({ n: 100, unita: "giorno" }), false);
+  assert.equal(periodoValido({ n: 1.5, unita: "giorno" }), false);
+});
+
+test("senza nulla di salvato i periodi sono 1 giorno e 4 mesi", () => {
+  assert.deepEqual(leggiPeriodi().map((p) => [p.n, p.unita]), [[1, "giorno"], [4, "mese"]]);
+  assert.equal(PERIODI_PREDEFINITI.length, 2);
 });
 
 test("un documento da 24 ore si cancella dopo 24 ore esatte, non prima", () => {

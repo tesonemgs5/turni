@@ -3,19 +3,18 @@
 //  - I file stanno nella memoria privata dell'app (Filesystem, Directory.Data).
 //  - L'elenco degli allegati sta in localStorage ("turni_documenti_v1"), separato
 //    dagli eventi: non tocca Supabase, la sincronizzazione ne' i backup.
-//  - A ogni allegato si sceglie la durata: 24 ORE da quando lo si allega, oppure
-//    4 MESI dopo la DATA DELL'EVENTO. Il documento scaduto viene cancellato in
-//    automatico (pulisciDocumenti, chiamata all'avvio e quando si riapre l'app).
+//  - A ogni allegato si sceglie per quanto tempo tenerlo DOPO IL GIORNO DELL'EVENTO
+//    (numero + giorno/settimana/mese/anno, predefiniti 1 giorno e 4 mesi, modificabili).
+//    Resta fino alle 23.59 del giorno dell'evento; dalle 00.00 del giorno dopo parte
+//    il periodo scelto (0 = si cancella alle 00.00 del giorno dopo). Il documento
+//    scaduto viene cancellato in automatico (pulisciDocumenti, chiamata all'avvio e
+//    quando si riapre l'app).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const CHIAVE = "turni_documenti_v1";
 const CARTELLA = "documenti";
 export const MESI_VALIDITA = 4;
 export const MAX_BYTES = 25 * 1024 * 1024;
-// Durata scelta quando si allega un documento.
-export const DURATA_24_ORE = "24h";
-export const DURATA_4_MESI = "4mesi";
-export const MS_24_ORE = 24 * 60 * 60 * 1000;
 // Un documento senza evento viene considerato "orfano" solo dopo questo tempo,
 // per non cancellare nulla durante sincronizzazioni o form ancora aperti.
 export const GIORNI_ATTESA_ORFANI = 30;
@@ -52,14 +51,71 @@ export function scadenzaDa(dateKey, mesi = MESI_VALIDITA) {
   return `${annoFine}-${p(meseFine0 + 1)}-${p(giornoFine)}`;
 }
 
-// Scadenza di un documento nuovo. 24 ore: scadenza con ora precisa (scadeMs).
-// 4 mesi (predefinita): 4 mesi dopo la data dell'evento (scade, solo data).
-export function scadenzaDocumento(durata, dateKey, adessoMs = Date.now()) {
-  if (durata === DURATA_24_ORE) {
-    const scadeMs = adessoMs + MS_24_ORE;
-    return { scade: dataISO(scadeMs), scadeMs };
+// ── Periodi di conservazione (selettori numero + tipo) ─────────────────────
+
+export const UNITA_PERIODO = ["giorno", "settimana", "mese", "anno"];
+export const MAX_NUMERO_PERIODO = 99;
+const CHIAVE_PERIODI = "turni_periodi_documenti_v1";
+export const PERIODI_PREDEFINITI = [
+  { id: "pred_1_giorno", n: 1, unita: "giorno" },
+  { id: "pred_4_mese", n: 4, unita: "mese" },
+];
+
+export function periodoValido(p) {
+  return !!p && Number.isInteger(p.n) && p.n >= 0 && p.n <= MAX_NUMERO_PERIODO && UNITA_PERIODO.includes(p.unita);
+}
+
+// "1 giorno", "0 giorni", "4 mesi", "2 settimane", "1 anno".
+export function testoPeriodo(p) {
+  if (!periodoValido(p)) return "";
+  const plurale = { giorno: "giorni", settimana: "settimane", mese: "mesi", anno: "anni" };
+  return `${p.n} ${p.n === 1 ? p.unita : plurale[p.unita]}`;
+}
+
+// Ultimo giorno in cui il documento resta (fino alle 23.59): data dell'evento + il periodo.
+// Con 0 e' la data dell'evento stessa, quindi si cancella alle 00.00 del giorno dopo.
+export function scadenzaPeriodo(dateKey, n, unita) {
+  if (unita === "mese") return scadenzaDa(dateKey, n);
+  if (unita === "anno") return scadenzaDa(dateKey, n * 12);
+  const giorni = unita === "settimana" ? n * 7 : unita === "giorno" ? n : null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateKey || ""));
+  if (giorni === null || !m) return null;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + giorni));
+  const p = (x) => String(x).padStart(2, "0");
+  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`;
+}
+
+// Scadenza di un documento nuovo. Senza un periodo valido: 4 mesi dopo l'evento.
+export function scadenzaDocumento(periodo, dateKey) {
+  const p = periodoValido(periodo) ? periodo : { n: MESI_VALIDITA, unita: "mese" };
+  return { scade: scadenzaPeriodo(dateKey, p.n, p.unita) };
+}
+
+export function nuovoIdPeriodo() {
+  return "per_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+// Periodi salvati sul telefono. Mai salvati = predefiniti; se si cancellano tutti resta vuoto.
+export function leggiPeriodi() {
+  try {
+    const grezzo = typeof localStorage !== "undefined" ? localStorage.getItem(CHIAVE_PERIODI) : null;
+    if (grezzo === null || grezzo === undefined) return PERIODI_PREDEFINITI.map((x) => ({ ...x }));
+    const v = JSON.parse(grezzo);
+    if (!Array.isArray(v)) return PERIODI_PREDEFINITI.map((x) => ({ ...x }));
+    return v.filter((x) => x && x.id && periodoValido(x));
+  } catch (e) {
+    return PERIODI_PREDEFINITI.map((x) => ({ ...x }));
   }
-  return { scade: scadenzaDa(dateKey) };
+}
+
+export function salvaPeriodi(elenco) {
+  try { if (typeof localStorage !== "undefined") localStorage.setItem(CHIAVE_PERIODI, JSON.stringify(elenco)); } catch (e) { /* spazio esaurito */ }
+}
+
+// Valore con cui parte il selettore: il primo periodo salvato (o 1 giorno).
+export function periodoIniziale() {
+  const primo = leggiPeriodi()[0];
+  return primo ? { n: primo.n, unita: primo.unita } : { n: 1, unita: "giorno" };
 }
 
 export function dataISO(ms) {
@@ -77,6 +133,7 @@ export function documentiDaPulire(elenco, oggiISO, idEventiPresenti, adessoMs) {
   const ids = [];
   for (const d of elenco || []) {
     if (!d || !d.id) continue;
+    // scadeMs: solo documenti creati con la versione precedente (24 ore dall'allegato).
     const scaduto = d.scadeMs ? adessoMs >= d.scadeMs : (d.scade && d.scade < oggiISO);
     const delGiorno = String(d.eventId || "").startsWith(PREFISSO_GIORNO);
     const orfano = conosco && !delGiorno && !idEventiPresenti.has(d.eventId) && adessoMs - (d.creato || 0) > soglia;
@@ -152,7 +209,7 @@ function messaggio(e) {
   return String((e && e.message) || e);
 }
 
-export async function aggiungiDocumento({ eventId, dateKey, file, durata }) {
+export async function aggiungiDocumento({ eventId, dateKey, file, periodo }) {
   try {
     if (!eventId || !dateKey || !file) return { ok: false, errore: "Dati mancanti" };
     if (file.size > MAX_BYTES) return { ok: false, errore: "File troppo grande (massimo 25 MB)" };
@@ -165,7 +222,7 @@ export async function aggiungiDocumento({ eventId, dateKey, file, durata }) {
     const doc = {
       id, eventId, dateKey, nome: file.name || nome, path,
       mime: file.type || "", size: file.size || 0,
-      creato: Date.now(), ...scadenzaDocumento(durata, dateKey),
+      creato: Date.now(), ...scadenzaDocumento(periodo, dateKey),
     };
     scrivi([...leggi(), doc]);
     return { ok: true, doc };
@@ -246,7 +303,7 @@ export async function anteprimaDocumento(id) {
   }
 }
 
-// Pulizia: scaduti (24 ore dall'allegato o 4 mesi dalla data evento) e orfani da tempo.
+// Pulizia: scaduti (data evento + periodo scelto) e orfani da tempo.
 export async function pulisciDocumenti(idEventiPresenti) {
   const ids = documentiDaPulire(leggi(), dataISO(Date.now()), idEventiPresenti, Date.now());
   if (ids.length === 0) return 0;
@@ -290,7 +347,7 @@ export async function scartaCondiviso(voce) {
 }
 
 // Sposta il file ricevuto nell'archivio e lo lega all'evento (o al giorno).
-export async function collegaCondiviso({ voce, eventId, dateKey, durata }) {
+export async function collegaCondiviso({ voce, eventId, dateKey, periodo }) {
   try {
     if (!voce || !voce.path || !eventId || !dateKey) return { ok: false, errore: "Dati mancanti" };
     const { Filesystem, Directory } = await import("@capacitor/filesystem");
@@ -302,7 +359,7 @@ export async function collegaCondiviso({ voce, eventId, dateKey, durata }) {
     const doc = {
       id, eventId, dateKey, nome: voce.nome || nome, path,
       mime: voce.mime || "", size: voce.size || 0,
-      creato: Date.now(), ...scadenzaDocumento(durata, dateKey),
+      creato: Date.now(), ...scadenzaDocumento(periodo, dateKey),
     };
     scrivi([...leggi(), doc]);
     return { ok: true, doc };

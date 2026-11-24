@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import {
   documentiEvento, aggiungiDocumento, eliminaDocumento, inviaDocumento,
-  anteprimaDocumento, sottoscrivi, DURATA_24_ORE, DURATA_4_MESI,
+  anteprimaDocumento, sottoscrivi, leggiPeriodi, salvaPeriodi, nuovoIdPeriodo, periodoIniziale,
+  testoPeriodo, UNITA_PERIODO, MAX_NUMERO_PERIODO,
 } from "./32-documenti";
 import { ConfermaEliminazione } from "./05-Comuni";
 
@@ -21,6 +22,81 @@ function dimensione(byte) {
 function dataIt(iso) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || "");
   return m ? `${m[3]}/${m[2]}/${m[1]}` : "";
+}
+
+// Selettori del periodo di conservazione: numero + giorno/settimana/mese/anno,
+// con i periodi salvati sul telefono (si aggiungono, si sostituiscono, si cancellano).
+//  - valore / onCambia: { n, unita } scelto adesso (controllato dal chiamante)
+export function SelettoreDurata({ T, accent, valore, onCambia }) {
+  const [periodi, setPeriodi] = useState(() => leggiPeriodi());
+  const [selId, setSelId] = useState(null);
+  const aggiorna = (nuovi) => { setPeriodi(nuovi); salvaPeriodi(nuovi); };
+  const uguale = (p) => p.n === valore.n && p.unita === valore.unita;
+  const selezionato = periodi.find((p) => p.id === selId) || null;
+  const modificato = !!selezionato && !uguale(selezionato);
+  const giaSalvato = periodi.some(uguale);
+  const plurale = { giorno: "giorni", settimana: "settimane", mese: "mesi", anno: "anni" };
+
+  function salvaNuovo() {
+    const p = { id: nuovoIdPeriodo(), n: valore.n, unita: valore.unita };
+    aggiorna([...periodi, p]);
+    setSelId(p.id);
+  }
+  function sostituisci() {
+    aggiorna(periodi.map((p) => (p.id === selId ? { ...p, n: valore.n, unita: valore.unita } : p)));
+  }
+  function elimina(id) {
+    aggiorna(periodi.filter((p) => p.id !== id));
+    if (selId === id) setSelId(null);
+  }
+
+  const campo = {
+    background: T.surface, color: T.text, border: `1px solid ${T.border}`, borderRadius: 8,
+    padding: "8px 6px", fontWeight: 800, fontSize: 14,
+  };
+  const piccolo = {
+    background: T.surface, color: T.text, border: `1px solid ${T.border}`, borderRadius: 8,
+    padding: "6px 8px", fontWeight: 800, fontSize: 12, cursor: "pointer",
+  };
+
+  return (
+    <div>
+      <div style={{ fontSize: 11, color: T.sub, marginBottom: 6 }}>
+        Resta fino alle 23.59 del giorno dell'evento; dal giorno dopo parte il periodo (0 = si cancella alle 00.00 del giorno dopo).
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+        {periodi.length === 0 && <span style={{ fontSize: 11, color: T.sub }}>Nessun periodo salvato.</span>}
+        {periodi.map((p) => {
+          const attivo = uguale(p);
+          return (
+            <span key={p.id} style={{
+              display: "inline-flex", alignItems: "center", borderRadius: 8, overflow: "hidden",
+              border: `2px solid ${attivo ? accent : T.border}`, background: attivo ? `${accent}22` : T.surface,
+            }}>
+              <button type="button" onClick={() => { setSelId(p.id); onCambia({ n: p.n, unita: p.unita }); }}
+                style={{ background: "transparent", color: T.text, border: "none", padding: "6px 8px", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>
+                {testoPeriodo(p)}
+              </button>
+              <button type="button" aria-label={`Cancella ${testoPeriodo(p)}`} onClick={() => elimina(p.id)}
+                style={{ background: "transparent", color: T.sub, border: "none", borderLeft: `1px solid ${T.border}`, padding: "6px 8px", fontSize: 12, cursor: "pointer" }}>✕</button>
+            </span>
+          );
+        })}
+      </div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+        <select aria-label="Numero" value={valore.n} onChange={(e) => onCambia({ ...valore, n: Number(e.target.value) })} style={{ ...campo, flex: 1 }}>
+          {Array.from({ length: MAX_NUMERO_PERIODO + 1 }, (_, i) => <option key={i} value={i}>{i}</option>)}
+        </select>
+        <select aria-label="Tipo" value={valore.unita} onChange={(e) => onCambia({ ...valore, unita: e.target.value })} style={{ ...campo, flex: 2 }}>
+          {UNITA_PERIODO.map((u) => <option key={u} value={u}>{valore.n === 1 ? u : plurale[u]}</option>)}
+        </select>
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        {!giaSalvato && <button type="button" onClick={salvaNuovo} style={piccolo}>💾 Salva «{testoPeriodo(valore)}»</button>}
+        {modificato && <button type="button" onClick={sostituisci} style={piccolo}>✏️ Sostituisci «{testoPeriodo(selezionato)}»</button>}
+      </div>
+    </div>
+  );
 }
 
 // "scade il 25/11/2026" oppure, per i documenti da 24 ore, "scade il 25/11/2026 alle 10:30".
@@ -43,7 +119,8 @@ export function SezioneDocumenti({ T, accent, eventId, dateKey, prenotaId }) {
   const [errore, setErrore] = useState("");
   const [anteprima, setAnteprima] = useState(null);
   const [daEliminare, setDaEliminare] = useState(null);
-  const [inAttesa, setInAttesa] = useState(null); // file scelti, in attesa della durata
+  const [inAttesa, setInAttesa] = useState(null); // file scelti, in attesa del periodo
+  const [periodo, setPeriodo] = useState(() => periodoIniziale());
   const docs = documentiEvento(eventId);
 
   async function scelti(ev) {
@@ -54,13 +131,13 @@ export function SezioneDocumenti({ T, accent, eventId, dateKey, prenotaId }) {
     setInAttesa(files); // prima si chiede per quanto tempo tenerli
   }
 
-  async function allega(durata) {
+  async function allega() {
     const files = inAttesa || [];
     setInAttesa(null);
     setLavoro(true);
     const id = eventId || prenotaId();
     for (const file of files) {
-      const r = await aggiungiDocumento({ eventId: id, dateKey, file, durata });
+      const r = await aggiungiDocumento({ eventId: id, dateKey, file, periodo });
       if (!r.ok) { setErrore(`${file.name}: ${r.errore}`); break; }
     }
     setLavoro(false);
@@ -90,7 +167,7 @@ export function SezioneDocumenti({ T, accent, eventId, dateKey, prenotaId }) {
   return (
     <div style={{ marginBottom: 12 }}>
       <div style={{ fontSize: 11, color: T.sub, marginBottom: 6 }}>
-        📎 <b style={{ color: T.text }}>Documenti</b> (copia promemoria: a ogni allegato scegli se tenerlo 24 ore o 4 mesi dopo l'evento)
+        📎 <b style={{ color: T.text }}>Documenti</b> (copia promemoria: a ogni allegato scegli per quanto tenerlo dopo il giorno dell'evento)
       </div>
       {docs.map((d) => (
         <div key={d.id} style={{
@@ -115,11 +192,11 @@ export function SezioneDocumenti({ T, accent, eventId, dateKey, prenotaId }) {
           <div style={{ fontSize: 13, fontWeight: 800, color: T.text, marginBottom: 8 }}>
             Per quanto tempo tenere {inAttesa.length === 1 ? "il documento" : `i ${inAttesa.length} documenti`}?
           </div>
-          <div style={{ display: "flex", gap: 6 }}>
-            <button type="button" onClick={() => allega(DURATA_24_ORE)} style={{ ...bottone, flex: 1 }}>⏱️ 24 ore</button>
-            <button type="button" onClick={() => allega(DURATA_4_MESI)} style={{ ...bottone, flex: 1 }}>📅 4 mesi dopo l'evento</button>
+          <SelettoreDurata T={T} accent={accent} valore={periodo} onCambia={setPeriodo} />
+          <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+            <button type="button" onClick={() => setInAttesa(null)} style={{ ...bottone, flex: 1, color: T.sub }}>Annulla</button>
+            <button type="button" onClick={allega} style={{ ...bottone, flex: 2, background: accent, color: "#fff", border: "none" }}>Allega ({testoPeriodo(periodo)})</button>
           </div>
-          <button type="button" onClick={() => setInAttesa(null)} style={{ ...bottone, width: "100%", marginTop: 6, color: T.sub }}>Annulla</button>
         </div>
       )}
       <button type="button" disabled={lavoro || !!inAttesa} onClick={() => inputRef.current && inputRef.current.click()}
