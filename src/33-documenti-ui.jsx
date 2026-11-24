@@ -224,3 +224,63 @@ export function SezioneDocumenti({ T, accent, eventId, dateKey, prenotaId }) {
     </div>
   );
 }
+
+// Riga degli allegati dentro la scheda di un evento (vista del giorno): per ogni documento
+// titolo, dimensione, scadenza e pulsante "Apri". Le immagini si aprono a schermo intero,
+// gli altri file con la condivisione del telefono.
+//  - colore / coloreSub: colori del testo della scheda (cambiano col colore dell'evento)
+export function DocumentiScheda({ T, eventId, colore, coloreSub }) {
+  useDocumentiVersione();
+  const [lavoro, setLavoro] = useState(false);
+  const [errore, setErrore] = useState("");
+  const [anteprima, setAnteprima] = useState(null);
+  const docs = documentiEvento(eventId);
+  if (docs.length === 0) return null;
+
+  async function apri(d) {
+    setErrore("");
+    if (/^image\//.test(d.mime || "")) {
+      const url = await anteprimaDocumento(d.id);
+      if (url) { setAnteprima({ url, nome: d.nome }); return; }
+    }
+    setLavoro(true);
+    const r = await inviaDocumento(d.id);
+    setLavoro(false);
+    if (!r.ok) setErrore(r.errore || "Apertura non riuscita");
+  }
+
+  return (
+    <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 8 }}>
+      {docs.map((d) => (
+        <div key={d.id} style={{
+          display: "flex", alignItems: "center", gap: 8, background: "rgba(255,255,255,0.18)",
+          borderRadius: 8, padding: "6px 8px", marginBottom: 4,
+        }}>
+          <span style={{ fontSize: 16 }}>📎</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: colore, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {d.nome}
+            </div>
+            <div style={{ fontSize: 12, color: coloreSub }}>
+              {[dimensione(d.size), testoScadenza(d)].filter(Boolean).join(" · ")}
+            </div>
+          </div>
+          <button type="button" disabled={lavoro} onClick={(e) => { e.stopPropagation(); apri(d); }} style={{
+            background: "rgba(0,0,0,0.25)", color: colore, border: "none", borderRadius: 8,
+            padding: "8px 10px", fontWeight: 800, fontSize: 13, cursor: "pointer", flexShrink: 0,
+          }}>{lavoro ? "…" : "📂 Apri"}</button>
+        </div>
+      ))}
+      {errore && <div style={{ fontSize: 12, color: "#fecaca", fontWeight: 700 }}>{errore}</div>}
+      {anteprima && (
+        <div onClick={(e) => { e.stopPropagation(); setAnteprima(null); }} style={{
+          position: "fixed", inset: 0, zIndex: 100000, background: "rgba(0,0,0,0.85)",
+          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 12,
+        }}>
+          <div style={{ color: "#fff", fontSize: 13, fontWeight: 700, marginBottom: 8 }}>{anteprima.nome} · tocca per chiudere</div>
+          <img src={anteprima.url} alt={anteprima.nome} style={{ maxWidth: "100%", maxHeight: "85%", objectFit: "contain" }} />
+        </div>
+      )}
+    </div>
+  );
+}

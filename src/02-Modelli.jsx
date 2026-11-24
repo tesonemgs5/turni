@@ -21,7 +21,7 @@ import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
 import { ImpostazioniAggiornamenti, inApk } from "./12-avviso-aggiornamento";
 import AGGIORNAMENTI_APP from "./aggiornamenti.json";
 import { QuartineSection } from "./16-QuartineSection";
-import { SezioneDocumenti, useDocumentiVersione } from "./33-documenti-ui";
+import { SezioneDocumenti, DocumentiScheda, useDocumentiVersione } from "./33-documenti-ui";
 import { haDocumenti, eliminaDocumentiEvento, documentiEvento, idGiorno } from "./32-documenti";
 import { scaricaFileTesto } from "./18-scarica-file";
 import { classeModelloA, ordinaClassiA, ordinaPerInizio } from "./21-ordine";
@@ -3038,6 +3038,7 @@ export default function VistaModelli({ C }){
               {e.note&&<div style={{color:cardSubColor,fontSize:13,marginTop:3,fontStyle:"italic"}}>
                 {e.note}
               </div>}
+              {haDocumenti(e.id)&&<DocumentiScheda T={T} eventId={e.id} colore={cardTextColor} coloreSub={cardSubColor}/>}
               {(()=>{
                 // Collegamento Piano Incentivante ↔ RC PI: calcolo dinamico
                 // (mai salvato, sempre coerente con lo stato attuale del
