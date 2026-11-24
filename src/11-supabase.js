@@ -1,8 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
 import { SUPABASE_CONFIGURATO } from './42-regola-supabase.js'
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+const env = (typeof import.meta !== 'undefined' && import.meta.env) || {}
+const supabaseUrl = env.VITE_SUPABASE_URL
+const supabaseKey = env.VITE_SUPABASE_ANON_KEY
 
 // REGOLA 1: Supabase e' solo un backup. Senza chiavi nella build (app distribuita senza Supabase)
 // al posto del collegamento vero c'e' questo finto client: ogni richiesta risponde subito
