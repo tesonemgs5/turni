@@ -627,7 +627,7 @@ export function ConteggioConfigCard({T, r, cfg, data, totaleTurni, labelGlobale,
             );
           }
           if(sm.tipo==="libero") return (
-            <SottomenuLibero key={sm.id} T={T} accent={accent} sm={sm} labelGlobale={labelGlobale} perGruppoSm={data.perSottomenu?.[sm.id]||{}} ordineRoot={ordineRoot} perCollGruppoSm={data.perSottomenuColl?.[sm.id]||{}} onMoveBlock={dir=>muoviSottomenu(sm.id,dir)} blockUp={idxSm>0} blockDown={idxSm<sottomenu.length-1}
+            <SottomenuLibero key={sm.id} T={T} accent={accent} sm={sm} labelGlobale={labelGlobale} perGruppoSm={data.perSottomenu?.[sm.id]||{}} ordineRoot={ordineRoot} ordineElenco={(cfg&&cfg.ordineTot)||ordineRoot} perCollGruppoSm={data.perSottomenuColl?.[sm.id]||{}} onMoveBlock={dir=>muoviSottomenu(sm.id,dir)} blockUp={idxSm>0} blockDown={idxSm<sottomenu.length-1}
               valore={v=>v.count||0} formatta={n=>String(n)} modelli={modelliOrdinati||modelli} fasceAutomatiche={fasceAutomatiche}
               onPatch={patch=>aggiornaSottomenu(sm.id,patch)} onRemove={()=>rimuoviSottomenu(sm.id)}/>
           );
@@ -976,7 +976,7 @@ export function OreTurnoConfigCard({T, r, cfg, data, totaleMinPeriodo, labelGlob
             );
           }
           if(sm.tipo==="libero") return (
-            <SottomenuLibero key={sm.id} T={T} accent={accent} sm={sm} labelGlobale={labelGlobale} perGruppoSm={data.perSottomenu?.[sm.id]||{}} ordineRoot={ordineRoot} perCollGruppoSm={data.perSottomenuColl?.[sm.id]||{}} onMoveBlock={dir=>muoviSottomenu(sm.id,dir)} blockUp={idxSm>0} blockDown={idxSm<sottomenu.length-1}
+            <SottomenuLibero key={sm.id} T={T} accent={accent} sm={sm} labelGlobale={labelGlobale} perGruppoSm={data.perSottomenu?.[sm.id]||{}} ordineRoot={ordineRoot} ordineElenco={(cfg&&cfg.ordineTot)||ordineRoot} perCollGruppoSm={data.perSottomenuColl?.[sm.id]||{}} onMoveBlock={dir=>muoviSottomenu(sm.id,dir)} blockUp={idxSm>0} blockDown={idxSm<sottomenu.length-1}
               valore={v=>v.minuti||0} formatta={fmtOreMin} modelli={modelliOrdinati||modelli} fasceAutomatiche={fasceAutomatiche}
               onPatch={patch=>aggiornaSottomenu(sm.id,patch)} onRemove={()=>rimuoviSottomenu(sm.id)}/>
           );
@@ -3402,7 +3402,7 @@ function FiglioMenu({T, accent, nodo, scope, perMod, perColl, modelli, valore, f
   );
 }
 
-function SottomenuLibero({T, accent, sm, labelGlobale, ordineRoot, perGruppoSm, perCollGruppoSm={}, valore, formatta, modelli, fasceAutomatiche, onPatch, onRemove, onMoveBlock, blockUp, blockDown}){
+function SottomenuLibero({T, accent, sm, labelGlobale, ordineRoot, ordineElenco, perGruppoSm, perCollGruppoSm={}, valore, formatta, modelli, fasceAutomatiche, onPatch, onRemove, onMoveBlock, blockUp, blockDown}){
   const gruppi = sm.gruppi||[];
   const asseg = sm.assegnazioni||{};
   const [nuovoKey, setNuovoKey] = useState(()=> (gruppi.length===1 && !gruppi[0].label) ? gruppi[0].key : null);
@@ -3545,6 +3545,7 @@ function SottomenuLibero({T, accent, sm, labelGlobale, ordineRoot, perGruppoSm, 
                 </div>
                 {modelliAperti[g.key]&&altri.length>0&&(
                   <ElencoModelliTendine chiave={"libero_"+sm.id+"_"+g.key} modelli={altri} renderRiga={riga}
+                    ordineElenco={ordineElenco||ordineRoot||"A"} valoreDi={m=>{ const inf=perGruppoSm[g.key]&&perGruppoSm[g.key][m.id]; return inf?valore(inf):0; }}
                     onSelezionaGruppo={(ms)=>assegnaMolti(ms.map(x=>x.id), g.key)}
                     stileContenitore={{border:"none",borderRadius:6,marginBottom:0}}/>
                 )}

@@ -1,4 +1,4 @@
-import { BANDA_A, classeModelloA, ordinaClassiA, ordineAttivo } from "./21-ordine.js";
+import { BANDA_A, classeModelloA, ordinaClassiA, ordineAttivo, minutiInizio } from "./21-ordine.js";
 import { oraInMinuti } from "./25-calcoli-rotazione.js";
 
 export function stessoHexColore(a,b){
@@ -123,4 +123,29 @@ export function calcolaOrdineRiordinoFasce(sottoinsieme){
   }
   out.push(...blocchi[4]);
   return out;
+}
+
+// Riordina le cartelle (blocchi) e i modelli di un elenco a tendine secondo il criterio scelto:
+//  A = alfabetico (cartelle, modelli dentro e modelli senza cartella)
+//  B = cronologico (per orario di inizio; una cartella vale quanto il suo modello che inizia prima)
+//  Q = quantita' (dal maggiore; una cartella vale la somma dei suoi modelli) — serve valoreDi(modello)
+// A parita' si va in ordine alfabetico. Qualsiasi altro criterio lascia tutto com'e'.
+export function ordinaSezioni({ blocchi, senza }, criterio, valoreDi, estrai) {
+  if (criterio !== "A" && criterio !== "B" && criterio !== "Q") return { blocchi, senza };
+  const mod = (x) => (estrai ? estrai(x) : x);
+  const nome = (x) => String(mod(x).label || mod(x).titolo || "");
+  const coll = (a, b) => String(a).localeCompare(String(b), "it", { sensitivity: "base", numeric: true });
+  const val = (x) => (valoreDi ? valoreDi(x) || 0 : 0);
+  const iniz = (x) => minutiInizio(mod(x));
+  const cmpModelli = criterio === "B" ? (a, b) => (iniz(a) - iniz(b)) || coll(nome(a), nome(b))
+    : criterio === "Q" ? (a, b) => (val(b) - val(a)) || coll(nome(a), nome(b))
+    : (a, b) => coll(nome(a), nome(b)) || (iniz(a) - iniz(b));
+  const ord = (arr) => [...arr].sort(cmpModelli);
+  const nuovi = blocchi.map((b) => ({ ...b, modelli: ord(b.modelli) }));
+  const somma = (b) => b.modelli.reduce((n, m) => n + val(m), 0);
+  const primo = (b) => Math.min(...b.modelli.map(iniz));
+  if (criterio === "B") nuovi.sort((a, b) => (primo(a) - primo(b)) || coll(a.label, b.label));
+  else if (criterio === "Q") nuovi.sort((a, b) => (somma(b) - somma(a)) || coll(a.label, b.label));
+  else nuovi.sort((a, b) => coll(a.label, b.label));
+  return { blocchi: nuovi, senza: ord(senza) };
 }

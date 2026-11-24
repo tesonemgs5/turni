@@ -6,7 +6,7 @@
 // Serve a tutte le liste che richiamano i modelli (selettori, colori, rotazioni, report...), cosi' hanno lo stesso sistema.
 import { useState, Fragment, createContext, useContext } from "react";
 import { classeModelloA, ordinaClassiA, minutiInizio } from "./21-ordine";
-import { ordinaModelliInGruppo } from "./26-ordine-modelli";
+import { ordinaModelliInGruppo, ordinaSezioni } from "./26-ordine-modelli";
 
 // Valori condivisi (ordine A/B, gruppi...) forniti una volta sola dalla schermata principale: cosi' ogni lista li trova da se'.
 export const ContestoTendine = createContext(null);
@@ -67,12 +67,14 @@ export function PulsanteOrdineAB(props) {
 // chiave = nome della lista (ricorda quali tendine erano aperte). renderRiga(m, i, arr) disegna la riga del modello.
 export function ElencoModelliTendine(props) {
   const ctx = useContext(ContestoTendine) || {};
-  const { modelli, calId, cercando, chiave, renderRiga, estrai, stileContenitore, selezionati, onSelezionaGruppo, soloInTesta } = props;
+  const { modelli, calId, cercando, chiave, renderRiga, estrai, stileContenitore, selezionati, onSelezionaGruppo, soloInTesta, ordineElenco, valoreDi } = props;
   const ordine = props.ordine ?? ctx.ordine, mainCalId = props.mainCalId ?? ctx.mainCalId, gruppiDelCalendario = props.gruppiDelCalendario || ctx.gruppiDelCalendario, gruppi = props.gruppi || ctx.gruppi, T = props.T || ctx.T;
   const LS = "turnipm_tendine_aperte_" + (chiave || "x");
   const [aperte, setAperte] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem(LS) || "[]")); } catch (e) { return new Set(); } });
   const salva = (s) => { setAperte(s); try { localStorage.setItem(LS, JSON.stringify([...s])); } catch (e) {} };
-  const { blocchi, senza } = costruisciSezioni({ modelli, ordine, calId, mainCalId, gruppiDelCalendario, gruppi, cercando, estrai });
+  // ordineElenco (opzionale, A/B/Q): cartelle e modelli seguono questo ordine invece di quello salvato (es. il report segue «Per modello»).
+  const sezioni = costruisciSezioni({ modelli, ordine, calId, mainCalId, gruppiDelCalendario, gruppi, cercando, estrai });
+  const { blocchi, senza } = (ordineElenco && !cercando) ? ordinaSezioni(sezioni, ordineElenco, valoreDi, estrai) : sezioni;
   const chiavi = blocchi.map((b) => b.key);
   const ordinati = [...blocchi.flatMap((b) => b.modelli), ...senza];
   const toggle = (k) => { const s = new Set(aperte); if (s.has(k)) s.delete(k); else s.add(k); salva(s); };
