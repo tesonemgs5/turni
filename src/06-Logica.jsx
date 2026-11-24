@@ -8476,6 +8476,51 @@ const importsRecenti = useMemo(()=>{
     return { idsAggiornati };
   }
 
+  // Pulizia: il gruppo dei sottomenu del report e' SOLO del modello (nome+orario). Un vecchio
+  // valore scritto sul singolo evento (reportOverrides[report].sottomenu) va cancellato, in locale e su Supabase.
+  // Si ripete da sola finche' trova qualcosa (anche dopo un caricamento da Supabase).
+  useEffect(()=>{
+    if(!userId) return;
+    const eventi = store?.events;
+    if(!eventi) return;
+    const haGruppo = (e)=>Object.values(e.reportOverrides||{}).some(o=>o && o.sottomenu!==undefined);
+    const togli = (e)=>{
+      const next = {};
+      Object.entries(e.reportOverrides||{}).forEach(([rid,o])=>{
+        if(!o || o.sottomenu===undefined){ next[rid]=o; return; }
+        const {sottomenu:_s, ...resto} = o;
+        if(Object.keys(resto).length>0) next[rid]=resto;
+      });
+      return next;
+    };
+    const ids = [];
+    const payload = {};
+    const nextEvents = {};
+    let trovato = false;
+    for(const [dk, calMap] of Object.entries(eventi)){
+      const nextCalMap = {};
+      for(const [cid, evts] of Object.entries(calMap)){
+        nextCalMap[cid] = evts.map(e=>{
+          if(!haGruppo(e)) return e;
+          trovato = true;
+          const ro = togli(e);
+          ids.push(e.id);
+          payload[e.id] = { report_overrides: Object.keys(ro).length>0 ? ro : null };
+          return {...e, reportOverrides: ro};
+        });
+      }
+      nextEvents[dk] = nextCalMap;
+    }
+    if(!trovato) return;
+    setStore(prev=>({...prev, events: nextEvents}));
+    saveToLocalStorage(nextEvents, store.calendars, modelli);
+    accodaScrittureRemote(ids.map(id=>({
+      tipo:"update", table:"events", payload: payload[id], match:{ id, user_id:userId },
+      contesto:"Pulizia: gruppo report tolto dall'evento (vale solo il modello)",
+    })));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store?.events, userId]);
+
   const SPIEGAZIONE_WIDGET = "Cos'è: il widget è il riquadro dei turni che puoi mettere sulla schermata Home del telefono Android. L'app gli manda i dati dei prossimi giorni ogni volta che apri l'app o cambi qualcosa. Non riguarda il salvataggio dei dati.";
   // ── Widget Android (2 settimane) ──
   // widgetTick sale ogni volta che l'app torna visibile: cosi' il widget si aggiorna APPENA APRI L'APP,
