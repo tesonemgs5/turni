@@ -88,7 +88,9 @@ export function ElencoModelliTendine(props) {
   // gli altri restano solo nelle tendine sotto, con la loro casella.
   const inTestaSet = soloInTesta ? new Set(soloInTesta) : null;
   const selBase = (!cercando && selSet.size > 0) ? ordinati.filter((m) => { const id = (estrai ? estrai(m) : m).id; return selSet.has(id) && (!inTestaSet || inTestaSet.has(id)); }) : [];
-  const selLista = ordine === "A"
+  // Con ordineElenco (es. il report) anche i selezionati seguono quell'ordine, non quello A/B del dispositivo.
+  const critSel = (ordineElenco && !cercando) ? ordineElenco : ordine;
+  const selLista = (critSel === "A" || critSel === "Q")
     ? selBase.map((m, i) => ({ m, i })).sort((a, b) => {
         const ma = estrai ? estrai(a.m) : a.m;
         const mb = estrai ? estrai(b.m) : b.m;

@@ -39,3 +39,22 @@ export function impostaInclusioneModelloReport(tipoReport, config, modelloId, in
   }
   return nuovo;
 }
+
+// Modelli del filtro del report che esistono ancora. Un ID rimasto nel filtro dopo che un modello e' stato
+// eliminato o ricreato non corrisponde a niente: non si conta e non si mostra.
+export function modelliInclusiValidi(inclusi, esistenti){
+  const ok = new Set(esistenti||[]);
+  return (inclusi||[]).filter(id=>id!=="__nessuno__" && ok.has(id));
+}
+
+// Toglie dal filtro gli ID che non corrispondono a nessun modello. Se non c'e' nulla da togliere restituisce
+// LO STESSO oggetto. Se i modelli rimasti sono zero la lista diventa «nessun modello» (mai «tutti»).
+export function pulisciModelliInclusi(config, esistenti){
+  const inc = config?.modelliInclusi;
+  if(!Array.isArray(inc) || inc.length===0) return config;
+  const ok = new Set(esistenti||[]);
+  const tenuti = inc.filter(id=>id==="__nessuno__" || ok.has(id));
+  if(tenuti.length===inc.length) return config;
+  const veri = tenuti.filter(id=>id!=="__nessuno__");
+  return {...config, modelliInclusi: veri.length>0 ? veri : ["__nessuno__"]};
+}

@@ -17,6 +17,8 @@ import { haDocumenti } from "./32-documenti";
 import { useDocumentiVersione } from "./33-documenti-ui";
 import { CronologiaReport } from "./41-cronologia-report-ui";
 import { ElencoModelliTendine, PulsanteOrdineAB } from "./23-tendine-modelli";
+import { modelliInclusiValidi, pulisciModelliInclusi } from "./27-report-modelli";
+import { ordineAttivo } from "./21-ordine";
 import { ModelloCard, ModelForm, RotazioneCard, RotazioneForm, ModelloSelector,
   GrigliaRotazione, NLRSScalanteView, DomenicheView, NLRSView } from "./04-Rotazione";
 import { ImportaTurniJsonDialog, ImportaFotoDialog } from "./07-Turni";
@@ -613,7 +615,13 @@ export default function VistaCalendario({ C }){
       <div key={r.id}>
         <div style={{display:"flex",alignItems:"center",padding:"12px 14px",
           borderBottom:`1px solid ${T.border}`,cursor:"pointer"}}
-          onClick={()=>setOpenReportConfig(isOpen?null:r.id)}>
+          onClick={()=>{
+            if(!isOpen && r.type!=="turnazione"){
+              const pulita = pulisciModelliInclusi(cfg, modelli.map(m=>m.id));
+              if(pulita!==cfg) updateConteggioConfig(r.id, pulita, "tolti dal filtro i modelli che non esistono più");
+            }
+            setOpenReportConfig(isOpen?null:r.id);
+          }}>
           <button onClick={e=>{e.stopPropagation();setConfermaEliminaReportId(r.id);}}
             style={{width:26,height:26,borderRadius:"50%",border:"none",cursor:"pointer",
               background:"#ef4444",color:"#fff",fontSize:16,fontWeight:700,
@@ -673,7 +681,7 @@ export default function VistaCalendario({ C }){
                     : (()=>{
                         const inc = cfg.modelliInclusi||[];
                         if(inc.includes("__nessuno__")) return 0; // scelto «nessun modello»
-                        if(inc.length>0) return inc.length;
+                        if(inc.length>0) return modelliInclusiValidi(inc, modelli.map(m=>m.id)).length; // solo i modelli che esistono ancora
                         // nessun filtro = TUTTI i modelli dei calendari del report: mostro quanti sono
                         const calOk = reportCalIds.length>0 ? [...new Set([...reportCalIds, ...(cfg.calendariExtra||[])])] : store.calendars.map(c=>c.id);
                         return modelli.filter(m=>calOk.includes(m.calendarId||mainCalId)).length;
@@ -985,7 +993,11 @@ export default function VistaCalendario({ C }){
         const aggiunti = cfg.modelliAggiunti||[];
         const inclusi = isTurnazione
           ? [...modelli.filter(m=>isModelloTurnazioneDefault(m)&&!esclusi.includes(m.id)).map(m=>m.id), ...aggiunti]
-          : (cfg.modelliInclusi||[]);
+          : (()=>{
+              const inc = cfg.modelliInclusi||[];
+              const validi = modelliInclusiValidi(inc, modelli.map(m=>m.id));
+              return (inc.length>0 && validi.length===0) ? ["__nessuno__"] : validi;
+            })();
         // Calendari da mostrare nel picker: quelli già selezionati per il report,
         // più eventuali calendari extra scelti manualmente qui (cfg.calendariExtra)
         const calendariExtra = cfg.calendariExtra||[];
@@ -1011,7 +1023,7 @@ export default function VistaCalendario({ C }){
           .filter(g=>g.modelli.length>0);
         function toggleModello(m){
           if(!isTurnazione){
-            const baseInc = (cfg.modelliInclusi||[]).filter(id=>id!=="__nessuno__");
+            const baseInc = modelliInclusiValidi(cfg.modelliInclusi, modelli.map(m=>m.id));
             const selezionato = baseInc.includes(m.id);
             const next = selezionato ? baseInc.filter(id=>id!==m.id) : [...baseInc, m.id];
             // tolti tutti = ZERO modelli (non «tutti»)
@@ -1032,7 +1044,7 @@ export default function VistaCalendario({ C }){
         function toggleGruppo(lista, seleziona){
           const ids = lista.map(m=>m.id);
           if(!isTurnazione){
-            const base = (cfg.modelliInclusi||[]).filter(id=>id!=="__nessuno__");
+            const base = modelliInclusiValidi(cfg.modelliInclusi, modelli.map(m=>m.id));
             const next = seleziona ? [...new Set([...base, ...ids])] : base.filter(id=>!ids.includes(id));
             updateConteggioConfig(reportId, {...cfg, modelliInclusi: next.length===0 ? ["__nessuno__"] : next});
             return;
@@ -1119,7 +1131,7 @@ export default function VistaCalendario({ C }){
                         <div style={{width:8,height:8,borderRadius:"50%",background:cal.color}}/>
                         <span style={{fontSize:12,fontWeight:800,color:T.sub,textTransform:"uppercase"}}>{cal.name}</span>
                       </div>
-                      <ElencoModelliTendine chiave={"reportpicker_"+cal.id} modelli={modelliCal} calId={cal.id} cercando={cercando} selezionati={inclusi} onSelezionaGruppo={toggleGruppo}
+                      <ElencoModelliTendine chiave={"reportpicker_"+cal.id} modelli={modelliCal} calId={cal.id} cercando={cercando} selezionati={inclusi} onSelezionaGruppo={toggleGruppo} ordineElenco={cfg.ordineTot||cfg.ordine||ordineAttivo()}
                         stileContenitore={{marginBottom:0}} renderRiga={(m,i,arr)=>{
                           const selezionato = inclusi.includes(m.id);
                           const colore = m?.coloreCustom||colByTime(m.inizio);

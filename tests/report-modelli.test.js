@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { impostaInclusioneModelloReport, statoInclusioneModelloReport } from "../src/27-report-modelli.js";
+import { impostaInclusioneModelloReport, statoInclusioneModelloReport, modelliInclusiValidi, pulisciModelliInclusi } from "../src/27-report-modelli.js";
 
 test("usa le inclusioni del report e rispetta il filtro esplicito senza modelli", () => {
   assert.equal(statoInclusioneModelloReport("conteggio_turni", {}, "m1", false), true);
@@ -34,4 +34,34 @@ test("mantiene la regola standard e le esclusioni della Turnazione", () => {
   assert.equal(statoInclusioneModelloReport("turnazione", incluso, "standard", true), true);
   const aggiunto = impostaInclusioneModelloReport("turnazione", {}, "personalizzato", true, false);
   assert.equal(statoInclusioneModelloReport("turnazione", aggiunto, "personalizzato", false), true);
+});
+
+test("il filtro conta solo i modelli che esistono ancora (un ID vecchio non fa 2 al posto di 1)", () => {
+  assert.deepEqual(modelliInclusiValidi(["piano","vecchio"], ["piano","altro"]), ["piano"]);
+  assert.deepEqual(modelliInclusiValidi(["__nessuno__"], ["piano"]), []);
+  assert.deepEqual(modelliInclusiValidi(undefined, ["piano"]), []);
+});
+
+test("pulisce gli ID vecchi dal filtro e non tocca il resto della configurazione", () => {
+  const config = { modelliInclusi:["piano","vecchio"], ordineTot:"A", sottomenu:[{id:"sm"}] };
+  const pulita = pulisciModelliInclusi(config, ["piano","altro"]);
+  assert.deepEqual(pulita.modelliInclusi, ["piano"]);
+  assert.equal(pulita.ordineTot, "A");
+  assert.deepEqual(pulita.sottomenu, [{id:"sm"}]);
+  assert.deepEqual(config.modelliInclusi, ["piano","vecchio"]);
+});
+
+test("senza ID vecchi restituisce lo stesso oggetto (nessuna scrittura inutile)", () => {
+  const config = { modelliInclusi:["piano"] };
+  assert.equal(pulisciModelliInclusi(config, ["piano"]), config);
+  const tutti = { modelliInclusi:[] };
+  assert.equal(pulisciModelliInclusi(tutti, ["piano"]), tutti);
+  const nessuno = { modelliInclusi:["__nessuno__"] };
+  assert.equal(pulisciModelliInclusi(nessuno, ["piano"]), nessuno);
+});
+
+test("se erano tutti ID vecchi il filtro diventa «nessun modello», mai «tutti»", () => {
+  const pulita = pulisciModelliInclusi({ modelliInclusi:["v1","v2"] }, ["piano"]);
+  assert.deepEqual(pulita.modelliInclusi, ["__nessuno__"]);
+  assert.equal(statoInclusioneModelloReport("conteggio_turni", pulita, "piano", false), false);
 });
