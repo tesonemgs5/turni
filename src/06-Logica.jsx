@@ -13,7 +13,7 @@ import { trovaModelloIdentita, tempoDaEvento } from "./31-identita-modello";
 import { fasceIndennitaDi, pulsantiFasciaDi, minutiPerFasceEvento, tariffaOraria } from "./24-fasce-indennita";
 import { pulisciDocumenti, idEventiDaStore } from "./32-documenti";
 import { descriviModificheReport, aggiungiVersioneReport, marcaOrarioAssegnazioni } from "./40-cronologia-report";
-import { SUPABASE_SOLO_BACKUP, SUPABASE_CONFIGURATO } from "./42-regola-supabase";
+import { SUPABASE_SOLO_BACKUP, SUPABASE_CONFIGURATO, CHIAVE_MODALITA_LOCALE } from "./42-regola-supabase";
 import {
   FASCE_AUTOMATICHE_DEFAULT, FESTIVITA_DEFAULT_ATTIVE, MONTHS, NOMI_GIORNI_IT, PALETTE, COLORE_H24,
   calcFine6h15, calcFine6h30, calcFineModello, categoriaAppAutoAutomatica, categoriaTurnoAutomatica,
@@ -1746,6 +1746,7 @@ export function useAppCore(session){
   }
   function accodaScrittureRemote(ops){
     if(!ops?.length) return;
+    if(!backupAttivo) return; // modalita' locale / build senza Supabase: niente backup da accodare
     const coda = leggiCodaSync();
     const ts = new Date().toISOString();
     for(const o of ops) coda.push({ id: generaIdLocale(), ts, match:null, payload:null, onConflict:null, ...o });
@@ -1760,6 +1761,7 @@ export function useAppCore(session){
   // Un solo svuotamento alla volta: se ne arriva un altro mentre il primo lavora,
   // viene rieseguito subito dopo (evita invii doppi e perdita di operazioni).
   async function processaCodaSync(){
+    if(!backupAttivo) return;
     if(codaInCorsoRef.current){ codaRiprovaRef.current = true; return; }
     codaInCorsoRef.current = true;
     try{
@@ -4495,7 +4497,15 @@ export function useAppCore(session){
     }
   }
 
-  async function handleLogout(){ await supabase.auth.signOut(); }
+  async function handleLogout(){
+    // In modalita' locale non c'e' nessun account da chiudere: si torna alla schermata per COLLEGARE il backup.
+    if(session?.locale){
+      try{ localStorage.removeItem(CHIAVE_MODALITA_LOCALE); }catch(e){}
+      window.location.reload();
+      return;
+    }
+    await supabase.auth.signOut();
+  }
 
   // ─── Scheletro condiviso per gli script di manutenzione "una tantum" ───
   // Entrambe le normalizzazioni (modelli e eventi) seguono sempre la stessa

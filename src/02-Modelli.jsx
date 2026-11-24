@@ -29,6 +29,7 @@ import { classeModelloA, ordinaClassiA, ordinaPerInizio } from "./21-ordine";
 import { ordinaModelliInGruppo } from "./26-ordine-modelli";
 import { BackupPerModelloPulsante, StatoSync } from "./20-backup-modelli";
 import { BackupModelliConfigEStato } from "./22-backup-stato";
+import { SUPABASE_CONFIGURATO } from "./42-regola-supabase";
 
 // Riga della lista Colori: mostra il pallino colore, etichetta, sottotitolo,
 // contatore di modelli che lo usano e (se applicabile) pulsanti per
@@ -1414,14 +1415,27 @@ export default function VistaModelli({ C }){
       <div style={{fontSize:11,color:T.sub,marginBottom:14}}>
         Versione {typeof __APP_VERSION__!=="undefined" ? __APP_VERSION__ : "dev"}{typeof __BUILD_NUM__!=="undefined" && __BUILD_NUM__ ? `#${__BUILD_NUM__}` : ""}
       </div>
-      <Sec label="ACCOUNT" T={T}>
-        <div style={{fontSize:12,color:T.sub,marginBottom:10}}>{session?.user?.email}</div>
-        <button onClick={handleLogout}
-          style={{width:"100%",background:"#ef4444",border:"none",borderRadius:10,
-            color:"#fff",padding:"10px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
-          🚪 Logout
-        </button>
-      </Sec>
+      {SUPABASE_CONFIGURATO&&(
+        <Sec label="BACKUP SUPABASE · ACCOUNT" T={T}>
+          {session?.locale?(<>
+            <div style={{fontSize:12,color:T.sub,marginBottom:10,lineHeight:1.45}}>
+              Modalità locale: i dati restano solo su questo dispositivo e non c'è nessun backup. Per attivarlo accedi con il tuo account.
+            </div>
+            <button onClick={handleLogout}
+              style={{width:"100%",background:"#2563eb",border:"none",borderRadius:10,
+                color:"#fff",padding:"10px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
+              ☁️ Collega il backup (accedi)
+            </button>
+          </>):(<>
+            <div style={{fontSize:12,color:T.sub,marginBottom:10}}>{session?.user?.email}</div>
+            <button onClick={handleLogout}
+              style={{width:"100%",background:"#ef4444",border:"none",borderRadius:10,
+                color:"#fff",padding:"10px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
+              🚪 Logout
+            </button>
+          </>)}
+        </Sec>
+      )}
 
       <SecCollapsible label="MANUTENZIONE" T={T} onToggle={(aperta)=>{ if(aperta) aggiornaVersioniAutomatiche(); }}>
         <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
@@ -2140,7 +2154,8 @@ export default function VistaModelli({ C }){
           background:T.s2,borderRadius:8,textAlign:"center",marginTop:8}}>{syncMsg}</div>}
       </SecCollapsible>
 
-      <SecCollapsible label="DATABASE CLOUD SUPABASE" T={T}>
+      {SUPABASE_CONFIGURATO&&(
+      <SecCollapsible label="BACKUP SU SUPABASE" T={T}>
         <div style={{fontSize:11,color:T.sub,marginBottom:10}}>
           Controlla lo stato dei dati memorizzati nel cloud Supabase.
         </div>
@@ -2259,6 +2274,7 @@ export default function VistaModelli({ C }){
           </div>
         )}
       </SecCollapsible>
+      )}
 
       <SecCollapsible label="BACKUP LOCALE (TELEFONO)" T={T}>
         <div style={{fontSize:11,color:T.sub,marginBottom:10}}>

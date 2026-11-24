@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { supabase } from "./11-supabase"
 
-export default function Auth({ onLogin }) {
+export default function Auth({ onContinuaLocale }) {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [mode, setMode] = useState("login") // login | register
@@ -80,6 +80,18 @@ export default function Auth({ onLogin }) {
           {mode==="login"?"Non hai un account? Registrati":"Hai già un account? Accedi"}
         </button>
         {msg&&<div style={{marginTop:12,textAlign:"center",fontSize:12,color:"#94a3b8"}}>{msg}</div>}
+        {onContinuaLocale&&(
+          <>
+            <button onClick={onContinuaLocale}
+              style={{width:"100%",marginTop:20,background:"#1e293b",border:"1px solid #334155",borderRadius:10,
+                color:"#f1f5f9",padding:"13px 0",fontSize:14,fontWeight:800,cursor:"pointer"}}>
+              Continua senza account
+            </button>
+            <div style={{marginTop:8,textAlign:"center",fontSize:11,color:"#64748b",lineHeight:1.4}}>
+              I dati restano solo su questo dispositivo. L'account serve soltanto per il backup, e lo puoi collegare più tardi dalle Impostazioni.
+            </div>
+          </>
+        )}
       </div>
     </div>
   )

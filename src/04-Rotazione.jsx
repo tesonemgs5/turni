@@ -1028,6 +1028,7 @@ export function impostaSilenziamentoErrore(contesto, silenziato) {
 // contesto non è stato silenziato dall'utente — lo accoda anche per il
 // modale a schermo tramite il listener registrato dal componente App.
 export function segnalaErrore(error, contesto) {
+  if (error && error.backupDisattivato) return; // backup Supabase non collegato: non e' un errore
   const voce = {
     id: generaIdLocale(),
     ts: new Date().toISOString(),
@@ -1045,6 +1046,7 @@ export function segnalaErrore(error, contesto) {
 // Come segnalaErrore, ma non apre mai il modale — solo Log. Usata nei
 // cicli dove serve un riepilogo unico invece di N popup.
 export function segnalaErroreSoloLog(error, contesto) {
+  if (error && error.backupDisattivato) return; // backup Supabase non collegato: non e' un errore
   const voce = {
     id: generaIdLocale(),
     ts: new Date().toISOString(),

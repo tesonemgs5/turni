@@ -3,10 +3,11 @@ import ReactDOM from 'react-dom/client'
 import App from './01-App.jsx'
 import Auth from './10-auth.jsx'
 import { supabase } from './11-supabase.js'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { registerSW } from 'virtual:pwa-register'
 import AvvisoAggiornamento from './12-avviso-aggiornamento.jsx'
 import { attivaMaiuscoloGlobale } from './24-maiuscolo.js'
+import { SUPABASE_CONFIGURATO, CHIAVE_MODALITA_LOCALE, CHIAVE_ULTIMO_UTENTE } from './42-regola-supabase.js'
 
 // Tutto cio' che si digita nei campi di testo diventa MAIUSCOLO (esclusi password, email, indirizzi, numeri, date, orari).
 attivaMaiuscoloGlobale()
@@ -65,10 +66,39 @@ function leggiSessioneLocale() {
   }
 }
 
+// REGOLA 1: l'app funziona anche senza Supabase e senza account. In modalita' locale la sessione e'
+// finta: usa l'ultimo id utente conosciuto, cosi' i dati gia' salvati su questo dispositivo restano visibili.
+function sessioneSoloLocale() {
+  let id = 'locale';
+  try { id = localStorage.getItem(CHIAVE_ULTIMO_UTENTE) || 'locale'; } catch { /* resta locale */ }
+  return { locale: true, user: { id, email: '' } };
+}
+
+function modalitaLocaleAttiva() {
+  if (!SUPABASE_CONFIGURATO) return true; // build senza Supabase: sempre locale
+  try { return localStorage.getItem(CHIAVE_MODALITA_LOCALE) === '1'; } catch { return false; }
+}
+
 function Root() {
+  const [locale, setLocale] = useState(modalitaLocaleAttiva);
+  const sessioneFinta = useMemo(() => sessioneSoloLocale(), []);
+  if (locale) return <><AvvisoAggiornamento /><App session={sessioneFinta} /></>;
+  return <RootCollegato onContinuaLocale={() => {
+    try { localStorage.setItem(CHIAVE_MODALITA_LOCALE, '1'); } catch { /* ignora */ }
+    setLocale(true);
+  }} />;
+}
+
+function RootCollegato({ onContinuaLocale }) {
   const sessioneLocale = leggiSessioneLocale();
   const [session, setSession] = useState(sessioneLocale)
   const [loading, setLoading] = useState(!sessioneLocale)
+
+  // Si ricorda l'ultimo utente: serve se un giorno si continua senza account o Supabase non c'e' piu'.
+  useEffect(() => {
+    const id = session?.user?.id;
+    if (id) { try { localStorage.setItem(CHIAVE_ULTIMO_UTENTE, id); } catch { /* ignora */ } }
+  }, [session]);
 
   useEffect(() => {
     let risolto = false;
@@ -139,7 +169,7 @@ function Root() {
       </div>
     );
   }
-  return session ? <><AvvisoAggiornamento /><App session={session} /></> : <Auth />
+  return session ? <><AvvisoAggiornamento /><App session={session} /></> : <Auth onContinuaLocale={onContinuaLocale} />
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(
