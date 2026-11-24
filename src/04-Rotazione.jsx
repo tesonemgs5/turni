@@ -1327,31 +1327,36 @@ export function aggiornaEsitoVoceLog(idVoce, esito) {
 }
 
 // Testo della seconda spunta (☁️) per una voce del log.
+// Il backup su Supabase non e' attivo (modalita' locale / build senza Supabase): nel Log non si mostra nessuno stato di backup.
+let backupSpento = false;
+export function impostaBackupAttivoLog(attivo) { backupSpento = !attivo; }
+
 export function statoSupabaseVoce(v) {
   if (!v || v.tipo !== "operazione") return null;
-  if (v.origine === "remoto") return { icona: "☁️", testo: "arrivato da Supabase", colore: "ok" };
+  if (backupSpento) return null; // senza backup collegato lo stato del backup non esiste
+  if (v.origine === "remoto") return { icona: "☁️", testo: "arrivato dal backup", colore: "ok" };
   if (v.esito) {
-    if (v.esito === "ok") return { icona: "☁️", testo: "Supabase ✓", colore: "ok" };
-    if (v.esito === "coda") return { icona: "🕓", testo: "Supabase: in coda", colore: "attesa" };
-    if (v.esito === "errore") return { icona: "⚠️", testo: "Supabase: NON salvato", colore: "errore" };
-    return { icona: "☁️", testo: "Supabase: in corso…", colore: "attesa" };
+    if (v.esito === "ok") return { icona: "☁️", testo: "Backup ✓", colore: "ok" };
+    if (v.esito === "coda") return { icona: "🕓", testo: "Backup: in coda", colore: "attesa" };
+    if (v.esito === "errore") return { icona: "⚠️", testo: "Backup non riuscito (i dati sono al sicuro in locale)", colore: "errore" };
+    return { icona: "☁️", testo: "Backup: in corso…", colore: "attesa" };
   }
   const tot = v.idsTotali || 0;
   if (!tot) {
     if ((v.idsFacoltativiTot || 0) > 0) {
       return (v.idsFacoltativi || []).length === 0
-        ? { icona: "☁️", testo: "Supabase ✓", colore: "ok" }
-        : { icona: "☁️", testo: "Supabase: riordino non verificato", colore: "attesa" };
+        ? { icona: "☁️", testo: "Backup ✓", colore: "ok" }
+        : { icona: "☁️", testo: "Backup: riordino non verificato", colore: "attesa" };
     }
     return null;
   }
   const rest = (v.idsAttesa || []).length;
-  if (rest === 0) return { icona: "☁️", testo: "Supabase ✓", colore: "ok" };
+  if (rest === 0) return { icona: "☁️", testo: "Backup ✓", colore: "ok" };
   const ok = Math.max(0, tot - rest);
-  if (v.inCoda) return { icona: "🕓", testo: `Supabase: in coda (${ok}/${tot})`, colore: "attesa" };
-  if (typeof navigator !== "undefined" && navigator.onLine === false) return { icona: "🕓", testo: `Supabase: in coda, senza rete (${ok}/${tot})`, colore: "attesa" };
-  if (Date.now() - new Date(v.ts).getTime() > 120000) return { icona: "⚠️", testo: `Supabase: non confermato (${ok}/${tot})`, colore: "errore" };
-  return { icona: "☁️", testo: `Supabase: ${ok}/${tot}…`, colore: "attesa" };
+  if (v.inCoda) return { icona: "🕓", testo: `Backup: in coda (${ok}/${tot})`, colore: "attesa" };
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return { icona: "🕓", testo: `Backup: in coda, senza rete (${ok}/${tot})`, colore: "attesa" };
+  if (Date.now() - new Date(v.ts).getTime() > 120000) return { icona: "⚠️", testo: `Backup non ancora confermato (${ok}/${tot})`, colore: "errore" };
+  return { icona: "☁️", testo: `Backup: ${ok}/${tot}…`, colore: "attesa" };
 }
 
 // ── Confronto cache precedente / nuova: cosa è cambiato ──────────────

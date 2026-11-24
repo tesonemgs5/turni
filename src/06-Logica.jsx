@@ -24,7 +24,7 @@ import {
   registraAttivita, confermaSupabase, segnaInCodaSupabase, segnaEsitoSheets, aggiornaEsitoVoceLog, segnaContestoLog, impostaSorgenteLog,
   registraListenerLogSync, leggiLogDaSincronizzare, segnaLogSincronizzato, voceLogPerSupabase, diffDisposizione, impostaDettaglioImport,
   sameData, saveDatiSessioneLocale, saveToLocalStorage, scriviCodaSync, segnalaErrore, segnalaErroreSoloLog,
-  verificaStrutturaSupabase,
+  verificaStrutturaSupabase, impostaBackupAttivoLog,
   uid, withEventoAggiornato, withEventoAggiunto, withEventoRimosso,
   esportaBackupLocaleCompleto, importaBackupLocaleCompleto, CATEGORIE_BACKUP_LOCALE,
   applicaOpExtraHols, diffExtraHolsInOps, leggiOpExtraHols, scriviOpExtraHols, saveExtraHolsLocale,
@@ -912,6 +912,7 @@ export function useAppCore(session){
   const userId = session?.user?.id;
   // Il backup su Supabase e' attivo solo con le chiavi nella build e un account collegato (non in modalita' locale).
   const backupAttivo = SUPABASE_CONFIGURATO && !!session && !session.locale;
+  impostaBackupAttivoLog(backupAttivo);
   const isInitialized = useRef(false);
   // I dati dell'app sono quelli LOCALI (Supabase e' solo backup). Ogni cambio dei modelli
   // (riordino, colori, spostamenti...) viene scritto nel salvataggio locale: prima il riordino
@@ -1887,15 +1888,12 @@ export function useAppCore(session){
             rimasti.push(op);
             if(etaMs>SOGLIA_AVVISO_MS && !op._avvisato){
               op._avvisato = true;
-              segnalaErrore(
-                { message:`Questa modifica è in attesa di sincronizzarsi da più di ${Math.round(etaMs/60000)} minuti (rete instabile). È salvata solo su questo dispositivo finché la connessione non torna stabile.` },
-                `Sincronizzazione in sospeso — ${op.contesto}`
-              );
+              segnalaErroreSoloLog(`Il backup di questa modifica è in attesa da più di ${Math.round(etaMs/60000)} minuti (rete instabile). La modifica è già salvata su questo dispositivo: il backup riparte da solo.`, `Backup su Supabase in attesa — ${op.contesto}`);
             }
           } else {
             // Errore vero (validazione, permessi...): non ha senso
             // ritentarlo all'infinito, si segnala e si scarta.
-            segnalaErrore(res.error, `Sincronizzazione in sospeso — ${op.contesto}`);
+            segnalaErroreSoloLog(res.error, `Backup su Supabase non riuscito — ${op.contesto}`);
             if(op.voceLogId) aggiornaEsitoVoceLog(op.voceLogId, "errore");
           }
         } else {
@@ -1916,10 +1914,7 @@ export function useAppCore(session){
         rimasti.push(op);
         if(etaMs>SOGLIA_AVVISO_MS && !op._avvisato){
           op._avvisato = true;
-          segnalaErrore(
-            { message:`Questa modifica è in attesa di sincronizzarsi da più di ${Math.round(etaMs/60000)} minuti (rete instabile). È salvata solo su questo dispositivo finché la connessione non torna stabile.` },
-            `Sincronizzazione in sospeso — ${op.contesto}`
-          );
+          segnalaErroreSoloLog(`Il backup di questa modifica è in attesa da più di ${Math.round(etaMs/60000)} minuti (rete instabile). La modifica è già salvata su questo dispositivo: il backup riparte da solo.`, `Backup su Supabase in attesa — ${op.contesto}`);
         }
       }
     }
@@ -4390,7 +4385,7 @@ export function useAppCore(session){
     }
   }
   useEffect(()=>{
-    if(!userId) return;
+    if(!userId || SUPABASE_SOLO_BACKUP) return; // REGOLA 1: nessun controllo automatico su Supabase (resta il pulsante manuale)
     let ultimo = 0;
     try{ ultimo = Number(localStorage.getItem("turnipm_check_struttura_ts")||0); }catch(e){}
     if(Date.now()-ultimo < 7*24*3600*1000) return;
@@ -6158,7 +6153,7 @@ const importsRecenti = useMemo(()=>{
   // Parte da solo, qualche secondo dopo ogni nuova voce o spunta. Se la tabella
   // non esiste ancora o manca la rete, riprova più tardi (senza disturbare).
   useEffect(()=>{
-    if(!userId) return;
+    if(!userId || !backupAttivo) return;
     let timer = null, inCorso = false, attesa = 0;
     async function invia(){
       if(inCorso) return;

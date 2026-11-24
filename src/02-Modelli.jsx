@@ -1623,8 +1623,8 @@ export default function VistaModelli({ C }){
         }}>
         <div style={{fontSize:11,color:T.sub,marginBottom:12}}>
           Qui finisce tutto: ogni modifica salvata in locale (💾) con l'elenco preciso di cosa è
-          cambiato, la conferma di Supabase (☁️ ✓ salvato, 🕓 in coda, ⚠️ non confermato) e ogni
-          errore. Le voci con più dettagli si aprono con "Mostra dettagli". Categorie: 🧩 Widget = il riquadro dei turni sulla schermata Home del telefono (non riguarda i salvataggi); 📊 Report = ogni modifica ai report, con la conferma di Supabase.
+          cambiato, lo stato del backup su Supabase (☁️ ✓ copiato, 🕓 in coda, ⚠️ non riuscito: i dati restano comunque al sicuro in locale) e ogni
+          errore. Le voci con più dettagli si aprono con "Mostra dettagli". Categorie: 🧩 Widget = il riquadro dei turni sulla schermata Home del telefono (non riguarda i salvataggi); 📊 Report = ogni modifica ai report, con lo stato del backup.
         </div>
 
         {erroriSilenziatiVisibile && erroriSilenziatiVisibile.length>0 && (
@@ -1650,7 +1650,7 @@ export default function VistaModelli({ C }){
         )}
 
         <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
-          {[["tutto","Tutto"],["operazioni","Operazioni"],["salvataggi","Salvataggi"],["report","Report"],["widget","Widget"],["errori","Errori"],["supabase","Supabase"]].map(([v,l])=>(
+          {[["tutto","Tutto"],["operazioni","Operazioni"],["salvataggi","Salvataggi"],["report","Report"],["widget","Widget"],["errori","Errori"],["supabase","Backup"]].map(([v,l])=>(
             <button key={v} onClick={()=>setFiltroLog(v)}
               style={{flex:"1 1 auto",padding:"7px 8px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:11,
                 background:filtroLog===v?"#6366f1":T.s2,color:filtroLog===v?"#fff":T.sub,
