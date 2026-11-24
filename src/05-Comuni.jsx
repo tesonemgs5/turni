@@ -3484,6 +3484,17 @@ function SottomenuLibero({T, accent, sm, labelGlobale, ordineRoot, ordineElenco,
         const ordEff = g.ordine||ordineRoot||"A";
         const assegnati = ordinaModelliOrd(modelli.filter(m=>asseg[m.id]===g.key), ordEff, m=>{ const inf=perGruppoSm[g.key]&&perGruppoSm[g.key][m.id]; return inf?valore(inf):0; });
         const altri = modelli.filter(m=>asseg[m.id]!==g.key);
+        // Turni che contano nel gruppo anche se nessun modello e' spuntato in «NEL GRUPPO»:
+        // eventi assegnati a mano dal modulo dell'evento, o modelli assegnati che non sono piu' nell'elenco.
+        const idSpuntati = new Set(assegnati.map(m=>String(m.id)));
+        const fuori = Object.entries(perGruppoSm[g.key]||{})
+          .filter(([mid,info])=>!idSpuntati.has(String(mid)) && (info?.count||0)>0)
+          .map(([mid,info])=>{
+            const mm = modelli.find(x=>String(x.id)===String(mid));
+            return { mid, nome: mm ? (mm.label||mm.titolo) : "Modello non più presente", count: info.count||0,
+              date: [...(info.dates||[])].sort(), perAssegnazione: asseg[mid]===g.key };
+          });
+        const nFuori = fuori.reduce((n,f)=>n+f.count,0);
         const vociRapide = vociMenuRapido(g.figli||[]);
         return (
           <div key={g.key}>
@@ -3543,6 +3554,27 @@ function SottomenuLibero({T, accent, sm, labelGlobale, ordineRoot, ordineElenco,
                   </div>
                   {modelliAperti[g.key]&&assegnati.map(riga)}
                 </div>
+                {fuori.length>0&&(
+                  <div style={{border:`1px solid #f59e0b`,background:"#fffbeb",borderRadius:10,padding:"8px 10px",marginBottom:8}}>
+                    <div style={{fontSize:11,fontWeight:900,color:"#92400e",letterSpacing:0.5}}>⚠️ TURNI NEL GRUPPO NON DALLA SELEZIONE · {nFuori}</div>
+                    <div style={{fontSize:11,color:"#92400e",margin:"4px 0 6px"}}>
+                      Contano nel gruppo anche se qui sopra nessun modello è spuntato.
+                    </div>
+                    {fuori.map(f=>(
+                      <div key={f.mid} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",borderTop:"1px solid #fde68a"}}>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:12,fontWeight:800,color:"#78350f",wordBreak:"break-word"}}>{f.nome} · {f.count}</div>
+                          <div style={{fontSize:11,color:"#92400e"}}>
+                            {f.date.slice(0,8).map(d=>d.slice(8,10)+"/"+d.slice(5,7)).join(", ")}{f.date.length>8?"…":""}
+                            {" — "}{f.perAssegnazione ? "modello assegnato al gruppo ma non più nell'elenco" : "assegnato a mano dall'evento (modulo dell'evento, sezione report)"}
+                          </div>
+                        </div>
+                        {f.perAssegnazione&&(<button type="button" onClick={()=>setAss(f.mid,g.key)}
+                          style={{background:"#ffffff",color:"#78350f",border:"1px solid #f59e0b",borderRadius:8,padding:"6px 10px",fontWeight:800,fontSize:12,cursor:"pointer",flexShrink:0}}>Togli</button>)}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {modelliAperti[g.key]&&altri.length>0&&(
                   <ElencoModelliTendine chiave={"libero_"+sm.id+"_"+g.key} modelli={altri} renderRiga={riga}
                     ordineElenco={ordineElenco||ordineRoot||"A"} valoreDi={m=>{ const inf=perGruppoSm[g.key]&&perGruppoSm[g.key][m.id]; return inf?valore(inf):0; }}
