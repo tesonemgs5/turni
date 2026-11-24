@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  descriviModificheReport, aggiungiVersioneReport, leggiCronologiaReport, azzeraCronologiaReport, MAX_VERSIONI_REPORT, stabile,
+  descriviModificheReport, aggiungiVersioneReport, leggiCronologiaReport, azzeraCronologiaReport, MAX_VERSIONI_REPORT, stabile, marcaOrarioAssegnazioni, formatoOraModifica,
 } from "../src/40-cronologia-report.js";
 
 const base = () => ({
@@ -77,4 +77,19 @@ test("versioni: i report sono separati", () => {
   azzeraCronologiaReport("r1");
   assert.equal(leggiCronologiaReport("r1").length, 0);
   assert.equal(leggiCronologiaReport("r2").length, 1);
+});
+
+test("marcaOrarioAssegnazioni: scrive l'ora solo per i modelli il cui gruppo e' cambiato", () => {
+  const prima = base();
+  const dopo = base();
+  dopo.sottomenu[0].assegnazioni = { ...dopo.sottomenu[0].assegnazioni, m1: "g2" };
+  delete dopo.sottomenu[0].assegnazioni.m3;
+  const r = marcaOrarioAssegnazioni(prima, dopo, 1000);
+  assert.deepEqual(r.sottomenu[0].assegnazioniTs, { m1: 1000, m3: 1000 });
+  assert.equal(marcaOrarioAssegnazioni(prima, base(), 2000).sottomenu[0].assegnazioniTs, undefined);
+});
+
+test("formatoOraModifica: data e ora di Roma", () => {
+  assert.equal(formatoOraModifica(Date.UTC(2026, 10, 24, 19, 35)), "24/11/2026 20:35");
+  assert.equal(formatoOraModifica(0), "");
 });

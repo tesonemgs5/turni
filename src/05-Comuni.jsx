@@ -4,6 +4,7 @@ import { fasceIndennitaDi, pulsantiFasciaDi, periodiDi } from "./24-fasce-indenn
 import { ordineAttivo, minutiInizio } from "./21-ordine";
 import { impostaSelezioneModelliGruppo } from "./29-periodo-sottomenu";
 import { spiegaErrore } from "./31-spiega-errore";
+import { formatoOraModifica } from "./40-cronologia-report";
 import { SimulatoreTurni, pctFuoriRange } from "./38-simulatore-turni";
 // Pallino rosso: percentuale di 1° o 2° turno sotto il 40% o sopra il 60%.
 const pctRossa = f => (f.key === "primo" || f.key === "secondo") && pctFuoriRange(f.pct);
@@ -3476,6 +3477,7 @@ function SottomenuLibero({T, accent, sm, labelGlobale, ordineRoot, ordineElenco,
                 {m.label||m.titolo}
                 {m.tempo!=="h24"&&m.inizio&&(<span style={{opacity:0.7,fontWeight:500,marginLeft:5}}>{m.inizio}→{fineModelloRicerca(m)}</span>)}
                 {altroGruppo&&(<span style={{opacity:0.6,fontWeight:500,marginLeft:5,fontSize:11}}>· in {altroGruppo}</span>)}
+                {(sm.assegnazioniTs||{})[m.id]&&(<span style={{opacity:0.6,fontWeight:500,marginLeft:5,fontSize:10}}>· modificato {formatoOraModifica(sm.assegnazioniTs[m.id])}</span>)}
               </span>
               <span style={{fontSize:13,fontWeight:800,color:T.text}}>{info?formatta(valore(info)):formatta(0)}</span>
             </div>

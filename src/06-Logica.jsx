@@ -12,7 +12,7 @@ import { scaricaFileTesto, inNativo, salvaBackupInCartella, leggiUltimoBackupCar
 import { trovaModelloIdentita, tempoDaEvento } from "./31-identita-modello";
 import { fasceIndennitaDi, pulsantiFasciaDi, minutiPerFasceEvento, tariffaOraria } from "./24-fasce-indennita";
 import { pulisciDocumenti, idEventiDaStore } from "./32-documenti";
-import { descriviModificheReport, aggiungiVersioneReport } from "./40-cronologia-report";
+import { descriviModificheReport, aggiungiVersioneReport, marcaOrarioAssegnazioni } from "./40-cronologia-report";
 import {
   FASCE_AUTOMATICHE_DEFAULT, FESTIVITA_DEFAULT_ATTIVE, MONTHS, NOMI_GIORNI_IT, PALETTE, COLORE_H24,
   calcFine6h15, calcFine6h30, calcFineModello, categoriaAppAutoAutomatica, categoriaTurnoAutomatica,
@@ -8249,6 +8249,7 @@ const importsRecenti = useMemo(()=>{
   function updateConteggioConfig(reportId, cfg, riepilogo){
     const tipo = (store.reports||[]).find(x=>x.id===reportId)?.type;
     const prima = conteggioConfigs[reportId] ?? getConteggioConfig(reportId, tipo);
+    cfg = marcaOrarioAssegnazioni(prima, cfg);
     const voceLogId = tracciaModificaReport(reportId, prima, cfg, riepilogo);
     const newCfg = {...conteggioConfigs, [reportId]: cfg};
     setConteggioConfigs(newCfg);
@@ -8301,7 +8302,7 @@ const importsRecenti = useMemo(()=>{
         });
         toccato = true;
       }
-      base[rid] = cfg;
+      base[rid] = marcaOrarioAssegnazioni(primaDi[rid] ?? getConteggioConfig(rid, r.type), cfg);
     });
     if(!toccato) return;
     let voceLogId = null;

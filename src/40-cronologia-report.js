@@ -121,3 +121,31 @@ export function aggiungiVersioneReport(reportId, cfgPrima, riepilogo, ts = Date.
     return { ok: false, errore: `cronologia delle versioni non salvata (${e?.message || "spazio del telefono esaurito"})` };
   }
 }
+
+// Orario dell'ultima modifica del gruppo di ogni modello (sm.assegnazioniTs[modelloId] = millisecondi).
+// Confronta le assegnazioni prima/dopo: per ogni modello cambiato (assegnato, spostato o tolto) scrive l'ora.
+export function marcaOrarioAssegnazioni(prima, dopo, ora = Date.now()) {
+  if (!dopo || !Array.isArray(dopo.sottomenu)) return dopo;
+  const vecchi = new Map(((prima && prima.sottomenu) || []).map((sm) => [sm.id, sm]));
+  let cambiato = false;
+  const sottomenu = dopo.sottomenu.map((sm) => {
+    const ass = sm.assegnazioni || {};
+    const ass0 = (vecchi.get(sm.id) || {}).assegnazioni || {};
+    const ts = { ...(sm.assegnazioniTs || {}) };
+    let tocca = false;
+    for (const id of Object.keys(ass)) if (ass[id] !== ass0[id]) { ts[id] = ora; tocca = true; }
+    for (const id of Object.keys(ass0)) if (!(id in ass)) { ts[id] = ora; tocca = true; }
+    if (!tocca) return sm;
+    cambiato = true;
+    return { ...sm, assegnazioniTs: ts };
+  });
+  return cambiato ? { ...dopo, sottomenu } : dopo;
+}
+
+// «24/11/2026 20:35» (ora di Roma)
+export function formatoOraModifica(ms) {
+  if (!ms) return "";
+  return new Date(ms).toLocaleString("it-IT", {
+    timeZone: "Europe/Rome", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+  }).replace(",", "");
+}

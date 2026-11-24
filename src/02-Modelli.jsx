@@ -1,4 +1,5 @@
-    import { useState, useEffect, useRef, useMemo, Fragment } from "react";
+    import { formatoOraModifica } from "./40-cronologia-report";
+import { useState, useEffect, useRef, useMemo, Fragment } from "react";
 import {
   MONTHS, DAYS, PALETTE, FONT_SIZE, NB, COLORE_H24, NOMI_MESI_IT,
   FASCE_AUTOMATICHE_DEFAULT, FESTIVITA_DEFAULT_ATTIVE, FESTIVITA_CATEGORIE,
@@ -3933,7 +3934,7 @@ export default function VistaModelli({ C }){
                           </button>
                           {smAperto && gestisceGruppi && (
                             <div style={{padding:"0 10px 8px"}}>
-                              <div style={{fontSize:10,color:T.sub,marginBottom:4}}>Vale per il modello e per tutti i suoi eventi (nome+orario). Conta l'ultima modifica.</div>
+                              <div style={{fontSize:10,color:T.sub,marginBottom:4}}>Vale per il modello e per tutti i suoi eventi (nome+orario). Conta l'ultima modifica.{(sm.assegnazioniTs||{})[modelloCorrente?.id] ? ` Ultima modifica: ${formatoOraModifica(sm.assegnazioniTs[modelloCorrente.id])}.` : ""}</div>
                               {(sm.gruppi||[]).map(g=>(
                                 <div key={g.key} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:6,padding:"3px 0"}}>
                                   {(sm.gruppi||[]).length>1 && <span style={{fontSize:12,fontWeight:700,color:T.text}}>{g.label||"(senza nome)"}</span>}
