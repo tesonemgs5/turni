@@ -3394,12 +3394,20 @@ export function useAppCore(session){
     if(j && (j.error || j.ok===false || j.success===false)) throw new Error(String(j.error||j.message||"Sheets ha risposto con un errore"));
     return j;
   }
+  // Ordine dei modelli come nella schermata Modelli: prima i calendari nel loro ordine, dentro ogni calendario l'ordine dei modelli.
+  function ordinaModelliPerCalendari(lista, cals){
+    const ordinati = calcolaOrdineVisuale(lista, gruppi, mainCalId);
+    const elenco = cals || [];
+    const perCal = elenco.flatMap(c=>ordinati.filter(m=>m && (m.calendarId||mainCalId)===c.id));
+    const orfani = ordinati.filter(m=>m && !elenco.some(c=>c.id===(m.calendarId||mainCalId)));
+    return [...perCal, ...orfani];
+  }
   async function saveToSheets(events, calendars, customUrl=sheetsUrl, customSecret=sheetsSecret, modelliToSave=modelli){
     if(!customUrl) return "⚠️ Sheets non configurato";
     if(!isInitialized.current) return;
     try {
       await postSheets(customUrl, { secret: customSecret, action:"save", events, calendars, userId });
-      await postSheets(customUrl, { secret: customSecret, action:"save_modelli", modelli: calcolaOrdineVisuale(modelliToSave, gruppi, mainCalId).map(m=>({
+      await postSheets(customUrl, { secret: customSecret, action:"save_modelli", modelli: ordinaModelliPerCalendari(modelliToSave, calendars).map(m=>({
         ...m,
         fine: (m.tempo==="6h15"||m.tempo==="6h 15m")&&m.inizio ? calcFine6h15(m.inizio) : (m.tempo==="6h30"||m.tempo==="6h 30m")&&m.inizio ? calcFine6h30(m.inizio) : m.fine||"",
       }))});
