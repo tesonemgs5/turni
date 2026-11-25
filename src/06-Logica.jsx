@@ -4127,7 +4127,7 @@ export function useAppCore(session){
   // Il flag si segna solo a lettura riuscita: finche' non riesce, riprova.
   const gruppiInCaricamentoRef = useRef(false);
   async function caricaGruppiUnaVolta(){
-    if(!userId || gruppiInCaricamentoRef.current || sincInCorsoRef.current || scrittureInVoloRef.current>0) return;
+    if(!userId || SUPABASE_SOLO_BACKUP || gruppiInCaricamentoRef.current || sincInCorsoRef.current || scrittureInVoloRef.current>0) return; // REGOLA 1: i gruppi sono quelli locali, Supabase non li riscrive
     try{ if(localStorage.getItem("turnipm_gruppi_caricati_v1")==="1") return; }catch(e){}
     if(typeof navigator!=="undefined" && navigator.onLine===false) return;
     let inCoda=0; try{ inCoda=(leggiCodaSync()||[]).length; }catch(e){}
@@ -5926,6 +5926,7 @@ const importsRecenti = useMemo(()=>{
       const { error } = await supabase.from("disposizione_auto").insert({ user_id:userId, n_modelli:d.voci.length, dati:d });
       if(error){ segnalaErroreSoloLog(error, "Salvataggio automatico disposizione"); return; }
       ultimaAutoRef.current = { firma, n:d.voci.length, pronto:true };
+      try{ localStorage.setItem("turnipm_ultima_auto_disposizione_v1", JSON.stringify({ userId, firma, n:d.voci.length })); }catch(e){}
       // Potatura: si tengono solo le ultime MAX_VERSIONI_AUTO versioni.
       const { data: vecchie } = await supabase.from("disposizione_auto").select("id")
         .eq("user_id",userId).order("salvato_il",{ascending:false}).range(MAX_VERSIONI_AUTO, MAX_VERSIONI_AUTO+200);
@@ -5956,19 +5957,14 @@ const importsRecenti = useMemo(()=>{
     }catch{ return null; }
   }
   useEffect(()=>{
-    if(loading || !userId || !isInitialized.current || modelli.length===0) return;
+    if(loading || !userId || !backupAttivo || !isInitialized.current || modelli.length===0) return;
     if(timerAutoRef.current) clearTimeout(timerAutoRef.current);
     timerAutoRef.current = setTimeout(async()=>{
       if(!ultimaAutoRef.current.pronto){
-        // Prima volta nella sessione: si legge l'ultima versione per confrontarsi.
-        try{
-          const { data, error } = await supabase.from("disposizione_auto").select("n_modelli,dati")
-            .eq("user_id",userId).order("salvato_il",{ascending:false}).limit(1);
-          if(error){ segnalaErroreSoloLog(error, "Salvataggio automatico disposizione (lettura ultima versione)"); return; }
-          ultimaAutoRef.current = data && data[0]
-            ? { firma:firmaDisposizione(data[0].dati||{}), n:data[0].n_modelli||0, pronto:true }
-            : { firma:null, n:0, pronto:true };
-        }catch{ return; }
+        // REGOLA 1: il confronto con l'ultima copia fatta si basa sul registro LOCALE, non su Supabase.
+        let reg = null;
+        try{ reg = JSON.parse(localStorage.getItem("turnipm_ultima_auto_disposizione_v1")||"null"); }catch(e){}
+        ultimaAutoRef.current = (reg && reg.userId===userId) ? { firma:reg.firma||null, n:reg.n||0, pronto:true } : { firma:null, n:0, pronto:true };
       }
       salvaVersioneAutomatica();
     }, 10000);
