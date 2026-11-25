@@ -1,13 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { supabase } from "../src/11-supabase.js";
-import { SUPABASE_CONFIGURATO, SUPABASE_SOLO_BACKUP } from "../src/42-regola-supabase.js";
+import { SUPABASE_CONFIGURATO, CONTROLLI_AUTOMATICI_SUPABASE } from "../src/42-regola-supabase.js";
 
 // REGOLA 1: senza chiavi nella build l'app deve funzionare lo stesso, tutta in locale.
 
-test("senza chiavi Supabase non e' configurato e resta solo backup", () => {
+test("senza chiavi Supabase non e' configurato e non fa controlli automatici", () => {
   assert.equal(SUPABASE_CONFIGURATO, false);
-  assert.equal(SUPABASE_SOLO_BACKUP, true);
+  assert.equal(CONTROLLI_AUTOMATICI_SUPABASE, false);
 });
 
 test("ogni richiesta risponde 'backup disattivato' senza rete e senza eccezioni", async () => {

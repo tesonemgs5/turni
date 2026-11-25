@@ -13,7 +13,7 @@ import { trovaModelloIdentita, tempoDaEvento } from "./31-identita-modello";
 import { fasceIndennitaDi, pulsantiFasciaDi, minutiPerFasceEvento, tariffaOraria } from "./24-fasce-indennita";
 import { pulisciDocumenti, idEventiDaStore } from "./32-documenti";
 import { descriviModificheReport, aggiungiVersioneReport, marcaOrarioAssegnazioni } from "./40-cronologia-report";
-import { SUPABASE_SOLO_BACKUP, SUPABASE_CONFIGURATO, CHIAVE_MODALITA_LOCALE } from "./42-regola-supabase";
+import { SUPABASE_CONFIGURATO, CONTROLLI_AUTOMATICI_SUPABASE, CHIAVE_MODALITA_LOCALE } from "./42-regola-supabase";
 import {
   FASCE_AUTOMATICHE_DEFAULT, FESTIVITA_DEFAULT_ATTIVE, MONTHS, NOMI_GIORNI_IT, PALETTE, COLORE_H24,
   calcFine6h15, calcFine6h30, calcFineModello, categoriaAppAutoAutomatica, categoriaTurnoAutomatica,
@@ -2281,13 +2281,17 @@ export function useAppCore(session){
     if(ops.length===0) return;
     flushExtraHolsRef.current = true;
     try{
-      // REGOLA 1: i giorni importanti sono quelli LOCALI. Al backup si manda la lista locale
-      // com'e' (niente lettura dal server, niente fusione): Supabase non decide mai cosa e' giusto.
-      const locale = storeRef.current?.extraHols || [];
-      const { error } = await supabase.from("user_settings").upsert({ user_id:userId, extra_hols:locale, updated_at:new Date().toISOString() });
-      if(error){ segnalaErroreSoloLog(error, "Backup giorni importanti (riprovo piu' tardi)"); return; }
+      const { data, error:errLettura } = await supabase.from("user_settings").select("extra_hols").eq("user_id", userId).maybeSingle();
+      if(errLettura) return;                       // resta in coda, si riprova
+      const unito = applicaOpExtraHols(data?.extra_hols||[], ops);
+      const { error } = await supabase.from("user_settings").upsert({ user_id:userId, extra_hols:unito, updated_at:new Date().toISOString() });
+      if(error){ segnalaErroreSoloLog(error, "Salvataggio giorni importanti (riprovo piu' tardi)"); return; }
       const inviate = new Set(ops.map(o=>o.id));
-      scriviOpExtraHols(leggiOpExtraHols().filter(o=>!inviate.has(o.id)));
+      const restanti = leggiOpExtraHols().filter(o=>!inviate.has(o.id));
+      scriviOpExtraHols(restanti);
+      const finale = applicaOpExtraHols(unito, restanti);
+      saveExtraHolsLocale(finale);
+      setStore(s=>({...s, extraHols: finale}));
     }catch(e){
       // rete caduta: le operazioni restano in coda e si riprova al prossimo giro
     }finally{
@@ -3777,7 +3781,7 @@ export function useAppCore(session){
   }
   // ── confronto/mappature riga-Supabase → dato locale (usate da Sincronizza ora e dall'automatica) ──
   const SYNC_AUTO_KEY = "turnipm_sync_auto";
-  const [syncAuto, setSyncAutoState] = useState(()=>{ try{ return !SUPABASE_SOLO_BACKUP && localStorage.getItem(SYNC_AUTO_KEY)!=="0"; }catch(e){ return false; } });
+  const [syncAuto, setSyncAutoState] = useState(()=>{ try{ return localStorage.getItem(SYNC_AUTO_KEY)!=="0"; }catch(e){ return true; } });
   function impostaSyncAuto(v){ setSyncAutoState(!!v); try{ localStorage.setItem(SYNC_AUTO_KEY, v?"1":"0"); }catch(e){} }
   const sincInCorsoRef = useRef(false);
   const ultimaSyncAutoRef = useRef(0);
@@ -4127,7 +4131,7 @@ export function useAppCore(session){
   // Il flag si segna solo a lettura riuscita: finche' non riesce, riprova.
   const gruppiInCaricamentoRef = useRef(false);
   async function caricaGruppiUnaVolta(){
-    if(!userId || SUPABASE_SOLO_BACKUP || gruppiInCaricamentoRef.current || sincInCorsoRef.current || scrittureInVoloRef.current>0) return; // REGOLA 1: i gruppi sono quelli locali, Supabase non li riscrive
+    if(!userId || !backupAttivo || gruppiInCaricamentoRef.current || sincInCorsoRef.current || scrittureInVoloRef.current>0) return;
     try{ if(localStorage.getItem("turnipm_gruppi_caricati_v1")==="1") return; }catch(e){}
     if(typeof navigator!=="undefined" && navigator.onLine===false) return;
     let inCoda=0; try{ inCoda=(leggiCodaSync()||[]).length; }catch(e){}
@@ -4184,7 +4188,7 @@ export function useAppCore(session){
 
   // Sincronizzazione AUTOMATICA: silenziosa, in background, solo lettura.
   async function sincronizzaAuto(motivo){
-    if(!userId || SUPABASE_SOLO_BACKUP || !syncAuto || !isInitialized.current) return;
+    if(!userId || !backupAttivo || !syncAuto || !isInitialized.current) return;
     if(typeof document!=="undefined" && document.visibilityState==="hidden") return;
     const ora = Date.now();
     if(ora - ultimaSyncAutoRef.current < (motivo==="tempo reale" ? 2000 : 15000)) return { tipo:"saltata" }; // aperture/riconnessioni: mai più di una ogni 15 s
@@ -4385,7 +4389,7 @@ export function useAppCore(session){
     }
   }
   useEffect(()=>{
-    if(!userId || SUPABASE_SOLO_BACKUP) return; // REGOLA 1: nessun controllo automatico su Supabase (resta il pulsante manuale)
+    if(!userId || !CONTROLLI_AUTOMATICI_SUPABASE) return; // nessun controllo automatico su Supabase (resta il pulsante manuale)
     let ultimo = 0;
     try{ ultimo = Number(localStorage.getItem("turnipm_check_struttura_ts")||0); }catch(e){}
     if(Date.now()-ultimo < 7*24*3600*1000) return;

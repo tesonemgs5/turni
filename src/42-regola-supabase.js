@@ -1,12 +1,14 @@
 // ═══════════════════════════════════════════════════════════════
-// REGOLA 1 — Supabase e' SOLO un backup. Tutto (A→Z, 0→100%) vive e si gestisce
-// in LOCALE, compresi i log. Se Supabase non c'e' (chiavi assenti, servizio
-// spento, progetto cancellato) l'app funziona come se niente fosse.
-//  - I dati di Supabase non sovrascrivono MAI quelli locali in automatico.
-//  - Si leggono da Supabase solo per un ripristino chiesto esplicitamente.
+// REGOLA 1 — Tutto (A→Z, 0→100%) vive e si gestisce in LOCALE, compresi i log.
+// Supabase e' il BACKUP e il canale per allineare un altro dispositivo, ma l'app
+// deve funzionare benissimo anche senza: chiavi assenti, servizio spento, progetto
+// cancellato, oppure scelta «Continua senza account».
+// La sincronizzazione tra dispositivi resta sotto controllo dell'utente
+// (interruttore «Sincronizzazione automatica» nelle Impostazioni).
 // ═══════════════════════════════════════════════════════════════
 
-export const SUPABASE_SOLO_BACKUP = true;
+// Nessun controllo automatico della struttura di Supabase (resta il pulsante manuale).
+export const CONTROLLI_AUTOMATICI_SUPABASE = false;
 
 // Supabase e' collegabile solo se la build contiene le chiavi (l'app distribuita senza Supabase non le ha).
 export const SUPABASE_CONFIGURATO = Boolean(

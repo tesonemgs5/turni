@@ -2182,9 +2182,13 @@ export default function VistaModelli({ C }){
           🔄 Sincronizza ora (solo novità)
         </button>
         <StatoSync T={T} userId={userId} refreshKey={esitoExportSupabase?.stato||""}/>
-        <div style={{fontSize:11,color:T.sub,marginTop:8,lineHeight:1.45}}>
-          🔒 I dati si gestiscono solo su questo dispositivo. Supabase è soltanto un backup: non aggiorna mai da solo i dati dell'app.
-          «Sincronizza ora» e «Importa da Supabase» leggono dal backup solo quando li premi tu.
+        <button onClick={()=>impostaSyncAuto(!syncAuto)}
+          style={{width:"100%",marginTop:8,background:syncAuto?"#10b981":T.s2,border:syncAuto?"none":`1px solid ${T.border}`,borderRadius:10,
+            color:syncAuto?"#fff":T.text,padding:"11px 0",cursor:"pointer",fontWeight:800,fontSize:12}}>
+          {syncAuto?"✅ Sincronizzazione automatica: SÌ":"⏸️ Sincronizzazione automatica: NO"}
+        </button>
+        <div style={{fontSize:10.5,color:T.sub,marginTop:4,lineHeight:1.4}}>
+          {syncAuto?"Le novità fatte su altri dispositivi arrivano da sole (solo lettura da Supabase).":"Le novità arrivano solo quando premi «Sincronizza ora»."}
         </div>
         <div style={{marginTop:12,padding:"10px 12px",background:T.s2,border:`1px solid ${T.border}`,borderRadius:10}}>
           <div style={{fontSize:12,fontWeight:800,color:T.text,marginBottom:8}}>🗄️ Backup automatici (dentro Supabase)</div>
