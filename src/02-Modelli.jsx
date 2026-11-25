@@ -3067,18 +3067,28 @@ export default function VistaModelli({ C }){
                 // ENTRAMBI i lati della coppia.
                 const tipoPIEvt = tipoModelloPI(e.modelloId);
                 if(!tipoPIEvt) return null;
-                const { perEvento } = computeStornoPI();
-                const info = perEvento[e.id];
-                if(!info || !info.collegatoDateKey) return null;
+                const { perEvento, perOccorrenza, duplicati } = computeStornoPI();
+                const info = (perOccorrenza && perOccorrenza[dayKey+"|"+e.id]) || perEvento[e.id];
+                // Stesso id in piu' date = evento duplicato nei dati: lo si dice, e' la causa dei collegamenti sbagliati.
+                const altre = ((duplicati && duplicati[e.id]) || []).filter(dk=>dk!==dayKey).map(dk=>{ const [,mo,dd]=dk.split("-"); return `${dd}/${mo}`; });
+                const avviso = altre.length>0 ? (
+                  <div style={{color:cardTextColor,background:"rgba(0,0,0,0.25)",borderRadius:6,padding:"3px 6px",fontSize:12,marginTop:4,fontWeight:700}}>
+                    ⚠️ Stesso evento (stesso id) anche il {altre.join(", ")}: duplicato
+                  </div>
+                ) : null;
+                if(!info || !info.collegatoDateKey) return avviso;
                 const [y,mm,d] = info.collegatoDateKey.split("-");
                 const dataFmt = `${d}/${mm}/${y}`;
                 const etichetta = tipoPIEvt==="piano_incentivante"
                   ? `↔ Recuperato con riposo del ${dataFmt}`
                   : `↔ Riposo per Piano Incentivante del ${dataFmt}`;
                 return (
-                  <div style={{color:cardSubColor,fontSize:13,marginTop:3,fontWeight:700}}>
-                    {etichetta}
-                  </div>
+                  <>
+                    <div style={{color:cardSubColor,fontSize:13,marginTop:3,fontWeight:700}}>
+                      {etichetta}
+                    </div>
+                    {avviso}
+                  </>
                 );
               })()}
 

@@ -13,6 +13,7 @@ import { trovaModelloIdentita, tempoDaEvento } from "./31-identita-modello";
 import { fasceIndennitaDi, pulsantiFasciaDi, minutiPerFasceEvento, tariffaOraria } from "./24-fasce-indennita";
 import { pulisciDocumenti, idEventiDaStore } from "./32-documenti";
 import { descriviModificheReport, aggiungiVersioneReport, marcaOrarioAssegnazioni } from "./40-cronologia-report";
+import { abbinaPianoIncentivanteRiposi } from "./43-collegamenti-pi";
 import { SUPABASE_CONFIGURATO, CONTROLLI_AUTOMATICI_SUPABASE, CHIAVE_MODALITA_LOCALE } from "./42-regola-supabase";
 import {
   FASCE_AUTOMATICHE_DEFAULT, FESTIVITA_DEFAULT_ATTIVE, MONTHS, NOMI_GIORNI_IT, PALETTE, COLORE_H24,
@@ -2150,30 +2151,9 @@ export function useAppCore(session){
         }
       }
     }
-    function cmp(a,b){
-      if(a.dateKey!==b.dateKey) return a.dateKey<b.dateKey?-1:1;
-      return a.id<b.id?-1:(a.id>b.id?1:0);
-    }
-    eventiPI.sort(cmp);
-    eventiRcPi.sort(cmp);
-
-    const perEvento = {};
-    eventiPI.forEach(ev=>{ perEvento[ev.id] = { tipo:"piano_incentivante", collegatoId:null, collegatoDateKey:null }; });
-    eventiRcPi.forEach(ev=>{ perEvento[ev.id] = { tipo:"rc_pi", collegatoId:null, collegatoDateKey:null }; });
-
-    // FIFO: per ogni RC PI (in ordine cronologico), prendo il primo Piano
-    // Incentivante di domenica non ancora assegnato a un altro RC PI.
-    const piAssegnati = new Set();
-    for(const consumo of eventiRcPi){
-      const credito = eventiPI.find(p=>!piAssegnati.has(p.id));
-      if(!credito) continue; // nessun Piano Incentivante libero da recuperare
-      piAssegnati.add(credito.id);
-      perEvento[consumo.id].collegatoId = credito.id;
-      perEvento[consumo.id].collegatoDateKey = credito.dateKey;
-      perEvento[credito.id].collegatoId = consumo.id;
-      perEvento[credito.id].collegatoDateKey = consumo.dateKey;
-    }
-    return { perEvento };
+    // La regola e' sempre la stessa (il 1° riposo con la 1ª domenica, ecc.), ma ogni evento si distingue
+    // per data + id: eventi con lo stesso id non si rubano il collegamento (vedi 43-collegamenti-pi.js).
+    return abbinaPianoIncentivanteRiposi(eventiPI, eventiRcPi);
   }
   function calcolaEventiGiorno(key, calIds=null){
     const calList = calIds || selectedCalIds;
