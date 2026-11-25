@@ -2,7 +2,7 @@
 import { supabase } from "./11-supabase";
 import { scriviEsitoImport } from "./22-backup-stato";
 import { ordineAttivo, impostaOrdineAttivo, posDaRiga, colonnePosizione, payloadPosCambiate, scambiaOrdini, mapGruppoDb, colGruppo, BANDA_A, classeModelloA, ordinaClassiA, minutiInizio } from "./21-ordine";
-import { stessoHexColore, calcolaOrdineModelli, calcolaOrdineVisuale, classificaFasciaOrariaModello, calcolaOrdineRiordinoFasce } from "./26-ordine-modelli";
+import { stessoHexColore, calcolaOrdineModelli, calcolaOrdineVisuale, classificaFasciaOrariaModello, calcolaOrdineRiordinoFasce, tipoProtrazionePerTitolo } from "./26-ordine-modelli";
 import { calcolaAllineamentoColori } from "./13-allinea-colori";
 import { impostaInclusioneModelloReport, statoInclusioneModelloReport } from "./27-report-modelli";
 import { meseCorrenteReport, statoInizialeMeseReport } from "./28-periodo-report";
@@ -2089,6 +2089,13 @@ export function useAppCore(session){
     if(n.includes("PAGAMENTO")) return "pagamento";
     return null;
   }
+  // Solo per l'ORDINE degli eventi del giorno: come tipoModelloProtrazione ma accetta anche le sigle
+  // "PP"/"PR" (es. il modello "PP PAGAMENTO"). I calcoli dei report continuano a usare tipoModelloProtrazione.
+  function tipoProtrazionePerOrdine(modelloId){
+    if(!modelloId) return null;
+    const mod = modelli.find(m=>m.id===modelloId);
+    return mod ? tipoProtrazionePerTitolo(mod.titolo) : null;
+  }
   // Gemella di tipoModelloProtrazione, stesso principio (riconoscimento per
   // titolo del modello, tollerante a refusi), applicata alla coppia
   // Piano Incentivante (il credito, maturato lavorando di domenica) /
@@ -2230,11 +2237,11 @@ export function useAppCore(session){
     // turno base dello stesso giorno/calendario.
     function trovaBasePerModelloOrario(evt){
       if(evt.modelloId===null||evt.modelloId===undefined) return null;
-      const tipo = tipoModelloProtrazione(evt.modelloId);
+      const tipo = tipoProtrazionePerOrdine(evt.modelloId);
       if(!tipo || !evt.tIn) return null;
       const base = ordinati.find(b=>
         b.id!==evt.id && b._cid===evt._cid &&
-        !decodificaProtrazioneFiglio(b.importId) && !tipoModelloProtrazione(b.modelloId) &&
+        !decodificaProtrazioneFiglio(b.importId) && !tipoProtrazionePerOrdine(b.modelloId) &&
         b.tOut && b.tOut===evt.tIn
       );
       return base ? base.id : null;

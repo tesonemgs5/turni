@@ -39,3 +39,22 @@ test("modelli senza gruppo B vanno dopo i gruppi", () => {
   const con = [...modelli, { id: "z", titolo: "Z", inizio: "07:00", sortOrder: 4, sortOrderAltro: 0, gruppoB: null }];
   assert.equal(ids(calcolaOrdineVisuale(con, gruppi, null, "B")), "m,p,n,z");
 });
+
+const { tipoProtrazionePerTitolo } = await import("../src/26-ordine-modelli.js");
+
+test("protrazione: titoli classici e sigle PP/PR", () => {
+  assert.equal(tipoProtrazionePerTitolo("PROTRAZIONE PAGAMENTO"), "pagamento");
+  assert.equal(tipoProtrazionePerTitolo("PROTRAZIONE RECUPERO"), "recupero");
+  assert.equal(tipoProtrazionePerTitolo("-PROTRAZIONE RECUPERO"), "meno_recupero");
+  assert.equal(tipoProtrazionePerTitolo("PP PAGAMENTO"), "pagamento");
+  assert.equal(tipoProtrazionePerTitolo("PP RECUPERO"), "recupero");
+  assert.equal(tipoProtrazionePerTitolo("PR PAGAMENTO"), "pagamento");
+});
+
+test("protrazione: altri modelli non vengono scambiati", () => {
+  assert.equal(tipoProtrazionePerTitolo("PI DF CHIAIA AUTO"), null);
+  assert.equal(tipoProtrazionePerTitolo("PIANO INCENTIVANTE"), null);
+  assert.equal(tipoProtrazionePerTitolo("PP"), null);
+  assert.equal(tipoProtrazionePerTitolo("PI RC"), null);
+  assert.equal(tipoProtrazionePerTitolo(""), null);
+});

@@ -155,3 +155,18 @@ export function ordinaSezioni({ blocchi, senza }, criterio, valoreDi, estrai) {
   else nuovi.sort((a, b) => coll(a.label, b.label));
   return { blocchi: nuovi, senza: ord(senza) };
 }
+
+// Riconoscimento delle protrazioni SOLO per l'ordine nella scheda del giorno: oltre ai titoli con
+// "PROTRAZIONE" accetta le sigle "PP"/"PR" seguite da PAGAMENTO o RECUPERO (es. "PP PAGAMENTO").
+// Non e' usato nei calcoli dei report. Ritorna "pagamento", "recupero", "meno_recupero" oppure null.
+export function tipoProtrazionePerTitolo(titolo){
+  const raw = String(titolo || "").trim();
+  const eMeno = raw.startsWith("-");
+  const n = raw.toUpperCase().replace(/\s+/g, "").replace(/^-+/, "");
+  const haRadice = n.includes("PROTRAZIONE") || n.includes("PROTAZIONE") || /^(PP|PR)(PAGAMENTO|RECUPERO)/.test(n);
+  if(!haRadice) return null;
+  if(eMeno && n.includes("RECUPERO")) return "meno_recupero";
+  if(n.includes("RECUPERO")) return "recupero";
+  if(n.includes("PAGAMENTO")) return "pagamento";
+  return null;
+}
