@@ -3386,7 +3386,10 @@ export function useAppCore(session){
     const res = inApk()
       ? await fetch(customUrl, { method:"POST", headers:{"Content-Type":"text/plain"}, body: JSON.stringify(body) })
       : await fetch("/api/sheets", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ ...body, sheetsUrl: customUrl }) });
-    if(!res.ok) throw new Error(`Risposta ${res.status} da Sheets`);
+    if(!res.ok){
+      let d=null; try{ d = await res.json(); }catch(e){}
+      throw new Error(`Risposta ${res.status} da Sheets` + (d && (d.error||d.dettaglio) ? ` — ${[d.error, d.status?`HTTP ${d.status}`:"", d.dettaglio].filter(Boolean).join(": ")}` : ""));
+    }
     let j=null; try{ j = await res.json(); }catch(e){}
     if(j && (j.error || j.ok===false || j.success===false)) throw new Error(String(j.error||j.message||"Sheets ha risposto con un errore"));
     return j;

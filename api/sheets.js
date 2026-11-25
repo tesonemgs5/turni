@@ -1,3 +1,7 @@
+function breve(testo) {
+  return String(testo || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+}
+
 function urlScriptGoogle(valore) {
   try {
     const u = new URL(String(valore || '').trim());
@@ -41,7 +45,7 @@ export default async function handler(req, res) {
     const text = await response.text();
     if (!response.ok) {
       console.error(`Servizio Sheets ha risposto con HTTP ${response.status}`);
-      return res.status(502).json({ error: 'Errore dal servizio Sheets', status: response.status });
+      return res.status(502).json({ error: 'Errore dal servizio Sheets', status: response.status, dettaglio: breve(text) });
     }
     try {
       return res.status(200).json(JSON.parse(text));
@@ -50,6 +54,7 @@ export default async function handler(req, res) {
     }
   } catch (err) {
     console.error('Richiesta al servizio Sheets non riuscita:', err);
-    return res.status(502).json({ error: 'Servizio Sheets non raggiungibile' });
+    const causa = err && err.cause ? (err.cause.code || err.cause.message) : '';
+    return res.status(502).json({ error: 'Servizio Sheets non raggiungibile', dettaglio: breve(`${err && err.message ? err.message : err} ${causa}`) });
   }
 }

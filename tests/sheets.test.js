@@ -114,3 +114,22 @@ test("ignora URL di altri siti e ricade su SHEETS_URL", async t=>{
   await invoke("POST", { body:{ sheetsUrl:"https://altro.example/exec", action:"load" } });
   assert.equal(chiamato, "https://script.google.com/macros/s/ENV/exec");
 });
+
+test("se Google risponde con errore, il dettaglio arriva all'app", async t=>{
+  const oldUrl = process.env.SHEETS_URL;
+  const oldFetch = globalThis.fetch;
+  const oldError = console.error;
+  console.error = () => {};
+  process.env.SHEETS_URL = "https://script.google.com/macros/s/ENV/exec";
+  globalThis.fetch = async ()=>({ ok:false, status:404, text:async()=>"<html><body>Pagina non trovata</body></html>" });
+  t.after(()=>{
+    if(oldUrl===undefined) delete process.env.SHEETS_URL;
+    else process.env.SHEETS_URL=oldUrl;
+    globalThis.fetch=oldFetch;
+    console.error=oldError;
+  });
+  const res = await invoke("POST", { body:{ action:"load" } });
+  assert.equal(res.statusCode, 502);
+  assert.equal(res.body.status, 404);
+  assert.equal(res.body.dettaglio, "Pagina non trovata");
+});
