@@ -3399,7 +3399,7 @@ export function useAppCore(session){
     if(!isInitialized.current) return;
     try {
       await postSheets(customUrl, { secret: customSecret, action:"save", events, calendars, userId });
-      await postSheets(customUrl, { secret: customSecret, action:"save_modelli", modelli: modelliToSave.map(m=>({
+      await postSheets(customUrl, { secret: customSecret, action:"save_modelli", modelli: calcolaOrdineVisuale(modelliToSave, gruppi, mainCalId).map(m=>({
         ...m,
         fine: (m.tempo==="6h15"||m.tempo==="6h 15m")&&m.inizio ? calcFine6h15(m.inizio) : (m.tempo==="6h30"||m.tempo==="6h 30m")&&m.inizio ? calcFine6h30(m.inizio) : m.fine||"",
       }))});
