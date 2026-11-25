@@ -45,7 +45,7 @@ export default async function handler(req, res) {
     const text = await response.text();
     if (!response.ok) {
       console.error(`Servizio Sheets ha risposto con HTTP ${response.status}`);
-      return res.status(502).json({ error: 'Errore dal servizio Sheets', status: response.status, dettaglio: breve(text) });
+      return res.status(502).json({ error: 'Errore dal servizio Sheets', status: response.status });
     }
     try {
       return res.status(200).json(JSON.parse(text));
@@ -55,6 +55,6 @@ export default async function handler(req, res) {
   } catch (err) {
     console.error('Richiesta al servizio Sheets non riuscita:', err);
     const causa = err && err.cause ? (err.cause.code || err.cause.message) : '';
-    return res.status(502).json({ error: 'Servizio Sheets non raggiungibile', dettaglio: breve(`${err && err.message ? err.message : err} ${causa}`) });
+    return res.status(502).json({ error: 'Servizio Sheets non raggiungibile', dettaglio: breve(causa) });
   }
 }
