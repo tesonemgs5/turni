@@ -3385,7 +3385,7 @@ export function useAppCore(session){
   async function postSheets(customUrl, body){
     const res = inApk()
       ? await fetch(customUrl, { method:"POST", headers:{"Content-Type":"text/plain"}, body: JSON.stringify(body) })
-      : await fetch("/api/sheets", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
+      : await fetch("/api/sheets", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ ...body, sheetsUrl: customUrl }) });
     if(!res.ok) throw new Error(`Risposta ${res.status} da Sheets`);
     let j=null; try{ j = await res.json(); }catch(e){}
     if(j && (j.error || j.ok===false || j.success===false)) throw new Error(String(j.error||j.message||"Sheets ha risposto con un errore"));
@@ -3438,16 +3438,13 @@ export function useAppCore(session){
 
   async function loadFromSheets(customUrl=sheetsUrl, customSecret=sheetsSecret){
     try {
-      // Il segreto va nel body (POST), non in query string: la query string
-      // può finire nei log del server o in eventuali proxy/CDN intermedi,
-      // il body no. Coerente con saveToSheets, che già usa POST+body.
-      const res = await fetch(`/api/sheets`, {
-        method: "POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ secret: customSecret, action:"load", userId }),
-      });
-      return await res.json() || null;
-    } catch(e){ return null; }
+      // Il segreto va nel body (POST), non in query string. Stesso percorso di saveToSheets:
+      // sul sito passa dal proxy, nell'APK chiama direttamente lo script Google.
+      return await postSheets(customUrl, { secret: customSecret, action:"load", userId }) || null;
+    } catch(e){
+      segnalaErroreSoloLog(e?.message||String(e), "Lettura da Google Sheets");
+      return null;
+    }
   }
 
   async function syncFromSheets(cals=store.calendars, evts=store.events, customUrl=sheetsUrl, customSecret=sheetsSecret, isBackground=false){

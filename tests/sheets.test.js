@@ -79,3 +79,38 @@ test("converte gli errori upstream in 502 senza inoltrare contenuti interni", as
   assert.equal(res.statusCode, 502);
   assert.deepEqual(res.body, { error:"Errore dal servizio Sheets", status:500 });
 });
+
+test("usa l'URL dello script salvato nell'app e non lo inoltra", async t=>{
+  const oldUrl = process.env.SHEETS_URL;
+  const oldFetch = globalThis.fetch;
+  delete process.env.SHEETS_URL;
+  let chiamato = null;
+  globalThis.fetch = async (url, opt)=>{
+    chiamato = { url, body: opt.body };
+    return { ok:true, text:async()=>'{"ok":true}' };
+  };
+  t.after(()=>{
+    if(oldUrl===undefined) delete process.env.SHEETS_URL;
+    else process.env.SHEETS_URL=oldUrl;
+    globalThis.fetch=oldFetch;
+  });
+  const res = await invoke("POST", { body:{ sheetsUrl:"https://script.google.com/macros/s/ABC/exec", action:"load", secret:"x" } });
+  assert.equal(res.statusCode, 200);
+  assert.equal(chiamato.url, "https://script.google.com/macros/s/ABC/exec");
+  assert.deepEqual(JSON.parse(chiamato.body), { action:"load", secret:"x" });
+});
+
+test("ignora URL di altri siti e ricade su SHEETS_URL", async t=>{
+  const oldUrl = process.env.SHEETS_URL;
+  const oldFetch = globalThis.fetch;
+  process.env.SHEETS_URL = "https://script.google.com/macros/s/ENV/exec";
+  let chiamato = null;
+  globalThis.fetch = async url=>{ chiamato = url; return { ok:true, text:async()=>'{"ok":true}' }; };
+  t.after(()=>{
+    if(oldUrl===undefined) delete process.env.SHEETS_URL;
+    else process.env.SHEETS_URL=oldUrl;
+    globalThis.fetch=oldFetch;
+  });
+  await invoke("POST", { body:{ sheetsUrl:"https://altro.example/exec", action:"load" } });
+  assert.equal(chiamato, "https://script.google.com/macros/s/ENV/exec");
+});
