@@ -5542,12 +5542,14 @@ const importsRecenti = useMemo(()=>{
   // non si vogliono più vedere proposti in digitazione.
   async function rimuoviValoreAutocomplete(campo, valore){
     if(!userId) return;
-    try {
-      const { error } = await supabase.from("autocomplete_valori")
-        .delete().eq("user_id", userId).eq("campo", campo).eq("valore", valore);
-      if(error){ segnalaErrore(error, `Rimozione valore autocomplete (${campo})`); return; }
-      setAutocompleteValori(prev=>({ ...prev, [campo]: prev[campo].filter(v=>v!==valore) }));
-    } catch(e){ segnalaErrore(e, `Rimozione valore autocomplete (${campo})`); }
+    // LOCALE PER PRIMO: il valore sparisce subito dalla lista (anche offline o senza Supabase);
+    // la cancellazione sul backup va in coda e parte quando c'e' linea.
+    setAutocompleteValori(prev=>({ ...prev, [campo]: (prev[campo]||[]).filter(v=>v!==valore) }));
+    accodaScritturaRemota({
+      tipo:"delete", table:"autocomplete_valori",
+      match:{ user_id:userId, campo, valore },
+      contesto:`Rimozione valore autocomplete (${campo})`,
+    });
   }
 
   // Prova a salvare; se Supabase segnala una colonna mancante nello schema,
