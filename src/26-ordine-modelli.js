@@ -33,9 +33,14 @@ export function raggruppaPerColore(lista){
   return out;
 }
 
-export function calcolaOrdineModelli(sottoinsieme){
+// ordineForzato (facoltativo, "A" o "B"): usa le posizioni di QUELL'ordine invece di quello scelto sul dispositivo.
+// sortOrder = posizione dell'ordine attivo, sortOrderAltro = posizione dell'altro.
+export function calcolaOrdineModelli(sottoinsieme, ordineForzato){
+  const attivo = ordineAttivo();
+  const ord = ordineForzato || attivo;
+  const pos = (m)=> ((ord===attivo ? m.sortOrder : m.sortOrderAltro) || 0);
   return [...(sottoinsieme||[])].filter(Boolean).sort((a,b)=>{
-    const sa = a.sortOrder || 0, sb = b.sortOrder || 0;
+    const sa = pos(a), sb = pos(b);
     if(sa!==sb) return sa-sb;
     const fa = classificaFasciaOrariaModello(a);
     const fb = classificaFasciaOrariaModello(b);
@@ -64,9 +69,10 @@ export function ordinaModelliInGruppo(lista, criterio="manuale", estrai){
   }).map(x=>x.m);
 }
 
-export function calcolaOrdineVisuale(modelli, gruppi, mainCalId){
-  const base = calcolaOrdineModelli(modelli);
-  const ordine = ordineAttivo();
+// ordineForzato (facoltativo): "B" per avere SEMPRE l'ordine per fasce orarie (gruppi B), come per gli eventi del giorno.
+export function calcolaOrdineVisuale(modelli, gruppi, mainCalId, ordineForzato){
+  const ordine = ordineForzato || ordineAttivo();
+  const base = calcolaOrdineModelli(modelli, ordine);
   const perCal = new Map();
   base.forEach(m=>{ const c = m.calendarId||mainCalId||"__"; if(!perCal.has(c)) perCal.set(c,[]); perCal.get(c).push(m); });
   const rank = new Map();

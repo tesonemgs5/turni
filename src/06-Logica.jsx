@@ -2192,8 +2192,8 @@ export function useAppCore(session){
       getEvts(key,c.id).forEach(e=>pushUnico(e,c.id)));
     // Ordine calendario: posizione dell'evento nell'elenco calendari configurato in Impostazioni
     const calOrderIdx = new Map(store.calendars.map((c,i)=>[c.id,i]));
-    // Ordine modello: posizione del modello nella schermata Modelli
-    const modOrderIdx = new Map(modelliOrdinati.map((m,i)=>[m.id,i]));
+    // Ordine modello: sistema B (fasce orarie) della schermata Modelli, sempre B anche se il dispositivo vede A
+    const modOrderIdx = new Map(modelliOrdinatiB.map((m,i)=>[m.id,i]));
     const ordinati = res.sort((a,b)=>{
       const ca = calOrderIdx.has(a._cid) ? calOrderIdx.get(a._cid) : 999;
       const cb = calOrderIdx.has(b._cid) ? calOrderIdx.get(b._cid) : 999;
@@ -4821,6 +4821,9 @@ function ricalcolaPosizioniGlobali(prev, calendarsOrdinati, ordiniPerCalendario,
 // Elenco completo (tutti i calendari insieme), usato dove serve una vista
 // globale — es. il ripristino da backup, o quando calId===null ("tutti").
 const modelliOrdinati = useMemo(()=>calcolaOrdineVisuale(modelli, gruppi, mainCalId), [modelli, gruppi, mainCalId]);
+// Ordine dei modelli per FASCE ORARIE (sistema B), sempre B a prescindere da cosa si vede sul dispositivo:
+// e' quello che decide l'ordine degli eventi nello stesso giorno (dopo l'ordine dei calendari).
+const modelliOrdinatiB = useMemo(()=>calcolaOrdineVisuale(modelli, gruppi, mainCalId, "B"), [modelli, gruppi, mainCalId]);
 
 const importsRecenti = useMemo(()=>{
   // Raggruppa per (calendario, importId): serve a tutti e 3 i dialog di import.
