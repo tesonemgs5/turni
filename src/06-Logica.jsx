@@ -8223,7 +8223,9 @@ const importsRecenti = useMemo(()=>{
   }
 
   function getConteggioConfig(reportId, reportType){
-    const saved = conteggioConfigs[reportId];
+    // Prima l'ultimo valore scritto (ref): se nello stesso salvataggio si applicano piu' scelte allo stesso
+    // report, ognuna deve ripartire da quella precedente e non dal valore "vecchio" dello schermo.
+    const saved = (conteggioConfigsRef.current||{})[reportId] ?? conteggioConfigs[reportId];
     if(saved) return saved;
     if(reportType==="turnazione"){
       return { fasceFiltro:[], modelliEsclusi:[], modelliAggiunti:[] };
@@ -8252,10 +8254,14 @@ const importsRecenti = useMemo(()=>{
   // riepilogo (facoltativo): testo per il Log al posto della descrizione automatica (es. «ripristinato lo stato precedente»).
   function updateConteggioConfig(reportId, cfg, riepilogo){
     const tipo = (store.reports||[]).find(x=>x.id===reportId)?.type;
-    const prima = conteggioConfigs[reportId] ?? getConteggioConfig(reportId, tipo);
+    // Parte SEMPRE dall'ultimo valore (ref), non da quello dello schermo: piu' modifiche nello stesso momento
+    // (es. «tutti gli eventi» da un evento con piu' report o piu' scelte) si sommano invece di cancellarsi.
+    const base = conteggioConfigsRef.current || conteggioConfigs;
+    const prima = base[reportId] ?? getConteggioConfig(reportId, tipo);
     cfg = marcaOrarioAssegnazioni(prima, cfg);
     const voceLogId = tracciaModificaReport(reportId, prima, cfg, riepilogo);
-    const newCfg = {...conteggioConfigs, [reportId]: cfg};
+    const newCfg = {...base, [reportId]: cfg};
+    conteggioConfigsRef.current = newCfg; // subito: la chiamata successiva ripartira' da qui
     setConteggioConfigs(newCfg);
     saveSettings({conteggio_configs: newCfg}, { voceLogId, contesto:"Salvataggio report" });
   }
