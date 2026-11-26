@@ -30,6 +30,7 @@ import { ordinaModelliInGruppo } from "./26-ordine-modelli";
 import { BackupPerModelloPulsante, StatoSync } from "./20-backup-modelli";
 import { BackupModelliConfigEStato } from "./22-backup-stato";
 import { SUPABASE_CONFIGURATO } from "./42-regola-supabase";
+import { tempoModelloDaOrari } from "./31-identita-modello";
 
 // Riga della lista Colori: mostra il pallino colore, etichetta, sottotitolo,
 // contatore di modelli che lo usano e (se applicabile) pulsanti per
@@ -4211,7 +4212,7 @@ export default function VistaModelli({ C }){
                       const nIn = (mod?.tempo==="h24") ? "" : (form.offIn!==undefined ? form.offIn : (mod?.inizio || ""));
                       const nOut = (mod?.tempo==="h24") ? "" : (form.offOut!==undefined ? form.offOut : ((mod ? calcFineModello(mod) : "") || mod?.fine || ""));
                       const nCol = form.colorOvr || mod.coloreCustom || mod.colore || (form.dur === "allday" ? COLORE_H24 : colByTime(nIn));
-                      const nTempo = mod?.tempo || "custom";
+                      const nTempo = tempoModelloDaOrari({ tempoAttuale: mod?.tempo, inizio: nIn, fine: nOut, calcFine6h15, calcFine6h30 });
                       await saveModello({
                         ...mod,
                         titolo: nTitoloMod,
@@ -4245,7 +4246,7 @@ export default function VistaModelli({ C }){
                     const nIn = (mod?.tempo==="h24") ? "" : (form.offIn!==undefined ? form.offIn : (mod?.inizio || ""));
                     const nOut = (mod?.tempo==="h24") ? "" : (form.offOut!==undefined ? form.offOut : ((mod ? calcFineModello(mod) : "") || mod?.fine || ""));
                     const nCol = form.colorOvr || mod?.coloreCustom || mod?.colore || (form.dur === "allday" ? COLORE_H24 : colByTime(nIn));
-                    const nTempo = mod?.tempo || "custom";
+                    const nTempo = tempoModelloDaOrari({ tempoAttuale: mod?.tempo, inizio: nIn, fine: nOut, calcFine6h15, calcFine6h30 });
 
                     const esitoNuovo = await saveModello({
                       ...(mod || {}),
@@ -4321,7 +4322,7 @@ export default function VistaModelli({ C }){
                     const nIn = (mod?.tempo==="h24") ? "" : (form.offIn!==undefined ? form.offIn : (mod?.inizio || ""));
                     const nOut = (mod?.tempo==="h24") ? "" : (form.offOut!==undefined ? form.offOut : ((mod ? calcFineModello(mod) : "") || mod?.fine || ""));
                     const nCol = form.colorOvr || mod?.coloreCustom || mod?.colore || (form.dur === "allday" ? COLORE_H24 : colByTime(nIn));
-                    const nTempo = mod?.tempo || "custom";
+                    const nTempo = tempoModelloDaOrari({ tempoAttuale: mod?.tempo, inizio: nIn, fine: nOut, calcFine6h15, calcFine6h30 });
                     const esitoNuovo4 = await saveModello({
                       ...(mod || {}),
                       id: null,

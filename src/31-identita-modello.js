@@ -26,6 +26,18 @@ export function tempoDaEvento({ allDay, tIn, tOut, calcFine6h15, calcFine6h30 })
   return "personalizzato";
 }
 
+// Tipo durata di un MODELLO quando ne cambiano gli orari (es. dal dialogo «Per tutti gli eventi»):
+// "6h15" o "6h30" se la fine coincide con inizio + quella durata, altrimenti "custom" (personalizzato).
+// Serve perche' il modello con tipo 6h15/6h30 ignora la fine salvata e la ricalcola dall'inizio: se il tipo
+// non segue gli orari, il modello «non cambia» e anche le ore dei report restano quelle vecchie.
+export function tempoModelloDaOrari({ tempoAttuale, inizio, fine, calcFine6h15, calcFine6h30 }) {
+  if (tempoAttuale === "h24") return "h24";
+  if (!inizio || !fine) return tempoAttuale || "custom";
+  if (calcFine6h15 && fine === calcFine6h15(inizio)) return "6h15";
+  if (calcFine6h30 && fine === calcFine6h30(inizio)) return "6h30";
+  return "custom";
+}
+
 export function chiaveIdentitaModello(m) {
   const tempo = tempoCanonico(m.tempo);
   const nome = normNome(m.titolo || m.label);
